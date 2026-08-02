@@ -3,209 +3,177 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#f1efe8" />
-    <title>誓界記 — 小島国プロトタイプ</title>
-    <link rel="stylesheet" href="styles.css" />
+    <meta name="theme-color" content="#172224" />
+    <title>誓界記 — セレナ島侯国</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='8' fill='%23172224'/%3E%3Ctext x='32' y='45' text-anchor='middle' font-size='38' fill='%23ead28d'%3E誓%3C/text%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
-    <div class="noise" aria-hidden="true"></div>
+    <div class="grain" aria-hidden="true"></div>
 
-    <header class="topbar">
-      <a class="brand" href="#" aria-label="誓界記 ホーム">
-        <span class="brand-mark">誓</span>
-        <span><strong>誓界記</strong><small>OATHBOUND CHRONICLE</small></span>
-      </a>
-      <div class="season-clock" aria-label="現在日時">
-        <span>白潮暦 312年・冬支度期</span>
-        <strong id="dayLabel">第1日 / 8日</strong>
-      </div>
-      <div class="top-actions">
-        <a class="text-button" href="https://github.com/Rune-markar/oathbound-chronicle-island-prototype/blob/main/CHANGELOG.md" target="_blank" rel="noopener noreferrer">更新履歴</a>
-        <button class="text-button" id="saveButton" type="button">記録する</button>
-        <button class="primary-button next-day-button" id="nextDayButton" type="button">
-          一日進める
-          <span aria-hidden="true">→</span>
+    <header class="grand-topbar">
+      <button class="realm-identity" id="realmHome" type="button" aria-label="国家画面を開く">
+        <span class="shield"><i>誓</i></span>
+        <span><strong>セレナ島侯国</strong><small>島政院</small></span>
+      </button>
+
+      <div class="resource-ledger" id="resourceLedger" aria-label="国家資源"></div>
+
+      <div class="date-controls" aria-label="時間操作">
+        <div class="speed-controls" id="speedControls">
+          <button type="button" data-speed="0" class="is-active" aria-label="一時停止">Ⅱ</button>
+          <button type="button" data-speed="1" aria-label="速度1">›</button>
+          <button type="button" data-speed="2" aria-label="速度2">»</button>
+          <button type="button" data-speed="3" aria-label="速度3">»›</button>
+        </div>
+        <button class="date-button" id="advanceDayButton" type="button">
+          <strong id="dateLabel">誓暦317年 青月12日</strong>
+          <small>クリックで一日進行</small>
         </button>
       </div>
     </header>
 
-    <main class="game-shell">
-      <section class="metric-ribbon" aria-label="島国の主要指標">
-        <article class="metric objective-metric">
-          <span class="metric-label">北方備蓄</span>
-          <div><strong id="deliveredMetric">0</strong><span> / 48樽</span></div>
-          <div class="progress-track"><span id="deliveryProgress"></span></div>
-        </article>
-        <article class="metric">
-          <span class="metric-label">国庫</span>
-          <div><strong id="treasuryMetric">80</strong><span> 王冠貨</span></div>
-          <small id="treasuryTrend">施策と買上げに使用</small>
-        </article>
-        <article class="metric">
-          <span class="metric-label">正統性</span>
-          <div><strong id="legitimacyMetric">64</strong><span> / 100</span></div>
-          <small id="legitimacyTrend">布告を受け入れる根拠</small>
-        </article>
-        <article class="metric">
-          <span class="metric-label">誓債</span>
-          <div><strong id="debtMetric">0</strong><span> 件</span></div>
-          <small id="debtTrend">破られた保護の記憶</small>
-        </article>
-        <article class="metric action-metric">
-          <span class="metric-label">本日の行動</span>
-          <div class="action-pips" id="actionPips" aria-label="残り行動点"></div>
-          <small>調査・対話・制度整備</small>
-        </article>
-      </section>
+    <div class="strategy-shell">
+      <aside class="left-dock" aria-label="国家メニュー">
+        <nav class="primary-tabs" id="primaryTabs">
+          <button class="is-active" type="button" data-panel="realm"><span>♜</span>国政</button>
+          <button type="button" data-panel="diplomacy"><span>⚖</span>外交</button>
+          <button type="button" data-panel="military"><span>⚔</span>軍事</button>
+          <button type="button" data-panel="people"><span>♟</span>人材</button>
+        </nav>
+        <section class="ledger-panel" id="leftPanel" aria-live="polite"></section>
+      </aside>
 
-      <div class="workspace">
-        <aside class="left-rail">
-          <nav class="scale-nav" aria-label="世界の縮尺">
-            <p class="rail-label">WORLD SCALE</p>
-            <button class="scale-button is-active" data-scale="country" type="button">
-              <span>01</span><strong>島国</strong><small>法・国庫・誓約</small>
-            </button>
-            <button class="scale-button" data-scale="city" type="button">
-              <span>02</span><strong>都市群</strong><small>倉庫・街道・機関</small>
-            </button>
-            <button class="scale-button" data-scale="village" type="button">
-              <span>03</span><strong>村々</strong><small>在庫・生活・証言</small>
-            </button>
-          </nav>
+      <main class="map-stage">
+        <div class="alert-rack" id="alertRack" aria-label="重要通知"></div>
 
-          <section class="player-card">
-            <div class="portrait" aria-hidden="true">レ</div>
-            <div>
-              <span>あなた</span>
-              <strong>レナ・アルディス</strong>
-              <small id="roleLabel">島政院の記録官</small>
-              <small class="player-location" id="playerLocationLabel">現在地：王都セレネ</small>
-            </div>
-          </section>
-
-          <section class="objective-card">
-            <span class="eyebrow">CURRENT OATH</span>
-            <h2>風待ちの徴発</h2>
-            <p>北岬の守備隊へ、8日目までに穀物48樽を届ける。</p>
-            <div class="deadline-line"><span>残り</span><strong id="daysRemaining">8日</strong></div>
-          </section>
-        </aside>
-
-        <section class="map-column">
-          <div class="map-heading">
-            <div>
-              <span class="eyebrow" id="scaleEyebrow">NATION / ONE ISLAND</span>
-              <h1 id="mapTitle">セレナ島侯国</h1>
-              <p id="mapSubtitle">三つの都市圏と六つの村が、同じ備蓄と命令を共有する。</p>
-            </div>
-            <div class="map-legend" aria-label="地図の凡例">
-              <span><i class="legend-city"></i>都市</span>
-              <span><i class="legend-village"></i>村</span>
-              <span><i class="legend-route"></i>穀物便</span>
-            </div>
-          </div>
-
-          <div class="map-frame" id="mapFrame" data-scale="country">
-            <svg id="islandMap" viewBox="0 0 900 650" role="img" aria-labelledby="mapSvgTitle mapSvgDesc">
-              <title id="mapSvgTitle">セレナ島侯国の地図</title>
-              <desc id="mapSvgDesc">三都市と六つの村、穀物輸送路を示す操作可能な地図</desc>
-              <defs>
-                <linearGradient id="seaGradient" x1="0" y1="0" x2="1" y2="1">
-                  <stop offset="0" stop-color="#dcebf0" />
-                  <stop offset="1" stop-color="#b9d4dc" />
-                </linearGradient>
-                <linearGradient id="landGradient" x1="0" y1="0" x2="1" y2="1">
-                  <stop offset="0" stop-color="#d6d7b9" />
-                  <stop offset="0.55" stop-color="#bac7a1" />
-                  <stop offset="1" stop-color="#94aa89" />
-                </linearGradient>
-                <filter id="landShadow" x="-20%" y="-20%" width="140%" height="140%">
-                  <feDropShadow dx="0" dy="9" stdDeviation="9" flood-color="#19384a" flood-opacity="0.24" />
-                </filter>
-                <pattern id="waves" width="40" height="28" patternUnits="userSpaceOnUse">
-                  <path d="M0 16 Q10 8 20 16 T40 16" fill="none" stroke="#fff" stroke-opacity=".27" stroke-width="1.5" />
-                </pattern>
-              </defs>
-              <rect width="900" height="650" fill="url(#seaGradient)" />
-              <rect width="900" height="650" fill="url(#waves)" opacity=".7" />
-              <g id="mapCamera">
-                <path class="island-shadow" d="M455 50 C541 59 625 112 653 194 C681 274 638 326 680 389 C716 443 673 532 604 565 C526 603 456 575 392 596 C316 621 229 568 214 493 C202 430 239 389 220 335 C196 267 232 191 294 158 C354 126 372 43 455 50Z" fill="#5d7c87" opacity=".28" transform="translate(0 14)" />
-                <path class="island" d="M455 50 C541 59 625 112 653 194 C681 274 638 326 680 389 C716 443 673 532 604 565 C526 603 456 575 392 596 C316 621 229 568 214 493 C202 430 239 389 220 335 C196 267 232 191 294 158 C354 126 372 43 455 50Z" fill="url(#landGradient)" stroke="#6e886e" stroke-width="4" filter="url(#landShadow)" />
-                <path d="M305 188 C359 208 381 183 423 140 C467 97 522 112 583 164" class="contour" />
-                <path d="M268 313 C340 277 385 299 447 266 C522 226 579 258 629 292" class="contour" />
-                <path d="M267 468 C351 430 410 466 465 429 C528 387 596 411 650 450" class="contour" />
-                <path d="M426 92 C438 149 414 202 426 264 C438 330 481 362 467 433 C455 496 470 538 507 570" class="river" />
-                <g id="territoryLayer"></g>
-                <g id="routeLayer"></g>
-                <g id="nodeLayer"></g>
-              </g>
-              <g class="compass" transform="translate(812 82)">
-                <circle r="31" fill="#f8f7f1" fill-opacity=".8" stroke="#31546a" stroke-width="1" />
-                <path d="M0 -24 L7 0 L0 24 L-7 0Z" fill="#16384d" />
-                <text y="-38" text-anchor="middle">N</text>
-              </g>
-            </svg>
-            <div class="map-note" id="mapNote">
-              <span class="pulse-dot"></span>
-              <span>地図上の都市・村を選択できます</span>
-            </div>
-          </div>
-
-          <section class="causal-strip" aria-label="現在の因果鎖">
-            <div class="causal-title">
-              <span class="eyebrow">VISIBLE CAUSALITY</span>
-              <strong>いま起きていること</strong>
-            </div>
-            <div class="causal-chain" id="causalChain"></div>
-          </section>
-        </section>
-
-        <aside class="inspector" id="inspector" aria-live="polite"></aside>
-      </div>
-
-      <section class="chronicle-panel">
-        <div class="chronicle-heading">
-          <div>
-            <span class="eyebrow">THE WORLD REMEMBERS</span>
-            <h2>島国年代記</h2>
-          </div>
-          <button class="text-button" id="resetButton" type="button">最初から</button>
+        <div class="map-caption">
+          <span id="mapModeEyebrow">POLITICAL MAP</span>
+          <strong id="mapCaptionTitle">白礁海峡周辺</strong>
         </div>
-        <ol class="chronicle-list" id="chronicleList"></ol>
-      </section>
-    </main>
 
-    <div class="modal-backdrop" id="introModal" role="dialog" aria-modal="true" aria-labelledby="introTitle">
-      <section class="intro-card">
-        <span class="eyebrow">PLAYABLE PROTOTYPE / CHAPTER 01</span>
-        <h2 id="introTitle">風待ちの徴発</h2>
-        <p class="intro-lead">一つの命令を、島国として決め、都市で運び、村の暮らしとして受け止める。</p>
-        <div class="intro-grid">
-          <div><span>舞台</span><strong>1島国・3都市・6村</strong></div>
-          <div><span>期限</span><strong>8日間</strong></div>
-          <div><span>目的</span><strong>穀物48樽</strong></div>
+        <svg id="strategyMap" class="strategy-map" viewBox="0 0 1000 650" role="img" aria-labelledby="mapTitle mapDescription">
+          <title id="mapTitle">セレナ島侯国と白礁海峡周辺の戦略地図</title>
+          <desc id="mapDescription">三都市、六村、ヴァルカ海岸公領、灯台諸島会議と海路を選択できる地図</desc>
+          <defs>
+            <linearGradient id="sea" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#55797c" />
+              <stop offset="1" stop-color="#2c555d" />
+            </linearGradient>
+            <pattern id="seaLines" width="34" height="26" patternUnits="userSpaceOnUse">
+              <path d="M0 13 Q9 6 17 13 T34 13" fill="none" stroke="#b9d5d1" stroke-opacity=".14" stroke-width="1.2" />
+            </pattern>
+            <filter id="landShadow" x="-20%" y="-20%" width="140%" height="140%">
+              <feDropShadow dx="0" dy="8" stdDeviation="8" flood-color="#102e34" flood-opacity=".4" />
+            </filter>
+          </defs>
+          <rect width="1000" height="650" fill="url(#sea)" />
+          <rect width="1000" height="650" fill="url(#seaLines)" />
+
+          <g class="sea-routes" aria-hidden="true">
+            <path data-route="white_reef" d="M565 310 C640 282 696 277 746 289" />
+            <path data-route="south_road" d="M505 482 C595 521 646 535 716 530" />
+          </g>
+          <g class="sea-labels">
+            <text x="642" y="254">白礁海峡</text>
+            <text x="588" y="550">南方商路</text>
+          </g>
+
+          <g class="country-group selena" data-country="selena" filter="url(#landShadow)">
+            <path class="province" data-place-type="province" data-place-id="selene" d="M171 121 C225 62 348 51 431 95 C476 119 495 173 471 230 C453 271 414 294 378 323 C323 320 270 304 224 273 C173 238 141 178 171 121Z" />
+            <path class="province" data-place-type="province" data-place-id="nereia" d="M378 323 C420 291 452 269 471 230 C532 244 589 288 607 346 C624 403 595 461 541 489 C487 517 438 482 393 454 C405 410 397 366 378 323Z" />
+            <path class="province" data-place-type="province" data-place-id="orta" d="M224 273 C271 304 324 320 378 323 C398 368 405 410 393 454 C360 493 326 549 263 540 C198 531 147 473 151 411 C154 353 194 315 224 273Z" />
+          </g>
+
+          <g class="country-group valka" data-country="valka" filter="url(#landShadow)">
+            <path class="province" data-place-type="province" data-place-id="valka_keep" d="M726 166 C782 136 856 157 883 211 C907 259 881 320 831 346 C782 370 715 340 696 291 C678 247 685 188 726 166Z" />
+          </g>
+
+          <g class="country-group lantern" data-country="lantern" filter="url(#landShadow)">
+            <path class="province" data-place-type="province" data-place-id="twinlight" d="M690 486 C719 463 758 467 773 496 C788 526 770 561 737 571 C706 579 672 555 671 522 C671 508 678 495 690 486Z" />
+            <path class="islet" d="M809 521 C826 507 849 512 856 530 C863 548 849 567 830 565 C811 563 798 539 809 521Z" />
+          </g>
+
+          <g class="city-layer">
+            <g class="map-node city" role="button" tabindex="0" data-place-type="province" data-place-id="selene" transform="translate(390 210)">
+              <circle r="13" /><path d="M-8 7V-6L0-13L8-6V7Z" /><text y="29">王都セレネ</text>
+            </g>
+            <g class="map-node city" role="button" tabindex="0" data-place-type="province" data-place-id="nereia" transform="translate(515 378)">
+              <circle r="13" /><path d="M-8 7V-6L0-13L8-6V7Z" /><text y="29">港都ネレイア</text>
+            </g>
+            <g class="map-node city" role="button" tabindex="0" data-place-type="province" data-place-id="orta" transform="translate(325 438)">
+              <circle r="13" /><path d="M-8 7V-6L0-13L8-6V7Z" /><text y="29">鐘楼市オルタ</text>
+            </g>
+            <g class="map-node city foreign" role="button" tabindex="0" data-place-type="country" data-place-id="valka" transform="translate(790 255)">
+              <circle r="15" /><path d="M-9 8V-7L0-15L9-7V8Z" /><text y="32">岬城ヴァルカ</text>
+            </g>
+            <g class="map-node city neutral" role="button" tabindex="0" data-place-type="country" data-place-id="lantern" transform="translate(725 520)">
+              <circle r="12" /><path d="M-7 7V-5L0-12L7-5V7Z" /><text y="28">双灯港</text>
+            </g>
+          </g>
+
+          <g class="village-layer">
+            <g class="map-node village" role="button" tabindex="0" data-place-type="village" data-place-id="mugiwano" transform="translate(338 176)"><circle r="6" /><text y="18">麦輪</text></g>
+            <g class="map-node village" role="button" tabindex="0" data-place-type="village" data-place-id="tsukishiro" transform="translate(456 182)"><circle r="6" /><text y="18">月代</text></g>
+            <g class="map-node village" role="button" tabindex="0" data-place-type="village" data-place-id="shionari" transform="translate(584 334)"><circle r="6" /><text y="18">潮鳴</text></g>
+            <g class="map-node village" role="button" tabindex="0" data-place-type="village" data-place-id="aonagi" transform="translate(574 432)"><circle r="6" /><text y="18">青凪</text></g>
+            <g class="map-node village" role="button" tabindex="0" data-place-type="village" data-place-id="haimugi" transform="translate(274 397)"><circle r="6" /><text y="18">灰麦</text></g>
+            <g class="map-node village" role="button" tabindex="0" data-place-type="village" data-place-id="kanezaka" transform="translate(364 492)"><circle r="6" /><text y="18">鐘坂</text></g>
+          </g>
+
+          <g class="map-ornament" transform="translate(80 555)">
+            <circle r="35" /><path d="M0-26L6-6L0 0L-6-6Z M0 26L6 6L0 0L-6 6Z" /><text y="5">N</text>
+          </g>
+        </svg>
+
+        <section class="selection-card" id="selectionCard" aria-live="polite"></section>
+
+        <div class="map-scale-switch" id="mapScaleSwitch" aria-label="表示縮尺">
+          <span>縮尺</span>
+          <button type="button" data-scale="country" class="is-active">国家</button>
+          <button type="button" data-scale="city">都市圏</button>
+          <button type="button" data-scale="village">村々</button>
         </div>
-        <p>北方の海が荒れ、守備隊の冬備蓄が失われた。島政院は村々へ穀物を求めている。ただし台帳は古く、街道は不揃いで、誰が余裕を持つのかさえ分からない。</p>
-        <button class="primary-button intro-start" id="startButton" type="button">記録官として始める <span>→</span></button>
-      </section>
+
+        <div class="map-mode-bar" id="mapModeBar" aria-label="地図モード">
+          <button type="button" data-map-mode="political" class="is-active"><i class="mode-swatch political"></i><span>政治</span></button>
+          <button type="button" data-map-mode="diplomatic"><i class="mode-swatch diplomatic"></i><span>外交</span></button>
+          <button type="button" data-map-mode="supply"><i class="mode-swatch supply"></i><span>補給</span></button>
+          <button type="button" data-map-mode="unrest"><i class="mode-swatch unrest"></i><span>不穏</span></button>
+        </div>
+
+        <div class="chronicle-ticker" id="chronicleTicker"></div>
+      </main>
+
+      <aside class="outliner">
+        <header><span>OUTLINER</span><strong>島政院摘要</strong></header>
+        <div id="outlinerContent"></div>
+        <footer>
+          <button id="saveButton" type="button">記録</button>
+          <button id="resetButton" type="button">最初から</button>
+          <a href="https://github.com/Rune-markar/oathbound-chronicle-island-prototype/blob/main/CHANGELOG.md" target="_blank" rel="noopener noreferrer">更新履歴</a>
+        </footer>
+      </aside>
     </div>
 
-    <div class="modal-backdrop is-hidden" id="resultModal" role="dialog" aria-modal="true" aria-labelledby="resultTitle">
-      <section class="result-card">
-        <span class="eyebrow">CHRONICLE SEALED</span>
-        <h2 id="resultTitle">結末</h2>
-        <p class="result-lead" id="resultLead"></p>
-        <div class="result-stats" id="resultStats"></div>
-        <p id="resultBody"></p>
-        <div class="result-actions">
-          <button class="text-button" id="closeResultButton" type="button">年代記を見る</button>
-          <button class="primary-button" id="replayButton" type="button">もう一度試す</button>
+    <div class="modal-backdrop is-hidden" id="warCouncilModal" role="dialog" aria-modal="true" aria-labelledby="warCouncilTitle">
+      <section class="war-council">
+        <button class="modal-close" id="closeWarCouncil" type="button" aria-label="閉じる">×</button>
+        <div class="council-header">
+          <span>WAR COUNCIL / 白礁海峡</span>
+          <h2 id="warCouncilTitle">戦争は目的ではなく、政治の手段である</h2>
+          <p>要求を先に定め、必要な力と止める地点をAI参謀が説明します。</p>
+        </div>
+        <div class="objective-tabs" id="objectiveTabs"></div>
+        <div id="warCouncilReport"></div>
+        <div class="council-actions">
+          <p id="declarationWarning"></p>
+          <button class="war-button" id="declareWarButton" type="button">この目的で宣戦布告</button>
         </div>
       </section>
     </div>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
-
-    <script type="module" src="src/app.js"></script>
+    <script type="module" src="./src/app.js"></script>
   </body>
 </html>

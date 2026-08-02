@@ -1,101 +1,115 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  COMMANDS,
+  WAR_OBJECTIVES,
   WORLD,
-  advanceDay,
+  advanceDays,
   createInitialState,
+  declareWar,
   deriveMetrics,
-  enactPolicy,
-  getOutcome,
-  getPolicyAvailability,
-  getTravelMinutes,
-  performAction,
+  getCommandAvailability,
+  getWarCouncilReport,
+  issueCommand,
+  negotiatePeace,
+  setWarPlan,
 } from "../src/simulation.js";
 
-test("initial world contains one nation, three cities, and six villages", () => {
-  const state = createInitialState();
-  assert.equal(Object.keys(WORLD.cities).length, 3);
+test("world keeps the small island scale while adding external polities", () => {
+  const islandProvinces = Object.values(WORLD.provinces).filter((province) => province.owner === "selena");
+  assert.equal(islandProvinces.length, 3);
   assert.equal(Object.keys(WORLD.villages).length, 6);
-  assert.equal(Object.keys(state.villages).length, 6);
-  assert.equal(state.target, 48);
-  assert.equal(state.locationId, "selene");
+  assert.equal(Object.keys(WORLD.countries).length, 3);
+  assert.equal(WORLD.seaZones.white_reef.value, 86);
 });
 
-test("field evidence unlocks the surplus-linked oath", () => {
-  let state = createInitialState();
-  assert.equal(getPolicyAvailability(state, "surplus").allowed, false);
-  state = performAction(state, "player.travel", "mugiwano");
-  state = performAction(state, "village.inspect", "mugiwano");
-  state = advanceDay(state);
-  state = performAction(state, "village.hear", "mugiwano");
-  state = performAction(state, "player.travel", "selene");
-  state = advanceDay(state);
-  state = performAction(state, "city.council", "selene");
-  assert.equal(state.evidence, 3);
-  assert.equal(getPolicyAvailability(state, "surplus").allowed, true);
-});
-
-test("a city standard reduces record error and spends finite resources", () => {
-  const initial = createInitialState();
-  let state = performAction(initial, "player.travel", "orta");
-  state = performAction(state, "city.ledger", "orta");
-  assert.equal(state.cities.orta.ledger, true);
-  assert.equal(state.treasury, 70);
-  assert.equal(state.actionPoints, 0);
-  assert.ok(Math.abs(state.villages.haimugi.recorded - state.villages.haimugi.stock) < Math.abs(initial.villages.haimugi.recorded - initial.villages.haimugi.stock));
-});
-
-test("daily shipment consumes village stock and never creates grain", () => {
-  let state = enactPolicy(createInitialState(), "levy");
-  const before = deriveMetrics(state).totalStock;
-  state = advanceDay(state);
-  const after = deriveMetrics(state).totalStock;
-  assert.ok(after < before);
-  assert.ok(state.delivered > 0);
-  assert.ok(state.delivered <= before - after);
-});
-
-test("one-time local actions cannot be repeated", () => {
-  let state = performAction(createInitialState(), "player.travel", "shionari");
-  state = performAction(state, "village.inspect", "shionari");
-  state = advanceDay(state);
-  assert.throws(() => performAction(state, "village.inspect", "shionari"), /照合済み/);
-});
-
-test("local work requires physical travel and travel consumes world time", () => {
-  const initial = createInitialState();
-  assert.throws(() => performAction(initial, "village.inspect", "mugiwano"), /移動してから/);
-  const arrived = performAction(initial, "player.travel", "mugiwano");
-  assert.equal(arrived.locationId, "mugiwano");
-  assert.equal(arrived.actionPoints, 1);
-  assert.equal(arrived.currentMinutes, 8 * 60 + getTravelMinutes("selene", "mugiwano"));
-});
-
-test("shipments stop exactly at the national target", () => {
-  let state = enactPolicy(createInitialState(), "levy");
-  while (!state.ended) state = advanceDay(state);
-  assert.ok(Math.abs(state.delivered - state.target) < 0.001);
-});
-
-test("reserve-protecting oaths never draw a village below its winter line", () => {
-  let state = createInitialState();
-  state.evidence = 3;
-  state = enactPolicy(state, "surplus");
-  while (!state.ended) state = advanceDay(state);
-  Object.values(WORLD.villages).forEach((village) => {
-    assert.ok(state.villages[village.id].stock >= village.reserve);
-  });
-  assert.equal(state.oathDebt, 0);
-  assert.ok(Math.abs(state.delivered - state.target) < 0.001);
-});
-
-test("outcome distinguishes delivery from a trustworthy delivery", () => {
+test("initial play is driven by concrete disputes rather than a food quota", () => {
   const state = createInitialState();
-  state.delivered = 48;
-  Object.values(state.villages).forEach((village) => { village.trust = 70; });
-  assert.equal(getOutcome(state).level, "best");
-  state.oathDebt = 6;
-  assert.equal(getOutcome(state).level, "mixed");
-  state.delivered = 10;
-  assert.equal(getOutcome(state).level, "failed");
+  assert.equal(state.issues.strait.status, "active");
+  assert.equal(state.issues.harbor.status, "active");
+  assert.equal(state.issues.reports.status, "active");
+  assert.equal("target" in state, false);
+  assert.equal(deriveMetrics(state).activeIssues, 3);
+});
+
+test("Notion personnel commands are present with time and cost", () => {
+  assert.equal(COMMANDS["court.serve"].name, "仕官");
+  assert.equal(COMMANDS["court.invite"].name, "勧誘");
+  assert.equal(COMMANDS["court.recruit"].name, "登用");
+  assert.ok(COMMANDS["court.recruit"].duration > 0);
+  assert.ok(COMMANDS["court.recruit"].cost.diplomacy > 0);
+});
+
+test("commands enter a timetable and apply their effect only after completion", () => {
+  let state = createInitialState();
+  state = issueCommand(state, "admin.harbor_standard");
+  assert.equal(state.commandQueue[0].remaining, 7);
+  assert.equal(state.issues.harbor.status, "active");
+  state = advanceDays(state, 6);
+  assert.equal(state.issues.harbor.status, "active");
+  state = advanceDays(state, 1);
+  assert.equal(state.issues.harbor.status, "resolved");
+  assert.equal(state.commandQueue.length, 0);
+  assert.ok(state.supply > 62);
+});
+
+test("better reconnaissance narrows the military estimate", () => {
+  let state = createInitialState();
+  const before = getWarCouncilReport(state).confidence;
+  state = issueCommand(state, "navy.soundings");
+  state = advanceDays(state, 5);
+  const after = getWarCouncilReport(state).confidence;
+  assert.ok(after > before);
+  assert.equal(state.issues.reports.status, "resolved");
+});
+
+test("war council evaluates a limited political objective and names a center of gravity", () => {
+  const report = getWarCouncilReport(createInitialState(), "navigation");
+  assert.equal(report.posture, "実行可能");
+  assert.equal(report.center.id, "strait");
+  assert.match(report.limit, /自由通航の保障/);
+  assert.ok(report.factors.some((factor) => factor.label === "正当性"));
+  assert.ok(report.factors.some((factor) => factor.label === "補給"));
+});
+
+test("a total war objective carries more escalation than limited navigation", () => {
+  assert.ok(WAR_OBJECTIVES.submission.escalationRisk > WAR_OBJECTIVES.navigation.escalationRisk);
+  const limited = getWarCouncilReport(createInitialState(), "navigation");
+  const total = getWarCouncilReport(createInitialState(), "submission");
+  assert.ok(total.score < limited.score);
+  assert.match(total.limit, /長期化/);
+});
+
+test("declaring without legitimacy creates a domestic consequence but remains a choice", () => {
+  const initial = createInitialState();
+  initial.justification = 20;
+  initial.warSupport = 25;
+  const state = declareWar(initial, "navigation");
+  assert.ok(state.war);
+  assert.equal(state.stability, 0);
+  assert.ok(state.legitimacy < initial.legitimacy);
+  assert.ok(state.regions.nereia.unrest > initial.regions.nereia.unrest);
+  assert.match(state.log[0].title, /宣戦/);
+  assert.ok(state.log.some((entry) => /罷業/.test(entry.title)));
+});
+
+test("war advances weekly and responds to the selected plan", () => {
+  let state = declareWar(createInitialState(), "navigation");
+  state = setWarPlan(state, "blockade");
+  state = advanceDays(state, 7);
+  assert.equal(state.war.weeks, 1);
+  assert.notEqual(state.war.score, 0);
+  assert.ok(state.war.losses > 0);
+  assert.ok(state.war.lastEnemyAction.reason.length > 0);
+});
+
+test("peace ends the war and records a political settlement", () => {
+  let state = declareWar(createInitialState(), "navigation");
+  state.war.score = 40;
+  state.war.objectiveProgress = 50;
+  state = negotiatePeace(state);
+  assert.equal(state.war, null);
+  assert.equal(state.agreements.navigation, true);
+  assert.equal(state.issues.strait.status, "resolved");
+  assert.equal(getCommandAvailability(state, "navy.soundings").allowed, true);
 });

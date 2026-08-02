@@ -1,546 +1,633 @@
 import {
-  DEADLINE,
-  POLICIES,
+  COMMANDS,
+  WAR_OBJECTIVES,
   WORLD,
-  advanceDay,
+  advanceDays,
   createInitialState,
+  declareWar,
   deriveMetrics,
-  enactPolicy,
-  getCityMetrics,
-  getOutcome,
-  getPlaceName,
-  getPolicyAvailability,
-  getTravelMinutes,
-  performAction,
+  formatDate,
+  getCommandAvailability,
+  getWarCouncilReport,
+  issueCommand,
+  negotiatePeace,
+  setWarPlan,
 } from "./simulation.js";
 
-const STORAGE_KEY = "oathbound-island-prototype-v2";
-const SVG_NS = "http://www.w3.org/2000/svg";
+const STORAGE_KEY = "oathbound-island-grand-strategy-v3";
+const SPEED_DELAYS = [0, 1100, 550, 250];
 
 let state = loadState() ?? createInitialState();
-let view = {
+let timer = null;
+let toastTimer = null;
+const view = {
+  panel: "realm",
+  mapMode: "political",
   scale: "country",
-  selectedType: "country",
-  selectedId: WORLD.country.id,
+  selectedType: null,
+  selectedId: null,
+  speed: 0,
+  warCouncilOpen: false,
+  objectiveId: "navigation",
 };
 
 const elements = {
-  dayLabel: document.querySelector("#dayLabel"),
-  deliveredMetric: document.querySelector("#deliveredMetric"),
-  deliveryProgress: document.querySelector("#deliveryProgress"),
-  treasuryMetric: document.querySelector("#treasuryMetric"),
-  legitimacyMetric: document.querySelector("#legitimacyMetric"),
-  debtMetric: document.querySelector("#debtMetric"),
-  actionPips: document.querySelector("#actionPips"),
-  daysRemaining: document.querySelector("#daysRemaining"),
-  roleLabel: document.querySelector("#roleLabel"),
-  playerLocationLabel: document.querySelector("#playerLocationLabel"),
-  mapFrame: document.querySelector("#mapFrame"),
-  map: document.querySelector("#islandMap"),
-  territoryLayer: document.querySelector("#territoryLayer"),
-  routeLayer: document.querySelector("#routeLayer"),
-  nodeLayer: document.querySelector("#nodeLayer"),
-  scaleEyebrow: document.querySelector("#scaleEyebrow"),
-  mapTitle: document.querySelector("#mapTitle"),
-  mapSubtitle: document.querySelector("#mapSubtitle"),
-  mapNote: document.querySelector("#mapNote span:last-child"),
-  inspector: document.querySelector("#inspector"),
-  causalChain: document.querySelector("#causalChain"),
-  chronicleList: document.querySelector("#chronicleList"),
-  introModal: document.querySelector("#introModal"),
-  resultModal: document.querySelector("#resultModal"),
-  resultTitle: document.querySelector("#resultTitle"),
-  resultLead: document.querySelector("#resultLead"),
-  resultStats: document.querySelector("#resultStats"),
-  resultBody: document.querySelector("#resultBody"),
+  resourceLedger: document.querySelector("#resourceLedger"),
+  dateLabel: document.querySelector("#dateLabel"),
+  speedControls: document.querySelector("#speedControls"),
+  leftPanel: document.querySelector("#leftPanel"),
+  primaryTabs: document.querySelector("#primaryTabs"),
+  alertRack: document.querySelector("#alertRack"),
+  strategyMap: document.querySelector("#strategyMap"),
+  mapModeEyebrow: document.querySelector("#mapModeEyebrow"),
+  mapCaptionTitle: document.querySelector("#mapCaptionTitle"),
+  mapModeBar: document.querySelector("#mapModeBar"),
+  mapScaleSwitch: document.querySelector("#mapScaleSwitch"),
+  selectionCard: document.querySelector("#selectionCard"),
+  chronicleTicker: document.querySelector("#chronicleTicker"),
+  outlinerContent: document.querySelector("#outlinerContent"),
+  warCouncilModal: document.querySelector("#warCouncilModal"),
+  objectiveTabs: document.querySelector("#objectiveTabs"),
+  warCouncilReport: document.querySelector("#warCouncilReport"),
+  declarationWarning: document.querySelector("#declarationWarning"),
+  declareWarButton: document.querySelector("#declareWarButton"),
   toast: document.querySelector("#toast"),
-  nextDayButton: document.querySelector("#nextDayButton"),
 };
 
 function loadState() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
-    const saved = JSON.parse(raw);
-    return saved.version === 2 ? saved : null;
+    const parsed = JSON.parse(raw);
+    return parsed.version === 3 ? parsed : null;
   } catch {
     return null;
   }
 }
 
-function saveState(showMessage = false) {
+function persist(showMessage = false) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  if (showMessage) showToast("年代記をこの端末に保存しました");
+  if (showMessage) showToast("年代記をこの端末に記録しました。");
 }
 
-function resetGame() {
-  state = createInitialState();
-  view = { scale: "country", selectedType: "country", selectedId: WORLD.country.id };
-  localStorage.removeItem(STORAGE_KEY);
-  elements.resultModal.classList.add("is-hidden");
+function commit(nextState, message = "") {
+  state = nextState;
+  persist();
   render();
+  if (message) showToast(message);
 }
 
 function showToast(message, tone = "neutral") {
+  clearTimeout(toastTimer);
   elements.toast.textContent = message;
-  elements.toast.dataset.tone = tone;
-  elements.toast.classList.add("is-visible");
-  window.clearTimeout(showToast.timer);
-  showToast.timer = window.setTimeout(() => elements.toast.classList.remove("is-visible"), 2600);
+  elements.toast.className = `toast is-visible ${tone === "danger" ? "is-danger" : ""}`;
+  toastTimer = setTimeout(() => {
+    elements.toast.className = "toast";
+  }, 2400);
 }
 
-function commit(nextState, message) {
-  state = nextState;
-  saveState();
-  render();
-  if (message) showToast(message, "good");
+function setSpeed(speed) {
+  view.speed = speed;
+  clearInterval(timer);
+  timer = null;
+  if (speed > 0 && !view.warCouncilOpen) {
+    timer = setInterval(() => {
+      commit(advanceDays(state, 1));
+    }, SPEED_DELAYS[speed]);
+  }
+  renderTimeControls();
 }
 
-function formatNumber(value, digits = 0) {
+function formatValue(value, digits = 0) {
   return Number(value).toLocaleString("ja-JP", { maximumFractionDigits: digits });
 }
 
-function formatClock(totalMinutes) {
-  const hours = Math.floor(totalMinutes / 60) % 24;
-  const minutes = totalMinutes % 60;
-  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
-}
-
-function setScale(scale, selectedId) {
-  view.scale = scale;
-  if (scale === "country") {
-    view.selectedType = "country";
-    view.selectedId = WORLD.country.id;
-  } else if (scale === "city") {
-    view.selectedType = "city";
-    view.selectedId = selectedId && WORLD.cities[selectedId] ? selectedId : currentCityId();
-  } else {
-    view.selectedType = "village";
-    view.selectedId = selectedId && WORLD.villages[selectedId] ? selectedId : currentVillageId();
-  }
-  render();
-}
-
-function currentCityId() {
-  if (view.selectedType === "city" && WORLD.cities[view.selectedId]) return view.selectedId;
-  if (view.selectedType === "village" && WORLD.villages[view.selectedId]) return WORLD.villages[view.selectedId].cityId;
-  return "selene";
-}
-
-function currentVillageId() {
-  if (view.selectedType === "village" && WORLD.villages[view.selectedId]) return view.selectedId;
-  return WORLD.cities[currentCityId()].villageIds[0];
-}
-
-function focusPlace(type, id) {
-  view.selectedType = type;
-  view.selectedId = id;
-  if (type === "city") view.scale = "city";
-  if (type === "village") view.scale = "village";
-  render();
-}
-
-function createSvg(tag, attrs = {}) {
-  const node = document.createElementNS(SVG_NS, tag);
-  Object.entries(attrs).forEach(([key, value]) => node.setAttribute(key, value));
-  return node;
-}
-
-function appendText(group, x, y, value, className, anchor = "middle") {
-  const text = createSvg("text", { x, y, class: className, "text-anchor": anchor });
-  text.textContent = value;
-  group.append(text);
-}
-
-function buildMap() {
-  elements.territoryLayer.replaceChildren();
-  elements.routeLayer.replaceChildren();
-  elements.nodeLayer.replaceChildren();
-
-  Object.values(WORLD.cities).forEach((city) => {
-    const selected = currentCityId() === city.id;
-    const territory = createSvg("circle", {
-      cx: city.x,
-      cy: city.y,
-      r: 112,
-      class: `territory ${selected ? "is-selected" : ""}`,
-      fill: city.color,
-    });
-    elements.territoryLayer.append(territory);
-
-    city.villageIds.forEach((villageId) => {
-      const village = WORLD.villages[villageId];
-      const cityState = state.cities[city.id];
-      const route = createSvg("line", {
-        x1: city.x,
-        y1: city.y,
-        x2: village.x,
-        y2: village.y,
-        class: `map-route ${cityState.caravan ? "is-improved" : ""}`,
-      });
-      elements.routeLayer.append(route);
-    });
-  });
-
-  const intercityRoutes = [
-    ["selene", "nereia"],
-    ["selene", "orta"],
-    ["orta", "nereia"],
+function renderResources() {
+  const resources = [
+    ["¤", formatValue(state.treasury, 1), `国庫 +${state.income.toFixed(1)}/月`],
+    ["♛", state.legitimacy, "正統性"],
+    ["♟", formatValue(state.manpower), "人的資源"],
+    ["⚓", formatValue(state.sailors), "水兵"],
+    ["文", state.admin, "統治力"],
+    ["使", state.diplomacy, "外交力"],
+    ["剣", state.military, "軍事力"],
   ];
-  intercityRoutes.forEach(([fromId, toId]) => {
-    const from = WORLD.cities[fromId];
-    const to = WORLD.cities[toId];
-    elements.routeLayer.prepend(
-      createSvg("path", {
-        d: `M${from.x} ${from.y} Q${(from.x + to.x) / 2 + 18} ${(from.y + to.y) / 2 - 18} ${to.x} ${to.y}`,
-        class: "intercity-route",
-      }),
-    );
-  });
+  elements.resourceLedger.innerHTML = resources.map(([icon, value, label]) => `
+    <div class="resource-item"><i>${icon}</i><strong>${value}</strong><small>${label}</small></div>
+  `).join("");
+}
 
-  Object.values(WORLD.cities).forEach((city) => {
-    const group = createSvg("g", {
-      class: `map-node city-node ${view.selectedType === "city" && view.selectedId === city.id ? "is-selected" : ""} ${state.locationId === city.id ? "is-player-location" : ""}`,
-      tabindex: "0",
-      role: "button",
-      "aria-label": `${city.name}を選択`,
-      "data-type": "city",
-      "data-id": city.id,
-    });
-    group.append(createSvg("circle", { cx: city.x, cy: city.y, r: 18, fill: city.color, class: "node-halo" }));
-    group.append(createSvg("circle", { cx: city.x, cy: city.y, r: 8, class: "node-core" }));
-    if (state.locationId === city.id) group.append(createSvg("circle", { cx: city.x, cy: city.y, r: 27, class: "player-marker" }));
-    appendText(group, city.x, city.y + 34, city.shortName, "node-label city-label");
-    appendText(group, city.x, city.y + 49, city.kind, "node-subtitle");
-    elements.nodeLayer.append(group);
-  });
-
-  Object.values(WORLD.villages).forEach((village) => {
-    const local = state.villages[village.id];
-    const cityActive = currentCityId() === village.cityId;
-    const group = createSvg("g", {
-      class: `map-node village-node ${cityActive ? "is-city-active" : ""} ${view.selectedType === "village" && view.selectedId === village.id ? "is-selected" : ""} ${local.hardship >= 2 ? "is-burdened" : ""} ${state.locationId === village.id ? "is-player-location" : ""}`,
-      tabindex: "0",
-      role: "button",
-      "aria-label": `${village.name}を選択`,
-      "data-type": "village",
-      "data-id": village.id,
-    });
-    group.append(createSvg("circle", { cx: village.x, cy: village.y, r: 10, class: "village-halo" }));
-    group.append(createSvg("circle", { cx: village.x, cy: village.y, r: 4.5, class: "village-core" }));
-    if (state.locationId === village.id) group.append(createSvg("circle", { cx: village.x, cy: village.y, r: 18, class: "player-marker" }));
-    appendText(group, village.x, village.y + 24, village.name, "node-label village-label");
-    elements.nodeLayer.append(group);
-  });
-
-  document.querySelectorAll(".map-node").forEach((node) => {
-    node.addEventListener("click", () => focusPlace(node.dataset.type, node.dataset.id));
-    node.addEventListener("keydown", (event) => {
-      if (event.key === "Enter" || event.key === " ") {
-        event.preventDefault();
-        focusPlace(node.dataset.type, node.dataset.id);
-      }
-    });
+function renderTimeControls() {
+  elements.dateLabel.textContent = formatDate(state);
+  elements.speedControls.querySelectorAll("[data-speed]").forEach((button) => {
+    button.classList.toggle("is-active", Number(button.dataset.speed) === view.speed);
   });
 }
 
-function updateMapCamera() {
-  let viewBox = "0 0 900 650";
-  if (view.scale === "city") {
-    const city = WORLD.cities[currentCityId()];
-    viewBox = `${city.x - 190} ${city.y - 145} 380 290`;
-  } else if (view.scale === "village") {
-    const village = WORLD.villages[currentVillageId()];
-    viewBox = `${village.x - 112} ${village.y - 88} 224 176`;
-  }
-  elements.map.setAttribute("viewBox", viewBox);
-  elements.mapFrame.dataset.scale = view.scale;
+function renderTabs() {
+  elements.primaryTabs.querySelectorAll("[data-panel]").forEach((button) => {
+    button.classList.toggle("is-active", button.dataset.panel === view.panel);
+  });
 }
 
-function renderHeader() {
-  elements.dayLabel.textContent = state.ended ? `第${DEADLINE}日 / 終了` : `第${state.day}日 / ${DEADLINE}日 · ${formatClock(state.currentMinutes)}`;
-  elements.deliveredMetric.textContent = formatNumber(state.delivered, 1);
-  elements.deliveryProgress.style.width = `${Math.min(100, (state.delivered / state.target) * 100)}%`;
-  elements.treasuryMetric.textContent = formatNumber(state.treasury, 1);
-  elements.legitimacyMetric.textContent = formatNumber(state.legitimacy);
-  elements.debtMetric.textContent = formatNumber(state.oathDebt);
-  elements.daysRemaining.textContent = state.ended ? "終了" : `${state.deadline - state.day + 1}日`;
-  elements.roleLabel.textContent = state.role;
-  elements.playerLocationLabel.textContent = `現在地：${getPlaceName(state.locationId)}`;
-  elements.actionPips.replaceChildren();
-  for (let index = 0; index < 2; index += 1) {
-    const pip = document.createElement("i");
-    if (index >= state.actionPoints) pip.classList.add("is-used");
-    elements.actionPips.append(pip);
-  }
-  elements.nextDayButton.disabled = false;
-  elements.nextDayButton.innerHTML = state.ended ? "年代記を確認" : "一日進める <span aria-hidden=\"true\">→</span>";
+function costLabel(command) {
+  const names = { treasury: "¤", admin: "統", diplomacy: "外", military: "軍", legitimacy: "正", manpower: "兵" };
+  return Object.entries(command.cost).map(([key, value]) => `${names[key]}${value}`).join(" · ");
 }
 
-function renderMapHeading() {
-  const data = {
-    country: {
-      eyebrow: "NATION / ONE ISLAND",
-      title: WORLD.country.name,
-      subtitle: "三つの都市圏と六つの村が、同じ備蓄と命令を共有する。",
-      note: "都市を選ぶか、縮尺を変えて現地へ降りられます",
-    },
-    city: (() => {
-      const city = WORLD.cities[currentCityId()];
-      return {
-        eyebrow: `CITY NETWORK / ${city.kind}`,
-        title: city.name,
-        subtitle: `${city.institution}が、周辺二村の物資と命令を変換する。`,
-        note: "村を選ぶと、同じ在庫を生活者の側から確認できます",
-      };
-    })(),
-    village: (() => {
-      const village = WORLD.villages[currentVillageId()];
-      return {
-        eyebrow: `VILLAGE / ${village.kind}`,
-        title: village.name,
-        subtitle: `${village.households}世帯・${village.population}人。国家の一行は、ここでは冬の食卓になる。`,
-        note: "台帳照合と証言は、国家規模の誓約案を解放します",
-      };
-    })(),
-  }[view.scale];
-  elements.scaleEyebrow.textContent = data.eyebrow;
-  elements.mapTitle.textContent = data.title;
-  elements.mapSubtitle.textContent = data.subtitle;
-  elements.mapNote.textContent = data.note;
-  document.querySelectorAll(".scale-button").forEach((button) => button.classList.toggle("is-active", button.dataset.scale === view.scale));
+function commandCards(group) {
+  return Object.values(COMMANDS).filter((command) => command.group === group).map((command) => {
+    const availability = getCommandAvailability(state, command.id);
+    return `
+      <button class="command-card" type="button" data-command="${command.id}" ${availability.allowed ? "" : "disabled"}>
+        <strong>${command.name}</strong><em>${availability.allowed ? `${command.duration}日 · ${costLabel(command)}` : availability.reason}</em>
+        <small>${command.description}</small>
+      </button>
+    `;
+  }).join("");
 }
 
-function meter(label, value, suffix = "/ 100", tone = "blue") {
-  const width = Math.max(0, Math.min(100, value));
-  return `<div class="mini-meter"><div><span>${label}</span><strong>${formatNumber(value)} ${suffix}</strong></div><div class="mini-track"><span class="${tone}" style="width:${width}%"></span></div></div>`;
-}
-
-function policyCard(policy) {
-  const availability = getPolicyAvailability(state, policy.id);
-  const selected = state.policy === policy.id;
+function meter(label, value, suffix = "/ 100") {
+  const width = Math.min(100, Math.max(0, Number(value)));
   return `
-    <article class="policy-card ${selected ? "is-selected" : ""}">
-      <div class="policy-card-heading"><span>${policy.tag}</span>${selected ? "<i>発布中</i>" : ""}</div>
-      <h3>${policy.title}</h3>
-      <p>${policy.summary}</p>
-      <small>${selected ? policy.promise : `${policy.requirement} — ${availability.reason}`}</small>
-      <button class="policy-button" data-policy="${policy.id}" type="button" ${availability.allowed ? "" : "disabled"}>${selected ? "発布済み" : "この誓約を発布"}</button>
-    </article>`;
+    <div class="mini-meter">
+      <div><span>${label}</span><strong>${formatValue(value, 0)} ${suffix}</strong></div>
+      <div class="mini-track"><span style="width:${width}%"></span></div>
+    </div>
+  `;
 }
 
-function renderCountryInspector() {
+function renderRealmPanel() {
   const metrics = deriveMetrics(state);
-  elements.inspector.innerHTML = `
-    <div class="inspector-heading">
-      <span class="eyebrow">NATIONAL DESK</span>
-      <h2>${WORLD.country.name}</h2>
-      <p>${WORLD.country.subtitle}</p>
+  const issueCards = Object.values(state.issues).map((issue) => `
+    <article class="issue-card ${issue.status === "resolved" ? "is-resolved" : ""}">
+      <strong>${issue.status === "resolved" ? "解決済み · " : ""}${issue.title}</strong>
+      <small>${issue.detail}</small>
+      <div class="severity-track"><span style="width:${issue.severity}%"></span></div>
+    </article>
+  `).join("");
+
+  elements.leftPanel.innerHTML = `
+    <header class="panel-heading">
+      <span>NATIONAL ADMINISTRATION</span>
+      <h1>${WORLD.nation.name}</h1>
+      <p>${WORLD.nation.ruler} · ${WORLD.nation.government}</p>
+    </header>
+    <div class="panel-body">
+      <section class="panel-section">
+        <div class="realm-facts">
+          <div><small>首都</small><strong>王都セレネ</strong></div>
+          <div><small>安定度</small><strong>${state.stability >= 0 ? "+" : ""}${state.stability}</strong></div>
+          <div><small>都市 / 村</small><strong>3 / 6</strong></div>
+          <div><small>国家即応度</small><strong>${metrics.nationalReadiness}%</strong></div>
+        </div>
+      </section>
+      <section class="panel-section">
+        <div class="section-heading"><h2>島政院に届いた問題</h2><small>${metrics.activeIssues}件が継続</small></div>
+        <div class="issue-list">${issueCards}</div>
+      </section>
+      <section class="panel-section">
+        <div class="section-heading"><h2>行政命令</h2><small>費用と時間を消費</small></div>
+        <div class="command-list">${commandCards("realm")}</div>
+      </section>
     </div>
-    <div class="fact-grid">
-      <div><span>人口</span><strong>${formatNumber(WORLD.country.population)}人</strong></div>
-      <div><span>情報把握</span><strong>${metrics.information}%</strong></div>
-      <div><span>村の信頼</span><strong>${formatNumber(metrics.averageTrust)}%</strong></div>
-      <div><span>島国安定</span><strong>${metrics.stability}%</strong></div>
-    </div>
-    <section class="inspector-section">
-      <div class="section-title"><h3>誓約律を定める</h3><span>証拠 ${state.evidence}点</span></div>
-      <p class="section-copy">同じ必要量でも、誰の数字を信じ、何を保護するかで歴史が変わる。発布後の変更はできない。</p>
-      <div class="policy-list">${Object.values(POLICIES).map(policyCard).join("")}</div>
-    </section>`;
+  `;
 }
 
-function actionButton(id, targetId, title, detail, cost, disabled) {
-  return `<button class="action-button" data-action="${id}" data-target="${targetId}" type="button" ${disabled ? "disabled" : ""}><span><strong>${title}</strong><small>${detail}</small></span><i>${cost}</i></button>`;
+function renderDiplomacyPanel() {
+  const report = getWarCouncilReport(state, "navigation");
+  elements.leftPanel.innerHTML = `
+    <header class="panel-heading">
+      <span>DIPLOMACY</span>
+      <h1>ヴァルカ海岸公領</h1>
+      <p>白礁海峡を挟む隣国 · 態度「警戒」</p>
+    </header>
+    <div class="panel-body">
+      <section class="panel-section">
+        <div class="diplomatic-target">
+          <div class="mini-shield">岬</div>
+          <div><strong>ヴァルカ海岸公領</strong><small>岬城ヴァルカ · 海岸諸侯会議</small></div>
+          <b class="relation-value">${state.relation}</b>
+        </div>
+        <div class="metric-stack" style="margin-top:12px">
+          ${meter("開戦事由", state.justification)}
+          ${meter("国内支持", state.warSupport)}
+          ${meter("情報確度", state.intelligence)}
+        </div>
+      </section>
+      <section class="panel-section">
+        <div class="section-heading"><h2>外交コマンド</h2><small>相手の反応を伴う</small></div>
+        <div class="command-list">${commandCards("diplomacy")}</div>
+      </section>
+      <section class="panel-section">
+        <div class="section-heading"><h2>AI参謀の暫定評価</h2><small>確度 ${report.confidence}%</small></div>
+        <p class="adviser-note"><strong>${report.posture}（${report.score >= 0 ? "+" : ""}${report.score}）</strong><br>${report.summary}<br>重点：${report.center.label}</p>
+        <button class="war-entry-button" type="button" data-open-war ${state.war ? "disabled" : ""}>⚔ 戦争という選択肢を検討</button>
+      </section>
+    </div>
+  `;
 }
 
-function travelPanel(targetId) {
-  const isHere = state.locationId === targetId;
-  if (isHere) {
-    return `<div class="location-status is-here"><span>現在地</span><strong>レナはここにいる</strong></div>`;
+function warPlanButton(id, name, detail) {
+  return `<button class="war-plan ${state.war?.plan === id ? "is-active" : ""}" type="button" data-war-plan="${id}"><strong>${name}</strong><small>${detail}</small></button>`;
+}
+
+function renderMilitaryPanel() {
+  const metrics = deriveMetrics(state);
+  if (state.war) {
+    const objective = WAR_OBJECTIVES[state.war.objectiveId];
+    const peace = state.war.peace;
+    elements.leftPanel.innerHTML = `
+      <header class="panel-heading">
+        <span>WAR THEATRE</span>
+        <h1>白礁海峡戦役</h1>
+        <p>対 ヴァルカ海岸公領 · 目的「${objective.name}」</p>
+      </header>
+      <div class="panel-body">
+        <section class="war-status-block">
+          <div class="war-score"><span>戦勝点</span><strong>${state.war.score >= 0 ? "+" : ""}${state.war.score.toFixed(1)}</strong></div>
+          <div class="metric-stack">
+            ${meter("目的達成", state.war.objectiveProgress)}
+            ${meter("組織力", state.organization)}
+            ${meter("遠征充足", state.supply)}
+            ${meter("戦争疲弊", state.warExhaustion)}
+          </div>
+        </section>
+        <section class="panel-section">
+          <div class="section-heading"><h2>作戦方針</h2><small>次の週次判定から反映</small></div>
+          <div class="war-plan-list">
+            ${warPlanButton("blockade", "商路封鎖", "損耗は低いが成果は緩やか。海上交通を圧迫する。")}
+            ${warPlanButton("strait", "海峡確保", "限定目的に合う均衡策。補給線を短く保つ。")}
+            ${warPlanButton("landing", "限定上陸", "成果と損耗が大きい。攻勢限界を越えやすい。")}
+          </div>
+        </section>
+        <section class="panel-section">
+          <div class="section-heading"><h2>相手の最新行動</h2><small>推定</small></div>
+          <p class="adviser-note"><strong>${state.war.lastEnemyAction.label}</strong><br>${state.war.lastEnemyAction.reason}</p>
+          ${peace ? `<p class="adviser-note"><strong>攻勢限界リスク ${peace.culminatingRisk}%</strong><br>${peace.recommendation}</p>` : ""}
+          <button class="peace-button" type="button" data-peace>講和条件を提示する</button>
+        </section>
+      </div>
+    `;
+    return;
   }
-  const minutes = getTravelMinutes(state.locationId, targetId);
-  return `<div class="location-status"><span>${getPlaceName(state.locationId)}から ${minutes}分</span><button class="travel-button" data-action="player.travel" data-target="${targetId}" type="button" ${state.actionPoints < 1 || state.ended ? "disabled" : ""}>ここへ移動する · 1 AP</button></div>`;
+
+  elements.leftPanel.innerHTML = `
+    <header class="panel-heading">
+      <span>MILITARY</span>
+      <h1>島嶼防衛軍</h1>
+      <p>常備軍・港湾騎士・七隻の沿岸艦隊</p>
+    </header>
+    <div class="panel-body">
+      <section class="panel-section">
+        <div class="realm-facts">
+          <div><small>兵士</small><strong>${formatValue(state.army)}</strong></div>
+          <div><small>艦船</small><strong>${state.fleet}隻</strong></div>
+          <div><small>海上優勢</small><strong>${metrics.seaControl}%</strong></div>
+          <div><small>推定敵艦</small><strong>${state.intelligence >= 65 ? "5稼働 / 8" : "6〜9隻"}</strong></div>
+        </div>
+        <div class="metric-stack" style="margin-top:12px">
+          ${meter("練度", state.training)}
+          ${meter("組織力", state.organization)}
+          ${meter("補給充足", state.supply)}
+          ${meter("海軍即応", state.navalReadiness)}
+        </div>
+      </section>
+      <section class="panel-section">
+        <div class="section-heading"><h2>軍事コマンド</h2><small>隠れた補給も判定</small></div>
+        <div class="command-list">${commandCards("military")}</div>
+      </section>
+      <section class="panel-section">
+        <p class="adviser-note">軍量だけでは決まりません。海峡への接近、港湾規格、船団、正当性が同じ戦役の成否へ繋がります。</p>
+      </section>
+    </div>
+  `;
 }
 
-function renderCityInspector(cityId) {
-  const city = WORLD.cities[cityId];
-  const local = state.cities[cityId];
-  const metrics = getCityMetrics(state, cityId);
-  const isHere = state.locationId === cityId;
-  elements.inspector.innerHTML = `
-    <button class="inspector-back" data-go-scale="country" type="button">← 島国全体</button>
-    <div class="inspector-heading">
-      <span class="eyebrow">${city.kind.toUpperCase()} / INSTITUTION</span>
-      <h2>${city.name}</h2>
-      <p>${city.description}</p>
+function characterStatus(id) {
+  const status = state.characters[id];
+  return ({ free: "無所属", foreign: "国外", serving: "仕官済み", retinue: "放浪軍結成", recruited: "登用済み" })[status] ?? status;
+}
+
+function renderPeoplePanel() {
+  const cards = Object.values(WORLD.characters).map((character) => `
+    <article class="character-card">
+      <header><strong>${character.name}</strong><i>${characterStatus(character.id)}</i></header>
+      <p>${character.role} · ${character.skill}</p>
+    </article>
+  `).join("");
+  elements.leftPanel.innerHTML = `
+    <header class="panel-heading">
+      <span>COURT & RETINUES</span>
+      <h1>人物と仕官</h1>
+      <p>能力は報告結果の正確さとして現れる</p>
+    </header>
+    <div class="panel-body">
+      <section class="panel-section">
+        <div class="section-heading"><h2>人物一覧</h2><small>忠誠と立場は別物</small></div>
+        <div class="character-list">${cards}</div>
+      </section>
+      <section class="panel-section">
+        <div class="section-heading"><h2>Notion内政コマンド</h2><small>原案を実装</small></div>
+        <div class="command-list">${commandCards("people")}</div>
+      </section>
     </div>
-    ${travelPanel(cityId)}
-    <div class="fact-grid">
-      <div><span>人口</span><strong>${formatNumber(city.population)}人</strong></div>
-      <div><span>圏内在庫</span><strong>${formatNumber(metrics.stock, 1)}樽</strong></div>
-      <div><span>累計発送</span><strong>${formatNumber(metrics.shipped, 1)}樽</strong></div>
-      <div><span>到着率</span><strong>${formatNumber(metrics.arrival * 100)}%</strong></div>
+  `;
+}
+
+function renderLeftPanel() {
+  if (view.panel === "diplomacy") renderDiplomacyPanel();
+  else if (view.panel === "military") renderMilitaryPanel();
+  else if (view.panel === "people") renderPeoplePanel();
+  else renderRealmPanel();
+}
+
+function renderAlerts() {
+  const alerts = [];
+  if (state.war) alerts.push(`<span class="alert-chip danger">戦争中 · 戦勝点 ${state.war.score.toFixed(1)}</span>`);
+  else alerts.push(`<span class="alert-chip danger">拿捕事件 · 対応未決</span>`);
+  if (state.commandQueue.length) alerts.push(`<span class="alert-chip info">${state.commandQueue.length}件の命令を実行中</span>`);
+  if (state.supply < 50) alerts.push(`<span class="alert-chip danger">遠征補給が不足</span>`);
+  elements.alertRack.innerHTML = alerts.join("");
+}
+
+function renderMap() {
+  elements.strategyMap.className.baseVal = `strategy-map map-mode-${view.mapMode} scale-${view.scale}`;
+  const labels = {
+    political: ["POLITICAL MAP", "白礁海峡周辺"],
+    diplomatic: ["DIPLOMATIC MAP", "友好・敵対関係"],
+    supply: ["SUPPLY MAP", "港湾と海上連絡線"],
+    unrest: ["UNREST MAP", "請願・罷業・動揺"],
+  };
+  elements.mapModeEyebrow.textContent = labels[view.mapMode][0];
+  elements.mapCaptionTitle.textContent = labels[view.mapMode][1];
+  elements.mapModeBar.querySelectorAll("[data-map-mode]").forEach((button) => {
+    button.classList.toggle("is-active", button.dataset.mapMode === view.mapMode);
+  });
+  elements.mapScaleSwitch.querySelectorAll("[data-scale]").forEach((button) => {
+    button.classList.toggle("is-active", button.dataset.scale === view.scale);
+  });
+  elements.strategyMap.querySelectorAll(".is-selected").forEach((node) => node.classList.remove("is-selected"));
+  if (view.selectedId) {
+    elements.strategyMap.querySelectorAll(`[data-place-id="${view.selectedId}"]`).forEach((node) => node.classList.add("is-selected"));
+  }
+}
+
+function renderSelection() {
+  if (!view.selectedId) {
+    elements.selectionCard.innerHTML = "";
+    return;
+  }
+  if (view.selectedType === "province") {
+    const province = WORLD.provinces[view.selectedId];
+    const local = state.regions[province.id];
+    elements.selectionCard.innerHTML = `
+      <header><h3>${province.name}</h3><span>${WORLD.countries[province.owner].name}</span></header>
+      <p>${province.note}</p>
+      <div class="selection-facts"><span>人口 ${formatValue(province.population)}</span><span>補給 ${formatValue(local.supply)}</span><span>不穏 ${formatValue(local.unrest)}</span></div>
+    `;
+    return;
+  }
+  if (view.selectedType === "village") {
+    const village = WORLD.villages[view.selectedId];
+    elements.selectionCard.innerHTML = `
+      <header><h3>${village.name}</h3><span>${village.kind} · ${WORLD.provinces[village.province].name}</span></header>
+      <p>${village.issue}</p>
+      <div class="selection-facts"><span>人口 ${formatValue(village.population)}</span><span>生活側から届いた事象</span></div>
+    `;
+    return;
+  }
+  const country = WORLD.countries[view.selectedId];
+  const isValka = view.selectedId === "valka";
+  elements.selectionCard.innerHTML = `
+    <header><h3>${country.name}</h3><span>${isValka ? `関係 ${state.relation}` : "中立"}</span></header>
+    <p>${isValka ? "白礁海峡の通航税と拿捕を巡って対立。軍事力より先に、相手が守ろうとする政治的利益を見極める必要がある。" : "紛争が拡大すれば、海上交易を守るため仲介または制裁へ動く。"}</p>
+    ${isValka ? '<div class="selection-facts"><span>首都 岬城ヴァルカ</span><span>推定艦隊 6〜9隻</span></div>' : ""}
+  `;
+}
+
+function renderOutliner() {
+  const issues = Object.values(state.issues).map((issue) => `
+    <div class="outliner-item ${issue.status === "resolved" ? "success" : "danger"}">
+      <strong>${issue.status === "resolved" ? "✓ " : ""}${issue.title}</strong>
+      <small>${issue.status === "resolved" ? "制度または合意で処理済み" : `深刻度 ${issue.severity}`}</small>
     </div>
-    <section class="inspector-section">
-      <div class="section-title"><h3>${city.institution}</h3><span>${state.actionPoints} AP</span></div>
-      ${meter("周辺村の信頼", metrics.trust)}
-      <div class="institution-flags">
-        <span class="${local.ledger ? "is-done" : ""}">統一台帳</span>
-        <span class="${local.caravan ? "is-done" : ""}">定期便</span>
-        <span class="${local.council ? "is-done" : ""}">現地評議会</span>
+  `).join("");
+  const queue = state.commandQueue.length ? state.commandQueue.map((item) => {
+    const command = COMMANDS[item.commandId];
+    const progress = ((item.total - item.remaining) / item.total) * 100;
+    return `
+      <div class="outliner-item">
+        <strong>${command.name}</strong><small>残り ${item.remaining}日</small>
+        <div class="queue-track"><span style="width:${progress}%"></span></div>
       </div>
-      <div class="action-list">
-        ${actionButton("city.ledger", cityId, "統一台帳を配る", "記録誤差を縮め、到着率 +5%", "1 AP / 10貨", !isHere || local.ledger || state.actionPoints < 1 || state.treasury < 10)}
-        ${actionButton("city.caravan", cityId, "定期荷車便を編成", "輸送容量と到着率を上げる", "1 AP / 12貨", !isHere || local.caravan || state.actionPoints < 1 || state.treasury < 12)}
-        ${actionButton("city.council", cityId, "現地評議会を開く", "証拠 +1・周辺信頼 +4", "1 AP", !isHere || local.council || state.actionPoints < 1)}
-      </div>
+    `;
+  }).join("") : '<div class="outliner-item"><small>実行中の命令はありません。</small></div>';
+  const war = state.war ? `
+    <section class="outliner-section">
+      <h3>戦争</h3>
+      <div class="outliner-item danger"><strong>白礁海峡戦役</strong><small>戦勝点 ${state.war.score.toFixed(1)} · ${WAR_OBJECTIVES[state.war.objectiveId].name}</small></div>
     </section>
-    <section class="inspector-section linked-places">
-      <h3>周辺の村</h3>
-      ${city.villageIds.map((id) => {
-        const village = WORLD.villages[id];
-        const villageState = state.villages[id];
-        return `<button data-place-type="village" data-place-id="${id}" type="button"><span>${village.name}<small>${village.kind}</small></span><strong>信頼 ${formatNumber(villageState.trust)}</strong></button>`;
-      }).join("")}
-    </section>`;
+  ` : "";
+  const logs = state.log.slice(0, 4).map((entry) => `
+    <div class="outliner-item"><strong>${entry.title}</strong><small>${entry.date} · ${entry.text}</small></div>
+  `).join("");
+  elements.outlinerContent.innerHTML = `
+    ${war}
+    <section class="outliner-section"><h3>現在の問題</h3>${issues}</section>
+    <section class="outliner-section"><h3>命令タイムテーブル</h3>${queue}</section>
+    <section class="outliner-section"><h3>年代記</h3>${logs}</section>
+  `;
 }
 
-function renderVillageInspector(villageId) {
-  const village = WORLD.villages[villageId];
-  const local = state.villages[villageId];
-  const city = WORLD.cities[village.cityId];
-  const isHere = state.locationId === villageId;
-  const stockDisplay = local.inspected || state.cities[village.cityId].ledger ? `${formatNumber(local.stock, 1)}樽` : `推定 ${formatNumber(local.recorded)}樽`;
-  const burden = local.hardship < 1 ? "軽微" : local.hardship < 3 ? "注意" : "深刻";
-  elements.inspector.innerHTML = `
-    <button class="inspector-back" data-go-city="${city.id}" type="button">← ${city.shortName}都市圏</button>
-    <div class="inspector-heading">
-      <span class="eyebrow">LOCAL LIFE / ${village.kind}</span>
-      <h2>${village.name}</h2>
-      <p>${village.households}世帯・${village.population}人。${village.custom}。</p>
+function renderTicker() {
+  const latest = state.log[0];
+  elements.chronicleTicker.innerHTML = `<strong>${latest.date} · ${latest.title}</strong><span>${latest.text}</span>`;
+}
+
+function renderWarCouncil() {
+  elements.warCouncilModal.classList.toggle("is-hidden", !view.warCouncilOpen);
+  if (!view.warCouncilOpen) return;
+  const report = getWarCouncilReport(state, view.objectiveId);
+  const objective = WAR_OBJECTIVES[view.objectiveId];
+  elements.objectiveTabs.innerHTML = Object.values(WAR_OBJECTIVES).map((item) => `
+    <button class="objective-tab ${item.id === view.objectiveId ? "is-active" : ""}" type="button" data-objective="${item.id}">
+      <strong>${item.name}</strong><small>${item.scope === "limited" ? "限定目的" : "全面目的"} · 拡大リスク ${item.escalationRisk}</small>
+    </button>
+  `).join("");
+  const factors = report.factors.map((factor) => `
+    <div class="factor-row">
+      <strong>${factor.label}</strong><b class="${factor.value < 0 ? "is-negative" : ""}">${factor.value >= 0 ? "+" : ""}${factor.value}</b><small>${factor.detail}</small>
     </div>
-    ${travelPanel(villageId)}
-    <div class="village-stock">
-      <span>穀物在庫</span><strong>${stockDisplay}</strong>
-      <small>冬越し線 ${village.reserve}樽 / 発送済み ${formatNumber(local.shipped, 1)}樽</small>
-    </div>
-    <div class="fact-grid">
-      <div><span>島政院への信頼</span><strong>${formatNumber(local.trust)}%</strong></div>
-      <div><span>生活負担</span><strong>${burden}</strong></div>
-    </div>
-    <blockquote class="village-voice"><p>「${local.heard ? village.voice : "話を聞けば、この村の事情が分かる。"}」</p><cite>${local.heard ? village.speaker : "未聴取"}</cite></blockquote>
-    <section class="inspector-section">
-      <div class="section-title"><h3>現地で行う</h3><span>${state.actionPoints} AP</span></div>
-      <div class="action-list">
-        ${actionButton("village.inspect", villageId, "台帳と倉を照合", "真の在庫と冬越し線を確認・証拠 +1", "1 AP", !isHere || local.inspected || state.actionPoints < 1)}
-        ${actionButton("village.hear", villageId, "生活者の証言を聞く", "固有事情を記録・証拠 +1・信頼 +5", "1 AP", !isHere || local.heard || state.actionPoints < 1)}
-        ${actionButton("village.relief", villageId, "予備穀を先に送る", "在庫 +8・信頼 +7", "1 AP / 8貨", !isHere || local.relief || state.actionPoints < 1 || state.treasury < 8)}
+  `).join("");
+  elements.warCouncilReport.innerHTML = `
+    <div class="council-report">
+      <aside class="ai-verdict">
+        <div class="score-ring"><strong>${report.score >= 0 ? "+" : ""}${report.score}</strong><small>確度 ${report.confidence}%</small></div>
+        <h3>${report.posture}</h3>
+        <p>${report.summary}</p>
+      </aside>
+      <div>
+        <div class="factor-table">${factors}</div>
+        <div class="strategic-notes">
+          <article class="strategic-note"><strong>重心候補 · ${report.center.label}</strong><small>${report.center.explanation}</small></article>
+          <article class="strategic-note"><strong>止める地点</strong><small>${report.limit}</small></article>
+        </div>
       </div>
-    </section>`;
-}
-
-function bindInspectorActions() {
-  elements.inspector.querySelectorAll("[data-policy]").forEach((button) => {
-    button.addEventListener("click", () => {
-      try {
-        commit(enactPolicy(state, button.dataset.policy), `${POLICIES[button.dataset.policy].title}を発布しました`);
-      } catch (error) {
-        showToast(error.message, "warning");
-      }
-    });
-  });
-  elements.inspector.querySelectorAll("[data-action]").forEach((button) => {
-    button.addEventListener("click", () => {
-      try {
-        commit(performAction(state, button.dataset.action, button.dataset.target), "行動を年代記へ記録しました");
-      } catch (error) {
-        showToast(error.message, "warning");
-      }
-    });
-  });
-  elements.inspector.querySelectorAll("[data-place-type]").forEach((button) => {
-    button.addEventListener("click", () => {
-      view.scale = button.dataset.placeType;
-      focusPlace(button.dataset.placeType, button.dataset.placeId);
-    });
-  });
-  elements.inspector.querySelectorAll("[data-go-scale]").forEach((button) => button.addEventListener("click", () => setScale(button.dataset.goScale)));
-  elements.inspector.querySelectorAll("[data-go-city]").forEach((button) => button.addEventListener("click", () => setScale("city", button.dataset.goCity)));
-}
-
-function renderInspector() {
-  if (view.scale === "country") renderCountryInspector();
-  else if (view.scale === "city") renderCityInspector(currentCityId());
-  else renderVillageInspector(currentVillageId());
-  bindInspectorActions();
-}
-
-function renderCausalChain() {
-  const nodes = [
-    ["原因", state.eventsTriggered.includes("north-storm") ? "白潮の時化" : "北方倉庫の損壊"],
-    ["必要", `穀物 ${state.target}樽`],
-    ["制度", state.policy ? POLICIES[state.policy].title : "誓約未発布"],
-    ["流れ", `到着 ${formatNumber(state.delivered, 1)}樽`],
-    ["記憶", state.oathDebt > 0 ? `誓債 ${state.oathDebt}件` : "保留中"],
-  ];
-  elements.causalChain.innerHTML = nodes.map(([label, value], index) => `${index ? '<span class="causal-arrow">→</span>' : ""}<div><small>${label}</small><strong>${value}</strong></div>`).join("");
-}
-
-function renderChronicle() {
-  elements.chronicleList.innerHTML = [...state.log].reverse().slice(0, 8).map((entry) => `
-    <li data-tone="${entry.tone}">
-      <div class="log-day"><span>DAY</span><strong>${String(entry.day).padStart(2, "0")}</strong></div>
-      <div class="log-mark"></div>
-      <article><div><span>${entry.scope}</span><h3>${entry.title}</h3></div><p>${entry.text}</p></article>
-    </li>`).join("");
-}
-
-function showResult() {
-  const outcome = getOutcome(state);
-  const metrics = deriveMetrics(state);
-  elements.resultTitle.textContent = outcome.title;
-  elements.resultLead.textContent = outcome.summary;
-  elements.resultBody.textContent = outcome.body;
-  elements.resultStats.innerHTML = `
-    <div><span>北方備蓄</span><strong>${formatNumber(state.delivered, 1)} / ${state.target}</strong></div>
-    <div><span>村の信頼</span><strong>${formatNumber(metrics.averageTrust)}%</strong></div>
-    <div><span>生活負担</span><strong>${formatNumber(metrics.totalHardship, 1)}</strong></div>
-    <div><span>誓債</span><strong>${state.oathDebt}件</strong></div>`;
-  elements.resultModal.classList.remove("is-hidden");
+    </div>
+  `;
+  const penalties = [];
+  if (state.justification < 50) penalties.push("開戦事由が不足し、罷業と正統性低下を招きます");
+  if (state.warSupport < 40) penalties.push("国内支持が不足しています");
+  elements.declarationWarning.textContent = penalties.length
+    ? `警告：${penalties.join("。")}`
+    : `${objective.description} 現在の正当性なら、直ちに宣戦できます。`;
+  elements.declareWarButton.textContent = `「${objective.name}」で宣戦布告`;
 }
 
 function render() {
-  renderHeader();
-  renderMapHeading();
-  buildMap();
-  updateMapCamera();
-  renderInspector();
-  renderCausalChain();
-  renderChronicle();
+  renderResources();
+  renderTimeControls();
+  renderTabs();
+  renderLeftPanel();
+  renderAlerts();
+  renderMap();
+  renderSelection();
+  renderOutliner();
+  renderTicker();
+  renderWarCouncil();
 }
 
-document.querySelectorAll(".scale-button").forEach((button) => button.addEventListener("click", () => setScale(button.dataset.scale)));
-document.querySelector("#saveButton").addEventListener("click", () => saveState(true));
-document.querySelector("#startButton").addEventListener("click", () => elements.introModal.classList.add("is-hidden"));
-document.querySelector("#closeResultButton").addEventListener("click", () => elements.resultModal.classList.add("is-hidden"));
-document.querySelector("#replayButton").addEventListener("click", resetGame);
-document.querySelector("#resetButton").addEventListener("click", () => {
-  if (window.confirm("現在の年代記を消して、最初の日からやり直しますか？")) resetGame();
-});
-elements.nextDayButton.addEventListener("click", () => {
-  if (state.ended) {
-    showResult();
+document.addEventListener("click", (event) => {
+  const panelButton = event.target.closest("[data-panel]");
+  if (panelButton) {
+    view.panel = panelButton.dataset.panel;
+    render();
     return;
   }
-  try {
-    const next = advanceDay(state);
-    const endedNow = next.ended;
-    commit(next, endedNow ? "8日目が終わり、年代記が封じられました" : "世界が一日進みました");
-    if (endedNow) window.setTimeout(showResult, 450);
-  } catch (error) {
-    showToast(error.message, "warning");
+
+  const commandButton = event.target.closest("[data-command]");
+  if (commandButton) {
+    try {
+      const command = COMMANDS[commandButton.dataset.command];
+      commit(issueCommand(state, command.id), `${command.name}を命じました。時間を進めると完了します。`);
+    } catch (error) {
+      showToast(error.message, "danger");
+    }
+    return;
+  }
+
+  const speedButton = event.target.closest("[data-speed]");
+  if (speedButton) {
+    setSpeed(Number(speedButton.dataset.speed));
+    return;
+  }
+
+  const modeButton = event.target.closest("[data-map-mode]");
+  if (modeButton) {
+    view.mapMode = modeButton.dataset.mapMode;
+    render();
+    return;
+  }
+
+  const scaleButton = event.target.closest("[data-scale]");
+  if (scaleButton) {
+    view.scale = scaleButton.dataset.scale;
+    render();
+    return;
+  }
+
+  const place = event.target.closest("[data-place-id]");
+  if (place) {
+    view.selectedType = place.dataset.placeType;
+    view.selectedId = place.dataset.placeId;
+    if (view.selectedType === "country" && view.selectedId === "valka") view.panel = "diplomacy";
+    if (view.selectedType === "village") view.scale = "village";
+    else if (view.selectedType === "province") view.scale = "city";
+    render();
+    return;
+  }
+
+  if (event.target.closest("[data-open-war]")) {
+    if (state.war) return;
+    setSpeed(0);
+    view.warCouncilOpen = true;
+    render();
+    return;
+  }
+
+  const objectiveButton = event.target.closest("[data-objective]");
+  if (objectiveButton) {
+    view.objectiveId = objectiveButton.dataset.objective;
+    renderWarCouncil();
+    return;
+  }
+
+  const planButton = event.target.closest("[data-war-plan]");
+  if (planButton) {
+    try {
+      commit(setWarPlan(state, planButton.dataset.warPlan), "作戦方針を更新しました。");
+    } catch (error) {
+      showToast(error.message, "danger");
+    }
+    return;
+  }
+
+  if (event.target.closest("[data-peace]")) {
+    try {
+      commit(negotiatePeace(state), "講和結果を年代記に記しました。");
+    } catch (error) {
+      showToast(error.message, "danger");
+    }
   }
 });
+
+document.querySelector("#advanceDayButton").addEventListener("click", () => commit(advanceDays(state, 1)));
+document.querySelector("#realmHome").addEventListener("click", () => {
+  view.panel = "realm";
+  view.scale = "country";
+  view.selectedId = null;
+  render();
+});
+document.querySelector("#saveButton").addEventListener("click", () => persist(true));
+document.querySelector("#resetButton").addEventListener("click", () => {
+  if (!window.confirm("現在の年代記を破棄し、最初から始めますか？")) return;
+  setSpeed(0);
+  localStorage.removeItem(STORAGE_KEY);
+  state = createInitialState();
+  view.panel = "realm";
+  view.mapMode = "political";
+  view.scale = "country";
+  view.selectedId = null;
+  view.warCouncilOpen = false;
+  render();
+});
+document.querySelector("#closeWarCouncil").addEventListener("click", () => {
+  view.warCouncilOpen = false;
+  renderWarCouncil();
+});
+elements.warCouncilModal.addEventListener("click", (event) => {
+  if (event.target === elements.warCouncilModal) {
+    view.warCouncilOpen = false;
+    renderWarCouncil();
+  }
+});
+elements.declareWarButton.addEventListener("click", () => {
+  try {
+    commit(declareWar(state, view.objectiveId), "宣戦を布告しました。時間を進めると戦役が進行します。");
+    view.warCouncilOpen = false;
+    view.panel = "military";
+    render();
+  } catch (error) {
+    showToast(error.message, "danger");
+  }
+});
+elements.strategyMap.addEventListener("keydown", (event) => {
+  if ((event.key === "Enter" || event.key === " ") && event.target.matches("[data-place-id]")) {
+    event.preventDefault();
+    event.target.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  }
+});
+window.addEventListener("beforeunload", () => persist());
 
 render();
