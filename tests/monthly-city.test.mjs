@@ -37,10 +37,13 @@ function numericLeaves(value, path = "state", result = []) {
   return result;
 }
 
-test("save v5 contains the continental monthly city schema", () => {
+test("save v7 contains the continental monthly city and war lifecycle schema", () => {
   const state = createInitialState();
   const city = state.cities.selene;
-  assert.equal(state.version, 5);
+  assert.equal(state.version, 7);
+  assert.deepEqual(state.occupations, []);
+  assert.deepEqual(state.warHistory, []);
+  assert.deepEqual(state.fiscal, { publicDebt: 24, totalDebtRepaid: 0 });
   assert.deepEqual(Object.keys(city.resources).sort(), ["commerce", "defense", "food", "money", "population", "production", "security", "support"]);
   assert.deepEqual(Object.keys(city.internal).sort(), ["administrativeEfficiency", "corruption", "fear", "foodPreservation", "housingCapacity", "sanitation"]);
   assert.deepEqual(Object.keys(city.military).sort(), ["draftPopulation", "sailors", "ships", "shipyard", "training", "troops"]);
@@ -187,6 +190,24 @@ test("monthly report net changes include order costs paid before production", ()
   assert.ok(report.actions.some((action) => action.title === "商業振興" && action.cost.money === 5));
 });
 
+test("national fiscal report splits revenue and all six expenditure categories", () => {
+  let state = ready(createInitialState());
+  state = queueOrder(state, { kind: "command", commandId: "city.commerce", officerId: "edras", cityId: "selene" });
+  const committed = commitMonth(state);
+  const report = committed.phase === "event" ? committed.pendingMonthReport : committed.monthlyReports[0];
+  assert.deepEqual(Object.keys(report.fiscal.income).sort(), ["commerce_tax", "land_tax", "other_income", "total"]);
+  assert.deepEqual(Object.keys(report.fiscal.expenditure).sort(), [
+    "debt_repayment", "economic_investment", "foreign_aid", "military_affairs",
+    "research_development", "social_security", "total",
+  ]);
+  assert.ok(report.fiscal.income.land_tax > 0);
+  assert.ok(report.fiscal.income.commerce_tax > 0);
+  assert.ok(report.fiscal.expenditure.economic_investment >= 5);
+  assert.equal(report.fiscal.balance, report.realm.money);
+  assert.equal(Number((report.fiscal.income.total - report.fiscal.expenditure.total).toFixed(1)), report.fiscal.balance);
+  assert.equal(Number((report.fiscal.closingTreasury - report.fiscal.openingTreasury).toFixed(1)), report.fiscal.balance);
+});
+
 test("event choice costs are folded back into the same monthly report", () => {
   let pending = ready(createInitialState());
   for (let month = 0; month < 3 && pending.phase !== "event"; month += 1) pending = commitMonth(ready(pending));
@@ -195,11 +216,16 @@ test("event choice costs are folded back into the same monthly report", () => {
   const choice = definition.choices.find((item) => Number.isFinite(item.effect.resources?.money)) ?? definition.choices[0];
   const cityId = pending.pendingEvent.cityId;
   const beforeChoice = pending.pendingMonthReport.cities.find((city) => city.cityId === cityId).changes.money;
+  const beforeFiscal = structuredClone(pending.pendingMonthReport.fiscal);
   const moneyEffect = choice.effect.resources?.money ?? 0;
   const resolved = resolveEventChoice(pending, choice.id);
   const local = resolved.monthlyReports[0].cities.find((city) => city.cityId === cityId);
   assert.equal(local.changes.money, Number((beforeChoice + moneyEffect).toFixed(1)));
   assert.equal(resolved.monthlyReports[0].events[0].detail, choice.detail);
+  const fiscal = resolved.monthlyReports[0].fiscal;
+  if (moneyEffect < 0) assert.equal(fiscal.expenditure.total, Number((beforeFiscal.expenditure.total + Math.abs(moneyEffect)).toFixed(1)));
+  if (moneyEffect > 0) assert.equal(fiscal.income.total, Number((beforeFiscal.income.total + moneyEffect).toFixed(1)));
+  assert.equal(fiscal.balance, resolved.monthlyReports[0].realm.money);
 });
 
 test("pending policy and facility orders change the pure month preview without mutating state", () => {
@@ -235,6 +261,11 @@ test("December creates an annual report before rolling into January", () => {
   assert.equal(state.year, 318);
   assert.equal(state.month, 1);
   assert.equal(state.annualReports[0].year, 317);
+  assert.equal(state.annualReports[0].fiscal.balance, state.annualReports[0].totals.money);
+  assert.equal(
+    Number((state.annualReports[0].fiscal.income.total - state.annualReports[0].fiscal.expenditure.total).toFixed(1)),
+    state.annualReports[0].fiscal.balance,
+  );
 });
 
 test("120-month standard simulation remains finite and never strands an event", () => {

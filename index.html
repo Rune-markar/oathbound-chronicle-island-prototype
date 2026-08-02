@@ -40,6 +40,7 @@
       <aside class="left-dock" aria-label="国家メニュー">
         <nav class="primary-tabs" id="primaryTabs">
           <button class="is-active" type="button" data-panel="council"><span>♜</span>評定</button>
+          <button type="button" data-panel="spending"><span>¤</span>支出</button>
           <button type="button" data-panel="city"><span>城</span>都市</button>
           <button type="button" data-panel="diplomacy"><span>⚖</span>外交</button>
           <button type="button" data-panel="military"><span>⚔</span>軍事</button>
@@ -59,17 +60,20 @@
         </div>
 
         <aside class="terrain-legend" aria-label="地図凡例">
-          <strong>MAP KEY</strong>
+          <strong>STRATEGIC MAP KEY</strong>
           <span><i class="legend-border"></i>太線：国境</span>
-          <span><i class="legend-tile"></i>細線：領域タイル</span>
+          <span><i class="legend-tile"></i>細線：小領域タイル</span>
+          <span><i class="legend-castle"></i>城郭：兵数・防備</span>
+          <span><i class="legend-army"></i>軍勢：兵力・作戦</span>
+          <span><i class="legend-front"></i>街道：進軍・補給線</span>
           <span><i class="legend-forest"></i>森林</span>
           <span><i class="legend-mountain"></i>山岳</span>
           <span><i class="legend-wetland"></i>湿地</span>
         </aside>
 
-        <svg id="strategyMap" class="strategy-map" viewBox="0 0 1000 650" role="img" aria-labelledby="mapTitle mapDescription">
-          <title id="mapTitle">エルドリア大陸の複数国家とセレナ王国の戦略地図</title>
-          <desc id="mapDescription">七国家を構成する複数の領域タイルと、森林、平原、丘陵、山岳、湿地、乾燥地、河川、街道を重ねた地勢図</desc>
+        <svg id="strategyMap" class="strategy-map scale-country" viewBox="20 35 960 585" role="img" aria-labelledby="mapTitle mapDescription">
+          <title id="mapTitle">城郭・街道・軍勢を中心とするエルドリア戦略地図</title>
+          <desc id="mapDescription">十国家を構成する百八十六の小領域に、城郭の兵数と防備、国境軍、敵軍、進軍街道、補給線を重ねた戦略地図</desc>
           <defs>
             <linearGradient id="sea" x1="0" y1="0" x2="1" y2="1">
               <stop offset="0" stop-color="#55797c" />
@@ -78,8 +82,18 @@
             <pattern id="seaLines" width="34" height="26" patternUnits="userSpaceOnUse">
               <path d="M0 13 Q9 6 17 13 T34 13" fill="none" stroke="#b9d5d1" stroke-opacity=".14" stroke-width="1.2" />
             </pattern>
+            <pattern id="atlasLandTexture" width="1800" height="1050" patternUnits="userSpaceOnUse">
+              <image href="./assets/generated/world-map-land-painted.png" x="0" y="0" width="1800" height="1050" preserveAspectRatio="xMidYMid slice" />
+            </pattern>
             <filter id="landShadow" x="-20%" y="-20%" width="140%" height="140%">
               <feDropShadow dx="0" dy="8" stdDeviation="8" flood-color="#102e34" flood-opacity=".4" />
+            </filter>
+            <filter id="borderDisplace" x="-8%" y="-8%" width="116%" height="116%">
+              <feTurbulence type="fractalNoise" baseFrequency=".006 .013" numOctaves="2" seed="317" result="borderNoise" />
+              <feDisplacementMap in="SourceGraphic" in2="borderNoise" scale="9" xChannelSelector="R" yChannelSelector="B" />
+            </filter>
+            <filter id="unitShadow" x="-40%" y="-40%" width="180%" height="180%">
+              <feDropShadow dx="0" dy="5" stdDeviation="4" flood-color="#0a1718" flood-opacity=".78" />
             </filter>
             <g id="terrainTree">
               <path d="M0-9L-5-2H-2L-7 4H-1V9H2V4H7L2-2H5Z" />
@@ -95,12 +109,53 @@
               <path d="M-11 7Q-5-6 2 7Q7-2 12 7" />
             </g>
           </defs>
-          <rect width="1000" height="650" fill="url(#sea)" />
-          <rect width="1000" height="650" fill="url(#seaLines)" />
+          <rect width="1800" height="1050" fill="url(#sea)" />
+          <image class="map-ocean-texture" href="./assets/generated/world-map-ocean-painted.png" x="0" y="0" width="1800" height="1050" preserveAspectRatio="xMidYMid slice" />
+          <rect class="map-ocean-lines" width="1800" height="1050" fill="url(#seaLines)" />
 
-          <path class="continent-backdrop" d="M67 82 C208 31 411 35 563 44 C735 36 898 54 946 126 L950 505 C918 584 769 613 609 592 C442 611 286 614 149 566 C70 521 44 423 55 302 C42 200 46 122 67 82Z" filter="url(#landShadow)" />
+          <g class="country-group deadland great-power" data-country="deadland" data-tile-count="21" data-rank="great-power" transform="translate(-5 194) scale(.78)">
+            <path class="country-landmass" data-landmass-country="deadland" d="M75 690Q152 626 250 585Q363 588 470 640Q526 718 540 820Q507 920 430 1000Q280 1034 150 1015Q66 961 45 865Q44 768 75 690Z" />
+            <path class="province map-tile terrain-wetland tile-muted" data-place-type="country" data-place-id="deadland" data-tile-name="黄昏沼境" data-terrain="wetland" data-terrain-label="冥府湿地" d="M75 690L250 585Q282 675 290 805Q171 760 75 690Z" />
+            <path class="province map-tile terrain-forest tile-deep" data-place-type="country" data-place-id="deadland" data-tile-name="枯冠森" data-terrain="forest" data-terrain-label="枯死林" d="M250 585L470 640Q409 723 290 805Q282 675 250 585Z" />
+            <path class="province map-tile terrain-hills" data-place-type="country" data-place-id="deadland" data-tile-name="葬丘回廊" data-terrain="hills" data-terrain-label="石灰丘陵" d="M470 640L540 820Q418 808 290 805Q409 723 470 640Z" />
+            <path class="province map-tile terrain-badlands tile-deep" data-place-type="country" data-place-id="deadland" data-tile-name="黒墓荒野" data-terrain="badlands" data-terrain-label="死灰荒地" d="M540 820L430 1000Q364 912 290 805Q418 808 540 820Z" />
+            <path class="province map-tile terrain-plains tile-muted" data-place-type="country" data-place-id="deadland" data-tile-name="静寂平原" data-terrain="plains" data-terrain-label="寒冷平原" d="M430 1000L150 1015Q227 907 290 805Q364 912 430 1000Z" />
+            <path class="province map-tile terrain-coast tile-light" data-place-type="country" data-place-id="deadland" data-tile-name="冥海沿岸" data-terrain="coast" data-terrain-label="暗礁海岸" d="M150 1015L45 865Q168 852 290 805Q227 907 150 1015Z" />
+            <path class="province map-tile terrain-wetland tile-deep" data-place-type="country" data-place-id="deadland" data-tile-name="忘却水郷" data-terrain="wetland" data-terrain-label="霧湿地" d="M45 865L75 690Q177 734 290 805Q168 852 45 865Z" />
+            <path class="nation-outline" d="M75 690Q152 626 250 585Q363 588 470 640Q526 718 540 820Q507 920 430 1000Q280 1034 150 1015Q66 961 45 865Q44 768 75 690Z" />
+            <text class="great-power-label" x="290" y="780">デッドランド冥府</text>
+          </g>
 
-          <g class="country-group forest-alliance" data-country="forest_alliance" data-tile-count="6">
+          <g class="country-group great-empire great-power" data-country="great_empire" data-tile-count="24" data-rank="great-power" transform="translate(213 20) scale(.88)">
+            <path class="country-landmass" data-landmass-country="great_empire" d="M920 120Q1095 65 1300 50Q1494 72 1660 150Q1705 291 1710 450Q1655 577 1550 680Q1322 699 1120 650Q1002 585 940 480Q899 380 900 270Q898 184 920 120Z" />
+            <path class="province map-tile terrain-highlands tile-muted" data-place-type="country" data-place-id="great_empire" data-tile-name="北帝冠州" data-terrain="highlands" data-terrain-label="帝国高原" d="M920 120L1300 50Q1302 202 1300 365Q1110 242 920 120Z" />
+            <path class="province map-tile terrain-mountains tile-deep" data-place-type="country" data-place-id="great_empire" data-tile-name="霊峰総督領" data-terrain="mountains" data-terrain-label="連峰" d="M1300 50L1660 150Q1495 256 1300 365Q1302 202 1300 50Z" />
+            <path class="province map-tile terrain-hills" data-place-type="country" data-place-id="great_empire" data-tile-name="東環丘州" data-terrain="hills" data-terrain-label="丘陵" d="M1660 150L1710 450Q1507 402 1300 365Q1495 256 1660 150Z" />
+            <path class="province map-tile terrain-plains tile-light" data-place-type="country" data-place-id="great_empire" data-tile-name="帝都直轄圏" data-terrain="plains" data-terrain-label="中央平原" d="M1710 450L1550 680Q1420 517 1300 365Q1507 402 1710 450Z" />
+            <path class="province map-tile terrain-coast tile-light" data-place-type="country" data-place-id="great_empire" data-tile-name="金帆海岸" data-terrain="coast" data-terrain-label="交易海岸" d="M1550 680L1120 650Q1219 504 1300 365Q1420 517 1550 680Z" />
+            <path class="province map-tile terrain-wetland tile-muted" data-place-type="country" data-place-id="great_empire" data-tile-name="南河総督領" data-terrain="wetland" data-terrain-label="大河低地" d="M1120 650L940 480Q1118 421 1300 365Q1219 504 1120 650Z" />
+            <path class="province map-tile terrain-plains" data-place-type="country" data-place-id="great_empire" data-tile-name="西部穀倉州" data-terrain="plains" data-terrain-label="穀倉平原" d="M940 480L900 270Q1104 320 1300 365Q1118 421 940 480Z" />
+            <path class="province map-tile terrain-forest tile-deep" data-place-type="country" data-place-id="great_empire" data-tile-name="神護西境" data-terrain="forest" data-terrain-label="古森林" d="M900 270L920 120Q1112 242 1300 365Q1104 320 900 270Z" />
+            <path class="nation-outline" d="M920 120Q1095 65 1300 50Q1494 72 1660 150Q1705 291 1710 450Q1655 577 1550 680Q1322 699 1120 650Q1002 585 940 480Q899 380 900 270Q898 184 920 120Z" />
+            <text class="great-power-label" x="1320" y="350">グレート帝国</text>
+          </g>
+
+          <g class="country-group avanheln great-power" data-country="avanheln" data-tile-count="24" data-rank="great-power" transform="translate(120 178) scale(.9 .82)">
+            <path class="country-landmass" data-landmass-country="avanheln" d="M430 730Q555 666 700 635Q882 610 1080 625Q1256 671 1400 750Q1422 873 1370 1000Q1101 1043 820 1030Q644 1019 520 970Q424 903 400 790Q407 751 430 730Z" />
+            <path class="province map-tile terrain-mountains tile-deep" data-place-type="country" data-place-id="avanheln" data-tile-name="西竜脊山地" data-terrain="mountains" data-terrain-label="竜峰" d="M430 730L700 635Q792 733 900 830Q666 779 430 730Z" />
+            <path class="province map-tile terrain-highlands" data-place-type="country" data-place-id="avanheln" data-tile-name="盟約高原" data-terrain="highlands" data-terrain-label="高原" d="M700 635L1080 625Q984 730 900 830Q792 733 700 635Z" />
+            <path class="province map-tile terrain-mountains tile-muted" data-place-type="country" data-place-id="avanheln" data-tile-name="竜王座連峰" data-terrain="mountains" data-terrain-label="主峰連峰" d="M1080 625L1400 750Q1148 797 900 830Q984 730 1080 625Z" />
+            <path class="province map-tile terrain-hills" data-place-type="country" data-place-id="avanheln" data-tile-name="東砦丘陵" data-terrain="hills" data-terrain-label="要塞丘陵" d="M1400 750L1370 1000Q1129 912 900 830Q1148 797 1400 750Z" />
+            <path class="province map-tile terrain-coast tile-light" data-place-type="country" data-place-id="avanheln" data-tile-name="南竜海岸" data-terrain="coast" data-terrain-label="岩礁海岸" d="M1370 1000L820 1030Q865 925 900 830Q1129 912 1370 1000Z" />
+            <path class="province map-tile terrain-plains tile-light" data-place-type="country" data-place-id="avanheln" data-tile-name="連盟南盆地" data-terrain="plains" data-terrain-label="山間盆地" d="M820 1030L520 970Q707 901 900 830Q865 925 820 1030Z" />
+            <path class="province map-tile terrain-badlands tile-deep" data-place-type="country" data-place-id="avanheln" data-tile-name="火口荒原" data-terrain="badlands" data-terrain-label="火山荒地" d="M520 970L400 790Q654 806 900 830Q707 901 520 970Z" />
+            <path class="province map-tile terrain-mountains" data-place-type="country" data-place-id="avanheln" data-tile-name="北方竜門" data-terrain="mountains" data-terrain-label="峠山地" d="M400 790L430 730Q666 779 900 830Q654 806 400 790Z" />
+            <path class="nation-outline" d="M430 730Q555 666 700 635Q882 610 1080 625Q1256 671 1400 750Q1422 873 1370 1000Q1101 1043 820 1030Q644 1019 520 970Q424 903 400 790Q407 751 430 730Z" />
+            <text class="great-power-label" x="905" y="800">アバンヘルン連盟</text>
+          </g>
+
+          <g class="country-group forest-alliance" data-country="forest_alliance" data-tile-count="18">
+            <path class="country-landmass" data-landmass-country="forest_alliance" d="M80 90L330 70L350 230L300 270L120 250L65 175Z" />
             <path class="province map-tile terrain-forest tile-deep" data-place-type="country" data-place-id="forest_alliance" data-tile-name="北樹海" data-terrain="forest" data-terrain-label="原生林" d="M80 90L330 70Q282 120 210 165Q125 130 80 90Z" />
             <path class="province map-tile terrain-hills tile-light" data-place-type="country" data-place-id="forest_alliance" data-tile-name="緑冠丘陵" data-terrain="hills" data-terrain-label="森林丘陵" d="M330 70L350 230Q300 175 210 165Q282 120 330 70Z" />
             <path class="province map-tile terrain-forest" data-place-type="country" data-place-id="forest_alliance" data-tile-name="東樹林" data-terrain="forest" data-terrain-label="針葉樹林" d="M350 230L300 270Q268 205 210 165Q300 175 350 230Z" />
@@ -109,7 +164,8 @@
             <path class="province map-tile terrain-forest tile-deep" data-place-type="country" data-place-id="forest_alliance" data-tile-name="西方林海" data-terrain="forest" data-terrain-label="深林" d="M65 175L80 90Q125 130 210 165Q115 160 65 175Z" />
             <path class="nation-outline" d="M80 90L330 70L350 230L300 270L120 250L65 175Z" />
           </g>
-          <g class="country-group vinia" data-country="vinia" data-tile-count="5">
+          <g class="country-group vinia" data-country="vinia" data-tile-count="15">
+            <path class="country-landmass" data-landmass-country="vinia" d="M330 70L660 65L630 240L520 270L350 230Z" />
             <path class="province map-tile terrain-highlands tile-muted" data-place-type="country" data-place-id="vinia" data-tile-name="白霜台地" data-terrain="highlands" data-terrain-label="高原" d="M330 70L660 65Q585 110 490 155Q400 105 330 70Z" />
             <path class="province map-tile terrain-mountains tile-deep" data-place-type="country" data-place-id="vinia" data-tile-name="北嶺山麓" data-terrain="mountains" data-terrain-label="山麓" d="M660 65L630 240Q580 180 490 155Q585 110 660 65Z" />
             <path class="province map-tile terrain-hills" data-place-type="country" data-place-id="vinia" data-tile-name="琥珀丘" data-terrain="hills" data-terrain-label="丘陵" d="M630 240L520 270Q535 210 490 155Q580 180 630 240Z" />
@@ -117,7 +173,8 @@
             <path class="province map-tile terrain-forest tile-deep" data-place-type="country" data-place-id="vinia" data-tile-name="西境林" data-terrain="forest" data-terrain-label="混交林" d="M350 230L330 70Q400 105 490 155Q405 185 350 230Z" />
             <path class="nation-outline" d="M330 70L660 65L630 240L520 270L350 230Z" />
           </g>
-          <g class="country-group heavens-gate" data-country="heavens_gate" data-tile-count="6">
+          <g class="country-group heavens-gate" data-country="heavens_gate" data-tile-count="18">
+            <path class="country-landmass" data-landmass-country="heavens_gate" d="M660 65L915 95L940 180L900 270L740 260L630 240Z" />
             <path class="province map-tile terrain-mountains tile-deep" data-place-type="country" data-place-id="heavens_gate" data-tile-name="天門連峰" data-terrain="mountains" data-terrain-label="高山" d="M660 65L915 95Q855 125 785 165Q710 115 660 65Z" />
             <path class="province map-tile terrain-highlands tile-muted" data-place-type="country" data-place-id="heavens_gate" data-tile-name="蒼穹台地" data-terrain="highlands" data-terrain-label="高原" d="M915 95L940 180Q880 170 785 165Q855 125 915 95Z" />
             <path class="province map-tile terrain-hills" data-place-type="country" data-place-id="heavens_gate" data-tile-name="東照丘" data-terrain="hills" data-terrain-label="丘陵" d="M940 180L900 270Q845 225 785 165Q880 170 940 180Z" />
@@ -126,7 +183,8 @@
             <path class="province map-tile terrain-highlands" data-place-type="country" data-place-id="heavens_gate" data-tile-name="巡礼高道" data-terrain="highlands" data-terrain-label="岩石高原" d="M630 240L660 65Q710 115 785 165Q690 190 630 240Z" />
             <path class="nation-outline" d="M660 65L915 95L940 180L900 270L740 260L630 240Z" />
           </g>
-          <g class="country-group lustrond" data-country="lustrond" data-tile-count="6">
+          <g class="country-group lustrond" data-country="lustrond" data-tile-count="18">
+            <path class="country-landmass" data-landmass-country="lustrond" d="M120 250L270 350L340 420L250 490L95 470L65 375Z" />
             <path class="province map-tile terrain-forest tile-deep" data-place-type="country" data-place-id="lustrond" data-tile-name="北境樹林" data-terrain="forest" data-terrain-label="温帯林" d="M120 250L270 350Q230 350 185 385Q145 310 120 250Z" />
             <path class="province map-tile terrain-hills" data-place-type="country" data-place-id="lustrond" data-tile-name="白壁丘陵" data-terrain="hills" data-terrain-label="石灰丘陵" d="M270 350L340 420Q270 395 185 385Q230 350 270 350Z" />
             <path class="province map-tile terrain-plains tile-light" data-place-type="country" data-place-id="lustrond" data-tile-name="公都盆地" data-terrain="plains" data-terrain-label="盆地平野" d="M340 420L250 490Q235 445 185 385Q270 395 340 420Z" />
@@ -135,7 +193,8 @@
             <path class="province map-tile terrain-plains" data-place-type="country" data-place-id="lustrond" data-tile-name="北西牧野" data-terrain="plains" data-terrain-label="草原" d="M65 375L120 250Q145 310 185 385Q110 390 65 375Z" />
             <path class="nation-outline" d="M120 250L270 350L340 420L250 490L95 470L65 375Z" />
           </g>
-          <g class="country-group izmenia" data-country="izmenia" data-tile-count="7">
+          <g class="country-group izmenia" data-country="izmenia" data-tile-count="21">
+            <path class="country-landmass" data-landmass-country="izmenia" d="M700 390L700 450L900 440L940 455L870 585L570 560L530 400Z" />
             <path class="province map-tile terrain-hills" data-place-type="country" data-place-id="izmenia" data-tile-name="北門丘" data-terrain="hills" data-terrain-label="丘陵" d="M700 390L700 450Q725 485 760 510Q720 440 700 390Z" />
             <path class="province map-tile terrain-plains tile-light" data-place-type="country" data-place-id="izmenia" data-tile-name="王都平" data-terrain="plains" data-terrain-label="乾燥平野" d="M700 450L900 440Q845 480 760 510Q725 485 700 450Z" />
             <path class="province map-tile terrain-badlands tile-deep" data-place-type="country" data-place-id="izmenia" data-tile-name="赤礫東境" data-terrain="badlands" data-terrain-label="荒地" d="M900 440L940 455Q870 500 760 510Q845 480 900 440Z" />
@@ -145,7 +204,8 @@
             <path class="province map-tile terrain-hills tile-deep" data-place-type="country" data-place-id="izmenia" data-tile-name="西境崖" data-terrain="hills" data-terrain-label="岩丘" d="M530 400L700 390Q720 440 760 510Q625 455 530 400Z" />
             <path class="nation-outline" d="M700 390L700 450L900 440L940 455L870 585L570 560L530 400Z" />
           </g>
-          <g class="country-group valka" data-country="valka" data-tile-count="6">
+          <g class="country-group valka" data-country="valka" data-tile-count="18">
+            <path class="country-landmass" data-landmass-country="valka" d="M670 265L740 260L900 270L900 440L700 450L700 390Z" />
             <path class="province map-tile terrain-mountains tile-deep" data-place-type="country" data-place-id="valka" data-tile-name="灰冠北稜" data-terrain="mountains" data-terrain-label="山岳" d="M670 265L740 260Q765 295 790 350Q720 300 670 265Z" />
             <path class="province map-tile terrain-highlands" data-place-type="country" data-place-id="valka" data-tile-name="鉄門高地" data-terrain="highlands" data-terrain-label="城塞高地" d="M740 260L900 270Q850 315 790 350Q765 295 740 260Z" />
             <path class="province map-tile terrain-hills tile-light" data-place-type="country" data-place-id="valka" data-tile-name="東部丘陵" data-terrain="hills" data-terrain-label="岩石丘陵" d="M900 270L900 440Q850 400 790 350Q850 315 900 270Z" />
@@ -154,7 +214,8 @@
             <path class="province map-tile terrain-mountains tile-deep" data-place-type="country" data-place-id="valka" data-tile-name="灰冠峠口" data-terrain="mountains" data-terrain-label="峠" d="M700 390L670 265Q720 300 790 350Q730 370 700 390Z" />
             <path class="nation-outline" d="M670 265L740 260L900 270L900 440L700 450L700 390Z" />
           </g>
-          <g class="country-group selena" data-country="selena" data-tile-count="3">
+          <g class="country-group selena" data-country="selena" data-tile-count="9">
+            <path class="country-landmass" data-landmass-country="selena" d="M300 270L520 270L670 265L700 390L530 400L570 560L330 570L250 490L340 420L270 350Z" />
             <path class="province map-tile terrain-plains tile-light" data-place-type="province" data-place-id="selene" data-tile-name="セレネ中央州" data-terrain="plains" data-terrain-label="河畔平野" d="M300 270L520 270Q548 330 530 400Q438 432 340 420L270 350Z" />
             <path class="province map-tile terrain-hills tile-deep" data-place-type="province" data-place-id="orta" data-tile-name="オルタ東境州" data-terrain="hills" data-terrain-label="山麓丘陵" d="M520 270L670 265L700 390Q620 410 530 400Q548 330 520 270Z" />
             <path class="province map-tile terrain-wetland tile-muted" data-place-type="province" data-place-id="nereia" data-tile-name="ネレイア南河州" data-terrain="wetland" data-terrain-label="河川低地" d="M340 420Q438 432 530 400L570 560L330 570L250 490Z" />
@@ -185,6 +246,18 @@
             <path class="imperial-road" data-route="imperial_road" d="M235 155 C330 220 390 260 420 315 C490 314 520 315 565 315 C630 315 685 317 735 320 C775 255 810 190 820 125" />
             <path class="river-route" data-route="silver_river" d="M355 105 C390 185 405 255 420 315 C430 370 445 415 465 455 C560 480 650 500 760 500" />
             <path class="pass-route" data-route="ash_pass" d="M565 315 C610 286 652 289 700 318" />
+            <path class="imperial-road world-route" data-route="empire_highway" d="M820 125C930 105 1000 145 1080 215C1240 350 1460 410 1665 400" />
+            <path class="river-route world-route" data-route="mourning_river" d="M190 650C204 717 213 787 221 822C198 882 162 931 112 986" />
+            <path class="pass-route world-route" data-route="dragon_road" d="M570 560C700 650 790 735 930 859C1080 825 1220 820 1380 793" />
+          </g>
+          <g class="strategic-fronts" aria-hidden="true">
+            <path class="strategic-corridor friendly-corridor" d="M420 315 C480 315 520 315 565 315" />
+            <path class="strategic-corridor supply-corridor" d="M465 455 C500 405 535 350 565 315" />
+            <path class="strategic-corridor hostile-corridor" d="M565 315 C620 287 676 294 735 320" />
+            <g class="pass-status" id="passStatusMarker" transform="translate(650 305)">
+              <path d="M-38 0L-27-14H27L38 0L27 14H-27Z" />
+              <text id="passStatusText" y="4">国境緊張</text>
+            </g>
           </g>
           <g class="terrain-labels">
             <text class="terrain-name" x="118" y="214">黎明樹海</text>
@@ -195,24 +268,60 @@
             <text class="route-name" x="300" y="235">大陸公路</text>
           </g>
 
-          <g class="city-layer">
-            <g class="map-node city" role="button" tabindex="0" data-place-type="province" data-place-id="selene" transform="translate(420 315)">
-              <circle r="13" /><path d="M-8 7V-6L0-13L8-6V7Z" /><text y="29">王都セレネ</text>
+          <g class="city-layer castle-layer">
+            <g class="map-node city castle-node friendly" role="button" tabindex="0" data-place-type="province" data-place-id="selene" transform="translate(420 315)">
+              <circle class="castle-influence" r="27" />
+              <path class="castle-silhouette" d="M-15 10V-3H-10V-11H-4V-17H4V-11H10V-3H15V10Z" />
+              <rect class="castle-plate" x="-54" y="18" width="108" height="34" rx="3" />
+              <text class="castle-name" y="31">王都セレネ</text>
+              <text class="castle-force" id="mapForceSelene" y="45">兵 880 · 防 51</text>
             </g>
-            <g class="map-node city" role="button" tabindex="0" data-place-type="province" data-place-id="nereia" transform="translate(465 455)">
-              <circle r="13" /><path d="M-8 7V-6L0-13L8-6V7Z" /><text y="29">河港ネレイア</text>
+            <g class="map-node city castle-node friendly" role="button" tabindex="0" data-place-type="province" data-place-id="nereia" transform="translate(465 455)">
+              <circle class="castle-influence" r="27" />
+              <path class="castle-silhouette" d="M-15 10V-3H-10V-11H-4V-17H4V-11H10V-3H15V10Z" />
+              <rect class="castle-plate" x="-58" y="18" width="116" height="34" rx="3" />
+              <text class="castle-name" y="31">河港ネレイア</text>
+              <text class="castle-force" id="mapForceNereia" y="45">兵 720 · 防 46</text>
             </g>
-            <g class="map-node city" role="button" tabindex="0" data-place-type="province" data-place-id="orta" transform="translate(565 315)">
-              <circle r="13" /><path d="M-8 7V-6L0-13L8-6V7Z" /><text y="29">城塞市オルタ</text>
+            <g class="map-node city castle-node friendly frontier-castle" role="button" tabindex="0" data-place-type="province" data-place-id="orta" transform="translate(565 315)">
+              <circle class="castle-influence" r="30" />
+              <path class="castle-silhouette" d="M-17 11V-4H-11V-13H-5V-20H5V-13H11V-4H17V11Z" />
+              <rect class="castle-plate" x="-57" y="20" width="114" height="34" rx="3" />
+              <text class="castle-name" y="33">城塞市オルタ</text>
+              <text class="castle-force" id="mapForceOrta" y="47">兵 520 · 防 64</text>
             </g>
-            <g class="map-node city foreign" role="button" tabindex="0" data-place-type="country" data-place-id="valka" transform="translate(735 320)">
-              <circle r="15" /><path d="M-9 8V-7L0-15L9-7V8Z" /><text y="32">鉄門城ヴァルカ</text>
+            <g class="map-node city castle-node foreign enemy-castle" role="button" tabindex="0" data-place-type="country" data-place-id="valka" transform="translate(735 320)">
+              <circle class="castle-influence" r="31" />
+              <path class="castle-silhouette" d="M-17 11V-4H-11V-13H-5V-20H5V-13H11V-4H17V11Z" />
+              <rect class="castle-plate" x="-62" y="20" width="124" height="34" rx="3" />
+              <text class="castle-name" y="33">鉄門城ヴァルカ</text>
+              <text class="castle-force" id="mapForceValka" y="47">兵 1,960 · 組 64</text>
             </g>
             <g class="map-node city neutral" role="button" tabindex="0" data-place-type="country" data-place-id="vinia" transform="translate(500 130)"><circle r="12" /><path d="M-7 7V-5L0-12L7-5V7Z" /><text y="28">ヴィニア</text></g>
             <g class="map-node city neutral" role="button" tabindex="0" data-place-type="country" data-place-id="forest_alliance" transform="translate(235 155)"><circle r="12" /><path d="M-7 7V-5L0-12L7-5V7Z" /><text y="28">森の連合国</text></g>
             <g class="map-node city neutral" role="button" tabindex="0" data-place-type="country" data-place-id="lustrond" transform="translate(225 435)"><circle r="12" /><path d="M-7 7V-5L0-12L7-5V7Z" /><text y="28">ルストロンド</text></g>
             <g class="map-node city neutral" role="button" tabindex="0" data-place-type="country" data-place-id="izmenia" transform="translate(760 500)"><circle r="12" /><path d="M-7 7V-5L0-12L7-5V7Z" /><text y="28">イズメニア</text></g>
             <g class="map-node city neutral" role="button" tabindex="0" data-place-type="country" data-place-id="heavens_gate" transform="translate(820 125)"><circle r="12" /><path d="M-7 7V-5L0-12L7-5V7Z" /><text y="28">ヘブンズゲート</text></g>
+            <g class="map-node city neutral great-power-node" role="button" tabindex="0" data-place-type="country" data-place-id="deadland" transform="translate(221 822)"><circle r="17" /><path d="M-10 9V-8L0-17L10-8V9Z" /><text y="35">デッドランド冥府</text></g>
+            <g class="map-node city neutral great-power-node" role="button" tabindex="0" data-place-type="country" data-place-id="great_empire" transform="translate(1375 341)"><circle r="17" /><path d="M-10 9V-8L0-17L10-8V9Z" /><text y="35">グレート帝国</text></g>
+            <g class="map-node city neutral great-power-node" role="button" tabindex="0" data-place-type="country" data-place-id="avanheln" transform="translate(930 859)"><circle r="17" /><path d="M-10 9V-8L0-17L10-8V9Z" /><text y="35">アバンヘルン連盟</text></g>
+          </g>
+
+          <g class="army-layer" aria-label="地図上の軍勢">
+            <g class="army-marker friendly-army" id="frontierArmyMarker" transform="translate(590 390)">
+              <path class="army-banner" d="M-28-34V34M-27-30H31L20-14L31 2H-27Z" />
+              <rect class="army-plate" x="-33" y="12" width="98" height="39" rx="3" />
+              <text class="army-name" x="16" y="25">東部国境軍</text>
+              <text class="army-strength" id="frontierArmyStrength" x="16" y="39">兵 1,094</text>
+              <text class="army-order" id="frontierArmyOrder" x="16" y="48">行軍縦隊 · 待機</text>
+            </g>
+            <g class="army-marker enemy-army" id="enemyArmyMarker" transform="translate(700 225)">
+              <path class="army-banner" d="M28-34V34M27-30H-31L-20-14L-31 2H27Z" />
+              <rect class="army-plate" x="-65" y="12" width="98" height="39" rx="3" />
+              <text class="army-name" x="-16" y="25">ヴァルカ守備軍</text>
+              <text class="army-strength" id="enemyArmyStrength" x="-16" y="39">兵 1,960</text>
+              <text class="army-order" id="enemyArmyOrder" x="-16" y="48">峠を警戒</text>
+            </g>
           </g>
 
           <g class="village-layer">
@@ -224,7 +333,7 @@
             <g class="map-node village" role="button" tabindex="0" data-place-type="village" data-place-id="kanezaka" transform="translate(620 365)"><circle r="6" /><text y="18">鐘坂</text></g>
           </g>
 
-          <g class="map-ornament" transform="translate(80 555)">
+          <g class="map-ornament" transform="translate(90 965)">
             <circle r="35" /><path d="M0-26L6-6L0 0L-6-6Z M0 26L6 6L0 0L-6 6Z" /><text y="5">N</text>
           </g>
         </svg>
@@ -244,6 +353,7 @@
 
         <div class="map-scale-switch" id="mapScaleSwitch" aria-label="表示縮尺">
           <span>縮尺</span>
+          <button type="button" data-scale="world">世界</button>
           <button type="button" data-scale="country" class="is-active">国家</button>
           <button type="button" data-scale="city">都市圏</button>
           <button type="button" data-scale="village">村々</button>
@@ -287,7 +397,7 @@
             <div class="campaign-objective-list" id="guideObjectiveList"></div>
           </section>
           <section class="guide-turn-loop">
-            <div><small>毎月はこの順番だけを追う</small><h2>方針 → 命令 → 月末 → 報告</h2></div>
+            <div><small>毎月はこの順番だけを追う</small><h2>方針 → 支出 → 月末 → 報告</h2></div>
             <ol id="guideLoop"></ol>
           </section>
           <aside class="guide-note">
@@ -300,11 +410,11 @@
           <section class="guide-basics">
             <header><small>CORE SYSTEMS</small><h2>統治で覚える五つのこと</h2></header>
             <div>
-              <article><b>統治力と人物</b><p>命令には担当武将と統治力が必要です。成果幅は能力、忠誠、意欲、功績、特性、所在地、季節方針から決まります。</p></article>
+              <article><b>国家支出と人物</b><p>基本コマンドは社会保障・軍事関連・研究開発・対外援助・国債返済・経済投資の六つです。分類を選び、その配下の具体策へ担当武将と統治力を割り当てます。</p></article>
               <article><b>都市の因果</b><p>税、配給、徴兵、移民、施設、派閥は連動します。命令予約後は右側の翌月予測と警告を確認してください。</p></article>
               <article><b>直轄と太守委任</b><p>統治委任では、太守が州庫を使って日常政務を自動処理します。朝廷が使える金・兵糧・兵は、名目総量ではなく戸籍と行政到達から決まります。</p></article>
               <article><b>強行命令</b><p>通常枠を最大2点超過できます。1点ごとに失敗率15%、全都市の腐敗+0.6、民心-0.8、翌月統治力-1です。</p></article>
-              <article><b>戦争と講和</b><p>政治目的、正当性、補給、情報、第三国介入を先に評価します。限定目的を達成したら攻勢限界前の講和が基本です。</p></article>
+              <article><b>戦争・講和・占領</b><p>政治目的、正当性、補給、情報、第三国介入を評価し、攻勢か防衛を選びます。損耗・施設破壊・避難民は戦後にも残り、占領後は自治・統合・同化・軍政・復興を月ごとに決めます。</p></article>
             </div>
           </section>
 
@@ -313,7 +423,7 @@
               <div><small>NATIONAL LOGIC MODELS</small><h2>他国家は何を守り、どう反応するか</h2></div>
               <p>各国の友好度・敵意・軍事力・機動・組織力・結束・介入意志は、推定戦力と第三国介入リスクへ反映されます。</p>
             </header>
-            <div class="guide-model-scope"><b>現在の実装範囲</b><span>月ごとの戦争行動を自律選択するのはヴァルカです。他国は大陸均衡へ影響する段階で、個別の外交命令・参戦イベントは今後の拡張範囲です。</span></div>
+            <div class="guide-model-scope"><b>現在の実装範囲</b><span>ヴァルカは守勢・攻勢の月次行動を自律選択し、関係悪化時には東境州へ侵攻します。他国は大陸均衡へ影響する段階で、個別の外交命令・参戦イベントは今後の拡張範囲です。</span></div>
             <div class="nation-logic-grid">
               <article class="nation-logic valka"><header><i>関</i><div><small>国境対立</small><h3>ヴァルカ公国</h3></div></header><p><b>守るもの：</b>峠関税と辺境諸侯の自治。</p><p>組織崩壊時は籠城、セレナの軍需不足時は輜重襲撃、疲弊時は局地反撃。限定戦で不利になると講和を探ります。</p></article>
               <article class="nation-logic vinia"><header><i>衡</i><div><small>均衡維持</small><h3>ヴィニア</h3></div></header><p><b>守るもの：</b>北方公路と大陸中央の均衡。</p><p>限定目的と早期講和は容認しやすく、体制変更・長期戦・交通網の独占を警戒します。</p></article>
@@ -321,6 +431,9 @@
               <article class="nation-logic lustrond"><header><i>静</i><div><small>慎重中立</small><h3>ルストロンド公国</h3></div></header><p><b>守るもの：</b>南西交易路と保護領の安全。</p><p>限定戦は静観しやすい一方、保護領秩序の動揺ではヘブンズゲート側の判断に影響されます。</p></article>
               <article class="nation-logic izmenia"><header><i>機</i><div><small>機会待ち</small><h3>イズメニア</h3></div></header><p><b>守るもの：</b>損失を抑えた勢力拡大。</p><p>他国の疲弊と交易路変化を観察し、長期戦・軍需不足・外交孤立を介入の好機と見ます。</p></article>
               <article class="nation-logic heavens"><header><i>秩</i><div><small>大陸秩序</small><h3>ヘブンズゲート王国</h3></div></header><p><b>守るもの：</b>既存秩序と保護領。</p><p>最大級の軍事力と介入意志を持ち、政権屈服・長期攻囲・保護領への脅威へ強く反応します。</p></article>
+              <article class="nation-logic deadland"><header><i>冥</i><div><small>冥府不介入</small><h3>デッドランド冥府</h3></div></header><p><b>守るもの：</b>死族国家の長期結束。</p><p>直接介入には慎重ですが、高い組織力と結束を持ち、短期的な圧力では国家方針を変えません。</p></article>
+              <article class="nation-logic great-empire"><header><i>帝</i><div><small>帝国均衡</small><h3>グレート帝国</h3></div></header><p><b>守るもの：</b>帝国均衡と神国保護秩序。</p><p>世界圏最大級の戦力を持ち、宗主ヘヴンズゲートを含む既存秩序への波及を重く見ます。</p></article>
+              <article class="nation-logic avanheln"><header><i>竜</i><div><small>山岳守勢</small><h3>アバンヘルン連盟</h3></div></header><p><b>守るもの：</b>竜王の保護と山岳盟約。</p><p>高い訓練・機動・結束を持ち、自領の峠と連盟秩序を脅かす拡大戦争を警戒します。</p></article>
             </div>
             <p class="guide-model-formula"><b>第三国介入リスク：</b>敵意、セレナへの負の友好度、介入意志、戦争状態から上がり、外交的なつながりから緩和されます。</p>
           </section>
@@ -340,10 +453,11 @@
         <div class="council-header">
           <span>WAR COUNCIL / 灰冠峠</span>
           <h2 id="warCouncilTitle">戦争は目的ではなく、政治の手段である</h2>
-          <p>要求を先に定め、必要な力と止める地点をAI参謀が説明します。</p>
+          <p>要求を先に定め、必要な力、止める地点、破壊と占領統治まで含む代償をAI参謀が説明します。</p>
         </div>
         <div class="objective-tabs" id="objectiveTabs"></div>
         <div id="warCouncilReport"></div>
+        <section class="war-cost-estimate" id="warCostEstimate" aria-label="開戦コスト概算"></section>
         <div class="council-actions">
           <p id="declarationWarning"></p>
           <button class="war-button" id="declareWarButton" type="button">この目的で宣戦布告</button>

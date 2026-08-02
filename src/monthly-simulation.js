@@ -26,8 +26,29 @@ import {
   resolveDelegatedAdministration,
 } from "./administration-model.js";
 import { chooseOpponentAction, evaluatePeaceDecision, evaluateWarDecision } from "./war-ai.js";
+import {
+  OCCUPATION_POLICIES,
+  PEACE_SETTLEMENTS,
+  WAR_PLANS,
+  getPeaceOptions as derivePeaceOptions,
+  getWarPlanOptions,
+  getWarStage,
+  occupationPolicyOutcome,
+} from "./war-system.js";
 
-export { ADMINISTRATION_MANDATES, ADMINISTRATION_MODES, DOCTRINES, FACILITIES, FACTION_DEFINITIONS, POLICY_DEFINITIONS };
+export {
+  ADMINISTRATION_MANDATES,
+  ADMINISTRATION_MODES,
+  DOCTRINES,
+  FACILITIES,
+  FACTION_DEFINITIONS,
+  OCCUPATION_POLICIES,
+  PEACE_SETTLEMENTS,
+  POLICY_DEFINITIONS,
+  WAR_PLANS,
+  getWarPlanOptions,
+  getWarStage,
+};
 
 export const FORCED_ORDER_RULES = {
   maximumOverage: 2,
@@ -66,6 +87,9 @@ export const WORLD = {
     lustrond: { id: "lustrond", name: "ルストロンド公国", capital: "白壁都", color: "#7a6a91", government: "公国" },
     izmenia: { id: "izmenia", name: "イズメニア", capital: "イズメニア王都", color: "#8e604f", government: "王国" },
     heavens_gate: { id: "heavens_gate", name: "ヘブンズゲート王国", capital: "天門京", color: "#536b89", government: "王国" },
+    deadland: { id: "deadland", name: "デッドランド冥府", capital: "首府未詳", color: "#514b62", government: "冥府国家", rank: "大国" },
+    great_empire: { id: "great_empire", name: "グレート帝国", capital: "帝都未詳", color: "#8a6556", government: "帝国 / 神国保護領", rank: "大国" },
+    avanheln: { id: "avanheln", name: "アバンヘルン連盟", capital: "主都未詳", color: "#7c5944", government: "山岳連盟 / 竜王保護領", rank: "大国" },
   },
   provinces: {
     selene: { id: "selene", owner: "selena", name: "王都セレネ", kind: "中央州", cityX: 420, cityY: 315, villages: ["mugiwano", "tsukishiro"], note: "王国評議会と諸州の使節が、大陸公路の規格と課税を調整する中枢。" },
@@ -92,15 +116,85 @@ export const WORLD = {
     imperial_road: { id: "imperial_road", name: "大陸公路", value: 74, note: "北西から東境へ通じ、外交と軍需の速度を左右する幹線。" },
   },
   characters: {
-    edras: { id: "edras", name: "エドラス・ヴェイン", portrait: "エ", role: "王都執政官", policy: "戸籍整備", stats: { leadership: 46, war: 31, intelligence: 70, politics: 84, charisma: 66 }, traits: ["commerce", "harbor"] },
-    mara: { id: "mara", name: "マーラ・ネレイス", portrait: "マ", role: "河港太守", policy: "河川交易", stats: { leadership: 73, war: 61, intelligence: 69, politics: 65, charisma: 78 }, traits: ["diplomacy", "scouting"] },
-    gaius: { id: "gaius", name: "ガイウス・オルタ", portrait: "ガ", role: "北部太守", policy: "兵站改革", stats: { leadership: 76, war: 70, intelligence: 52, politics: 57, charisma: 62 }, traits: ["drill", "repair", "mobilize"] },
-    sera: { id: "sera", name: "セラ・クレフ", portrait: "セ", role: "王国軍師", policy: "情報府", stats: { leadership: 48, war: 36, intelligence: 86, politics: 79, charisma: 59 }, traits: ["scouting", "justification"] },
-    ilva: { id: "ilva", name: "イルヴァ・ロウ", portrait: "イ", role: "無所属の測量士", policy: "峠測量", stats: { leadership: 55, war: 39, intelligence: 78, politics: 64, charisma: 51 }, traits: ["scouting", "repair"] },
-    dario: { id: "dario", name: "ダリオ・フェン", portrait: "ダ", role: "放浪軍の隊長", policy: "機動防衛", stats: { leadership: 81, war: 77, intelligence: 54, politics: 42, charisma: 69 }, traits: ["drill", "mobilize"] },
-    mirel: { id: "mirel", name: "ミレル・サーン", portrait: "ミ", role: "ヴァルカ系商人", policy: "縦横術", stats: { leadership: 38, war: 29, intelligence: 73, politics: 81, charisma: 84 }, traits: ["diplomacy", "commerce", "recruitment"] },
+    edras: { id: "edras", name: "エドラス・ヴェイン", portrait: "エ", portraitImage: "assets/generated/officer-edras.webp", role: "王都執政官", policy: "戸籍整備", stats: { leadership: 46, war: 31, intelligence: 70, politics: 84, charisma: 66 }, traits: ["commerce", "harbor"] },
+    mara: { id: "mara", name: "マーラ・ネレイス", portrait: "マ", portraitImage: "assets/generated/officer-mara.webp", role: "河港太守", policy: "河川交易", stats: { leadership: 73, war: 61, intelligence: 69, politics: 65, charisma: 78 }, traits: ["diplomacy", "scouting"] },
+    gaius: { id: "gaius", name: "ガイウス・オルタ", portrait: "ガ", portraitImage: "assets/generated/officer-gaius.webp", role: "北部太守", policy: "兵站改革", stats: { leadership: 76, war: 70, intelligence: 52, politics: 57, charisma: 62 }, traits: ["drill", "repair", "mobilize"] },
+    sera: { id: "sera", name: "セラ・クレフ", portrait: "セ", portraitImage: "assets/generated/officer-sera.webp", role: "王国軍師", policy: "情報府", stats: { leadership: 48, war: 36, intelligence: 86, politics: 79, charisma: 59 }, traits: ["scouting", "justification"] },
+    ilva: { id: "ilva", name: "イルヴァ・ロウ", portrait: "イ", portraitImage: "assets/generated/officer-ilva.webp", role: "無所属の測量士", policy: "峠測量", stats: { leadership: 55, war: 39, intelligence: 78, politics: 64, charisma: 51 }, traits: ["scouting", "repair"] },
+    dario: { id: "dario", name: "ダリオ・フェン", portrait: "ダ", portraitImage: "assets/generated/officer-dario.webp", role: "放浪軍の隊長", policy: "機動防衛", stats: { leadership: 81, war: 77, intelligence: 54, politics: 42, charisma: 69 }, traits: ["drill", "mobilize"] },
+    mirel: { id: "mirel", name: "ミレル・サーン", portrait: "ミ", portraitImage: "assets/generated/officer-mirel.webp", role: "ヴァルカ系商人", policy: "縦横術", stats: { leadership: 38, war: 29, intelligence: 73, politics: 81, charisma: 84 }, traits: ["diplomacy", "commerce", "recruitment"] },
   },
 };
+
+export const ENEMY_COMMANDERS = Object.freeze({
+  valka: Object.freeze({
+    id: "adelheid_kraehe",
+    countryId: "valka",
+    name: "アデルハイト・クレーエ",
+    portrait: "ア",
+    portraitImage: "assets/generated/enemy-commander-valka.webp",
+    role: "灰冠峠総司令",
+    doctrine: "城砦防衛と局地反撃",
+    stats: Object.freeze({ leadership: 79, war: 75, intelligence: 72 }),
+  }),
+});
+
+export const GREAT_POWER_FOUNDATIONS = Object.freeze({
+  deadland: Object.freeze({
+    type: "低密度領域国家",
+    surplusCapacity: 58,
+    transportIntegration: 60,
+    administrativeReach: 88,
+    naturalFrontier: 93,
+    environment: "西南の広大な湿原・暗色ステップ・多島海は農業人口を増やしにくい一方、侵攻軍の補給を著しく消耗させる。",
+    integration: "食料消費の小さい死族労働力と長命官僚が、低密度の拠点・水路・葬道を長期間維持する。",
+    limit: "可航河川から外れた乾燥地では機動が落ち、領域面積に比べて即応兵力を集中しにくい。",
+  }),
+  great_empire: Object.freeze({
+    type: "大河流域帝国",
+    surplusCapacity: 93,
+    transportIntegration: 94,
+    administrativeReach: 88,
+    naturalFrontier: 78,
+    environment: "東方の巨大沖積平野は北の連峰から流れる本流と支流で結ばれ、穀倉・河港・東海岸の外港を一つの市場圏にする。",
+    integration: "帝都直轄の河川中枢、地方総督領、神国保護秩序を階層化し、舟運と幹線道で徴税・軍需を集約する。",
+    limit: "南部半乾燥地と長い海岸線は辺境費を増やし、宗主ヘヴンズゲートとの秩序調整を欠く拡張は維持できない。",
+  }),
+  avanheln: Object.freeze({
+    type: "山岳回廊連盟",
+    surplusCapacity: 64,
+    transportIntegration: 76,
+    administrativeReach: 79,
+    naturalFrontier: 96,
+    environment: "南部の褶曲山脈は平行する長い谷と少数の峠を持ち、各盆地を守りながら同じ回廊で相互支援できる。",
+    integration: "中央集権ではなく谷ごとの盟約、峠守備、竜王の超越的保護によって、広い山地を少ない行政費で束ねる。",
+    limit: "平地余剰が小さく峠が閉じると連盟内輸送が分断されるため、外征より回廊防衛に適した大国である。",
+  }),
+});
+
+export function getGreatPowerFoundation(countryId) {
+  const foundation = GREAT_POWER_FOUNDATIONS[countryId];
+  if (!foundation) return null;
+  const score = Math.round(
+    foundation.surplusCapacity * 0.25
+    + foundation.transportIntegration * 0.25
+    + foundation.administrativeReach * 0.3
+    + foundation.naturalFrontier * 0.2,
+  );
+  const factors = [
+    { id: "surplusCapacity", label: "余剰動員", value: foundation.surplusCapacity },
+    { id: "transportIntegration", label: "交通統合", value: foundation.transportIntegration },
+    { id: "administrativeReach", label: "行政到達", value: foundation.administrativeReach },
+    { id: "naturalFrontier", label: "自然国境", value: foundation.naturalFrontier },
+  ];
+  return {
+    ...foundation,
+    score,
+    viable: score >= 70 && foundation.transportIntegration >= 55 && foundation.administrativeReach >= 65,
+    factors,
+    limitingFactor: [...factors].sort((a, b) => a.value - b.value)[0],
+  };
+}
 
 export const CAMPAIGN_BRIEF = Object.freeze({
   role: "セレナ王",
@@ -114,16 +208,17 @@ export const CAMPAIGN_BRIEF = Object.freeze({
   ],
   loop: [
     { id: "doctrine", label: "方針", detail: "季節の初めに優先分野を一つ決める" },
-    { id: "orders", label: "命令", detail: "課題を選び、担当武将と統治力を割り当てる" },
+    { id: "orders", label: "支出", detail: "六つの国家支出から具体策と担当武将を選ぶ" },
     { id: "month", label: "月末", detail: "費用と予測を確認して月を確定する" },
     { id: "report", label: "報告", detail: "事件に対応し、結果から次の命令を決める" },
   ],
 });
 
 export const WAR_OBJECTIVES = {
-  transit: { id: "transit", name: "国境通行権の保障", scope: "limited", politicalValue: 68, description: "隊商差押えの停止と灰冠峠の通行権を条約化する。領土は要求しない。", escalationRisk: 20, targetScore: 32 },
-  pass_control: { id: "pass_control", name: "灰冠峠の共同管理", scope: "limited", politicalValue: 79, description: "ヴァルカの関所を共同管理とし、単独封鎖を不可能にする。", escalationRisk: 42, targetScore: 46 },
-  submission: { id: "submission", name: "ヴァルカ政権の屈服", scope: "total", politicalValue: 88, description: "公領の外交権を奪う。通航問題を越えた全面的な体制変更となる。", escalationRisk: 78, targetScore: 68 },
+  transit: { id: "transit", name: "国境通行権の保障", mode: "offensive", scope: "limited", politicalValue: 68, description: "隊商差押えの停止と灰冠峠の通行権を条約化する。領土は要求しない。", escalationRisk: 20, targetScore: 32 },
+  pass_control: { id: "pass_control", name: "灰冠峠の共同管理", mode: "offensive", scope: "limited", politicalValue: 79, description: "ヴァルカの関所を共同管理とし、単独封鎖を不可能にする。", escalationRisk: 42, targetScore: 46 },
+  submission: { id: "submission", name: "ヴァルカ政権の屈服", mode: "offensive", scope: "total", politicalValue: 88, description: "公領の外交権を奪う。通航問題を越えた全面的な体制変更となる。", escalationRisk: 78, targetScore: 68 },
+  homeland_defense: { id: "homeland_defense", name: "東境州の防衛", mode: "defensive", scope: "limited", politicalValue: 92, description: "侵攻軍を国境外へ押し戻し、都市・住民・行政網を守る。", escalationRisk: 12, targetScore: 28 },
 };
 
 export const FORMATIONS = {
@@ -132,26 +227,45 @@ export const FORMATIONS = {
   assault: { id: "assault", name: "突撃陣", description: "敵関所へ集中する。成果と損耗、指揮官依存がともに大きい。", score: 7, supply: -3, loss: 5 },
 };
 
-const command = (id, group, name, taskType, cost, description, extras = {}) => ({
-  id, group, name, taskType, cost, description, durationTurns: 1, governanceCost: 1, ...extras,
+export const SPENDING_CATEGORIES = Object.freeze({
+  social_security: { id: "social_security", name: "社会保障", icon: "民", color: "#d87b6a", description: "生活、食料、衛生、治安を支え、国民の暮らしと民心を安定させる。" },
+  military_affairs: { id: "military_affairs", name: "軍事関連", icon: "軍", color: "#c7a83e", description: "訓練、動員、人材確保に支出し、国防と戦役遂行能力を整える。" },
+  research_development: { id: "research_development", name: "研究開発", icon: "研", color: "#5d8fc0", description: "測量、制度、行政技術へ投資し、情報と国家運営の精度を高める。" },
+  foreign_aid: { id: "foreign_aid", name: "対外援助", icon: "援", color: "#8f6eb5", description: "使節、援助、対外広報を通じて、他国との関係と交渉条件を整える。" },
+  debt_repayment: { id: "debt_repayment", name: "国債返済", icon: "債", color: "#d28d35", description: "国債の元本を返済し、将来の財政負担と信用不安を減らす。" },
+  economic_investment: { id: "economic_investment", name: "経済投資", icon: "産", color: "#4f8b70", description: "農業、商業、道路、交易へ投資し、将来の生産と税収を育てる。" },
+});
+
+export const REVENUE_CATEGORIES = Object.freeze({
+  land_tax: { id: "land_tax", name: "農地税", color: "#4c9a8e" },
+  commerce_tax: { id: "commerce_tax", name: "商業税", color: "#3f78a8" },
+  other_income: { id: "other_income", name: "その他歳入", color: "#8a6bb3" },
+});
+
+const command = (id, group, spendingCategory, name, taskType, cost, description, extras = {}) => ({
+  id, group, spendingCategory, name, taskType, cost, description, durationTurns: 1, governanceCost: 1, ...extras,
 });
 
 export const COMMANDS = {
-  "city.cultivate": command("city.cultivate", "city", "開墾", "cultivate", { money: 4 }, "水路と共同地を整え、生産力と食料収支を改善する。", { repeatable: true }),
-  "city.commerce": command("city.commerce", "city", "商業振興", "commerce", { money: 5 }, "市場・倉札・信用を整え、月次収入を伸ばす。", { repeatable: true }),
-  "city.patrol": command("city.patrol", "city", "治安巡回", "patrol", { money: 3 }, "巡回と負担調整を行い、治安と徴募回復を支える。", { repeatable: true }),
-  "city.repair": command("city.repair", "city", "都市補修", "repair", { money: 5 }, "城壁・街道・埠頭を補修し、防備と造船力を増やす。", { repeatable: true }),
-  "city.drill": command("city.drill", "city", "駐屯訓練", "drill", { money: 4 }, "駐屯兵を訓練し、実効戦力を高める。", { repeatable: true }),
-  "admin.harbor_standard": command("admin.harbor_standard", "city", "州間規格を統一", "harbor", { money: 8 }, "三州の車軸・荷札・通行時刻を一つの公路令に揃える。", { defaultCityId: "orta" }),
-  "navy.soundings": command("navy.soundings", "military", "灰冠峠を測量", "scouting", { money: 5 }, "側道・渡河点・敵哨戒を確認し、軍情報を改善する。", { defaultCityId: "orta" }),
-  "diplomacy.talks": command("diplomacy.talks", "diplomacy", "国境会談を提案", "diplomacy", { money: 3 }, "隊商差押えの停止と関税引下げを交渉する。", { defaultCityId: "selene" }),
-  "diplomacy.trade": command("diplomacy.trade", "diplomacy", "大陸交易協定を打診", "diplomacy", { money: 6 }, "相互の市場と街道使用を制度化する。", { defaultCityId: "selene" }),
-  "diplomacy.aid": command("diplomacy.aid", "diplomacy", "国境商会を支援", "diplomacy", { money: 14 }, "ヴァルカの国境商会へ資金を供与する。", { defaultCityId: "selene" }),
-  "diplomacy.justify": command("diplomacy.justify", "diplomacy", "国境侵犯を公示", "justification", { money: 4 }, "差押え記録と条約違反を周辺諸国へ公開する。", { defaultCityId: "selene" }),
-  "military.mobilize": command("military.mobilize", "military", "東部国境軍を動員", "mobilize", { money: 7, draftPopulation: 180 }, "徴募可能人口から兵を集める。", { defaultCityId: "orta", repeatable: true, governanceCost: 2 }),
-  "court.serve": command("court.serve", "people", "仕官", "recruitment", { money: 4 }, "測量士イルヴァへ仕官を取り次ぐ。", { defaultCityId: "selene", targetOfficerId: "ilva" }),
-  "court.invite": command("court.invite", "people", "勧誘", "recruitment", { money: 7 }, "ダリオを誘い、友軍の放浪隊を結成する。", { defaultCityId: "orta", targetOfficerId: "dario" }),
-  "court.recruit": command("court.recruit", "people", "登用", "recruitment", { money: 10 }, "ミレルを外交官として登用する。", { defaultCityId: "nereia", targetOfficerId: "mirel" }),
+  "welfare.relief": command("welfare.relief", "city", "social_security", "生活支援給付", "patrol", { money: 6 }, "困窮世帯へ給付を行い、民心と地域の安定を回復する。", { repeatable: true }),
+  "welfare.health": command("welfare.health", "city", "social_security", "公衆衛生事業", "repair", { money: 5 }, "診療所、井戸、下水を整備し、衛生と民心を改善する。", { repeatable: true }),
+  "city.patrol": command("city.patrol", "city", "social_security", "治安巡回", "patrol", { money: 3 }, "巡回と負担調整を行い、治安と徴募回復を支える。", { repeatable: true }),
+  "city.drill": command("city.drill", "city", "military_affairs", "駐屯訓練", "drill", { money: 4 }, "駐屯兵を訓練し、実効戦力を高める。", { repeatable: true }),
+  "military.mobilize": command("military.mobilize", "military", "military_affairs", "東部国境軍を動員", "mobilize", { money: 7, draftPopulation: 180 }, "徴募可能人口から兵を集める。", { defaultCityId: "orta", repeatable: true, governanceCost: 2 }),
+  "court.invite": command("court.invite", "people", "military_affairs", "放浪隊を軍務へ勧誘", "recruitment", { money: 7 }, "ダリオを誘い、友軍の放浪隊を結成する。", { defaultCityId: "orta", targetOfficerId: "dario" }),
+  "research.administration": command("research.administration", "city", "research_development", "行政技術を研究", "harbor", { money: 7 }, "戸籍、会計、文書様式を研究し、行政効率と腐敗対策を改善する。", { repeatable: true }),
+  "admin.harbor_standard": command("admin.harbor_standard", "city", "research_development", "州間規格を統一", "harbor", { money: 8 }, "三州の車軸・荷札・通行時刻を一つの公路令に揃える。", { defaultCityId: "orta" }),
+  "navy.soundings": command("navy.soundings", "military", "research_development", "灰冠峠を測量", "scouting", { money: 5 }, "側道・渡河点・敵哨戒を確認し、軍情報を改善する。", { defaultCityId: "orta" }),
+  "court.serve": command("court.serve", "people", "research_development", "測量士を研究職へ登用", "recruitment", { money: 4 }, "測量士イルヴァへ仕官を取り次ぐ。", { defaultCityId: "selene", targetOfficerId: "ilva" }),
+  "diplomacy.talks": command("diplomacy.talks", "diplomacy", "foreign_aid", "国境会談へ使節を派遣", "diplomacy", { money: 3 }, "隊商差押えの停止と関税引下げを交渉する。", { defaultCityId: "selene" }),
+  "diplomacy.aid": command("diplomacy.aid", "diplomacy", "foreign_aid", "国境商会を支援", "diplomacy", { money: 14 }, "ヴァルカの国境商会へ資金を供与する。", { defaultCityId: "selene" }),
+  "diplomacy.justify": command("diplomacy.justify", "diplomacy", "foreign_aid", "国境侵犯を対外公示", "justification", { money: 4 }, "差押え記録と条約違反を周辺諸国へ公開する。", { defaultCityId: "selene" }),
+  "court.recruit": command("court.recruit", "people", "foreign_aid", "外交顧問を登用", "recruitment", { money: 10 }, "ミレルを外交官として登用する。", { defaultCityId: "nereia", targetOfficerId: "mirel" }),
+  "debt.principal": command("debt.principal", "fiscal", "debt_repayment", "国債元本を返済", "commerce", { money: 8 }, "王都金庫から国債元本を返済し、国家債務を8減らす。", { defaultCityId: "selene", repeatable: true, debtPayment: 8 }),
+  "city.cultivate": command("city.cultivate", "city", "economic_investment", "開墾", "cultivate", { money: 4 }, "水路と共同地を整え、生産力と食料収支を改善する。", { repeatable: true }),
+  "city.commerce": command("city.commerce", "city", "economic_investment", "商業振興", "commerce", { money: 5 }, "市場・倉札・信用を整え、月次収入を伸ばす。", { repeatable: true }),
+  "city.repair": command("city.repair", "city", "economic_investment", "都市基盤を補修", "repair", { money: 5 }, "城壁・街道・埠頭を補修し、防備と造船力を増やす。", { repeatable: true }),
+  "diplomacy.trade": command("diplomacy.trade", "diplomacy", "economic_investment", "大陸交易協定を打診", "diplomacy", { money: 6 }, "相互の市場と街道使用を制度化する。", { defaultCityId: "selene" }),
 };
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
@@ -189,15 +303,58 @@ function startingProblems() {
 }
 
 function foreignState(relation, army, mobility, training, organization, cohesion, hostility, interventionWeight, stance) {
-  return { relation, army, mobility, supportColumns: Math.max(6, Math.round(army / 260)), training, organization, cohesion, hostility, interventionWeight, stance };
+  return {
+    relation, army, mobility, supportColumns: Math.max(6, Math.round(army / 260)), training, organization,
+    cohesion, hostility, interventionWeight, stance, infrastructure: 100,
+    civilianPopulation: army * 12, displaced: 0, civilianLosses: 0, warDamage: 0,
+  };
+}
+
+export function normalizeWarState(state) {
+  state.version = 7;
+  state.occupations ??= [];
+  state.warHistory ??= [];
+  Object.values(state.foreignStates ?? {}).forEach((country) => {
+    country.infrastructure = Number.isFinite(country.infrastructure) ? country.infrastructure : 100;
+    country.civilianPopulation = Number.isFinite(country.civilianPopulation) ? country.civilianPopulation : Math.max(1000, (country.army ?? 0) * 12);
+    country.displaced = Number.isFinite(country.displaced) ? country.displaced : 0;
+    country.civilianLosses = Number.isFinite(country.civilianLosses) ? country.civilianLosses : 0;
+    country.warDamage = Number.isFinite(country.warDamage) ? country.warDamage : 0;
+  });
+  if (state.war) {
+    state.war.side ??= "attacker";
+    state.war.plan ??= state.war.side === "defender" ? "defend" : "pass";
+    state.war.devastation ??= 0;
+    state.war.homeDamage ??= 0;
+    state.war.displaced ??= 0;
+    state.war.civilianLosses ??= 0;
+    state.war.stage ??= getWarStage(state.war)?.id ?? "opening";
+  }
+  state.occupations.forEach((occupation) => {
+    occupation.status ??= "occupied";
+    occupation.policy ??= "autonomy";
+    occupation.months ??= 0;
+    occupation.control ??= 55;
+    occupation.resistance ??= 45;
+    occupation.integration ??= 0;
+    occupation.assimilation ??= 0;
+    occupation.infrastructure ??= 55;
+    occupation.displaced ??= 0;
+    occupation.civilianLosses ??= 0;
+    occupation.garrison ??= 360;
+    occupation.requiredGarrison ??= 420;
+    occupation.history ??= [];
+  });
+  return state;
 }
 
 export function createInitialState() {
   const state = {
-    version: 5, year: 317, month: 4, turn: 0, phase: "planning", nextOrderId: 1,
+    version: 7, year: 317, month: 4, turn: 0, phase: "planning", nextOrderId: 1,
     rngSeed: 3170401, eventCooldowns: {}, eventPity: 0, pendingOrders: [], pendingEvent: null, pendingMonthReport: null,
-    monthlyReports: [], annualReports: [], governancePenalty: 0,
+    monthlyReports: [], annualReports: [], lastViewedReportId: null, governancePenalty: 0,
     legitimacy: 68, justification: 58, warExhaustion: 0, intelNetwork: 33,
+    fiscal: { publicDebt: 24, totalDebtRepaid: 0 },
     cities: {
       selene: cityState({ population: 18400, food: 7200, money: 38, production: 55, commerce: 72, security: 69, support: 61, defense: 51, sanitation: 58, corruption: 12, administration: 72, housing: 20500, preservation: 92, fear: 12, draft: 860, troops: 880, sailors: 260, ships: 3, training: 58, shipyard: 31, governorId: "edras", facilityLevels: { farmland: 2, market: 2, road: 2, granary: 1, barracks: 1, office: 2 } }),
       nereia: cityState({ population: 13700, food: 5600, money: 32, production: 42, commerce: 78, security: 57, support: 54, defense: 46, sanitation: 51, corruption: 18, administration: 61, housing: 15200, preservation: 90, fear: 16, draft: 690, troops: 720, sailors: 420, ships: 3, training: 61, shipyard: 68, governorId: "mara", facilityLevels: { farmland: 1, market: 2, road: 2, granary: 1, barracks: 1, office: 1 } }),
@@ -227,13 +384,16 @@ export function createInitialState() {
       lustrond: foreignState(9, 1280, 52, 51, 55, 61, 21, 38, "慎重中立"),
       izmenia: foreignState(-8, 2440, 64, 65, 62, 68, 34, 54, "機会待ち"),
       heavens_gate: foreignState(2, 3680, 69, 71, 74, 78, 29, 82, "大陸秩序"),
+      deadland: foreignState(-12, 5280, 48, 78, 82, 91, 46, 79, "冥府不介入"),
+      great_empire: foreignState(5, 6120, 58, 73, 79, 83, 31, 88, "帝国均衡"),
+      avanheln: foreignState(11, 4740, 72, 81, 76, 86, 27, 74, "山岳守勢"),
     },
-    war: null,
+    war: null, occupations: [], warHistory: [],
     log: [{ id: "opening", date: "誓暦317年 青月", scope: "評定", title: "春季評定が招集された", text: "隊商差押え、道路規格の不一致、敵守備隊報告を前に、今季の方針と担当武将を決める。", tone: "danger" }],
   };
   startingProblems().forEach((issue) => state.cities[issue.cityId].issues.push(issue));
   normalizeAdministrationState(WORLD, state);
-  return state;
+  return normalizeWarState(state);
 }
 
 export function getCampaignStatus(state) {
@@ -266,6 +426,16 @@ export function getTurnGuidance(state) {
     };
   }
 
+  const latestReport = state.monthlyReports?.[0];
+  if (latestReport && state.lastViewedReportId !== latestReport.id) {
+    return {
+      step: 4, stepLabel: "月次報告",
+      title: `${latestReport.season} ${latestReport.monthName}の結果を確認する`,
+      description: "都市収支、実行した命令、戦況、事件結果を確認すると、次月の方針へ進みます。",
+      action: "open_reports", actionLabel: "月次報告を確認する",
+    };
+  }
+
   const campaign = getCampaignStatus(state);
   if (campaign.complete) {
     return {
@@ -286,6 +456,22 @@ export function getTurnGuidance(state) {
   }
 
   if (!state.pendingOrders.length) {
+    const foodSecurity = getFoodSecurityStatus(state);
+    const foodEmergency = foodSecurity.primaryCity?.severity === "danger"
+      ? foodSecurity.primaryCity
+      : null;
+    if (foodEmergency) {
+      const availability = getCommandAvailability(state, "city.cultivate", null, foodEmergency.cityId);
+      return {
+        step: 2, stepLabel: "食料危機",
+        title: `${foodEmergency.name}の食料収支を立て直す`,
+        description: `次月末の備蓄は${Math.max(0, Math.round(foodEmergency.after)).toLocaleString("ja-JP")}、現在の減少幅では約${foodEmergency.afterRunway.toFixed(1)}か月分です。開戦や追加支出より先に、食料生産を確保してください。`,
+        action: availability.allowed ? "open_command" : "open_spending",
+        actionLabel: availability.allowed ? "開墾の担当武将を選ぶ" : "経済投資を確認する",
+        commandId: availability.allowed ? "city.cultivate" : null,
+        cityId: foodEmergency.cityId,
+      };
+    }
     if (state.war) {
       return {
         step: 2, stepLabel: "戦役方針",
@@ -307,17 +493,17 @@ export function getTurnGuidance(state) {
         step: 2, stepLabel: "国境決着",
         title: "国境通行権を要求する方法を決める",
         description: "国境会談で関係は改善しましたが、通行権はまだ保証されていません。軍事画面で限定目的と開戦条件を確認してください。",
-        action: "open_military", actionLabel: "軍事画面で要求を定める",
+        action: "open_war_council", actionLabel: "戦争評定で要求を定める",
       };
     }
     return {
-      step: 2, stepLabel: "今月の命令",
-      title: recommended ? `「${COMMANDS[recommended.commandId].name}」を検討する` : "今月の命令を一つ決める",
+      step: 2, stepLabel: "今月の支出",
+      title: recommended ? `「${COMMANDS[recommended.commandId].name}」を検討する` : "今月の支出を一つ決める",
       description: recommended
         ? `${recommended.reason}ための推奨命令です。担当武将を選ぶと今月の計画へ入ります。`
-        : "都市・外交・軍事から課題を一つ選び、担当武将を割り当ててください。",
-      action: recommended ? "open_command" : "open_city",
-      actionLabel: recommended ? "担当武将を選ぶ" : "都市の課題を見る",
+        : "六つの国家支出から目的を選び、その配下の具体策へ担当武将を割り当ててください。",
+      action: recommended ? "open_command" : "open_spending",
+      actionLabel: recommended ? "担当武将を選ぶ" : "国家支出を選ぶ",
       commandId: recommended?.commandId ?? null,
       cityId: recommended?.cityId ?? WORLD.nation.capital,
     };
@@ -345,7 +531,9 @@ function logEntry(state, scope, title, text, tone = "neutral") {
 }
 
 export function deriveCityMetrics(state, cityId) { return modelCityMetrics(WORLD, state, cityId); }
-export function deriveRealmLedger(state) { return modelRealmLedger(WORLD, state); }
+export function deriveRealmLedger(state) {
+  return { ...modelRealmLedger(WORLD, state), publicDebt: state.fiscal?.publicDebt ?? 24 };
+}
 export function deriveAdministrationNetwork(state) { return modelAdministrationNetwork(WORLD, state, deriveRealmLedger(state).cities); }
 export function getCityAdministration(state, cityId) { return modelCityAdministration(WORLD, state, cityId, deriveCityMetrics(state, cityId)); }
 export function getOfficerReport(state, officerId) { return getOfficer(WORLD, state, officerId); }
@@ -392,6 +580,12 @@ export function getCountryReport(state, countryId) {
   return { ...country, ...foreign, power };
 }
 
+export function getEnemyCommander(state, countryId = state.war?.targetCountryId ?? "valka") {
+  const commander = ENEMY_COMMANDERS[countryId];
+  if (!commander) return null;
+  return { ...commander, country: getCountryReport(state, countryId) };
+}
+
 export function getContinentalBalance(state, targetId = "valka") {
   const surrounding = Object.entries(state.foreignStates).filter(([id]) => id !== targetId);
   const interventionRisk = clamp(Math.round(surrounding.reduce((sum, [, country]) => {
@@ -429,7 +623,11 @@ export function getMilitarySummary(state) {
   const mobility = clamp(Math.round((road?.operatingRate ?? 0.6) * 28 + frontierCity.training * 0.25 + commander.stats.leadership * 0.22 + force.morale * 0.15 + (100 - state.issues.standards.severity) * 0.1), 0, 100);
   const supplyCoverage = clamp(Math.round(ledger.deliverableFood / Math.max(1, ledger.mobilizableTroops * 2.1) * 100), 0, 100);
   const organization = clamp(Math.round(force.organization * 0.52 + commandScore * 0.36 + ledger.capacityCoverage * 0.06 + ledger.defense * 0.06), 0, 100);
-  return { army: ledger.mobilizableTroops + (state.officers.dario.allegiance === "retinue" ? 220 : 0), supportColumns: Math.max(6, Math.round(ledger.mobilizableTroops / 300)), training: ledger.training, organization, mobility, supply: supplyCoverage, commander, deputy, force, mutualBond: bond };
+  const occupationGarrisons = (state.occupations ?? [])
+    .filter((occupation) => occupation.status === "occupied")
+    .reduce((sum, occupation) => sum + occupation.garrison, 0);
+  const fieldArmy = Math.max(0, ledger.mobilizableTroops - occupationGarrisons) + (state.officers.dario.allegiance === "retinue" ? 220 : 0);
+  return { army: fieldArmy, occupationGarrisons, supportColumns: Math.max(6, Math.round(Math.max(1, fieldArmy) / 300)), training: ledger.training, organization, mobility, supply: supplyCoverage, commander, deputy, force, mutualBond: bond };
 }
 
 function resolveCityId(item, cityId) { return item.defaultCityId ?? cityId ?? WORLD.nation.capital; }
@@ -441,6 +639,7 @@ export function getCommandAvailability(state, commandId, officerId = null, cityI
   const targetCityId = resolveCityId(item, cityId);
   const city = state.cities[targetCityId];
   if (!city) return { allowed: false, reason: "対象都市が不明" };
+  if (item.debtPayment && (state.fiscal?.publicDebt ?? 24) <= 0) return { allowed: false, reason: "返済すべき国債がありません" };
   if (!item.repeatable && (state.completedCommands.includes(commandId) || state.commandQueue.some((task) => task.commandId === commandId) || state.pendingOrders.some((order) => order.commandId === commandId))) return { allowed: false, reason: "実行済みまたは予約中" };
   if (state.commandQueue.some((task) => task.commandId === commandId && task.cityId === targetCityId)) return { allowed: false, reason: "同じ任務を実行中" };
   const reservedMoney = state.pendingOrders.filter((order) => order.cityId === targetCityId).reduce((sum, order) => sum + (order.cost?.money ?? 0), 0);
@@ -538,9 +737,12 @@ function completeCommand(state, task) {
   switch (task.commandId) {
     case "city.cultivate": city.resources.production = clamp(city.resources.production + delta, 0, 100); break;
     case "city.commerce": city.resources.commerce = clamp(city.resources.commerce + delta, 0, 100); break;
+    case "welfare.relief": city.resources.support = clamp(city.resources.support + Math.max(2, Math.round(delta * 1.4)), 0, 100); city.resources.security = clamp(city.resources.security + Math.max(1, Math.round(delta / 2)), 0, 100); break;
+    case "welfare.health": city.internal.sanitation = clamp(city.internal.sanitation + Math.max(2, Math.round(delta * 1.5)), 0, 100); city.resources.support = clamp(city.resources.support + Math.max(1, Math.round(delta / 2)), 0, 100); break;
     case "city.patrol": city.resources.security = clamp(city.resources.security + delta, 0, 100); break;
     case "city.repair": city.resources.defense = clamp(city.resources.defense + delta, 0, 100); city.facilities.road.condition = clamp(city.facilities.road.condition + delta * 2, 0, 100); break;
     case "city.drill": city.military.training = clamp(city.military.training + delta, 0, 100); break;
+    case "research.administration": city.internal.administrativeEfficiency = clamp(city.internal.administrativeEfficiency + Math.max(2, Math.round(delta * 1.4)), 0, 100); city.internal.corruption = clamp(city.internal.corruption - Math.max(1, Math.round(delta / 2)), 0, 100); break;
     case "admin.harbor_standard":
       state.issues.standards.severity = clamp(state.issues.standards.severity - outcome, 0, 100);
       if (state.issues.standards.severity <= 15) state.issues.standards.status = "resolved";
@@ -551,6 +753,14 @@ function completeCommand(state, task) {
     case "diplomacy.trade": state.foreignStates.valka.relation = clamp(state.foreignStates.valka.relation + delta, -100, 100); if (outcome >= 58) state.agreements.trade = true; break;
     case "diplomacy.aid": state.foreignStates.valka.relation = clamp(state.foreignStates.valka.relation + Math.round(delta * 1.5), -100, 100); if (outcome >= 55) state.agreements.aid = true; break;
     case "diplomacy.justify": state.justification = clamp(state.justification + delta * 2, 0, 100); break;
+    case "debt.principal": {
+      state.fiscal ??= { publicDebt: 24, totalDebtRepaid: 0 };
+      const payment = Math.min(item.debtPayment, state.fiscal.publicDebt);
+      state.fiscal.publicDebt = Math.max(0, state.fiscal.publicDebt - payment);
+      state.fiscal.totalDebtRepaid = (state.fiscal.totalDebtRepaid ?? 0) + payment;
+      state.legitimacy = clamp(state.legitimacy + 1, 0, 100);
+      break;
+    }
     case "military.mobilize": city.military.troops += Math.round(110 + outcome * 0.55); city.military.training = clamp(city.military.training + Math.max(1, Math.round(outcome / 30)), 0, 100); city.resources.security = clamp(city.resources.security - Math.max(2, Math.round(7 - outcome / 25)), 0, 100); break;
     case "court.serve": state.officers.ilva.allegiance = "serving"; state.officers.ilva.rank = "国境測量官"; state.officers.ilva.rankLevel = 2; break;
     case "court.invite": state.officers.dario.allegiance = "retinue"; break;
@@ -584,10 +794,18 @@ function orderTitle(order) {
   return `${FACTION_DEFINITIONS[order.factionId].name}へ${FACTION_ACTIONS[order.action].name}`;
 }
 
+function orderSpendingCategory(order) {
+  if (order.kind === "command") return COMMANDS[order.commandId]?.spendingCategory ?? "economic_investment";
+  if (order.kind === "facility") return "economic_investment";
+  if (order.kind === "faction") return order.action === "suppress" ? "military_affairs" : "social_security";
+  return "social_security";
+}
+
 function actionRecord(order) {
   return {
     id: order.id, kind: order.kind, cityId: order.cityId, title: orderTitle(order),
     status: "started", detail: "実行を開始", cost: clone(order.cost ?? {}),
+    commandId: order.commandId ?? null, spendingCategory: orderSpendingCategory(order),
     governanceCost: order.governanceCost, forced: order.forced, forcedPoints: order.forcedPoints ?? 0,
   };
 }
@@ -679,6 +897,23 @@ function resourceChanges(before, after) {
   return Object.fromEntries(Object.keys(before).map((key) => [key, Number((after[key] - before[key]).toFixed(1))]));
 }
 
+function cityOperatingFiscal(metrics) {
+  const expenditure = Object.fromEntries(Object.keys(SPENDING_CATEGORIES).map((id) => [id, 0]));
+  expenditure.social_security += metrics.officerWages;
+  metrics.facilities.facilities.forEach((facility) => {
+    const category = facility.id === "barracks" ? "military_affairs"
+      : facility.id === "office" ? "research_development"
+        : facility.id === "granary" ? "social_security"
+          : "economic_investment";
+    expenditure[category] += facility.upkeepTotal;
+  });
+  expenditure.military_affairs += metrics.troopUpkeep + metrics.fleetUpkeep;
+  return {
+    income: { land_tax: metrics.landTaxIncome, commerce_tax: metrics.commerceTaxIncome, other_income: 0 },
+    expenditure,
+  };
+}
+
 function applyCityMonth(state, cityId, opening) {
   const city = state.cities[cityId];
   const before = clone(city.resources);
@@ -703,6 +938,7 @@ function applyCityMonth(state, cityId, opening) {
     changes: resourceChanges(opening, city.resources),
     breakdown: { orders: resourceChanges(opening, before), monthly: resourceChanges(before, city.resources), external: {} },
     factors: metrics.forecasts,
+    fiscal: cityOperatingFiscal(metrics),
   };
 }
 
@@ -730,38 +966,153 @@ function applyTroopLosses(state, amount) {
   });
 }
 
+function applyForeignWarDamage(state, war, plan, delta) {
+  const country = state.foreignStates[war.targetCountryId];
+  const damage = Math.max(0, plan.targetDamage + Math.max(0, delta) * 0.08);
+  const displaced = Math.max(0, Math.round(plan.displacement + damage * 9));
+  const civilianLosses = Math.max(0, Math.round(plan.civilianLoss + damage * 0.35));
+  country.infrastructure = clamp(country.infrastructure - damage, 0, 100);
+  country.warDamage = clamp(country.warDamage + damage, 0, 100);
+  country.displaced += displaced;
+  country.civilianLosses += civilianLosses;
+  country.civilianPopulation = Math.max(0, country.civilianPopulation - civilianLosses);
+  war.devastation = clamp(war.devastation + damage, 0, 100);
+  war.displaced += displaced;
+  war.civilianLosses += civilianLosses;
+  return { damage, displaced, civilianLosses };
+}
+
+function applyHomeWarDamage(state, war, plan, opponentAction) {
+  const enemyPressure = ({ advance: 1.2, assault: 4.8, bombard: 3.2, raid_supply: 1.4, regroup: 0.3 })[opponentAction.id] ?? 0.8;
+  const damage = Math.max(0, plan.homeDamage + enemyPressure);
+  const city = state.cities.orta;
+  const displaced = Math.max(0, Math.round(plan.displacement + damage * 16));
+  const civilianLosses = Math.max(0, Math.round(plan.civilianLoss + damage * 0.55));
+  city.resources.defense = clamp(city.resources.defense - damage * 0.5, 0, 100);
+  city.resources.production = clamp(city.resources.production - damage * 0.18, 0, 100);
+  city.resources.commerce = clamp(city.resources.commerce - damage * 0.12, 0, 100);
+  city.resources.support = clamp(city.resources.support - damage * 0.16, 0, 100);
+  city.resources.population = Math.max(0, city.resources.population - civilianLosses);
+  city.facilities.road.condition = clamp(city.facilities.road.condition - damage * 1.5, 0, 100);
+  city.facilities.barracks.condition = clamp(city.facilities.barracks.condition - damage, 0, 100);
+  war.homeDamage = clamp(war.homeDamage + damage, 0, 100);
+  war.displaced += displaced;
+  war.civilianLosses += civilianLosses;
+  return { damage, displaced, civilianLosses };
+}
+
 function resolveWarMonth(state) {
   if (!state.war) return null;
   const war = state.war;
   const objective = WAR_OBJECTIVES[war.objectiveId];
   const military = getMilitarySummary(state);
   const enemy = state.foreignStates[war.targetCountryId];
-  const opponentAction = chooseOpponentAction({ own: { supply: military.supply, exhaustion: state.warExhaustion }, enemy, warScore: war.score, objective });
-  const planEffects = {
-    interdict: { pressure: 5, foodCost: 1450, exhaustion: 1.6, name: "街道遮断" },
-    pass: { pressure: 3, foodCost: 1080, exhaustion: 1, name: "峠確保" },
-    siege: { pressure: 8, foodCost: 2050, exhaustion: 3.2, name: "城砦攻囲" },
-  };
-  const plan = planEffects[war.plan];
+  const opponentAction = chooseOpponentAction({
+    own: { supply: military.supply, exhaustion: state.warExhaustion }, enemy,
+    enemyRole: war.side === "defender" ? "attacker" : "defender", warScore: war.score, objective,
+  });
+  const plan = WAR_PLANS[war.plan] ?? WAR_PLANS[war.side === "defender" ? "defend" : "pass"];
   const formation = FORMATIONS[military.force.formation];
   const ratio = (military.army * military.training * military.organization + military.supportColumns * military.mobility * 2100) / Math.max(1, enemy.army * enemy.training * enemy.organization + enemy.supportColumns * enemy.mobility * 2100);
-  let delta = clamp((ratio - 1) * 18 + plan.pressure + formation.score + (getIntelligence(state) - 50) * 0.03 + (military.supply - 50) * 0.035, -10, 13);
+  const defensiveGround = war.side === "defender" ? 4 + state.cities.orta.resources.defense / 25 : 0;
+  let delta = clamp((ratio - 1) * 18 + plan.pressure + formation.score + defensiveGround + (getIntelligence(state) - 50) * 0.03 + (military.supply - 50) * 0.035, -10, 13);
   if (opponentAction.id === "raid_supply") consumeWarFood(state, 520);
   if (opponentAction.id === "counterstroke") delta -= 3;
   if (opponentAction.id === "entrench" && war.plan === "siege") delta -= 4;
+  if (opponentAction.id === "assault") delta -= 4;
+  if (opponentAction.id === "advance") delta -= 1.5;
+  if (opponentAction.id === "bombard") delta -= 2.5;
+  if (opponentAction.id === "regroup") delta += 2;
   const uncovered = consumeWarFood(state, Math.round(plan.foodCost * (1 - formation.supply * 0.04)));
   if (uncovered > 0) delta -= 4;
   war.score = clamp(war.score + delta, -100, 100); war.months += 1; war.lastEnemyAction = opponentAction;
   war.objectiveProgress = clamp(war.objectiveProgress + Math.max(0, delta * 1.35), 0, 100);
   state.warExhaustion = clamp(state.warExhaustion + plan.exhaustion + Math.max(0, uncovered / 400), 0, 100);
   war.lastOwnAction = plan.name;
-  const ownLoss = Math.max(18, Math.round(34 + plan.exhaustion * 12 + Math.max(0, -delta) * 5 + formation.loss));
-  const enemyLoss = Math.max(16, Math.round(30 + Math.max(0, delta) * 5));
+  state.legitimacy = clamp(state.legitimacy + (plan.legitimacy ?? 0), 0, 100);
+  const ownLoss = Math.max(8, Math.round(34 + plan.exhaustion * 12 + Math.max(0, -delta) * 5 + formation.loss + plan.ownLoss));
+  const enemyLoss = Math.max(12, Math.round(30 + Math.max(0, delta) * 5 + plan.enemyLoss));
   applyTroopLosses(state, ownLoss); enemy.army = Math.max(300, enemy.army - enemyLoss);
+  state.forces.frontier_guard.organization = clamp(state.forces.frontier_guard.organization - ownLoss / 180 + (war.plan === "defend" ? 0.8 : 0), 15, 100);
+  enemy.organization = clamp(enemy.organization - enemyLoss / 220 + (opponentAction.id === "regroup" || opponentAction.id === "entrench" ? 1.5 : 0), 15, 100);
   war.losses += ownLoss; war.enemyLosses += enemyLoss;
+  const damage = war.side === "defender"
+    ? applyHomeWarDamage(state, war, plan, opponentAction)
+    : applyForeignWarDamage(state, war, plan, delta);
   war.peace = evaluatePeaceDecision({ warScore: war.score, objectiveProgress: war.objectiveProgress, objective, own: { exhaustion: state.warExhaustion, organization: military.organization, supply: military.supply } });
-  logEntry(state, "戦争", `${plan.name} — ${opponentAction.label}`, `戦況 ${delta >= 0 ? "+" : ""}${delta.toFixed(1)}。兵 ${ownLoss}、食料 ${plan.foodCost.toLocaleString("ja-JP")}を消費。`, delta >= 0 ? "success" : "danger");
-  return { delta, ownLoss, enemyLoss, foodCost: plan.foodCost, opponentAction };
+  war.stage = getWarStage(war).id;
+  logEntry(state, "戦争", `${plan.name} — ${opponentAction.label}`, `戦況 ${delta >= 0 ? "+" : ""}${delta.toFixed(1)}。兵 ${ownLoss}、食料 ${plan.foodCost.toLocaleString("ja-JP")}、施設被害 ${damage.damage.toFixed(1)}、避難民 ${damage.displaced}。`, delta >= 0 ? "success" : "danger");
+  return { delta, ownLoss, enemyLoss, foodCost: plan.foodCost, opponentAction, planId: plan.id, side: war.side, ...damage };
+}
+
+function spendOccupationMoney(state, amount) {
+  const cities = Object.values(state.cities).slice().sort((left, right) => right.resources.money - left.resources.money);
+  let remaining = amount;
+  cities.forEach((city) => {
+    const paid = Math.min(Math.max(0, city.resources.money), remaining);
+    city.resources.money -= paid;
+    remaining -= paid;
+  });
+  return remaining;
+}
+
+function resolveOccupationMonth(state, occupation) {
+  if (occupation.status !== "occupied") return null;
+  const policy = OCCUPATION_POLICIES[occupation.policy] ?? OCCUPATION_POLICIES.autonomy;
+  const unpaid = spendOccupationMoney(state, policy.moneyCost);
+  const unfed = consumeWarFood(state, policy.foodCost);
+  const supplied = unpaid <= 0 && unfed <= 0;
+  const outcome = occupationPolicyOutcome(occupation, policy.id, supplied);
+  occupation.months += 1;
+  occupation.control = clamp(occupation.control + outcome.control, 0, 100);
+  occupation.resistance = clamp(occupation.resistance + outcome.resistance, 0, 100);
+  occupation.integration = clamp(occupation.integration + outcome.integration, 0, 100);
+  occupation.assimilation = clamp(occupation.assimilation + outcome.assimilation, 0, 100);
+  occupation.infrastructure = clamp(occupation.infrastructure + outcome.infrastructure, 0, 100);
+  occupation.displaced = Math.max(0, occupation.displaced + outcome.displaced);
+  state.legitimacy = clamp(state.legitimacy + outcome.legitimacy, 0, 100);
+  const foreign = state.foreignStates[occupation.countryId];
+  foreign.relation = clamp(foreign.relation + outcome.relation, -100, 100);
+  state.cities.selene.resources.money += outcome.revenue;
+  let resistanceLoss = 0;
+  let resistanceDamage = 0;
+  if (occupation.resistance >= 70) {
+    resistanceLoss = Math.round(10 + (occupation.resistance - 70) * 0.8);
+    resistanceDamage = 1 + (occupation.resistance - 70) * 0.08;
+    applyTroopLosses(state, resistanceLoss);
+    occupation.infrastructure = clamp(occupation.infrastructure - resistanceDamage, 0, 100);
+    occupation.control = clamp(occupation.control - 1.5, 0, 100);
+  }
+  if (occupation.integration >= 100 && occupation.resistance <= 30) {
+    occupation.status = occupation.policy === "assimilation" && occupation.assimilation >= 80 ? "annexed" : "integrated";
+    occupation.garrison = Math.max(120, Math.round(occupation.garrison * 0.45));
+  }
+  const report = {
+    occupationId: occupation.id, policyId: policy.id, policyName: policy.name, supplied,
+    moneyCost: policy.moneyCost, foodCost: policy.foodCost, revenue: outcome.revenue,
+    controlDelta: outcome.control, resistanceDelta: outcome.resistance,
+    integrationDelta: outcome.integration, assimilationDelta: outcome.assimilation,
+    infrastructureDelta: outcome.infrastructure - resistanceDamage,
+    displacedDelta: outcome.displaced, resistanceLoss, status: occupation.status,
+  };
+  occupation.lastReport = report;
+  occupation.history.unshift({ year: state.year, month: state.month, ...report });
+  occupation.history = occupation.history.slice(0, 24);
+  logEntry(state, "占領", `${occupation.name} — ${policy.name}`, `統制 ${occupation.control.toFixed(0)}、抵抗 ${occupation.resistance.toFixed(0)}、制度統合 ${occupation.integration.toFixed(0)}。${supplied ? "駐屯と行政費を充足。" : "駐屯費または補給が不足。"}`, occupation.resistance >= 70 ? "danger" : "info");
+  return report;
+}
+
+function resolveOccupations(state) {
+  return (state.occupations ?? []).map((occupation) => resolveOccupationMonth(state, occupation)).filter(Boolean);
+}
+
+function maybeStartDefensiveWar(state) {
+  if (state.war || state.turn < 2) return null;
+  const enemy = state.foreignStates.valka;
+  if (enemy.relation > -65 || enemy.hostility < 75) return null;
+  state.war = createWarState("valka", "homeland_defense", "defender");
+  logEntry(state, "侵攻", "ヴァルカ軍が東境州へ侵攻", "国境交渉が決裂し、灰冠峠から侵攻軍が前進した。東部国境軍は防衛戦闘へ移る。", "danger");
+  return { countryId: "valka", objectiveId: "homeland_defense" };
 }
 
 function nextRandom(state) { state.rngSeed = (Math.imul(state.rngSeed, 1664525) + 1013904223) >>> 0; return state.rngSeed / 4294967296; }
@@ -876,11 +1227,97 @@ function applyEffect(city, effect) {
   if (effect.activeEffect) city.activeEffects.push(clone(effect.activeEffect));
 }
 
+const EVENT_SPENDING_CATEGORIES = {
+  crop_failure: "social_security",
+  flood: "social_security",
+  bandits: "military_affairs",
+  epidemic: "social_security",
+  refugees: "social_security",
+  corruption: "research_development",
+  merchant_exit: "economic_investment",
+  peasant_revolt: "social_security",
+};
+
+function sumValues(values) {
+  return Object.values(values).reduce((sum, value) => sum + (Number(value) || 0), 0);
+}
+
+function roundFiscal(value) {
+  return Number((Number(value) || 0).toFixed(1));
+}
+
+function createFiscalReport(report) {
+  const income = Object.fromEntries(Object.keys(REVENUE_CATEGORIES).map((id) => [id, 0]));
+  const expenditure = Object.fromEntries(Object.keys(SPENDING_CATEGORIES).map((id) => [id, 0]));
+  report.cities.forEach((local) => {
+    Object.keys(income).forEach((id) => { income[id] += local.fiscal?.income?.[id] ?? 0; });
+    Object.keys(expenditure).forEach((id) => { expenditure[id] += local.fiscal?.expenditure?.[id] ?? 0; });
+  });
+  (report.actions ?? []).forEach((action) => {
+    const cost = Math.max(0, Number(action.cost?.money) || 0);
+    if (!cost) return;
+    const category = SPENDING_CATEGORIES[action.spendingCategory] ? action.spendingCategory : "economic_investment";
+    expenditure[category] += cost;
+  });
+  (report.events ?? []).forEach((event) => {
+    const effect = Number(event.moneyEffect) || 0;
+    if (effect > 0) income.other_income += effect;
+    if (effect < 0) {
+      const category = SPENDING_CATEGORIES[event.spendingCategory] ? event.spendingCategory : "social_security";
+      expenditure[category] += Math.abs(effect);
+    }
+  });
+  (report.occupations ?? []).forEach((occupation) => {
+    expenditure.military_affairs += Math.max(0, occupation.moneyCost ?? 0);
+    income.other_income += Math.max(0, occupation.revenue ?? 0);
+  });
+  const balance = roundFiscal(report.realm.money);
+  const knownBalance = roundFiscal(sumValues(income) - sumValues(expenditure));
+  const reconciliation = roundFiscal(balance - knownBalance);
+  if (reconciliation > 0) income.other_income += reconciliation;
+  if (reconciliation < 0) expenditure.social_security += Math.abs(reconciliation);
+  Object.keys(income).forEach((id) => { income[id] = roundFiscal(income[id]); });
+  Object.keys(expenditure).forEach((id) => { expenditure[id] = roundFiscal(expenditure[id]); });
+  let incomeTotal = roundFiscal(sumValues(income));
+  let expenditureTotal = roundFiscal(sumValues(expenditure));
+  const roundedReconciliation = roundFiscal(balance - (incomeTotal - expenditureTotal));
+  if (roundedReconciliation > 0) income.other_income = roundFiscal(income.other_income + roundedReconciliation);
+  if (roundedReconciliation < 0) expenditure.social_security = roundFiscal(expenditure.social_security + Math.abs(roundedReconciliation));
+  incomeTotal = roundFiscal(sumValues(income));
+  expenditureTotal = roundFiscal(sumValues(expenditure));
+  const openingTreasury = roundFiscal(report.cities.reduce((sum, city) => sum + (city.before.money ?? 0), 0));
+  const closingTreasury = roundFiscal(report.cities.reduce((sum, city) => sum + (city.after.money ?? 0), 0));
+  return {
+    income: { ...income, total: incomeTotal },
+    expenditure: { ...expenditure, total: expenditureTotal },
+    balance,
+    openingTreasury,
+    closingTreasury,
+  };
+}
+
 function annualReport(state, year) {
   const reports = state.monthlyReports.filter((report) => report.year === year);
   const totals = { money: 0, food: 0, population: 0, security: 0, support: 0 };
   reports.forEach((report) => report.cities.forEach((city) => Object.keys(totals).forEach((key) => { totals[key] += city.changes[key] ?? 0; })));
-  return { id: `annual-${year}`, year, totals, months: reports.length, events: reports.reduce((sum, report) => sum + report.events.length, 0) };
+  const income = Object.fromEntries(Object.keys(REVENUE_CATEGORIES).map((id) => [id, roundFiscal(reports.reduce((sum, report) => sum + (report.fiscal?.income?.[id] ?? 0), 0))]));
+  const expenditure = Object.fromEntries(Object.keys(SPENDING_CATEGORIES).map((id) => [id, roundFiscal(reports.reduce((sum, report) => sum + (report.fiscal?.expenditure?.[id] ?? 0), 0))]));
+  const balance = roundFiscal(reports.reduce((sum, report) => sum + (report.fiscal?.balance ?? report.realm.money ?? 0), 0));
+  let incomeTotal = roundFiscal(sumValues(income));
+  let expenditureTotal = roundFiscal(sumValues(expenditure));
+  const reconciliation = roundFiscal(balance - (incomeTotal - expenditureTotal));
+  if (reconciliation > 0) income.other_income = roundFiscal(income.other_income + reconciliation);
+  if (reconciliation < 0) expenditure.social_security = roundFiscal(expenditure.social_security + Math.abs(reconciliation));
+  incomeTotal = roundFiscal(sumValues(income));
+  expenditureTotal = roundFiscal(sumValues(expenditure));
+  const fiscal = {
+    income: { ...income, total: incomeTotal },
+    expenditure: { ...expenditure, total: expenditureTotal },
+    balance,
+    openingTreasury: reports.at(-1)?.fiscal?.openingTreasury ?? null,
+    closingTreasury: reports[0]?.fiscal?.closingTreasury ?? null,
+  };
+  return { id: `annual-${year}`, year, totals, fiscal, months: reports.length, events: reports.reduce((sum, report) => sum + report.events.length, 0) };
 }
 
 function finalizeMonth(state, report) {
@@ -909,23 +1346,26 @@ function refreshReportTotals(state, report) {
   });
   const total = (key) => Number(report.cities.reduce((sum, city) => sum + (city.changes[key] ?? 0), 0).toFixed(1));
   report.realm = { money: total("money"), food: total("food"), population: total("population"), security: total("security"), support: total("support") };
+  report.fiscal = createFiscalReport(report);
   return report;
 }
 
 export function commitMonth(state) {
   if (state.phase !== "planning") throw new Error("先に事件への対応を決めてください");
   if (state.council.pending) throw new Error("季節評定の方針を先に決めてください");
-  const next = clone(state);
+  const next = normalizeWarState(clone(state));
   const opening = Object.fromEntries(Object.entries(next.cities).map(([cityId, city]) => [cityId, clone(city.resources)]));
   const actions = startOrders(next);
   progressWork(next, actions);
   actions.push(...resolveDelegatedAdministration(WORLD, next));
   const cities = Object.keys(next.cities).map((cityId) => applyCityMonth(next, cityId, opening[cityId]));
+  const aggression = maybeStartDefensiveWar(next);
   const war = resolveWarMonth(next);
+  const occupations = resolveOccupations(next);
   const monthName = formatDate(next).split(" ")[1];
   const report = {
     id: `month-${next.year}-${next.month}`, year: next.year, month: next.month, monthName,
-    season: seasonForMonth(next.month).name, cities, war, events: [], actions, realm: {},
+    season: seasonForMonth(next.month).name, cities, aggression, war, occupations, events: [], actions, realm: {},
   };
   refreshReportTotals(next, report);
   const event = drawEvent(next);
@@ -941,13 +1381,25 @@ export function resolveEventChoice(state, choiceId) {
   if (!choice) throw new Error("事件の選択肢が不明です");
   const city = next.cities[next.pendingEvent.cityId];
   applyEffect(city, choice.effect);
-  const eventResult = { eventId: definition.id, cityId: next.pendingEvent.cityId, choiceId, title: definition.name, choice: choice.name, detail: choice.detail };
+  const eventResult = {
+    eventId: definition.id, cityId: next.pendingEvent.cityId, choiceId,
+    title: definition.name, choice: choice.name, detail: choice.detail,
+    moneyEffect: choice.effect.resources?.money ?? 0,
+    spendingCategory: EVENT_SPENDING_CATEGORIES[definition.id] ?? "social_security",
+  };
   next.pendingMonthReport.events.push(eventResult);
   next.eventCooldowns[`${definition.id}:${next.pendingEvent.cityId}`] = 6;
   city.issues = city.issues.filter((issue) => issue.id !== definition.id);
   logEntry(next, "事件", `${definition.name} — ${choice.name}`, `${WORLD.provinces[next.pendingEvent.cityId].name}で「${choice.name}」を選択した。`, "danger");
   refreshReportTotals(next, next.pendingMonthReport);
   return finalizeMonth(next, next.pendingMonthReport);
+}
+
+export function acknowledgeMonthReport(state, reportId = state.monthlyReports?.[0]?.id) {
+  if (!reportId || !state.monthlyReports?.some((report) => report.id === reportId)) throw new Error("確認する月次報告がありません");
+  const next = clone(state);
+  next.lastViewedReportId = reportId;
+  return next;
 }
 
 export function deriveMonthPreview(state) {
@@ -957,25 +1409,145 @@ export function deriveMonthPreview(state) {
   return { report, pendingEvent: projected.pendingEvent, phase: projected.phase };
 }
 
+export function getFoodSecurityStatus(state, preview = undefined) {
+  const ledger = deriveRealmLedger(state);
+  const planningPreview = preview === undefined ? deriveMonthPreview(state) : preview;
+  const severityRank = { stable: 0, warning: 1, danger: 2 };
+  const cities = ledger.cities.map((city) => {
+    const local = planningPreview?.report?.cities?.find((item) => item.cityId === city.cityId);
+    const change = local?.changes?.food ?? city.foodBalance;
+    const after = local?.after?.food ?? city.food + change;
+    const runway = change < 0 ? Math.max(0, city.food) / Math.abs(change) : Number.POSITIVE_INFINITY;
+    const afterRunway = change < 0 ? Math.max(0, after) / Math.abs(change) : Number.POSITIVE_INFINITY;
+    const severity = after <= 0 || afterRunway <= 1.5
+      ? "danger"
+      : runway <= 4 || afterRunway <= 3
+        ? "warning"
+        : "stable";
+    return {
+      cityId: city.cityId,
+      name: city.name,
+      current: city.food,
+      change,
+      after,
+      runway,
+      afterRunway,
+      severity,
+    };
+  }).sort((left, right) => (
+    severityRank[right.severity] - severityRank[left.severity]
+    || left.afterRunway - right.afterRunway
+  ));
+  const primaryCity = cities[0] ?? null;
+  const monthlyChange = cities.reduce((sum, city) => sum + city.change, 0);
+  return {
+    severity: primaryCity?.severity ?? "stable",
+    primaryCity,
+    cities,
+    criticalCities: cities.filter((city) => city.severity !== "stable"),
+    provisions: ledger.provisions,
+    monthlyChange,
+    runwayMonths: monthlyChange < 0 ? ledger.provisions / Math.abs(monthlyChange) : Number.POSITIVE_INFINITY,
+  };
+}
+
+export function getBorderNegotiationStatus(state) {
+  const relation = state.foreignStates.valka.relation;
+  const talksCompleted = state.completedCommands.includes("diplomacy.talks");
+  const transitSecured = Boolean(state.agreements.transit || state.issues.border.status === "resolved");
+  return {
+    relation,
+    openingRelation: -31,
+    relationshipGain: relation + 31,
+    talksCompleted,
+    transitSecured,
+    meetingProgress: talksCompleted || transitSecured ? 100 : 0,
+    status: transitSecured
+      ? "通行権を確保"
+      : talksCompleted
+        ? "会談完了・通行権は未保証"
+        : "国境会談は未実施",
+    description: transitSecured
+      ? "講和または協定により、灰冠峠の通行権は条約化されています。"
+      : talksCompleted
+        ? "一度限りの国境会談で関係は改善しましたが、通行権そのものは得られません。残る決着手段と代償を戦争評定で比較してください。"
+        : "国境会談は関係改善の準備工程です。会談だけで通行権が自動的に得られるわけではありません。",
+  };
+}
+
+export function getWarDeclarationEstimate(state, objectiveId = "transit") {
+  const objective = WAR_OBJECTIVES[objectiveId];
+  if (!objective || objective.mode === "defensive") throw new Error("概算できない戦争目的です");
+  const report = getWarCouncilReport(state, objectiveId);
+  const ledger = deriveRealmLedger(state);
+  const formation = FORMATIONS[state.forces.frontier_guard.formation];
+  const plan = WAR_PLANS[objective.scope === "total" ? "siege" : "pass"];
+  const scorePerMonth = Math.max(0, Number((report.score * 0.14).toFixed(1)));
+  const progressPerMonth = scorePerMonth * 1.35;
+  const peaceScoreThreshold = Number((objective.targetScore * 0.55).toFixed(1));
+  const monthsByScore = scorePerMonth > 0 ? Math.ceil(peaceScoreThreshold / scorePerMonth) : Number.POSITIVE_INFINITY;
+  const monthsByProgress = progressPerMonth > 0 ? Math.ceil(45 / progressPerMonth) : Number.POSITIVE_INFINITY;
+  const estimatedMonths = Number.isFinite(Math.min(monthsByScore, monthsByProgress))
+    ? Math.max(1, Math.min(monthsByScore, monthsByProgress))
+    : null;
+  const foodPerMonth = Math.round(plan.foodCost * (1 - formation.supply * 0.04));
+  const troopLossPerMonth = Math.max(8, Math.round(34 + plan.exhaustion * 12 + formation.loss + plan.ownLoss));
+  const damagePerMonth = Math.max(0, plan.targetDamage + scorePerMonth * 0.08);
+  const displacedPerMonth = Math.max(0, Math.round(plan.displacement + damagePerMonth * 9));
+  const projectedProvisions = estimatedMonths === null
+    ? null
+    : Math.round(ledger.provisions + (ledger.supplyBalance - foodPerMonth) * estimatedMonths);
+  const foodSecurity = getFoodSecurityStatus(state, null);
+  return {
+    objectiveId,
+    objectiveName: objective.name,
+    planId: plan.id,
+    planName: plan.name,
+    formationId: formation.id,
+    formationName: formation.name,
+    scorePerMonth,
+    peaceScoreThreshold,
+    estimatedMonths,
+    foodPerMonth,
+    totalFood: estimatedMonths === null ? null : foodPerMonth * estimatedMonths,
+    troopLossPerMonth,
+    totalTroopLoss: estimatedMonths === null ? null : troopLossPerMonth * estimatedMonths,
+    displacedPerMonth,
+    totalDisplaced: estimatedMonths === null ? null : displacedPerMonth * estimatedMonths,
+    projectedProvisions,
+    foodRisk: foodSecurity.severity !== "stable" || (projectedProvisions !== null && projectedProvisions <= 0),
+    confidence: report.confidence,
+  };
+}
+
 export function getTurnWarnings(state) {
   const ledger = deriveRealmLedger(state);
   const preview = deriveMonthPreview(state);
+  const foodSecurity = getFoodSecurityStatus(state, preview);
   const warnings = [];
   if (ledger.administration.overextension > 0) warnings.push(`行政網が処理限界を${ledger.administration.overextension}%超過：直轄を減らすか、役所と人材を整備してください`);
   if (ledger.administration.unintegratedCities > 0) warnings.push(`州郡化前の都市 ${ledger.administration.unintegratedCities}：名目人口・兵・兵糧の全量は動員できません`);
   if (ledger.governance.available > 0) warnings.push(`未使用統治力 ${ledger.governance.available}`);
   ledger.cities.forEach((city) => {
     const local = preview?.report.cities.find((item) => item.cityId === city.cityId);
-    if ((local?.after.food ?? city.food + city.foodBalance) <= 0 && (local?.changes.food ?? city.foodBalance) < 0) warnings.push(`${city.name}で食料不足の見込み`);
     if ((local?.after.money ?? city.money + city.netIncome) < 0) warnings.push(`${city.name}で財政赤字の見込み`);
     if (city.facilities.facilities.some((facility) => facility.level > 0 && facility.operatingRate < 0.7)) warnings.push(`${city.name}で施設稼働率が低下`);
     if (city.factionRisk >= 35) warnings.push(`${city.name}で派閥反乱の危険`);
+  });
+  foodSecurity.criticalCities.forEach((city) => {
+    const runway = Number.isFinite(city.afterRunway) ? `約${city.afterRunway.toFixed(1)}か月分` : "収支は安定";
+    warnings.push(`${city.severity === "danger" ? "食料危機" : "食料備蓄注意"}：${city.name}は次月末 ${Math.max(0, Math.round(city.after)).toLocaleString("ja-JP")}（${runway}）`);
   });
   if (ledger.governance.forced > 0) {
     const forcedOrders = state.pendingOrders.filter((order) => order.forced);
     const maximumChance = Math.max(...forcedOrders.map((order) => (order.forcedPoints ?? 0) * FORCED_ORDER_RULES.failureChancePerPoint), 0);
     warnings.push(`強行命令 ${forcedOrders.length}件：失敗率 最大${maximumChance}% / 全都市の腐敗 +${(ledger.governance.forced * FORCED_ORDER_RULES.corruptionPerPoint).toFixed(1)}・民心 ${(ledger.governance.forced * FORCED_ORDER_RULES.supportPerPoint).toFixed(1)} / 翌月統治力 -${Math.min(2, ledger.governance.forced)}`);
   }
+  if (state.war && (state.war.peace?.culminatingRisk ?? 0) >= 70) warnings.push(`戦役が攻勢限界に接近：危険度 ${state.war.peace.culminatingRisk}%`);
+  (state.occupations ?? []).filter((occupation) => occupation.status === "occupied").forEach((occupation) => {
+    if (occupation.resistance >= 70) warnings.push(`${occupation.name}で武装抵抗が激化：抵抗 ${occupation.resistance.toFixed(0)}`);
+    if (occupation.garrison < occupation.requiredGarrison) warnings.push(`${occupation.name}の駐屯兵が必要数を下回っています`);
+  });
   if (ledger.availableOfficers > 0) warnings.push(`待機中の人物 ${ledger.availableOfficers}名`);
   const previewMoney = preview?.report.cities.reduce((sum, city) => sum + city.after.money, 0);
   if ((previewMoney ?? ledger.treasury + ledger.netIncome) < 0) warnings.push("国家全体で給与遅配の危険");
@@ -1028,29 +1600,145 @@ export function getWarCouncilReport(state, objectiveId = "transit") {
   });
 }
 
+function createWarState(targetCountryId, objectiveId, side = "attacker") {
+  return {
+    targetCountryId, objectiveId, side, plan: side === "defender" ? "defend" : "pass",
+    score: 0, months: 0, objectiveProgress: 0, losses: 0, enemyLosses: 0,
+    devastation: 0, homeDamage: 0, displaced: 0, civilianLosses: 0, stage: "opening",
+    lastOwnAction: side === "defender" ? "防衛配置" : "開戦準備",
+    lastEnemyAction: side === "defender"
+      ? { id: "advance", label: "峠口へ前進する", reason: "侵攻路を確保し、守備側の反応を測る。" }
+      : { id: "screen", label: "峠を警戒する", reason: "主力を温存し関所と国境城砦を守る。" },
+    peace: null,
+  };
+}
+
 export function declareWar(state, objectiveId) {
   if (state.war) throw new Error("すでに戦争中です");
   const objective = WAR_OBJECTIVES[objectiveId]; if (!objective) throw new Error("戦争目的が不明です");
-  const next = clone(state); const support = getWarSupport(next);
+  if (objective.mode === "defensive") throw new Error("防衛目的は敵国の侵攻時に発動します");
+  const next = normalizeWarState(clone(state)); const support = getWarSupport(next);
   const shortfall = Math.max(0, 50 - next.justification) + Math.max(0, 40 - support);
   if (shortfall > 0) { next.legitimacy = clamp(next.legitimacy - Math.ceil(shortfall / 4), 0, 100); next.cities.orta.resources.security = clamp(next.cities.orta.resources.security - 18, 0, 100); logEntry(next, "国内", "国境農民が徴発を拒否", "十分な正当性のない宣戦に東境州が反発した。", "danger"); }
-  next.war = { targetCountryId: "valka", objectiveId, plan: "pass", score: 0, months: 0, objectiveProgress: 0, losses: 0, enemyLosses: 0, lastOwnAction: "開戦準備", lastEnemyAction: { id: "screen", label: "峠を警戒する", reason: "主力を温存し関所と国境城砦を守る。" }, peace: null };
+  next.war = createWarState("valka", objectiveId, "attacker");
   logEntry(next, "宣戦", `${objective.name}を要求`, `政治目的「${objective.name}」のためヴァルカへ宣戦した。`, "danger");
   return next;
 }
 
-export function setWarPlan(state, planId) { if (!state.war) throw new Error("戦争中ではありません"); if (!["interdict", "pass", "siege"].includes(planId)) throw new Error("作戦方針が不明です"); const next = clone(state); next.war.plan = planId; return next; }
+export function startDefensiveWar(state, countryId = "valka") {
+  if (state.war) throw new Error("すでに戦争中です");
+  if (!state.foreignStates[countryId]) throw new Error("侵攻国が不明です");
+  const next = normalizeWarState(clone(state));
+  next.war = createWarState(countryId, "homeland_defense", "defender");
+  logEntry(next, "侵攻", `${WORLD.countries[countryId].name}軍が東境州へ侵攻`, "東部国境軍は防衛戦闘へ移り、都市と住民の退路を確保する。", "danger");
+  return next;
+}
 
-export function negotiatePeace(state) {
+export function setWarPlan(state, planId) {
   if (!state.war) throw new Error("戦争中ではありません");
-  const next = clone(state); const war = next.war; const objective = WAR_OBJECTIVES[war.objectiveId];
-  const success = war.score >= objective.targetScore * 0.55 || war.objectiveProgress >= 45;
-  const result = success ? objective.name : war.score >= 0 ? "限定停戦" : "関税措置の追認";
+  const plan = WAR_PLANS[planId];
+  if (!plan || !plan.roles.includes(state.war.side ?? "attacker")) throw new Error("現在の戦争立場では選べない作戦です");
+  const next = clone(state); next.war.plan = planId; return next;
+}
+
+export function getPeaceOptions(state) {
+  if (!state.war) return [];
+  return derivePeaceOptions({ ...state, warObjective: WAR_OBJECTIVES[state.war.objectiveId] });
+}
+
+function createOccupation(state, war, policy = "autonomy") {
+  const strategicZone = war.objectiveId === "pass_control";
+  const foreign = state.foreignStates[war.targetCountryId];
+  const garrison = strategicZone ? 240 : 520;
+  return {
+    id: `occupation-${war.targetCountryId}-${state.year}-${state.month}`,
+    countryId: war.targetCountryId,
+    territoryId: strategicZone ? "ash_pass" : `${war.targetCountryId}_heartland`,
+    name: strategicZone ? "灰冠峠共同管理区" : `${WORLD.countries[war.targetCountryId].name}占領地域`,
+    status: "occupied", policy, months: 0,
+    control: strategicZone ? 68 : 54,
+    resistance: clamp(foreign.cohesion * 0.72 + war.devastation * 0.3 - war.score * 0.12, 18, 82),
+    integration: strategicZone ? 18 : 0, assimilation: 0,
+    infrastructure: foreign.infrastructure,
+    population: strategicZone ? Math.round(foreign.civilianPopulation * 0.16) : foreign.civilianPopulation,
+    displaced: strategicZone ? Math.round(foreign.displaced * 0.16) : foreign.displaced,
+    civilianLosses: strategicZone ? Math.round(foreign.civilianLosses * 0.16) : foreign.civilianLosses,
+    garrison, requiredGarrison: strategicZone ? 220 : 480, history: [], lastReport: null,
+  };
+}
+
+export function negotiatePeace(state, settlementId = "auto") {
+  if (!state.war) throw new Error("戦争中ではありません");
+  if (state.war.months < 1) throw new Error("講和条件は1か月以上の戦況を確定してから提示できます");
+  const next = normalizeWarState(clone(state)); const war = next.war; const objective = WAR_OBJECTIVES[war.objectiveId];
+  const options = getPeaceOptions(next);
+  const choice = settlementId === "auto"
+    ? (options.find((option) => option.id === "objective" && option.allowed) ?? options.find((option) => option.id === "ceasefire"))
+    : options.find((option) => option.id === settlementId);
+  if (!choice || !choice.allowed) throw new Error(choice?.reason ?? "その講和条件は提示できません");
+  const success = choice.id !== "ceasefire";
+  let result = choice.name;
+  if (war.side === "defender" && success) {
+    result = "国境防衛と相互撤兵";
+    next.issues.border.severity = clamp(next.issues.border.severity - 18, 0, 100);
+  }
   if (success && war.objectiveId === "transit") { next.agreements.transit = true; next.issues.border.status = "resolved"; }
-  if (success && war.objectiveId === "pass_control") next.agreements.transit = true;
-  next.foreignStates.valka.relation = clamp(next.foreignStates.valka.relation + (success ? 8 : -6), -100, 100);
-  next.war = null; next.warExhaustion = clamp(next.warExhaustion - 8, 0, 100);
-  logEntry(next, "講和", result, `${war.months}か月の戦役を終了。兵の損失 ${war.losses}、敵軍推定損失 ${war.enemyLosses}。`, result === "関税措置の追認" ? "danger" : "success");
+  if (success && war.objectiveId === "pass_control") {
+    next.agreements.transit = true;
+    next.issues.border.status = "resolved";
+    if (!next.occupations.some((occupation) => occupation.territoryId === "ash_pass" && occupation.status === "occupied")) next.occupations.push(createOccupation(next, war, "integration"));
+  }
+  if (success && war.objectiveId === "submission") {
+    const policy = choice.id === "occupation" ? "military" : "autonomy";
+    next.occupations.push(createOccupation(next, war, policy));
+  }
+  const target = next.foreignStates[war.targetCountryId];
+  target.relation = clamp(target.relation + (choice.id === "ceasefire" ? -2 : choice.id === "occupation" ? -22 : 6), -100, 100);
+  target.hostility = clamp(target.hostility + (choice.id === "occupation" ? 18 : success ? -5 : 2), 0, 100);
+  next.warHistory.unshift({
+    id: `war-${next.year}-${next.month}-${war.targetCountryId}`, year: next.year, month: next.month,
+    targetCountryId: war.targetCountryId, objectiveId: war.objectiveId, side: war.side,
+    settlementId: choice.id, result, months: war.months, score: war.score,
+    losses: war.losses, enemyLosses: war.enemyLosses, devastation: war.devastation,
+    homeDamage: war.homeDamage, displaced: war.displaced, civilianLosses: war.civilianLosses,
+  });
+  next.warHistory = next.warHistory.slice(0, 60);
+  next.war = null; next.warExhaustion = clamp(next.warExhaustion - (success ? 8 : 4), 0, 100);
+  logEntry(next, "講和", result, `${war.months}か月の戦役を終了。兵の損失 ${war.losses}、敵軍推定損失 ${war.enemyLosses}、累計避難民 ${war.displaced}。`, success ? "success" : "danger");
+  return next;
+}
+
+export function setOccupationPolicy(state, occupationId, policyId) {
+  if (!OCCUPATION_POLICIES[policyId]) throw new Error("占領政策が不明です");
+  const next = normalizeWarState(clone(state));
+  const occupation = next.occupations.find((item) => item.id === occupationId);
+  if (!occupation || occupation.status !== "occupied") throw new Error("統治中の占領地域がありません");
+  occupation.policy = policyId;
+  logEntry(next, "占領", `${occupation.name}を${OCCUPATION_POLICIES[policyId].name}へ変更`, OCCUPATION_POLICIES[policyId].description, policyId === "assimilation" || policyId === "military" ? "danger" : "info");
+  return next;
+}
+
+export function setOccupationGarrison(state, occupationId, amount) {
+  const next = normalizeWarState(clone(state));
+  const occupation = next.occupations.find((item) => item.id === occupationId);
+  if (!occupation || occupation.status !== "occupied") throw new Error("駐屯対象がありません");
+  const totalAvailable = getMilitarySummary(next).army + occupation.garrison;
+  const requested = Math.round(Number(amount));
+  if (!Number.isFinite(requested) || requested < 100 || requested > totalAvailable) throw new Error(`駐屯兵は100〜${totalAvailable}の範囲で指定してください`);
+  occupation.garrison = requested;
+  logEntry(next, "占領", `${occupation.name}の駐屯兵を変更`, `駐屯兵 ${requested} / 必要 ${occupation.requiredGarrison}。`, "info");
+  return next;
+}
+
+export function releaseOccupation(state, occupationId) {
+  const next = normalizeWarState(clone(state));
+  const occupation = next.occupations.find((item) => item.id === occupationId);
+  if (!occupation || occupation.status !== "occupied") throw new Error("撤兵できる占領地域がありません");
+  occupation.status = "released";
+  occupation.garrison = 0;
+  next.legitimacy = clamp(next.legitimacy + 2, 0, 100);
+  next.foreignStates[occupation.countryId].relation = clamp(next.foreignStates[occupation.countryId].relation + 12, -100, 100);
+  logEntry(next, "占領", `${occupation.name}から撤兵`, "自治政府へ権限を移し、軍事占領を終了した。", "success");
   return next;
 }
 

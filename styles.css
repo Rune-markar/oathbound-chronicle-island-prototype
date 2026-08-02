@@ -1,20 +1,22 @@
 :root {
   color-scheme: dark;
-  --ink: #172224;
-  --ink-2: #223235;
-  --ink-3: #304448;
-  --panel: #e8dfc9;
-  --panel-2: #d6c9ac;
-  --paper-ink: #262a27;
-  --muted: #767467;
-  --gold: #c6a356;
-  --gold-light: #ead28d;
-  --teal: #2d706f;
-  --teal-light: #6fa3a0;
-  --red: #9b4c43;
-  --green: #52765c;
-  --line: rgba(232, 216, 174, 0.22);
-  --shadow: 0 14px 40px rgba(8, 18, 20, 0.38);
+  --ink: #101d1f;
+  --ink-2: #182b2e;
+  --ink-3: #294447;
+  --panel: #e1d3b3;
+  --panel-2: #c8b58c;
+  --paper-raised: #f7eed9;
+  --paper-sunken: #d8c69e;
+  --paper-ink: #1e2824;
+  --muted: #5f5c52;
+  --gold: #c99b38;
+  --gold-light: #f0d27c;
+  --teal: #205f5c;
+  --teal-light: #4d918a;
+  --red: #a33f35;
+  --green: #3f7251;
+  --line: rgba(237, 210, 139, 0.3);
+  --shadow: 0 14px 40px rgba(4, 12, 14, 0.48);
   font-family: "Yu Mincho", "Hiragino Mincho ProN", "Noto Serif JP", Georgia, serif;
 }
 
@@ -435,7 +437,7 @@ a:focus-visible,
 .strategy-shell {
   height: calc(100vh - 160px);
   display: grid;
-  grid-template-columns: 350px minmax(420px, 1fr) 290px;
+  grid-template-columns: 310px minmax(640px, 1fr) 240px;
 }
 
 .left-dock {
@@ -833,6 +835,246 @@ a:focus-visible,
   line-height: 1.45;
 }
 
+.command-target {
+  color: #66756f;
+  font-family: system-ui, sans-serif;
+  font-size: 8px;
+  font-weight: 700;
+}
+
+.spending-heading {
+  background:
+    linear-gradient(120deg, rgba(90, 117, 105, 0.14), transparent 58%),
+    linear-gradient(180deg, #efe7d5, #ddd1b7);
+}
+
+.spending-ledger {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border: solid rgba(68, 58, 39, 0.18);
+  border-width: 1px 0 0 1px;
+}
+
+.spending-ledger > div {
+  padding: 9px;
+  border: solid rgba(68, 58, 39, 0.18);
+  border-width: 0 1px 1px 0;
+  background: rgba(255, 255, 255, 0.24);
+}
+
+.spending-ledger small,
+.spending-ledger strong {
+  display: block;
+}
+
+.spending-ledger small {
+  color: #7d776a;
+  font-family: system-ui, sans-serif;
+  font-size: 8px;
+}
+
+.spending-ledger strong {
+  margin-top: 3px;
+  color: #33423c;
+  font-size: 14px;
+}
+
+.spending-category-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.spending-category-card {
+  min-height: 62px;
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  align-items: center;
+  gap: 7px;
+  padding: 8px;
+  border: 1px solid rgba(93, 75, 42, 0.32);
+  color: #424943;
+  background: rgba(255, 255, 255, 0.28);
+  cursor: pointer;
+  text-align: left;
+}
+
+.spending-category-card:hover,
+.spending-category-card.is-active {
+  border-color: #82682f;
+  background: #f1e4c7;
+  box-shadow: inset 3px 0 #7b8f7f;
+}
+
+.spending-category-card i,
+.spending-detail-heading > i {
+  display: grid;
+  place-items: center;
+  border: 1px solid #8e7748;
+  color: #635226;
+  background: rgba(255, 255, 255, 0.36);
+  font-family: serif;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.spending-category-card i {
+  width: 28px;
+  height: 28px;
+}
+
+.spending-category-card strong,
+.spending-category-card small {
+  display: block;
+}
+
+.spending-category-card strong {
+  font-size: 10px;
+}
+
+.spending-category-card small {
+  margin-top: 3px;
+  color: #817967;
+  font-family: system-ui, sans-serif;
+  font-size: 8px;
+}
+
+.spending-detail {
+  background: rgba(101, 127, 111, 0.06);
+}
+
+.spending-detail-heading {
+  display: grid;
+  grid-template-columns: 42px 1fr;
+  gap: 10px;
+  align-items: start;
+  margin-bottom: 10px;
+}
+
+.spending-detail-heading > i {
+  width: 42px;
+  height: 42px;
+  font-size: 17px;
+}
+
+.spending-detail-heading small,
+.spending-detail-heading h2,
+.spending-detail-heading p {
+  margin: 0;
+}
+
+.spending-detail-heading small {
+  color: #7f745c;
+  font-family: system-ui, sans-serif;
+  font-size: 8px;
+}
+
+.spending-detail-heading h2 {
+  margin-top: 2px;
+  color: #35443d;
+  font-size: 15px;
+}
+
+.spending-detail-heading p {
+  margin-top: 5px;
+  color: #69675f;
+  font-family: system-ui, sans-serif;
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.spending-city-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-bottom: 10px;
+}
+
+.spending-city-tabs button {
+  padding: 6px 3px;
+  border: 1px solid rgba(91, 72, 38, 0.28);
+  border-right: 0;
+  color: #6b6559;
+  background: rgba(255, 255, 255, 0.32);
+  cursor: pointer;
+  font-size: 9px;
+}
+
+.spending-city-tabs button:last-child {
+  border-right: 1px solid rgba(91, 72, 38, 0.28);
+}
+
+.spending-city-tabs button.is-active {
+  color: #f5e9c9;
+  background: #52675e;
+}
+
+.spending-debt-note {
+  margin: 0 0 9px;
+  padding: 8px;
+  color: #684d3c;
+  background: rgba(157, 95, 67, 0.1);
+  font-family: system-ui, sans-serif;
+  font-size: 9px;
+}
+
+.spending-shortcut-list {
+  display: grid;
+  gap: 7px;
+}
+
+.spending-shortcut {
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  gap: 2px 8px;
+  align-items: center;
+  width: 100%;
+  padding: 9px;
+  border: 1px solid rgba(92, 73, 39, 0.31);
+  color: #3e4842;
+  background: rgba(255, 255, 255, 0.3);
+  cursor: pointer;
+  text-align: left;
+}
+
+.spending-shortcut:hover {
+  border-color: #80652f;
+  background: #f0e4ca;
+}
+
+.spending-shortcut > span {
+  grid-row: 1 / 4;
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid #927946;
+  color: #655326;
+  font-family: serif;
+  font-weight: 800;
+}
+
+.spending-shortcut strong,
+.spending-shortcut small,
+.spending-shortcut b {
+  grid-column: 2;
+}
+
+.spending-shortcut strong {
+  font-size: 11px;
+}
+
+.spending-shortcut small {
+  color: #777064;
+  font-family: system-ui, sans-serif;
+  font-size: 8px;
+}
+
+.spending-shortcut b {
+  color: #557064;
+  font-family: system-ui, sans-serif;
+  font-size: 8px;
+}
+
 .diplomatic-target {
   display: grid;
   grid-template-columns: 48px 1fr auto;
@@ -1043,6 +1285,78 @@ a:focus-visible,
   justify-content: space-between;
 }
 
+.enemy-commander-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  margin-top: 9px;
+  padding: 10px;
+  border: 1px solid rgba(126, 61, 54, 0.48);
+  color: #4b3b35;
+  background: linear-gradient(120deg, rgba(141, 65, 57, 0.13), rgba(55, 60, 58, 0.05));
+}
+
+.enemy-commander-card > div {
+  min-width: 0;
+}
+
+.enemy-commander-card small,
+.enemy-commander-card strong,
+.enemy-commander-card span,
+.enemy-commander-card em {
+  display: block;
+}
+
+.enemy-commander-card small {
+  color: #945548;
+  font-family: system-ui, sans-serif;
+  font-size: 7px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.enemy-commander-card strong {
+  margin: 2px 0;
+  font-size: 12px;
+}
+
+.enemy-commander-card span,
+.enemy-commander-card em,
+.enemy-commander-card p {
+  color: #746c62;
+  font-family: system-ui, sans-serif;
+  font-size: 8px;
+  font-style: normal;
+  line-height: 1.45;
+}
+
+.enemy-commander-card em {
+  margin-top: 3px;
+}
+
+.enemy-commander-card p {
+  grid-column: 1 / -1;
+  margin: 7px 0 0;
+  padding-top: 7px;
+  border-top: 1px solid rgba(126, 61, 54, 0.2);
+}
+
+.enemy-commander-card p b {
+  color: #8b473e;
+}
+
+.enemy-commander-card.is-compact {
+  margin-top: 12px;
+  padding: 8px;
+  text-align: left;
+}
+
+.enemy-commander-card.is-compact span,
+.enemy-commander-card.is-compact em {
+  font-size: 7px;
+}
+
 .war-score strong {
   color: #773a32;
   font-size: 27px;
@@ -1085,6 +1399,82 @@ a:focus-visible,
   cursor: pointer;
 }
 
+.peace-button strong,
+.peace-button small {
+  display: block;
+}
+
+.peace-button small {
+  margin-top: 4px;
+  color: #6f6654;
+  font-size: 9px;
+}
+
+.peace-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.peace-option-list,
+.occupation-governance,
+.garrison-controls {
+  display: grid;
+  gap: 7px;
+}
+
+.war-consequence-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid rgba(112, 82, 47, 0.18);
+  background: rgba(87, 55, 40, 0.05);
+}
+
+.war-consequence-grid span,
+.war-consequence-grid small,
+.war-consequence-grid strong {
+  display: block;
+}
+
+.war-consequence-grid small {
+  color: #7b7164;
+  font-size: 8px;
+}
+
+.war-consequence-grid strong {
+  margin-top: 2px;
+  color: #5f3d35;
+}
+
+.occupation-policy-heading {
+  margin-top: 7px;
+}
+
+.occupation-policy-list {
+  max-height: 330px;
+  overflow: auto;
+}
+
+.garrison-controls {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.garrison-controls button,
+.release-occupation-button {
+  padding: 8px;
+  border: 1px solid #9b8969;
+  color: #51483b;
+  background: rgba(255, 255, 255, 0.3);
+  cursor: pointer;
+}
+
+.release-occupation-button {
+  margin-top: 5px;
+  border-color: #8d655e;
+  color: #6f3d37;
+}
+
 .map-stage {
   position: relative;
   min-width: 0;
@@ -1097,21 +1487,62 @@ a:focus-visible,
   width: 100%;
   height: 100%;
   display: block;
+  overflow: hidden;
+  background: radial-gradient(circle at 46% 42%, #56786e 0, #355b5f 58%, #203f45 100%);
+}
+
+.map-ocean-texture,
+.map-ocean-lines,
+.country-landmass {
+  pointer-events: none;
+}
+
+.map-ocean-texture {
+  opacity: 0.9;
+  filter: saturate(0.82) contrast(0.94) brightness(0.88);
+}
+
+.map-ocean-lines {
+  opacity: 0.44;
+}
+
+.country-landmass {
+  fill: url(#atlasLandTexture);
+  filter: url(#landShadow);
+  opacity: 0.94;
+  stroke: rgba(229, 207, 145, 0.62);
+  stroke-linejoin: round;
+  stroke-width: 1.4;
+  vector-effect: non-scaling-stroke;
 }
 
 .province {
   cursor: pointer;
-  fill: var(--tile-color, var(--map-color));
-  stroke: rgba(34, 51, 49, 0.7);
-  stroke-width: 1.45;
+  fill: color-mix(in srgb, var(--tile-color, var(--map-color)) 48%, transparent);
+  stroke: rgba(74, 61, 39, 0.62);
+  stroke-width: 0.9;
   vector-effect: non-scaling-stroke;
   transition: fill 180ms ease, filter 150ms ease, opacity 150ms ease, stroke 150ms ease;
 }
 
-.continent-backdrop {
-  fill: #b8aa82;
-  stroke: rgba(242, 223, 171, 0.55);
-  stroke-width: 3;
+.territory-source {
+  fill: none;
+  stroke: none;
+  pointer-events: none;
+}
+
+.territory-cell {
+  stroke: rgba(71, 59, 39, 0.5);
+  stroke-width: 0.62;
+  stroke-linejoin: round;
+}
+
+.territory-region-outline {
+  fill: none;
+  stroke: rgba(84, 67, 40, 0.7);
+  stroke-width: 1.15;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
 }
 
 .country-group.selena { --map-color: #4c8a7d; }
@@ -1121,6 +1552,9 @@ a:focus-visible,
 .country-group.lustrond { --map-color: #7a6a91; }
 .country-group.izmenia { --map-color: #8e604f; }
 .country-group.heavens-gate { --map-color: #536b89; }
+.country-group.deadland { --map-color: #514b62; }
+.country-group.great-empire { --map-color: #8a6556; }
+.country-group.avanheln { --map-color: #7c5944; }
 
 .province.tile-light { --tile-color: color-mix(in srgb, var(--map-color) 86%, #e5d6ab); }
 .province.tile-deep { --tile-color: color-mix(in srgb, var(--map-color) 84%, #263f3d); }
@@ -1128,10 +1562,43 @@ a:focus-visible,
 
 .nation-outline {
   fill: none;
-  stroke: rgba(22, 37, 37, 0.92);
+  filter: url(#borderDisplace);
+  stroke: rgba(249, 226, 165, 0.74);
+  stroke-linecap: round;
   stroke-linejoin: round;
-  stroke-width: 5;
+  stroke-width: 2.8;
   vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+.great-power .nation-outline {
+  stroke: rgba(255, 232, 163, 0.82);
+  stroke-width: 3.6;
+}
+
+.great-power-label {
+  fill: rgba(255, 238, 190, 0.8);
+  font-family: serif;
+  font-size: 25px;
+  font-weight: 800;
+  letter-spacing: 0.13em;
+  paint-order: stroke;
+  pointer-events: none;
+  stroke: rgba(26, 32, 31, 0.82);
+  stroke-width: 6px;
+  text-anchor: middle;
+}
+
+.strategy-map:not(.scale-world) .great-power,
+.strategy-map:not(.scale-world) .great-power-node,
+.strategy-map:not(.scale-world) .world-route {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.scale-world .strategic-fronts,
+.scale-world .army-layer {
+  opacity: 0;
   pointer-events: none;
 }
 
@@ -1142,6 +1609,11 @@ a:focus-visible,
   filter: brightness(1.12);
 }
 
+.territory-cell:hover,
+.territory-cell.is-selected {
+  stroke-width: 2.2;
+}
+
 .map-mode-diplomatic .country-group.selena { --map-color: #477d69; }
 .map-mode-diplomatic .country-group.valka { --map-color: #bd4943; }
 .map-mode-diplomatic .country-group.forest-alliance { --map-color: #4e8a68; }
@@ -1149,6 +1621,9 @@ a:focus-visible,
 .map-mode-diplomatic .country-group.lustrond { --map-color: #7b7967; }
 .map-mode-diplomatic .country-group.izmenia { --map-color: #a16b52; }
 .map-mode-diplomatic .country-group.heavens-gate { --map-color: #65778c; }
+.map-mode-diplomatic .country-group.deadland { --map-color: #655a78; }
+.map-mode-diplomatic .country-group.great-empire { --map-color: #9a6654; }
+.map-mode-diplomatic .country-group.avanheln { --map-color: #865845; }
 
 .map-mode-supply .country-group { --map-color: #547358; }
 .map-mode-unrest .country-group { --map-color: #6e8061; }
@@ -1162,6 +1637,11 @@ a:focus-visible,
 .map-mode-terrain .province[data-terrain="wetland"] { --tile-color: #4f7771; }
 .map-mode-terrain .province[data-terrain="coast"] { --tile-color: #a69567; }
 .map-mode-terrain .province[data-terrain="badlands"] { --tile-color: #915b43; }
+
+.map-mode-terrain .province {
+  fill: color-mix(in srgb, var(--tile-color) 42%, transparent);
+  stroke: rgba(88, 71, 42, 0.58);
+}
 
 .terrain-contours,
 .terrain-symbols {
@@ -1220,6 +1700,73 @@ a:focus-visible,
   stroke-dasharray: 4 6;
 }
 
+.strategic-fronts {
+  opacity: 0.92;
+  pointer-events: none;
+  transition: opacity 180ms ease;
+}
+
+.strategic-corridor {
+  fill: none;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.friendly-corridor,
+.supply-corridor {
+  stroke: rgba(70, 141, 111, 0.82);
+  stroke-width: 10;
+}
+
+.supply-corridor {
+  stroke: rgba(74, 126, 156, 0.82);
+  stroke-dasharray: 3 7;
+  stroke-width: 8;
+}
+
+.hostile-corridor {
+  stroke: rgba(168, 68, 55, 0.92);
+  stroke-dasharray: 8 8;
+  stroke-width: 11;
+}
+
+.strategy-map.is-at-war .hostile-corridor {
+  animation: frontLineAdvance 1.7s linear infinite;
+  stroke: #d64f3f;
+}
+
+.pass-status {
+  filter: url(#unitShadow);
+}
+
+.pass-status path {
+  fill: rgba(117, 62, 43, 0.96);
+  stroke: #f0ce76;
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+
+.pass-status text {
+  fill: #fff0bd;
+  font-family: system-ui, sans-serif;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  paint-order: stroke;
+  stroke: rgba(54, 27, 22, 0.94);
+  stroke-width: 2px;
+  text-anchor: middle;
+}
+
+.pass-status.is-secure path {
+  fill: rgba(50, 103, 77, 0.96);
+}
+
+.pass-status.is-war path {
+  fill: rgba(157, 47, 38, 0.98);
+  animation: passAlert 1.15s ease-in-out infinite alternate;
+}
+
 .terrain-labels text {
   fill: rgba(225, 238, 232, 0.72);
   font-size: 13px;
@@ -1243,6 +1790,14 @@ a:focus-visible,
 
 @keyframes routeFlow {
   to { stroke-dashoffset: -100; }
+}
+
+@keyframes frontLineAdvance {
+  to { stroke-dashoffset: -32; }
+}
+
+@keyframes passAlert {
+  to { filter: brightness(1.35); }
 }
 
 .map-node {
@@ -1299,9 +1854,155 @@ a:focus-visible,
   font-size: 10px;
 }
 
+.castle-node {
+  filter: url(#unitShadow);
+}
+
+.castle-node .castle-influence {
+  fill: rgba(39, 90, 77, 0.28);
+  stroke: rgba(237, 209, 124, 0.72);
+  stroke-dasharray: 3 3;
+  stroke-width: 1.5;
+}
+
+.castle-node.foreign .castle-influence {
+  fill: rgba(137, 50, 43, 0.3);
+  stroke: rgba(242, 161, 121, 0.82);
+}
+
+.castle-node .castle-silhouette {
+  fill: #f0dcad;
+  stroke: #493b29;
+  stroke-linejoin: round;
+  stroke-width: 1.5;
+}
+
+.castle-node.frontier-castle .castle-silhouette,
+.castle-node.enemy-castle .castle-silhouette {
+  filter: drop-shadow(0 0 5px rgba(247, 209, 110, 0.48));
+}
+
+.castle-node .castle-plate {
+  fill: rgba(20, 40, 39, 0.95);
+  stroke: rgba(235, 207, 132, 0.78);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.castle-node.foreign .castle-plate {
+  fill: rgba(91, 34, 30, 0.96);
+  stroke: rgba(239, 155, 115, 0.85);
+}
+
+.castle-node .castle-name,
+.castle-node .castle-force {
+  font-family: system-ui, sans-serif;
+  text-anchor: middle;
+}
+
+.castle-node .castle-name {
+  fill: #fff0c5;
+  font-size: 10px;
+  font-weight: 900;
+  stroke-width: 2.5px;
+}
+
+.castle-node .castle-force {
+  fill: #d8c98e;
+  font-size: 8px;
+  font-weight: 700;
+  stroke-width: 2px;
+}
+
+.castle-node:hover .castle-influence,
+.castle-node:focus .castle-influence,
+.castle-node.is-selected .castle-influence {
+  fill: rgba(215, 183, 90, 0.24);
+  stroke: #fff0b2;
+  stroke-width: 3;
+}
+
+.army-layer {
+  opacity: 1;
+  pointer-events: none;
+  transition: opacity 180ms ease;
+}
+
+.army-marker {
+  filter: url(#unitShadow);
+}
+
+.army-marker .army-banner {
+  fill: #326957;
+  stroke: #f2d787;
+  stroke-linejoin: round;
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+.army-marker.enemy-army .army-banner {
+  fill: #963f35;
+  stroke: #f1a878;
+}
+
+.army-marker .army-plate {
+  fill: rgba(16, 34, 34, 0.96);
+  stroke: rgba(231, 204, 128, 0.82);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.army-marker.enemy-army .army-plate {
+  fill: rgba(76, 27, 25, 0.96);
+  stroke: rgba(239, 152, 108, 0.82);
+}
+
+.army-marker text {
+  font-family: system-ui, sans-serif;
+  paint-order: stroke;
+  stroke: rgba(8, 20, 20, 0.95);
+  stroke-width: 2px;
+  text-anchor: middle;
+}
+
+.army-marker .army-name {
+  fill: #fff0c2;
+  font-size: 8px;
+  font-weight: 900;
+}
+
+.army-marker .army-strength {
+  fill: #fff6d8;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.army-marker .army-order {
+  fill: #c9d3c5;
+  font-size: 6px;
+  font-weight: 700;
+}
+
+.map-mode-terrain .army-layer,
+.map-mode-terrain .strategic-fronts,
+.map-mode-diplomatic .army-layer,
+.map-mode-unrest .army-layer {
+  opacity: 0.48;
+}
+
+.scale-world .village-layer,
 .scale-country .village-layer {
   opacity: 0;
   pointer-events: none;
+}
+
+.great-power-node circle {
+  fill: #573e45;
+  stroke-width: 4;
+}
+
+.great-power-node text {
+  font-size: 15px;
 }
 
 .scale-village .country-group:not(.selena),
@@ -1440,6 +2141,20 @@ a:focus-visible,
   height: 0;
   border: 0;
   border-top: 1px solid #dbcda6;
+}
+
+.terrain-legend .legend-castle {
+  background: linear-gradient(135deg, #efd897 0 45%, #2d5d50 46% 100%);
+}
+
+.terrain-legend .legend-army {
+  background: linear-gradient(90deg, #3b795f 0 50%, #9f4439 50% 100%);
+}
+
+.terrain-legend .legend-front {
+  height: 0;
+  border: 0;
+  border-top: 4px dashed #cf634d;
 }
 
 .terrain-legend .legend-forest { background: #426a4d; }
@@ -2208,6 +2923,9 @@ a:focus-visible,
 .nation-logic.lustrond { --logic-accent: #7a6a91; }
 .nation-logic.izmenia { --logic-accent: #8e604f; }
 .nation-logic.heavens { --logic-accent: #536b89; }
+.nation-logic.deadland { --logic-accent: #514b62; }
+.nation-logic.great-empire { --logic-accent: #8a6556; }
+.nation-logic.avanheln { --logic-accent: #7c5944; }
 
 .nation-logic > header {
   display: flex;
@@ -2697,10 +3415,19 @@ a:focus-visible,
   display: grid;
   place-items: center;
   flex: 0 0 auto;
+  overflow: hidden;
   clip-path: polygon(50% 0, 92% 15%, 84% 76%, 50% 100%, 16% 76%, 8% 15%);
   color: #f5e2ae;
   background: linear-gradient(150deg, #4b7771, #284f50);
   font-weight: 800;
+}
+
+.officer-seal img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  object-position: 50% 18%;
 }
 
 .officer-seal.large {
@@ -3790,7 +4517,7 @@ a:focus-visible,
   }
 
   .strategy-shell {
-    grid-template-columns: 320px minmax(390px, 1fr) 250px;
+    grid-template-columns: 300px minmax(420px, 1fr) 220px;
   }
 
   .campaign-bar {
@@ -3854,6 +4581,45 @@ a:focus-visible,
 }
 
 @media (max-width: 700px) {
+  .terrain-legend {
+    display: none;
+  }
+
+  .map-caption {
+    max-width: calc(100% - 116px);
+  }
+
+  .map-caption strong {
+    overflow: hidden;
+    font-size: 12px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .selection-card {
+    bottom: 130px;
+    left: 8px;
+    max-height: 150px;
+    overflow-y: auto;
+    width: calc(100% - 16px);
+    padding: 10px 11px;
+  }
+
+  .map-scale-switch {
+    bottom: 87px;
+    left: 8px;
+  }
+
+  .selection-card p {
+    font-size: 9px;
+    line-height: 1.35;
+  }
+
+  .selection-facts {
+    gap: 6px 10px;
+    font-size: 8px;
+  }
+
   .grand-topbar {
     grid-template-columns: 1fr;
   }
@@ -4593,6 +5359,87 @@ a:focus-visible,
 .faction-card.is-danger { border-color: rgba(151, 70, 55, 0.55); }
 .faction-meters { margin: 10px 0; }
 
+.fiscal-report-card,
+.fiscal-report-empty {
+  margin-bottom: 12px;
+  border: 1px solid rgba(64, 83, 74, 0.28);
+  background: linear-gradient(145deg, rgba(244, 239, 224, 0.98), rgba(226, 230, 217, 0.96));
+  box-shadow: 0 8px 24px rgba(44, 52, 45, 0.1);
+}
+.fiscal-report-card > header {
+  display: flex;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 16px 18px;
+  color: #efe4c8;
+  background: linear-gradient(110deg, #273f3b, #465846);
+}
+.fiscal-report-card > header > div:first-child { min-width: 0; }
+.fiscal-report-card > header span,
+.fiscal-report-card > header h2,
+.fiscal-report-card > header p { display: block; margin: 0; }
+.fiscal-report-card > header span { color: #b9c7b8; font-family: system-ui, sans-serif; font-size: 7px; letter-spacing: 0.14em; }
+.fiscal-report-card > header h2 { margin-top: 4px; font-size: 18px; }
+.fiscal-report-card > header p { margin-top: 5px; color: #c6cebf; font-family: system-ui, sans-serif; font-size: 8px; }
+.fiscal-balance {
+  display: grid;
+  min-width: 148px;
+  align-content: center;
+  padding-left: 17px;
+  border-left: 1px solid rgba(239, 224, 187, 0.23);
+  text-align: right;
+}
+.fiscal-balance small { color: #d2d5c9; font-family: system-ui, sans-serif; font-size: 8px; }
+.fiscal-balance strong { margin: 2px 0; color: #a9d5af; font-size: 20px; }
+.fiscal-balance.is-deficit strong { color: #ec9d8c; }
+.fiscal-balance span { color: #abb7ad !important; font-size: 7px !important; letter-spacing: 0 !important; }
+.fiscal-chart-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 12px; }
+.fiscal-chart {
+  min-width: 0;
+  padding: 11px;
+  border: 1px solid rgba(75, 90, 78, 0.2);
+  background: rgba(255, 255, 255, 0.42);
+  font-family: system-ui, sans-serif;
+}
+.fiscal-chart > header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.fiscal-chart > header h3 { margin: 0; color: #455950; font-size: 11px; letter-spacing: 0.08em; }
+.fiscal-chart > header strong { color: #6d5734; font-size: 10px; }
+.fiscal-chart-body { display: grid; grid-template-columns: 118px minmax(0, 1fr); gap: 12px; align-items: center; margin-top: 9px; }
+.fiscal-donut {
+  position: relative;
+  display: grid;
+  width: 118px;
+  height: 118px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--fiscal-gradient);
+  box-shadow: inset 0 0 0 1px rgba(52, 65, 59, 0.16), 0 3px 10px rgba(45, 52, 46, 0.14);
+}
+.fiscal-donut::before { content: ""; position: absolute; inset: 24%; border-radius: 50%; background: #f0ecdf; box-shadow: 0 0 0 1px rgba(64, 80, 71, 0.12); }
+.fiscal-donut > span { position: relative; z-index: 1; text-align: center; }
+.fiscal-donut small,
+.fiscal-donut b { display: block; }
+.fiscal-donut small { color: #798077; font-size: 7px; }
+.fiscal-donut b { margin-top: 2px; color: #344b43; font-size: 12px; }
+.fiscal-legend { display: grid; gap: 4px; min-width: 0; margin: 0; padding: 0; list-style: none; }
+.fiscal-legend li { display: grid; grid-template-columns: 8px minmax(62px, 1fr) auto 34px; gap: 5px; align-items: center; min-width: 0; color: #696d66; font-size: 7px; }
+.fiscal-legend i { width: 7px; height: 7px; border: 1px solid rgba(38, 50, 45, 0.25); background: var(--fiscal-color); }
+.fiscal-legend span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fiscal-legend strong { color: #46584f; text-align: right; }
+.fiscal-legend small { color: #8a8378; text-align: right; }
+.fiscal-note { margin: 0; padding: 0 13px 12px; color: #77776e; font-family: system-ui, sans-serif; font-size: 7px; line-height: 1.5; }
+.fiscal-report-empty { padding: 18px; color: #59675f; font-family: system-ui, sans-serif; }
+.fiscal-report-empty strong { font-size: 13px; }
+.fiscal-report-empty p { margin: 5px 0 0; color: #838076; font-size: 8px; }
+.fiscal-chart-grid.is-compact { grid-template-columns: 1fr; gap: 6px; padding: 9px 0 3px; }
+.fiscal-chart.is-compact { padding: 7px; }
+.fiscal-chart.is-compact .fiscal-chart-body { grid-template-columns: 68px minmax(0, 1fr); gap: 7px; }
+.fiscal-chart.is-compact .fiscal-donut { width: 68px; height: 68px; }
+.fiscal-chart.is-compact .fiscal-donut b { font-size: 9px; }
+.fiscal-chart.is-compact .fiscal-legend li { grid-template-columns: 7px minmax(48px, 1fr) auto; }
+.fiscal-chart.is-compact .fiscal-legend small { display: none; }
+
 .report-list details,
 .annual-report {
   padding: 10px 2px;
@@ -4606,6 +5453,11 @@ a:focus-visible,
 .report-list summary b { color: #46564f; }
 .report-event { color: #8a493f; }
 .report-event small { display: block; margin-top: 3px; color: #8d766c; }
+.report-war { padding: 7px; color: #52635b; background: rgba(69, 93, 81, 0.08); }
+.report-war.is-danger { color: #8a493f; background: rgba(138, 73, 63, 0.08); }
+.report-war strong,
+.report-war small { display: block; }
+.report-war small { margin-top: 3px; color: #7c7569; }
 .annual-report span,
 .annual-report small { display: block; margin-top: 4px; }
 
@@ -4715,6 +5567,378 @@ a:focus-visible,
 .event-choice small { font-family: system-ui, sans-serif; font-size: 9px; }
 .event-choice small { color: #8a806e; }
 
+/* Global contrast hierarchy */
+.grand-topbar {
+  border-bottom-color: #d0a64c;
+  background: linear-gradient(180deg, #294246 0%, #112428 100%);
+  box-shadow: 0 5px 20px rgba(3, 10, 12, 0.68);
+}
+
+.resource-item:nth-child(odd) {
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.resource-item strong {
+  color: #fff2d2;
+  text-shadow: 0 1px 8px rgba(240, 210, 124, 0.12);
+}
+
+.campaign-bar {
+  border-bottom-color: rgba(225, 183, 78, 0.72);
+  background: linear-gradient(90deg, #203c3d, #10282b 56%, #0c1e22);
+  box-shadow: 0 6px 20px rgba(3, 11, 13, 0.56);
+}
+
+.campaign-bar-goal {
+  border-left-color: var(--gold-light);
+  background: linear-gradient(90deg, rgba(213, 166, 59, 0.2), transparent 92%);
+}
+
+.campaign-flow span {
+  border-color: rgba(231, 207, 145, 0.19);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.campaign-flow span.is-active {
+  border-color: #e0b653;
+  color: #fff0c8;
+  background: linear-gradient(180deg, rgba(198, 147, 39, 0.35), rgba(102, 78, 31, 0.24));
+  box-shadow: inset 0 -2px #e0b653;
+}
+
+.primary-tabs {
+  background: linear-gradient(180deg, #182f33, #0c1e22);
+}
+
+.primary-tabs button {
+  color: #aebdb7;
+}
+
+.primary-tabs button:hover,
+.primary-tabs button.is-active {
+  color: #fff1c9;
+  background: linear-gradient(90deg, rgba(202, 153, 48, 0.34), rgba(36, 97, 91, 0.72));
+  box-shadow: inset 4px 0 #e3b959, inset 0 -1px rgba(236, 213, 151, 0.2);
+}
+
+.ledger-panel {
+  background:
+    linear-gradient(120deg, rgba(255, 255, 255, 0.18), transparent 42%),
+    linear-gradient(180deg, #e4d7ba 0%, #d5c39d 100%);
+}
+
+.panel-heading {
+  border-bottom: 2px solid #9b7836;
+  background:
+    linear-gradient(100deg, rgba(42, 91, 83, 0.15), transparent 58%),
+    linear-gradient(180deg, #f5ecd8, #d7c39a);
+  box-shadow: 0 4px 12px rgba(68, 49, 22, 0.12);
+}
+
+.panel-heading h1 {
+  color: #142a27;
+}
+
+.panel-heading p {
+  color: #585c55;
+}
+
+.panel-section + .panel-section {
+  border-top-color: rgba(67, 52, 28, 0.3);
+}
+
+.section-heading {
+  padding-left: 9px;
+  border-left: 3px solid #9a742c;
+}
+
+.section-heading h2,
+.section-heading h3 {
+  color: #182824;
+}
+
+.campaign-brief-card,
+.proposal-card,
+.governor-card,
+.officer-card,
+.world-dossier,
+.candidate-card {
+  border-color: rgba(81, 61, 29, 0.34);
+  background: rgba(255, 250, 236, 0.84);
+  box-shadow: 0 7px 18px rgba(61, 44, 20, 0.1);
+}
+
+.command-card,
+.spending-shortcut {
+  border-color: rgba(83, 62, 28, 0.42);
+  background: linear-gradient(180deg, #fbf4e2, #e7d7b8);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.78), 0 4px 11px rgba(61, 44, 20, 0.08);
+}
+
+.command-card:hover:not(:disabled),
+.spending-shortcut:hover {
+  border-color: #72551e;
+  background: #fff3d6;
+  box-shadow: inset 4px 0 var(--teal), 0 6px 14px rgba(61, 44, 20, 0.12);
+}
+
+.realm-facts,
+.spending-ledger,
+.city-ledger-grid,
+.officer-stat-grid {
+  border-color: rgba(65, 51, 28, 0.34);
+  background: var(--paper-sunken);
+  box-shadow: inset 0 1px 3px rgba(70, 50, 20, 0.12);
+}
+
+.realm-facts div,
+.spending-ledger > div,
+.city-ledger-grid > div,
+.officer-stat-grid div {
+  border-color: rgba(65, 51, 28, 0.22);
+  background: rgba(255, 250, 235, 0.56);
+}
+
+.realm-facts div:nth-child(4n + 1),
+.realm-facts div:nth-child(4n + 2),
+.spending-ledger > div:nth-child(4n + 1),
+.spending-ledger > div:nth-child(4n + 2),
+.city-ledger-grid > div:nth-child(4n + 1),
+.city-ledger-grid > div:nth-child(4n + 2) {
+  background: rgba(76, 109, 94, 0.1);
+}
+
+.realm-facts strong,
+.spending-ledger strong,
+.city-ledger-grid strong,
+.officer-stat-grid strong {
+  color: #18352f;
+}
+
+.issue-card {
+  border-color: rgba(132, 54, 42, 0.38);
+  background: rgba(255, 239, 225, 0.82);
+  box-shadow: 0 4px 12px rgba(92, 43, 30, 0.08);
+}
+
+.issue-card::before {
+  width: 5px;
+  background: #ae3f33;
+}
+
+.issue-card.is-resolved {
+  border-color: rgba(49, 103, 70, 0.34);
+  background: rgba(229, 243, 224, 0.78);
+}
+
+.doctrine-card,
+.spending-category-card,
+.formation-card,
+.world-nation-card,
+.world-people-card,
+.statistics-rank-card,
+.policy-options button,
+.faction-actions button {
+  border-color: rgba(76, 61, 34, 0.38);
+  color: #25322d;
+  background: rgba(252, 246, 231, 0.78);
+}
+
+:is(
+  .doctrine-card.is-selected,
+  .spending-category-card.is-active,
+  .formation-card.is-active,
+  .world-nation-card.is-active,
+  .world-people-card.is-active,
+  .statistics-rank-card.is-active,
+  .policy-options button.is-active
+) {
+  border-color: #d0a547;
+  color: #fff0c9;
+  background: linear-gradient(105deg, #174e4b, #276a63);
+  box-shadow: inset 4px 0 #e0b44f, 0 5px 13px rgba(18, 61, 57, 0.24);
+}
+
+:is(
+  .doctrine-card.is-selected,
+  .spending-category-card.is-active,
+  .formation-card.is-active,
+  .world-nation-card.is-active,
+  .world-people-card.is-active,
+  .statistics-rank-card.is-active,
+  .policy-options button.is-active
+) :is(strong, small, b, em) {
+  color: inherit;
+}
+
+.spending-category-card.is-active i {
+  border-color: #efd17e;
+  color: #fff0c7;
+  background: rgba(6, 29, 28, 0.28);
+}
+
+.proposal-card > button {
+  border-color: #164a47;
+  color: #fff0c9;
+  background: linear-gradient(180deg, #2d756d, #1a514e);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.16);
+}
+
+.proposal-card > button:hover:not(:disabled) {
+  border-color: #b88d35;
+  color: #fff4d8;
+  background: linear-gradient(180deg, #3a8278, #235c57);
+}
+
+.city-workspace {
+  background:
+    linear-gradient(90deg, rgba(93, 67, 29, 0.075) 1px, transparent 1px) 0 0 / 56px 56px,
+    linear-gradient(rgba(93, 67, 29, 0.065) 1px, transparent 1px) 0 0 / 56px 56px,
+    #dccdab;
+}
+
+.city-workspace-header {
+  box-shadow: inset 0 -2px #c89c3f, 0 7px 18px rgba(19, 37, 34, 0.24);
+}
+
+.city-workspace-tabs {
+  border-bottom-color: #8f6d2f;
+  background: rgba(213, 198, 165, 0.98);
+  box-shadow: 0 6px 16px rgba(50, 40, 24, 0.18);
+}
+
+.city-workspace-tabs button {
+  color: #514f48;
+}
+
+.city-workspace-tabs button:hover {
+  color: #173d38;
+  background: rgba(255, 247, 224, 0.7);
+}
+
+.city-workspace-tabs button.is-active {
+  color: #fff0c9;
+  background: linear-gradient(180deg, #2f6d66, #1d514d);
+  box-shadow: inset 0 -3px #e0b34f;
+}
+
+.city-metric-card,
+.city-sheet,
+.population-hero,
+.economy-summary article,
+.policy-card,
+.facility-card,
+.faction-card,
+.report-list {
+  border-color: rgba(73, 55, 28, 0.36);
+  background: rgba(255, 250, 236, 0.88);
+  box-shadow: 0 7px 18px rgba(58, 42, 20, 0.1);
+}
+
+.city-metric-card {
+  border-top: 3px solid #34776d;
+}
+
+.city-metric-card:nth-child(2n) {
+  border-top-color: #ad8232;
+}
+
+.economy-summary article {
+  border-top: 3px solid #34776d;
+}
+
+.economy-summary article:nth-child(2) {
+  border-top-color: #ad8232;
+}
+
+.city-sheet > header,
+.report-list > header {
+  border-bottom-color: rgba(70, 51, 24, 0.3);
+}
+
+.forecast-delta.positive { color: #226442; }
+.forecast-delta.negative { color: #a13229; }
+
+.fiscal-chart {
+  border-color: rgba(69, 52, 27, 0.4);
+  background: #f8f1df;
+  box-shadow: 0 5px 14px rgba(58, 42, 20, 0.1);
+}
+
+.fiscal-donut::before {
+  background: #fbf5e6;
+}
+
+.report-causal-grid > div,
+.report-total-strip span {
+  border: 1px solid rgba(68, 52, 29, 0.15);
+  background: rgba(228, 216, 188, 0.58);
+}
+
+.outliner {
+  border-left-color: #b78c38;
+  background: linear-gradient(180deg, #183034, #0b1e22);
+  box-shadow: -8px 0 24px rgba(3, 10, 12, 0.48);
+}
+
+.outliner > header,
+.plan-tray > header {
+  background: linear-gradient(90deg, rgba(202, 154, 52, 0.19), rgba(42, 101, 92, 0.16));
+}
+
+.outliner-section > h3 {
+  padding-left: 10px;
+  border-left: 3px solid #bd9138;
+  color: #ead18e;
+  background: rgba(205, 159, 58, 0.1);
+}
+
+.outliner-item:nth-child(odd),
+.planned-order,
+.plan-forecast-row,
+.plan-budget > div {
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.outliner-item {
+  border-top-color: rgba(235, 215, 158, 0.13);
+}
+
+.outliner-item strong,
+.planned-order strong,
+.plan-forecast-row strong {
+  color: #f1e6ca;
+}
+
+.alert-chip.danger {
+  border-color: #d77a66;
+  color: #ffe0d7;
+  background: rgba(118, 40, 31, 0.86);
+}
+
+.alert-chip.info {
+  border-color: #61a49c;
+  color: #def5ef;
+  background: rgba(26, 78, 74, 0.9);
+}
+
+.event-board {
+  border-color: #c3943d;
+  background: #ddcdab;
+}
+
+.event-choice {
+  border-color: rgba(73, 53, 24, 0.38);
+  background: rgba(255, 249, 232, 0.88);
+  box-shadow: 0 5px 13px rgba(68, 48, 20, 0.09);
+}
+
+.event-choice:hover {
+  border-color: #745315;
+  background: #fff0ca;
+  box-shadow: inset 4px 0 var(--teal), 0 7px 15px rgba(68, 48, 20, 0.13);
+}
+
 @media (max-width: 1250px) {
   .city-overview-grid,
   .population-card-grid { grid-template-columns: repeat(2, minmax(120px, 1fr)); }
@@ -4726,6 +5950,8 @@ a:focus-visible,
   .faction-grid { grid-template-columns: 1fr; }
   .report-causal-grid > div { grid-template-columns: 45px repeat(2, minmax(64px, 1fr)); }
   .report-causal-grid > div span:nth-of-type(3) { grid-column: 2 / 3; }
+  .fiscal-chart-body { grid-template-columns: 100px minmax(0, 1fr); }
+  .fiscal-donut { width: 100px; height: 100px; }
 }
 
 @media (max-width: 980px) {
@@ -4738,6 +5964,9 @@ a:focus-visible,
 }
 
 @media (max-width: 700px) {
+  .fiscal-report-card > header { align-items: start; flex-direction: column; }
+  .fiscal-balance { width: 100%; min-width: 0; padding: 9px 0 0; border-top: 1px solid rgba(239, 224, 187, 0.23); border-left: 0; text-align: left; }
+  .fiscal-chart-grid { grid-template-columns: 1fr; }
   .month-end-button { min-width: 160px; }
   .city-workspace-header { align-items: start; flex-direction: column; }
   .city-governor-badge { width: 100%; }
@@ -4751,4 +5980,219 @@ a:focus-visible,
   .event-art { height: 126px; }
   .event-choice { grid-template-columns: 1fr; }
   .event-choice strong { grid-row: auto; }
+}
+
+/* Decision clarity: food security, negotiation state, and war-cost disclosure */
+.resource-item.is-food {
+  position: relative;
+}
+
+.resource-item.is-food::after {
+  position: absolute;
+  top: 4px;
+  right: 5px;
+  color: #dcc26f;
+  content: "●";
+  font-size: 7px;
+}
+
+.resource-item.is-warning {
+  background: rgba(154, 105, 34, 0.22);
+}
+
+.resource-item.is-danger {
+  background: rgba(143, 47, 37, 0.34);
+  box-shadow: inset 0 -3px #d76d58;
+}
+
+.resource-item.is-warning::after { color: #efbd56; }
+.resource-item.is-danger::after { color: #ff806a; content: "!"; font-size: 10px; font-weight: 900; }
+.resource-item.is-warning strong,
+.resource-item.is-danger strong { color: #ffe1a0; }
+
+.campaign-bar-next.has-food-risk {
+  grid-template-rows: auto auto auto auto;
+}
+
+.campaign-bar-next.has-food-risk .campaign-flow {
+  grid-row: 1 / 5;
+}
+
+.campaign-food-alert {
+  grid-column: 1;
+  margin-top: 5px;
+  padding: 5px 7px;
+  border: 1px solid rgba(239, 189, 86, 0.48);
+  color: #ffe8b4;
+  background: rgba(122, 78, 22, 0.28);
+  font-family: system-ui, sans-serif;
+}
+
+.campaign-food-alert.is-danger {
+  border-color: rgba(255, 118, 94, 0.7);
+  background: rgba(132, 39, 30, 0.48);
+}
+
+.campaign-food-alert b,
+.campaign-food-alert span {
+  display: block;
+  font-size: 8px;
+  line-height: 1.35;
+}
+
+.campaign-food-alert span { margin-top: 1px; color: #d8d1bb; }
+
+.border-negotiation-status {
+  border-left: 3px solid #a47f39;
+}
+
+.border-status-badge {
+  padding: 3px 6px;
+  border: 1px solid rgba(137, 96, 35, 0.35);
+  color: #735827 !important;
+  background: #eee0bc;
+}
+
+.border-status-badge.is-pending { color: #8a3d31 !important; background: #f1d7c6; }
+.border-status-badge.is-secured { color: #2c6650 !important; background: #d8eadb; }
+
+.border-progress-track {
+  height: 8px;
+  margin: 10px 0;
+  overflow: hidden;
+  border: 1px solid rgba(70, 58, 37, 0.25);
+  background: rgba(70, 58, 37, 0.1);
+}
+
+.border-progress-track i {
+  height: 100%;
+  display: block;
+  background: linear-gradient(90deg, #80622e, #c79d45);
+}
+
+.border-progress-facts {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.border-progress-facts span {
+  padding: 7px;
+  border: 1px solid rgba(70, 58, 37, 0.16);
+  background: rgba(255, 255, 255, 0.26);
+}
+
+.border-progress-facts small,
+.border-progress-facts strong { display: block; }
+.border-progress-facts small { color: #777064; font: 8px system-ui, sans-serif; }
+.border-progress-facts strong { margin-top: 3px; color: #3d433d; font-size: 10px; }
+
+.war-plan,
+.formation-card {
+  position: relative;
+}
+
+.selection-state {
+  float: right;
+  margin: -2px 0 5px 7px;
+  padding: 2px 5px;
+  border: 1px solid rgba(77, 63, 39, 0.25);
+  border-radius: 999px;
+  color: #766d5c;
+  background: rgba(255, 255, 255, 0.35);
+  font: 700 7px system-ui, sans-serif;
+  letter-spacing: 0.05em;
+}
+
+[aria-pressed="true"] > .selection-state {
+  border-color: #e2bd60;
+  color: #fff1c8;
+  background: #386b5e;
+}
+
+.war-plan:focus-visible,
+.formation-card:focus-visible,
+.objective-tab:focus-visible {
+  outline: 3px solid #d1a64b;
+  outline-offset: -3px;
+}
+
+.war-cost-estimate {
+  margin: 0 26px 18px;
+  padding: 15px;
+  border: 1px solid rgba(75, 58, 34, 0.28);
+  background: rgba(248, 239, 216, 0.74);
+}
+
+.war-estimate-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.war-estimate-heading strong { color: #493c2b; font-size: 13px; }
+.war-estimate-heading small { color: #766d5e; font: 9px system-ui, sans-serif; }
+
+.war-estimate-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 7px;
+}
+
+.war-estimate-grid > span {
+  padding: 9px;
+  border: 1px solid rgba(75, 58, 34, 0.18);
+  background: rgba(255, 255, 255, 0.4);
+}
+
+.war-estimate-grid small,
+.war-estimate-grid strong,
+.war-estimate-grid em { display: block; }
+.war-estimate-grid small { color: #7b725f; font: 8px system-ui, sans-serif; }
+.war-estimate-grid strong { margin-top: 4px; color: #493b2b; font-size: 12px; }
+.war-estimate-grid em { margin-top: 3px; color: #776f62; font: normal 8px system-ui, sans-serif; }
+
+.war-estimate-reserve {
+  margin: 9px 0 0;
+  padding: 7px 9px;
+  color: #3f594d;
+  background: rgba(91, 139, 110, 0.12);
+  font: 9px/1.45 system-ui, sans-serif;
+}
+
+.war-estimate-reserve.is-danger {
+  color: #853f32;
+  background: rgba(174, 68, 48, 0.13);
+}
+
+.war-estimate-note {
+  display: block;
+  margin-top: 7px;
+  color: #7d7568;
+  font: 8px/1.4 system-ui, sans-serif;
+}
+
+@media (max-width: 700px) {
+  .resource-item.is-food.is-warning,
+  .resource-item.is-food.is-danger {
+    position: sticky;
+    z-index: 2;
+    left: 0;
+    order: -1;
+    min-width: 132px;
+    backdrop-filter: blur(8px);
+  }
+
+  .campaign-bar-next.has-food-risk .campaign-flow,
+  .campaign-food-alert {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  .border-progress-facts,
+  .war-estimate-grid { grid-template-columns: repeat(2, 1fr); }
+  .war-cost-estimate { margin: 0 14px 14px; padding: 11px; }
+  .war-estimate-heading { align-items: start; flex-direction: column; gap: 3px; }
 }

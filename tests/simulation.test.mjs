@@ -2,8 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   COMMANDS,
+  SPENDING_CATEGORIES,
   WAR_OBJECTIVES,
   WORLD,
+  acknowledgeMonthReport,
   adoptDoctrine,
   appointForceOfficer,
   commitMonth,
@@ -12,16 +14,20 @@ import {
   deriveCityMetrics,
   deriveMetrics,
   deriveRealmLedger,
+  getBorderNegotiationStatus,
   getCityBreakdown,
   getCampaignStatus,
   getCommandAvailability,
   getContinentalBalance,
   getCouncilProposals,
   getCountryReport,
+  getGreatPowerFoundation,
+  getFoodSecurityStatus,
   getMilitarySummary,
   getTaskForecast,
   getTurnGuidance,
   getWarCouncilReport,
+  getWarDeclarationEstimate,
   negotiatePeace,
   queueOrder,
   resolveEventChoice,
@@ -51,7 +57,7 @@ test("world is a contiguous continental campaign with multiple states and local 
   assert.equal(WORLD.continent.name, "エルドリア大陸");
   assert.equal(ownProvinces.length, 3);
   assert.equal(Object.keys(WORLD.villages).length, 6);
-  assert.equal(Object.keys(WORLD.countries).length, 7);
+  assert.equal(Object.keys(WORLD.countries).length, 10);
   assert.equal(WORLD.strategicZones.ash_pass.value, 86);
   assert.equal(deriveCityMetrics(createInitialState(), "selene").village.villages.length, 2);
   assert.match(getCityBreakdown(createInitialState(), "selene").villages, /麦輪村/);
@@ -66,6 +72,31 @@ test("national resources are derived from cities instead of flat power currencie
   assert.equal(ledger.troops, 2120);
   assert.equal(ledger.population, 41400);
   assert.equal(deriveMetrics(state).activeIssues, 3);
+});
+
+test("state spending uses six basic categories with concrete commands underneath", () => {
+  assert.deepEqual(Object.values(SPENDING_CATEGORIES).map((category) => category.name), [
+    "社会保障", "軍事関連", "研究開発", "対外援助", "国債返済", "経済投資",
+  ]);
+  const categoryIds = new Set(Object.keys(SPENDING_CATEGORIES));
+  assert.ok(Object.values(COMMANDS).every((command) => categoryIds.has(command.spendingCategory)));
+  for (const categoryId of categoryIds) {
+    assert.ok(Object.values(COMMANDS).some((command) => command.spendingCategory === categoryId));
+  }
+});
+
+test("debt repayment spends capital funds and reduces the actual national debt", () => {
+  let state = preparedState();
+  const openingDebt = state.fiscal.publicDebt;
+  state = queueOrder(state, { kind: "command", commandId: "debt.principal", officerId: "edras", cityId: "selene" });
+  assert.equal(state.fiscal.publicDebt, openingDebt);
+  state = settleMonth(state);
+  assert.equal(state.fiscal.publicDebt, openingDebt - 8);
+  assert.equal(state.fiscal.totalDebtRepaid, 8);
+  const repayment = state.monthlyReports[0].actions.find((action) => action.title === "国債元本を返済");
+  assert.equal(repayment.cost.money, 8);
+  state.fiscal.publicDebt = 0;
+  assert.match(getCommandAvailability(state, "debt.principal", null, "selene").reason, /返済すべき国債/);
 });
 
 test("campaign guidance gives the player one explicit objective and a four-step monthly route", () => {
@@ -85,10 +116,15 @@ test("campaign guidance gives the player one explicit objective and a four-step 
   afterTalks.completedCommands.push("diplomacy.talks");
   afterTalks.issues.standards.status = "resolved";
   afterTalks.issues.reports.status = "resolved";
-  assert.equal(getTurnGuidance(afterTalks).action, "open_military");
+  assert.equal(getTurnGuidance(afterTalks).action, "open_war_council");
 
   state = queueOrder(state, { kind: "command", commandId: orderGuidance.commandId, officerId: "edras", cityId: orderGuidance.cityId });
   assert.equal(getTurnGuidance(state).action, "end_month");
+
+  const settled = commitMonth(state);
+  assert.equal(getTurnGuidance(settled).action, "open_reports");
+  const acknowledged = acknowledgeMonthReport(settled);
+  assert.notEqual(getTurnGuidance(acknowledged).action, "open_reports");
 
   state.agreements.transit = true;
   state.issues.border.status = "resolved";
@@ -202,10 +238,25 @@ test("road condition, standards, and commander-deputy bond feed land mobility an
 test("continental diplomacy reports every active country and drives intervention risk", () => {
   const state = createInitialState();
   assert.equal(getCountryReport(state, "heavens_gate").capital, "天門京");
+  assert.equal(getCountryReport(state, "great_empire").rank, "大国");
+  assert.ok(getCountryReport(state, "great_empire").power > getCountryReport(state, "heavens_gate").power);
   const normal = getContinentalBalance(state);
   const hostile = structuredClone(state);
   Object.values(hostile.foreignStates).forEach((country) => { country.hostility = 90; country.relation = -60; });
   assert.ok(getContinentalBalance(hostile).interventionRisk > normal.interventionRisk);
+});
+
+test("great powers require surplus, transport, administration, and defensible frontiers", () => {
+  const deadland = getGreatPowerFoundation("deadland");
+  const empire = getGreatPowerFoundation("great_empire");
+  const avanheln = getGreatPowerFoundation("avanheln");
+  assert.ok([deadland, empire, avanheln].every((foundation) => foundation.viable && foundation.score >= 70));
+  assert.equal(empire.type, "大河流域帝国");
+  assert.equal(deadland.limitingFactor.label, "余剰動員");
+  assert.equal(avanheln.limitingFactor.label, "余剰動員");
+  assert.ok(empire.transportIntegration > avanheln.transportIntegration);
+  assert.ok(avanheln.naturalFrontier > empire.naturalFrontier);
+  assert.equal(getGreatPowerFoundation("valka"), null);
 });
 
 test("war council evaluates political objective, terrain, supply, intelligence, and third countries", () => {
@@ -218,6 +269,46 @@ test("war council evaluates political objective, terrain, supply, intelligence, 
   const encircled = structuredClone(initial);
   Object.values(encircled.foreignStates).forEach((country) => { country.hostility = 95; country.relation = -80; });
   assert.ok(getWarCouncilReport(encircled, "transit").score < report.score);
+});
+
+test("food security warns before depletion and takes over turn guidance at danger level", () => {
+  const state = preparedState();
+  const opening = getFoodSecurityStatus(state, null);
+  assert.equal(opening.severity, "warning");
+  assert.equal(opening.primaryCity.cityId, "nereia");
+
+  state.cities.nereia.resources.food = 900;
+  const danger = getFoodSecurityStatus(state);
+  assert.equal(danger.severity, "danger");
+  assert.ok(danger.primaryCity.afterRunway <= 1.5);
+  const guidance = getTurnGuidance(state);
+  assert.equal(guidance.stepLabel, "食料危機");
+  assert.equal(guidance.commandId, "city.cultivate");
+  assert.equal(guidance.cityId, "nereia");
+});
+
+test("border negotiation distinguishes the completed meeting from secured transit rights", () => {
+  const state = createInitialState();
+  assert.equal(getBorderNegotiationStatus(state).meetingProgress, 0);
+  state.completedCommands.push("diplomacy.talks");
+  state.foreignStates.valka.relation = -23;
+  const afterTalks = getBorderNegotiationStatus(state);
+  assert.equal(afterTalks.meetingProgress, 100);
+  assert.equal(afterTalks.relationshipGain, 8);
+  assert.equal(afterTalks.transitSecured, false);
+  assert.match(afterTalks.status, /未保証/);
+});
+
+test("war declaration estimate exposes duration and cumulative human and food costs", () => {
+  const state = preparedState();
+  const estimate = getWarDeclarationEstimate(state, "transit");
+  assert.equal(estimate.estimatedMonths, 6);
+  assert.equal(estimate.peaceScoreThreshold, 17.6);
+  assert.equal(estimate.totalFood, estimate.foodPerMonth * estimate.estimatedMonths);
+  assert.equal(estimate.totalTroopLoss, estimate.troopLossPerMonth * estimate.estimatedMonths);
+  assert.equal(estimate.totalDisplaced, estimate.displacedPerMonth * estimate.estimatedMonths);
+  assert.ok(estimate.projectedProvisions < deriveRealmLedger(state).provisions);
+  assert.equal(estimate.foodRisk, true);
 });
 
 test("declaring without sufficient justification creates an East March consequence", () => {
@@ -257,6 +348,8 @@ test("formation selection trades battlefield pressure for losses and supply", ()
 
 test("peace ends war and records a border settlement", () => {
   let state = declareWar(createInitialState(), "transit");
+  assert.throws(() => negotiatePeace(state), /1か月以上/);
+  state.war.months = 1;
   state.war.score = 40;
   state.war.objectiveProgress = 50;
   state = negotiatePeace(state);

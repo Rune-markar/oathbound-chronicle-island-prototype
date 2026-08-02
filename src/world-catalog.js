@@ -110,23 +110,23 @@ export const PEOPLES = Object.freeze({
 // Notion由来の種族設定と、ゲーム内で用いる代表像の演出設定を分離する。
 // 年齢・役職・表情は種族そのものの固定属性ではなく、今回登場する一代表のもの。
 export const PEOPLE_REPRESENTATIVES = Object.freeze({
-  acrane: { image: "./assets/generated/race-acrane.webp", role: "星糸の観測使", apparentAge: "40代", expression: "距離を測る冷静な眼差し" },
-  elf: { image: "./assets/generated/race-elf.webp", role: "森王庭の上席使節", apparentAge: "40代", expression: "穏やかな自信" },
-  goblin: { image: "./assets/generated/race-goblin.webp", role: "交易評議会の古参", apparentAge: "50代", expression: "老獪で親しげな微笑み" },
-  orc: { image: "./assets/generated/race-orc.webp", role: "氏族盟約の交渉人", apparentAge: "30代", expression: "挑戦的な片眉と半笑い" },
-  undead: { image: "./assets/generated/race-undead.webp", role: "冥府の弔冠大使", apparentAge: "70代相当", expression: "長い歳月を湛えた哀感" },
-  giant: { image: "./assets/generated/race-giant.webp", role: "高峰氏族の盟約者", apparentAge: "40代", expression: "包容力のある快活さ" },
-  fairy: { image: "./assets/generated/race-fairy.webp", role: "花暦宮の伝令使", apparentAge: "20代", expression: "好奇心に満ちた笑顔" },
-  lamia: { image: "./assets/generated/race-lamia.webp", role: "河宮の条約使", apparentAge: "30代", expression: "相手を量る含み笑い" },
-  homunculus: { image: "./assets/generated/race-homunculus.webp", role: "錬成院の通訳官", apparentAge: "20代", expression: "分析中の率直な驚き" },
-  machine_life: { image: "./assets/generated/race-machine-life.webp", role: "古機構の調停個体", apparentAge: "50代", expression: "人を見抜く温かな微笑み" },
-  beastfolk: { image: "./assets/generated/race-beastfolk.webp", role: "群れ評議会の遊説使", apparentAge: "30代", expression: "快活で大胆な笑み" },
-  phantom_beast: { image: "./assets/generated/race-phantom-beast.webp", role: "幻境の記憶守", apparentAge: "60代", expression: "遠い記憶を惜しむ眼差し" },
-  angel: { image: "./assets/generated/race-angel.webp", role: "天門の親善使節", apparentAge: "40代", expression: "慈愛に満ちた歓迎" },
-  demon: { image: "./assets/generated/race-demon.webp", role: "黒曜廷の全権使", apparentAge: "20代", expression: "不敵で愉快そうな笑み" },
-  ogre: { image: "./assets/generated/race-ogre.webp", role: "鬼州の年長評議員", apparentAge: "50代", expression: "豪胆で人懐こい大笑い" },
-  human: { image: "./assets/generated/race-human.webp", role: "王国の若手外交官", apparentAge: "20代", expression: "端正で揺るがない平静" },
-  dragon: { image: "./assets/generated/race-dragon.webp", role: "竜王座の古参代理", apparentAge: "60代", expression: "峻厳さの奥の愉悦" },
+  acrane: { image: "./assets/generated/race-acrane.webp", role: "星糸の観測使", apparentAge: "28歳", expression: "全ての眼に宿る鋭い猜疑" },
+  elf: { image: "./assets/generated/race-elf.webp", role: "森王庭の上席使節", apparentAge: "25歳", expression: "目を閉じて身を反らす大笑い" },
+  goblin: { image: "./assets/generated/race-goblin.webp", role: "交易評議会の策士", apparentAge: "21歳", expression: "嘘を見抜こうとする猜疑" },
+  orc: { image: "./assets/generated/race-orc.webp", role: "氏族盟約の交渉人", apparentAge: "27歳", expression: "反論を叩きつける憤怒と驚愕" },
+  undead: { image: "./assets/generated/race-undead.webp", role: "冥府の弔冠大使", apparentAge: "28歳", expression: "顎を上げて見下ろす冷たい軽蔑" },
+  giant: { image: "./assets/generated/race-giant.webp", role: "高峰氏族の盟約者", apparentAge: "27歳", expression: "民を守ろうとする防衛的な怒り" },
+  fairy: { image: "./assets/generated/race-fairy.webp", role: "花暦宮の伝令使", apparentAge: "18歳", expression: "両目を見開いた驚愕" },
+  lamia: { image: "./assets/generated/race-lamia.webp", role: "河宮の条約使", apparentAge: "22歳", expression: "獲物を見定める捕食者の満足" },
+  homunculus: { image: "./assets/generated/race-homunculus.webp", role: "錬成院の通訳官", apparentAge: "20歳", expression: "答えを組み立てきれない分析的混乱" },
+  machine_life: { image: "./assets/generated/race-machine-life.webp", role: "古機構の調停個体", apparentAge: "25歳", expression: "涙を理解し始めた静かな共感" },
+  beastfolk: { image: "./assets/generated/race-beastfolk.webp", role: "群れ評議会の遊説使", apparentAge: "19歳", expression: "秘密を誘う悪戯なウインク" },
+  phantom_beast: { image: "./assets/generated/race-phantom-beast.webp", role: "幻境の記憶守", apparentAge: "19歳", expression: "視線を伏せた声なき悲嘆" },
+  angel: { image: "./assets/generated/race-angel.webp", role: "天門の親善使節", apparentAge: "26歳", expression: "手を差し伸べる切迫した慈愛" },
+  demon: { image: "./assets/generated/race-demon.webp", role: "黒曜廷の全権使", apparentAge: "24歳", expression: "隠そうともしない露骨な嫌悪" },
+  ogre: { image: "./assets/generated/race-ogre.webp", role: "鬼州の祝勝使", apparentAge: "20歳", expression: "拳を掲げる勝利の雄叫び" },
+  human: { image: "./assets/generated/race-human.webp", role: "王国の若手外交官", apparentAge: "23歳", expression: "焦燥を押し込めた決意" },
+  dragon: { image: "./assets/generated/race-dragon.webp", role: "竜王座の密命代理", apparentAge: "29歳", expression: "秘密を噛みしめる片側の含み笑い" },
 });
 
 export const DIPLOMATIC_DELEGATES = Object.freeze({
@@ -136,6 +136,8 @@ export const DIPLOMATIC_DELEGATES = Object.freeze({
   lustrond: { peopleId: "human", certainty: "構成種族", note: "国家設定で明記された人間の代表。" },
   izmenia: { peopleId: "human", certainty: "構成種族", note: "国家設定で明記された人間の代表。" },
   heavens_gate: { peopleId: "angel", certainty: "関連種族", note: "神族国家との関連種族として天使の代表を表示。" },
+  deadland: { peopleId: "undead", certainty: "構成種族", note: "国家設定で明記された死族の代表。" },
+  avanheln: { peopleId: "dragon", certainty: "関連種族", note: "竜王の保護下にある連盟として竜族代表を表示。" },
 });
 
 export function getDiplomaticDelegate(countryId) {

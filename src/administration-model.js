@@ -215,8 +215,18 @@ function canSpend(city, config, cost) {
   return city.resources.money - cost >= config.reserveMoney;
 }
 
+function delegatedSpendingCategory(id) {
+  if (["grain", "patrol", "relief", "order"].includes(id)) return "social_security";
+  if (id === "frontier") return "military_affairs";
+  if (["audit", "registry"].includes(id)) return "research_development";
+  return "economic_investment";
+}
+
 function spendAction(cityId, id, title, detail, cost, changes) {
-  return { id, kind: "administration", cityId, title, status: "completed", detail, cost: { money: cost }, governanceCost: 0, forced: false, changes };
+  return {
+    id, kind: "administration", cityId, title, status: "completed", detail,
+    spendingCategory: delegatedSpendingCategory(id), cost: { money: cost }, governanceCost: 0, forced: false, changes,
+  };
 }
 
 function chooseDelegatedAction(world, state, cityId) {

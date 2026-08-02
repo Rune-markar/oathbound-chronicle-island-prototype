@@ -6,7 +6,8 @@ const root = new URL("../", import.meta.url);
 
 test("game manual covers the monthly loop and every active foreign national logic model", async () => {
   const manual = await readFile(new URL("MANUAL.md", root), "utf8");
-  assert.match(manual, /方針.*命令.*月末.*報告/s);
+  assert.match(manual, /方針.*支出.*月末.*報告/s);
+  ["社会保障", "軍事関連", "研究開発", "対外援助", "国債返済", "経済投資"].forEach((name) => assert.match(manual, new RegExp(name)));
   assert.match(manual, /他国家の国家論理モデル/);
   [
     "ヴァルカ公国",
@@ -15,6 +16,9 @@ test("game manual covers the monthly loop and every active foreign national logi
     "ルストロンド公国",
     "イズメニア",
     "ヘブンズゲート王国",
+    "デッドランド冥府",
+    "グレート帝国",
+    "アバンヘルン連盟",
   ].forEach((name) => assert.match(manual, new RegExp(name)));
   assert.match(manual, /月ごとの具体的な戦争行動を自律選択するのは主敵ヴァルカ/);
 });

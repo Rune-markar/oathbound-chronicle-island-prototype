@@ -324,9 +324,12 @@ export function deriveCityMetrics(world, state, cityId) {
   const adminFactor = 0.62 + internal.administrativeEfficiency / 230 + office * 0.025;
   const landIncome = resources.population / 1300 * (0.65 + resources.production / 100) * landTax.rate * 8;
   const commerceIncome = resources.population / 1200 * (0.4 + resources.commerce / 100) * commerceTax.rate * 7;
-  const grossIncome = (landIncome + commerceIncome)
-    * securityFactor * adminFactor * (1 + market * 0.08 + road * 0.04 + village.miningSupport * 0.55)
+  const incomeCollectionFactor = securityFactor * adminFactor
+    * (1 + market * 0.08 + road * 0.04 + village.miningSupport * 0.55)
     * doctrine.incomeMultiplier * (1 - internal.corruption / 170);
+  const landTaxIncome = landIncome * incomeCollectionFactor;
+  const commerceTaxIncome = commerceIncome * incomeCollectionFactor;
+  const grossIncome = landTaxIncome + commerceTaxIncome;
   const officerWages = getServingOfficers(world, state)
     .filter((officer) => officer.location === cityId)
     .reduce((sum, officer) => sum + 0.32 + officer.rankLevel * 0.11, 0);
@@ -415,7 +418,7 @@ export function deriveCityMetrics(world, state, cityId) {
     defense: resources.defense, gold: resources.money, provisions: resources.food,
     draftPopulation: military.draftPopulation, troops: military.troops, sailors: military.sailors,
     ships: military.ships, training: military.training, shipyard: military.shipyard,
-    households: Math.round(resources.population / 5), grossIncome, expenses, netIncome,
+    households: Math.round(resources.population / 5), grossIncome, landTaxIncome, commerceTaxIncome, expenses, netIncome,
     officerWages, facilityUpkeep, troopUpkeep, fleetUpkeep,
     foodProduction, supplyYield: foodProduction, civilianNeed, militaryNeed, spoilage, foodBalance, supplyBalance: foodBalance,
     foodSatisfaction, housingRate, unemploymentRate, populationDelta, supportDelta, securityDelta,

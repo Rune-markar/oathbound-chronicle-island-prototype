@@ -10,8 +10,13 @@ import {
   FORCED_ORDER_RULES,
   FORMATIONS,
   POLICY_DEFINITIONS,
+  OCCUPATION_POLICIES,
+  REVENUE_CATEGORIES,
+  SPENDING_CATEGORIES,
   WAR_OBJECTIVES,
+  WAR_PLANS,
   WORLD,
+  acknowledgeMonthReport,
   adoptDoctrine,
   appointForceOfficer,
   cancelOrder,
@@ -27,25 +32,37 @@ import {
   getCityBreakdown,
   getCityAdministration,
   getCampaignStatus,
+  getBorderNegotiationStatus,
   getCommandAvailability,
   getContinentalBalance,
   getCountryReport,
   getCouncilProposals,
   getEligibleOfficers,
+  getEnemyCommander,
   getGovernance,
+  getGreatPowerFoundation,
+  getFoodSecurityStatus,
   getMilitarySummary,
+  getPeaceOptions,
   getOfficerReport,
   getTaskForecast,
   getTurnGuidance,
   getTurnWarnings,
   getWarCouncilReport,
+  getWarDeclarationEstimate,
   getWarSupport,
+  getWarPlanOptions,
+  getWarStage,
   negotiatePeace,
+  normalizeWarState,
   queueOrder,
   resolveEventChoice,
+  releaseOccupation,
   setFormation,
   setAdministrationMandate,
   setAdministrationMode,
+  setOccupationGarrison,
+  setOccupationPolicy,
   setWarPlan,
 } from "./simulation.js";
 import {
@@ -60,6 +77,7 @@ import {
   getWorldCatalogSummary,
 } from "./world-catalog.js";
 import { createGameAudio } from "./audio.js";
+import { subdivideTerritoryTiles } from "./map-tiles.js";
 import {
   RESOURCE_CATEGORIES,
   STATISTICS_BASIS,
@@ -70,7 +88,8 @@ import {
   getWorldStatisticsSummary,
 } from "./world-statistics.js";
 
-const STORAGE_KEY = "oathbound-continental-grand-strategy-v5";
+const STORAGE_KEY = "oathbound-continental-grand-strategy-v7";
+const LEGACY_STORAGE_KEYS = ["oathbound-continental-grand-strategy-v6"];
 
 const CITY_ART = Object.freeze({
   selene: "./assets/generated/city-selene.webp",
@@ -111,6 +130,13 @@ const TERRAIN_TILE_PROFILES = Object.freeze({
   badlands: { climate: "乾燥", movement: "高", defense: "+10%", resources: "硫黄・色鉱", risk: "水不足", summary: "礫地と涸れ谷が補給を消耗させ、水場の確保が行軍可能距離を決める。" },
 });
 
+const MAP_VIEWBOXES = Object.freeze({
+  world: "0 0 1800 1050",
+  country: "20 35 960 585",
+  city: "200 150 620 440",
+  village: "250 175 540 400",
+});
+
 function cityArt(cityId) {
   return CITY_ART[cityId] ?? CITY_ART.selene;
 }
@@ -121,6 +147,8 @@ let resetArmTimer = null;
 let previewCache = { state: null, value: null };
 const view = {
   panel: "council",
+  spendingCategoryId: "social_security",
+  spendingCityId: "selene",
   mapMode: "political",
   scale: "country",
   selectedType: null,
@@ -179,6 +207,7 @@ const elements = {
   objectiveTabs: document.querySelector("#objectiveTabs"),
   warCouncilReport: document.querySelector("#warCouncilReport"),
   declarationWarning: document.querySelector("#declarationWarning"),
+  warCostEstimate: document.querySelector("#warCostEstimate"),
   declareWarButton: document.querySelector("#declareWarButton"),
   assignmentModal: document.querySelector("#assignmentModal"),
   assignmentTitle: document.querySelector("#assignmentTitle"),
@@ -197,10 +226,14 @@ const elements = {
 
 function loadState() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(STORAGE_KEY) ?? LEGACY_STORAGE_KEYS.map((key) => localStorage.getItem(key)).find(Boolean);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    return parsed.version === 5 ? parsed : null;
+    if (![6, 7].includes(parsed.version)) return null;
+    parsed.fiscal ??= { publicDebt: 24, totalDebtRepaid: 0 };
+    parsed.fiscal.publicDebt = Number.isFinite(parsed.fiscal.publicDebt) ? parsed.fiscal.publicDebt : 24;
+    parsed.fiscal.totalDebtRepaid = Number.isFinite(parsed.fiscal.totalDebtRepaid) ? parsed.fiscal.totalDebtRepaid : 0;
+    return normalizeWarState(parsed);
   } catch {
     return null;
   }
@@ -312,16 +345,19 @@ function withPlanningForecast(city) {
 function renderResources() {
   const ledger = deriveRealmLedger(state);
   const military = getMilitarySummary(state);
+  const foodSecurity = getFoodSecurityStatus(state, getPlanningPreview());
+  const foodTone = foodSecurity.severity === "stable" ? "" : `is-${foodSecurity.severity}`;
+  const foodStatus = foodSecurity.severity === "danger" ? "危機" : foodSecurity.severity === "warning" ? "注意" : "安定";
   const resources = [
-    ["¤", formatValue(ledger.remittableMoney, 1), `朝廷可動 / 州庫計 ${formatValue(ledger.treasury, 1)}`],
-    ["俵", formatValue(ledger.deliverableFood), `輸送可能 / 在庫 ${formatValue(ledger.provisions)}`],
-    ["兵", formatValue(ledger.mobilizableTroops), `動員可能 / 駐屯 ${formatValue(ledger.troops)}`],
-    ["道", `${military.mobility} / ${military.supply}`, "機動 / 軍需"],
-    ["♛", state.legitimacy, "正統性"],
-    ["令", `${ledger.governance.used}/${ledger.governance.max}`, `統治力 · 待機${ledger.availableOfficers}名`],
+    { icon: "¤", value: formatValue(ledger.remittableMoney, 1), label: `朝廷可動 / 州庫計 ${formatValue(ledger.treasury, 1)}` },
+    { icon: "俵", value: formatValue(ledger.deliverableFood), label: `輸送可能（行政補正後） / 在庫 ${formatValue(ledger.provisions)}`, className: `is-food ${foodTone}`, title: `食料${foodStatus}。輸送可能量は統治方式・委任方針・行政到達度を反映した値です。` },
+    { icon: "兵", value: formatValue(ledger.mobilizableTroops), label: `動員可能 / 駐屯 ${formatValue(ledger.troops)}` },
+    { icon: "道", value: `${military.mobility} / ${military.supply}`, label: "機動 / 軍需" },
+    { icon: "♛", value: state.legitimacy, label: "正統性" },
+    { icon: "令", value: `${ledger.governance.used}/${ledger.governance.max}`, label: `統治力 · 待機${ledger.availableOfficers}名` },
   ];
-  elements.resourceLedger.innerHTML = resources.map(([icon, value, label]) => `
-    <div class="resource-item"><i>${icon}</i><strong>${value}</strong><small>${label}</small></div>
+  elements.resourceLedger.innerHTML = resources.map(({ icon, value, label, className = "", title = "" }) => `
+    <div class="resource-item ${className}"${title ? ` title="${title}" aria-label="${title}"` : ""}><i>${icon}</i><strong>${value}</strong><small>${label}</small></div>
   `).join("");
 }
 
@@ -350,6 +386,10 @@ function campaignObjectiveItems(campaign, compact = false) {
 function renderCampaignBar() {
   const campaign = getCampaignStatus(state);
   const guidance = getTurnGuidance(state);
+  const foodSecurity = getFoodSecurityStatus(state, getPlanningPreview());
+  const foodRisk = foodSecurity.primaryCity && foodSecurity.severity !== "stable"
+    ? `<div class="campaign-food-alert is-${foodSecurity.severity}" role="status"><b>${foodSecurity.severity === "danger" ? "食料危機" : "食料注意"} · ${foodSecurity.primaryCity.name}</b><span>次月末 ${formatValue(Math.max(0, foodSecurity.primaryCity.after))} / 約${foodSecurity.primaryCity.afterRunway.toFixed(1)}か月分</span></div>`
+    : "";
   const flow = campaign.loop.map((item, index) => {
     const step = index + 1;
     const active = guidance.step === step;
@@ -363,10 +403,11 @@ function renderCampaignBar() {
       <strong>${campaign.title}</strong>
       <span>${campaign.completedCount} / ${campaign.totalCount} 達成</span>
     </div>
-    <div class="campaign-bar-next">
+    <div class="campaign-bar-next ${foodRisk ? "has-food-risk" : ""}">
       <small>次にすること · STEP ${guidance.step}/4 ${guidance.stepLabel}</small>
       <strong>${guidance.title}</strong>
       <span>${guidance.description}</span>
+      ${foodRisk}
       <div class="campaign-flow" aria-label="月次の進め方">${flow}</div>
     </div>
     <div class="campaign-bar-actions">
@@ -392,10 +433,9 @@ function costLabel(command) {
   return Object.entries(command.cost).map(([key, value]) => `${names[key]}${value}`).join(" · ");
 }
 
-function commandCards(group, cityId = null) {
+function spendingCommandCards(categoryId, cityId = WORLD.nation.capital) {
   return Object.values(COMMANDS)
-    .filter((command) => command.group === group)
-    .filter((command) => !command.defaultCityId || group !== "city" || command.defaultCityId === cityId)
+    .filter((command) => command.spendingCategory === categoryId)
     .map((command) => {
       const targetCityId = command.defaultCityId ?? cityId ?? WORLD.nation.capital;
       const availability = getCommandAvailability(state, command.id, null, targetCityId);
@@ -403,10 +443,16 @@ function commandCards(group, cityId = null) {
         <button class="command-card" type="button" data-command="${command.id}" data-city-id="${targetCityId}" ${availability.allowed ? "" : "disabled"}>
           <strong>${command.name}</strong><em>${availability.allowed ? `${command.durationTurns}か月 · 統治${command.governanceCost} · ${costLabel(command)}` : availability.reason}</em>
           <small>${command.description}</small>
+          <span class="command-target">対象：${WORLD.provinces[targetCityId].name}</span>
           ${availability.allowed ? '<span class="assign-prompt">担当武将を選ぶ →</span>' : ""}
         </button>
       `;
     }).join("");
+}
+
+function spendingShortcut(categoryId, text) {
+  const category = SPENDING_CATEGORIES[categoryId];
+  return `<button class="spending-shortcut" type="button" data-spending-category="${categoryId}"><span>${category.icon}</span><strong>${category.name}</strong><small>${text}</small><b>具体策を見る →</b></button>`;
 }
 
 function meter(label, value, suffix = "/ 100", className = "") {
@@ -422,6 +468,30 @@ function meter(label, value, suffix = "/ 100", className = "") {
 function statCells(stats) {
   const labels = { leadership: "統率", war: "武力", intelligence: "知力", politics: "政治", charisma: "魅力" };
   return Object.entries(labels).map(([key, label]) => `<div><small>${label}</small><strong>${stats[key]}</strong></div>`).join("");
+}
+
+function officerSeal(officer, size = "") {
+  const className = ["officer-seal", size].filter(Boolean).join(" ");
+  const portrait = officer.portraitImage
+    ? `<img src="${officer.portraitImage}" alt="" loading="lazy">`
+    : officer.portrait;
+  return `<span class="${className}" aria-hidden="true">${portrait}</span>`;
+}
+
+function enemyCommanderCard(commander, action = null, compact = false) {
+  if (!commander) return "";
+  return `
+    <article class="enemy-commander-card ${compact ? "is-compact" : ""}">
+      ${officerSeal(commander, "large")}
+      <div>
+        <small>ENEMY COMMANDER · ${commander.country.name}</small>
+        <strong>${commander.name}</strong>
+        <span>${commander.role} · ${commander.doctrine}</span>
+        <em>統率 ${commander.stats.leadership} · 武力 ${commander.stats.war} · 知力 ${commander.stats.intelligence}</em>
+        ${action ? `<p><b>${action.label}</b><br>${action.reason}</p>` : ""}
+      </div>
+    </article>
+  `;
 }
 
 function seasonName() {
@@ -445,7 +515,7 @@ function renderCouncilPanel() {
     const availability = getCommandAvailability(state, proposal.commandId, proposal.officerId, proposal.cityId);
     return `
       <article class="proposal-card">
-        <header><span class="officer-seal">${officer.portrait}</span><div><strong>${officer.name}</strong><small>${officer.role}の提案</small></div><b>${proposal.forecast.grade}</b></header>
+        <header>${officerSeal(officer)}<div><strong>${officer.name}</strong><small>${officer.role}の提案</small></div><b>${proposal.forecast.grade}</b></header>
         <p>「${proposal.reason}」</p>
         <button type="button" data-command="${command.id}" data-city-id="${proposal.cityId}" ${availability.allowed ? "" : "disabled"}>${command.name}を任務化 · 予測 ${proposal.forecast.range[0]}〜${proposal.forecast.range[1]}</button>
       </article>
@@ -491,6 +561,51 @@ function cityTabs() {
   `).join("");
 }
 
+function renderSpendingPanel() {
+  const ledger = deriveRealmLedger(state);
+  const governance = getGovernance(state);
+  const selected = SPENDING_CATEGORIES[view.spendingCategoryId] ?? SPENDING_CATEGORIES.social_security;
+  const reservedMoney = state.pendingOrders.reduce((sum, order) => sum + (order.cost?.money ?? 0), 0);
+  const categories = Object.values(SPENDING_CATEGORIES).map((category) => {
+    const commandCount = Object.values(COMMANDS).filter((command) => command.spendingCategory === category.id).length;
+    return `
+      <button type="button" class="spending-category-card ${category.id === selected.id ? "is-active" : ""}" data-spending-category="${category.id}">
+        <i>${category.icon}</i><span><strong>${category.name}</strong><small>具体策 ${commandCount}件</small></span>
+      </button>
+    `;
+  }).join("");
+  const cityTargets = Object.keys(state.cities).map((cityId) => `
+    <button type="button" class="${cityId === view.spendingCityId ? "is-active" : ""}" data-spending-city="${cityId}">${WORLD.provinces[cityId].name.replace(/王都|河港|城塞市/, "")}</button>
+  `).join("");
+  elements.leftPanel.innerHTML = `
+    <header class="panel-heading spending-heading">
+      <span>NATIONAL EXPENDITURE</span>
+      <h1>国家支出</h1>
+      <p>目的を選び、その配下から具体策を決める</p>
+    </header>
+    <div class="panel-body">
+      <section class="panel-section">
+        <div class="spending-ledger">
+          <div><small>朝廷可動金</small><strong>${formatValue(ledger.remittableMoney, 1)}</strong></div>
+          <div><small>予約支出</small><strong>${formatValue(reservedMoney, 1)}</strong></div>
+          <div><small>国債残高</small><strong>${formatValue(ledger.publicDebt, 1)}</strong></div>
+          <div><small>統治力</small><strong>${governance.used} / ${governance.max}</strong></div>
+        </div>
+      </section>
+      <section class="panel-section">
+        <div class="section-heading"><h2>基本コマンド</h2><small>国家支出 6分類</small></div>
+        <div class="spending-category-grid">${categories}</div>
+      </section>
+      <section class="panel-section spending-detail">
+        <div class="spending-detail-heading"><i>${selected.icon}</i><div><small>選択中の支出</small><h2>${selected.name}</h2><p>${selected.description}</p></div></div>
+        <nav class="spending-city-tabs" aria-label="具体策の対象都市">${cityTargets}</nav>
+        ${selected.id === "debt_repayment" ? `<p class="spending-debt-note">国債残高 ${formatValue(ledger.publicDebt, 1)} · 累計返済 ${formatValue(state.fiscal?.totalDebtRepaid ?? 0, 1)}</p>` : ""}
+        <div class="command-list spending-command-list">${spendingCommandCards(selected.id, view.spendingCityId)}</div>
+      </section>
+    </div>
+  `;
+}
+
 function renderCityPanel() {
   const cityId = view.selectedCityId;
   const city = withPlanningForecast(deriveCityMetrics(state, cityId));
@@ -506,7 +621,7 @@ function renderCityPanel() {
     <div class="panel-body">
       <section class="panel-section">
         <article class="governor-card">
-          <span class="officer-seal large">${governor.portrait}</span>
+          ${officerSeal(governor, "large")}
           <div><small>太守</small><strong>${governor.name}</strong><p>${governor.policy} · 忠誠 ${governor.loyalty} · 意欲 ${governor.stamina}</p></div>
         </article>
         <div class="officer-stat-grid compact">${statCells(governor.stats)}</div>
@@ -520,8 +635,12 @@ function renderCityPanel() {
         </div>
       </section>
       <section class="panel-section">
-        <div class="section-heading"><h2>内政任務</h2><small>統治力 ${governance.used}/${governance.max}</small></div>
-        <div class="command-list">${commandCards("city", cityId)}</div>
+        <div class="section-heading"><h2>国家支出から実行</h2><small>統治力 ${governance.used}/${governance.max}</small></div>
+        <div class="spending-shortcut-list">
+          ${spendingShortcut("social_security", `${city.name}の生活・衛生・治安を支える`)}
+          ${spendingShortcut("economic_investment", `${city.name}の生産・商業・基盤を育てる`)}
+          ${spendingShortcut("research_development", "制度・測量・行政技術を整える")}
+        </div>
       </section>
       <section class="panel-section city-issue-list">
         <div class="section-heading"><h2>現在の課題</h2><small>${state.cities[cityId].issues.length}件</small></div>
@@ -559,7 +678,7 @@ function cityWorkspaceHeader(city, governor) {
   return `
     <header class="city-workspace-header" style="--city-art: url('${cityArt(city.cityId)}')">
       <div><span>${city.kind} / ${city.season.name}季</span><h1>${city.name}</h1><p>${city.note}</p></div>
-      <div class="city-governor-badge"><span class="officer-seal">${governor.portrait}</span><div><small>太守</small><strong>${governor.name}</strong><b>${governor.policy}</b></div></div>
+      <div class="city-governor-badge">${officerSeal(governor)}<div><small>太守</small><strong>${governor.name}</strong><b>${governor.policy}</b></div></div>
     </header>
     <nav class="city-workspace-tabs" aria-label="都市画面タブ">
       ${Object.entries(CITY_TABS).map(([id, label]) => `<button type="button" data-city-tab="${id}" class="${view.cityTab === id ? "is-active" : ""}">${label}</button>`).join("")}
@@ -787,14 +906,84 @@ function reportActionRows(report, cityId) {
   }).join("");
 }
 
+function reportWarRows(report) {
+  const entries = [];
+  if (report.aggression) entries.push('<p class="report-war is-danger"><strong>敵軍侵攻</strong><small>東部国境軍が国土防衛戦へ移行しました。</small></p>');
+  if (report.war) {
+    const war = report.war;
+    entries.push(`<p class="report-war"><strong>戦況 ${signed(war.delta, 1)} · 自軍損失 ${formatValue(war.ownLoss)}</strong><small>敵軍損失 ${formatValue(war.enemyLoss)} · 食料 ${formatValue(war.foodCost)} · 施設被害 ${formatValue(war.damage, 1)} · 避難民 ${formatValue(war.displaced)} · 住民被害 ${formatValue(war.civilianLosses)}</small></p>`);
+  }
+  (report.occupations ?? []).forEach((occupation) => {
+    entries.push(`<p class="report-war ${occupation.resistanceLoss ? "is-danger" : ""}"><strong>占領統治 · ${occupation.policyName}</strong><small>${occupation.supplied ? "費用・補給充足" : "費用または補給不足"} · 統制 ${signed(occupation.controlDelta, 1)} · 抵抗 ${signed(occupation.resistanceDelta, 1)} · 統合 ${signed(occupation.integrationDelta, 1)} · 避難民 ${signed(occupation.displacedDelta)}</small></p>`);
+  });
+  return entries.length ? `<h3>戦争・占領</h3>${entries.join("")}` : "";
+}
+
+function fiscalEntries(section, definitions) {
+  return Object.values(definitions).map((definition) => ({
+    ...definition,
+    value: Math.max(0, Number(section?.[definition.id]) || 0),
+  }));
+}
+
+function fiscalGradient(entries, total) {
+  if (total <= 0) return "conic-gradient(#d8d1c3 0% 100%)";
+  let cursor = 0;
+  const segments = entries.filter((entry) => entry.value > 0).map((entry) => {
+    const start = cursor;
+    cursor += entry.value / total * 100;
+    return `${entry.color} ${start.toFixed(2)}% ${cursor.toFixed(2)}%`;
+  });
+  return `conic-gradient(${segments.join(", ")})`;
+}
+
+function fiscalChart(title, section, definitions, compact = false) {
+  const entries = fiscalEntries(section, definitions);
+  const total = Math.max(0, Number(section?.total) || entries.reduce((sum, entry) => sum + entry.value, 0));
+  const legend = entries.map((entry) => {
+    const percent = total > 0 ? entry.value / total * 100 : 0;
+    return `<li><i style="--fiscal-color:${entry.color}"></i><span>${entry.name}</span><strong>${formatValue(entry.value, 1)}</strong><small>${formatValue(percent, 1)}%</small></li>`;
+  }).join("");
+  return `
+    <article class="fiscal-chart ${compact ? "is-compact" : ""}">
+      <header><h3>${title}</h3><strong>金 ${formatValue(total, 1)}</strong></header>
+      <div class="fiscal-chart-body">
+        <div class="fiscal-donut" role="img" aria-label="${title} 合計 ${formatValue(total, 1)}" style="--fiscal-gradient:${fiscalGradient(entries, total)}"><span><small>${title}</small><b>${formatValue(total, 1)}</b></span></div>
+        <ul class="fiscal-legend">${legend}</ul>
+      </div>
+    </article>
+  `;
+}
+
+function fiscalCharts(fiscal, compact = false) {
+  return `<div class="fiscal-chart-grid ${compact ? "is-compact" : ""}">${fiscalChart("歳入", fiscal.income, REVENUE_CATEGORIES, compact)}${fiscalChart("支出", fiscal.expenditure, SPENDING_CATEGORIES, compact)}</div>`;
+}
+
+function fiscalReportCard(report) {
+  const fiscal = report.fiscal;
+  const positive = fiscal.balance >= 0;
+  return `
+    <section class="fiscal-report-card">
+      <header>
+        <div><span>NATIONAL FINANCE · ${report.year} ${report.monthName}</span><h2>国家財政レポート</h2><p>全都市の税収、維持費、国家支出、臨時収支を集計</p></div>
+        <div class="fiscal-balance ${positive ? "is-surplus" : "is-deficit"}"><small>当月${positive ? "黒字" : "赤字"}</small><strong>${signed(fiscal.balance, 1)}</strong><span>国庫 ${formatValue(fiscal.openingTreasury, 1)} → ${formatValue(fiscal.closingTreasury, 1)}</span></div>
+      </header>
+      ${fiscalCharts(fiscal)}
+      <p class="fiscal-note">支出は「社会保障・軍事関連・研究開発・対外援助・国債返済・経済投資」の六分類で集計しています。</p>
+    </section>
+  `;
+}
+
 function renderCityReports(city) {
   const reports = state.monthlyReports.filter((report) => report.cities.some((item) => item.cityId === city.cityId)).slice(0, 18);
   const annual = state.annualReports.slice(0, 6);
   const events = reports.flatMap((report) => report.events.filter((item) => item.cityId === city.cityId).map((item) => ({ ...item, year: report.year, monthName: report.monthName })));
+  const latestFiscalReport = state.monthlyReports.find((report) => report.fiscal);
   return `
+    ${latestFiscalReport ? fiscalReportCard(latestFiscalReport) : '<section class="fiscal-report-empty"><strong>国家財政レポート</strong><p>月を終えると、歳入・六分類支出・収支のグラフを作成します。</p></section>'}
     <section class="report-columns">
-      <article class="report-list monthly-report-list"><header><h2>月次報告</h2><small>${reports.length}件 · 実収支</small></header>${reports.length ? reports.map((report, index) => { const local = report.cities.find((item) => item.cityId === city.cityId); return `<details ${index === 0 ? "open" : ""}><summary><span>${report.year}年 ${report.monthName}</span><b>金 ${signed(local.changes.money, 1)} · 食 ${signed(local.changes.food)}</b></summary><div class="report-total-strip"><span>人口 <b>${signed(local.changes.population)}</b></span><span>治安 <b>${signed(local.changes.security, 1)}</b></span><span>民心 <b>${signed(local.changes.support, 1)}</b></span></div><h3>因果内訳</h3><div class="report-causal-grid">${reportCausalRows(local)}</div><h3>命令・委任政務</h3><div class="report-actions">${reportActionRows(report, city.cityId)}</div>${report.events.filter((item) => item.cityId === city.cityId).map((item) => `<p class="report-event">事件「${item.title}」— ${item.choice}<small>${item.detail ?? ""}</small></p>`).join("")}</details>`; }).join("") : '<p class="empty-candidates">月を終えると報告が蓄積されます。</p>'}</article>
-      <div class="report-side-stack"><article class="report-list"><header><h2>年次総括</h2><small>${annual.length}件</small></header>${annual.length ? annual.map((report) => `<div class="annual-report"><strong>誓暦${report.year}年</strong><span>金 ${signed(report.totals.money, 1)} / 食料 ${signed(report.totals.food)} / 人口 ${signed(report.totals.population)}</span><small>重大事件 ${report.events}件</small></div>`).join("") : '<p class="empty-candidates">12月終了時に年次総括を作成します。</p>'}</article><article class="report-list"><header><h2>事件履歴</h2><small>${events.length}件</small></header>${events.length ? events.map((item) => `<div class="report-history-item"><strong>${item.year}年 ${item.monthName} · ${item.title}</strong><span>${item.choice}</span><small>${item.detail ?? ""}</small></div>`).join("") : '<p class="empty-candidates">この都市の重大事件はまだありません。</p>'}</article></div>
+      <article class="report-list monthly-report-list"><header><h2>月次報告</h2><small>${reports.length}件 · 実収支</small></header>${reports.length ? reports.map((report, index) => { const local = report.cities.find((item) => item.cityId === city.cityId); return `<details ${index === 0 ? "open" : ""}><summary><span>${report.year}年 ${report.monthName}</span><b>金 ${signed(local.changes.money, 1)} · 食 ${signed(local.changes.food)}</b></summary><div class="report-total-strip"><span>人口 <b>${signed(local.changes.population)}</b></span><span>治安 <b>${signed(local.changes.security, 1)}</b></span><span>民心 <b>${signed(local.changes.support, 1)}</b></span></div><h3>因果内訳</h3><div class="report-causal-grid">${reportCausalRows(local)}</div><h3>命令・委任政務</h3><div class="report-actions">${reportActionRows(report, city.cityId)}</div>${report.events.filter((item) => item.cityId === city.cityId).map((item) => `<p class="report-event">事件「${item.title}」— ${item.choice}<small>${item.detail ?? ""}</small></p>`).join("")}${reportWarRows(report)}</details>`; }).join("") : '<p class="empty-candidates">月を終えると報告が蓄積されます。</p>'}</article>
+      <div class="report-side-stack"><article class="report-list"><header><h2>年次総括</h2><small>${annual.length}件</small></header>${annual.length ? annual.map((report) => report.fiscal ? `<details class="annual-report"><summary><span>誓暦${report.year}年</span><b>${report.fiscal.balance >= 0 ? "黒字" : "赤字"} ${signed(report.fiscal.balance, 1)}</b></summary>${fiscalCharts(report.fiscal, true)}<small>${report.months}か月集計 · 重大事件 ${report.events}件</small></details>` : `<div class="annual-report"><strong>誓暦${report.year}年</strong><span>金 ${signed(report.totals.money, 1)} / 食料 ${signed(report.totals.food)} / 人口 ${signed(report.totals.population)}</span><small>重大事件 ${report.events}件</small></div>`).join("") : '<p class="empty-candidates">12月終了時に年次総括を作成します。</p>'}</article><article class="report-list"><header><h2>事件履歴</h2><small>${events.length}件</small></header>${events.length ? events.map((item) => `<div class="report-history-item"><strong>${item.year}年 ${item.monthName} · ${item.title}</strong><span>${item.choice}</span><small>${item.detail ?? ""}</small></div>`).join("") : '<p class="empty-candidates">この都市の重大事件はまだありません。</p>'}</article></div>
     </section>
   `;
 }
@@ -1008,18 +1197,20 @@ function renderDiplomacyPanel() {
   const selected = getCountryReport(state, view.selectedCountryId) ?? getCountryReport(state, "valka");
   const delegate = getDiplomaticDelegate(selected.id);
   const isValka = selected.id === "valka";
+  const borderStatus = isValka ? getBorderNegotiationStatus(state) : null;
   const report = isValka ? getWarCouncilReport(state, "transit") : null;
+  const foundation = getGreatPowerFoundation(selected.id);
   const countryCards = balance.countries.filter((country) => country.id !== WORLD.nation.id).map((country) => `
     <button type="button" class="world-nation-card ${country.id === selected.id ? "is-active" : ""}" data-diplomacy-country="${country.id}">
       <span class="world-sigil" style="--nation-color:${country.color}">${country.name.slice(0, 1)}</span>
-      <span><strong>${country.name}</strong><small>${country.stance} · 推定戦力 ${formatValue(country.power)}</small></span>
+      <span><strong>${country.name}</strong><small>${country.rank ? `${country.rank} · ` : ""}${country.stance} · 推定戦力 ${formatValue(country.power)}</small></span>
       <em class="${country.relation < 0 ? "knowledge-unknown" : "knowledge-defined"}">${country.relation >= 0 ? "+" : ""}${country.relation}</em>
     </button>`).join("");
   elements.leftPanel.innerHTML = `
     <header class="panel-heading">
       <span>DIPLOMACY</span>
       <h1>大陸外交</h1>
-      <p>${WORLD.continent.name} · 周辺国の関係と介入可能性</p>
+      <p>エルドリア世界圏 · 諸国の関係と介入可能性</p>
     </header>
     <div class="panel-body">
       <section class="panel-section">
@@ -1043,11 +1234,32 @@ function renderDiplomacyPanel() {
           ${meter("第三国介入", metrics.interventionRisk)}
         </div>
       </section>
-      <section class="panel-section"><div class="section-heading"><h2>周辺国家</h2><small>${balance.countries.length - 1}か国</small></div><div class="world-nation-list">${countryCards}</div></section>
+      ${foundation ? `
+      <section class="panel-section great-power-foundation">
+        <div class="section-heading"><h2>巨大国家の成立基盤</h2><small>${foundation.type} · 成立指数 ${foundation.score}</small></div>
+        <div class="metric-stack">
+          ${foundation.factors.map((factor) => meter(factor.label, factor.value)).join("")}
+        </div>
+        <p class="adviser-note"><strong>環境</strong><br>${foundation.environment}</p>
+        <p class="adviser-note"><strong>統合方式</strong><br>${foundation.integration}</p>
+        <p class="adviser-note"><strong>構造的限界 · ${foundation.limitingFactor.label}</strong><br>${foundation.limit}</p>
+      </section>
+      ` : ""}
+      <section class="panel-section"><div class="section-heading"><h2>世界諸国</h2><small>${balance.countries.length - 1}か国</small></div><div class="world-nation-list">${countryCards}</div></section>
       ${isValka ? `
+      <section class="panel-section border-negotiation-status">
+        <div class="section-heading"><h2>灰冠峠の交渉</h2><small class="border-status-badge ${borderStatus.transitSecured ? "is-secured" : borderStatus.talksCompleted ? "is-pending" : ""}">${borderStatus.status}</small></div>
+        <div class="border-progress-track" role="progressbar" aria-label="国境会談の工程" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${borderStatus.meetingProgress}"><i style="width:${borderStatus.meetingProgress}%"></i></div>
+        <div class="border-progress-facts">
+          <span><small>会談工程</small><strong>${borderStatus.talksCompleted ? "1 / 1 完了" : "0 / 1"}</strong></span>
+          <span><small>関係</small><strong>${borderStatus.openingRelation} → ${borderStatus.relation >= 0 ? "+" : ""}${borderStatus.relation}</strong></span>
+          <span><small>通行権</small><strong>${borderStatus.transitSecured ? "確保" : "未保証"}</strong></span>
+        </div>
+        <p class="adviser-note">${borderStatus.description}</p>
+      </section>
       <section class="panel-section">
-        <div class="section-heading"><h2>外交任務</h2><small>担当官を任命</small></div>
-        <div class="command-list">${commandCards("diplomacy", "selene")}</div>
+        <div class="section-heading"><h2>対外支出</h2><small>国家支出から選択</small></div>
+        <div class="spending-shortcut-list">${spendingShortcut("foreign_aid", "使節・援助・対外公示の具体策を選ぶ")}${spendingShortcut("economic_investment", "交易協定への投資を選ぶ")}</div>
       </section>
       <section class="panel-section">
         <div class="section-heading"><h2>軍師見解</h2><small>確度 ${report.confidence}%</small></div>
@@ -1060,39 +1272,96 @@ function renderDiplomacyPanel() {
 }
 
 function warPlanButton(id, name, detail) {
-  return `<button class="war-plan ${state.war?.plan === id ? "is-active" : ""}" type="button" data-war-plan="${id}"><strong>${name}</strong><small>${detail}</small></button>`;
+  const active = state.war?.plan === id;
+  return `<button class="war-plan ${active ? "is-active" : ""}" type="button" data-war-plan="${id}" aria-pressed="${active}"><span class="selection-state">${active ? "選択中" : "選択"}</span><strong>${name}</strong><small>${detail}</small></button>`;
 }
 
 function formationButtons() {
   const current = state.forces.frontier_guard.formation;
-  return Object.values(FORMATIONS).map((formation) => `
-    <button type="button" class="formation-card ${formation.id === current ? "is-active" : ""}" data-formation="${formation.id}">
-      <strong>${formation.name}</strong><small>${formation.description}</small>
+  return Object.values(FORMATIONS).map((formation) => {
+    const active = formation.id === current;
+    return `
+    <button type="button" class="formation-card ${active ? "is-active" : ""}" data-formation="${formation.id}" aria-pressed="${active}">
+      <span class="selection-state">${active ? "選択中" : "選択"}</span><strong>${formation.name}</strong><small>${formation.description}</small>
+    </button>
+  `;
+  }).join("");
+}
+
+function occupationPolicyButtons(occupation) {
+  return Object.values(OCCUPATION_POLICIES).map((policy) => `
+    <button type="button" class="war-plan ${occupation.policy === policy.id ? "is-active" : ""}" data-occupation-policy="${policy.id}" data-occupation-id="${occupation.id}">
+      <strong>${policy.name}</strong><small>${policy.description}</small>
     </button>
   `).join("");
+}
+
+function renderOccupationGovernance() {
+  const occupations = (state.occupations ?? []).filter((occupation) => occupation.status === "occupied");
+  if (!occupations.length) return "";
+  return occupations.map((occupation) => {
+    const policy = OCCUPATION_POLICIES[occupation.policy];
+    const last = occupation.lastReport;
+    return `
+      <section class="panel-section occupation-governance">
+        <div class="section-heading"><h2>${occupation.name}</h2><small>占領 ${occupation.months}か月 · ${policy.name}</small></div>
+        <div class="metric-stack">
+          ${meter("統制", occupation.control)}${meter("抵抗", occupation.resistance)}
+          ${meter("制度統合", occupation.integration)}${meter("文化同化", occupation.assimilation)}
+          ${meter("インフラ", occupation.infrastructure)}
+        </div>
+        <div class="war-consequence-grid">
+          <span><small>駐屯兵</small><strong>${formatValue(occupation.garrison)} / ${formatValue(occupation.requiredGarrison)}</strong></span>
+          <span><small>避難民</small><strong>${formatValue(occupation.displaced)}</strong></span>
+          <span><small>住民被害</small><strong>${formatValue(occupation.civilianLosses)}</strong></span>
+        </div>
+        ${last ? `<p class="adviser-note"><strong>前月の統治</strong><br>${last.supplied ? "駐屯費・補給を充足" : "駐屯費または補給が不足"} · 抵抗 ${signed(last.resistanceDelta, 1)} · 統合 ${signed(last.integrationDelta, 1)} · インフラ ${signed(last.infrastructureDelta, 1)}</p>` : ""}
+        <div class="garrison-controls">
+          <button type="button" data-occupation-garrison="${occupation.id}" data-garrison-value="${Math.max(100, occupation.garrison - 100)}">駐屯 -100</button>
+          <button type="button" data-occupation-garrison="${occupation.id}" data-garrison-value="${occupation.garrison + 100}">駐屯 +100</button>
+        </div>
+        <div class="section-heading occupation-policy-heading"><h2>統治政策</h2><small>月次に反映</small></div>
+        <div class="war-plan-list occupation-policy-list">${occupationPolicyButtons(occupation)}</div>
+        <button class="release-occupation-button" type="button" data-release-occupation="${occupation.id}">自治政府へ移管して撤兵</button>
+      </section>
+    `;
+  }).join("");
 }
 
 function renderMilitaryPanel() {
   const metrics = deriveMetrics(state);
   const military = getMilitarySummary(state);
   const ledger = deriveRealmLedger(state);
+  const enemyCommander = getEnemyCommander(state);
   if (state.war) {
     const objective = WAR_OBJECTIVES[state.war.objectiveId];
     const peace = state.war.peace;
+    const stage = getWarStage(state.war);
+    const planOptions = getWarPlanOptions(state.war.side);
+    const peaceOptions = getPeaceOptions(state);
     elements.leftPanel.innerHTML = `
-      <header class="panel-heading"><span>WAR THEATRE</span><h1>灰冠峠戦役</h1><p>目的「${objective.name}」 · 軍団長 ${military.commander.name}</p></header>
+      <header class="panel-heading"><span>WAR THEATRE / ${stage.name}</span><h1>${state.war.side === "defender" ? "東境州防衛戦" : "灰冠峠戦役"}</h1><p>目的「${objective.name}」 · 軍団長 ${military.commander.name}</p></header>
       <div class="panel-body">
         <section class="war-status-block">
           <div class="war-score"><span>戦勝点</span><strong>${signed(state.war.score, 1)}</strong></div>
           <div class="metric-stack">${meter("目的達成", state.war.objectiveProgress)}${meter("組織力", military.organization)}${meter("軍需充足", military.supply)}${meter("戦争疲弊", state.warExhaustion)}</div>
         </section>
-        <section class="panel-section"><div class="section-heading"><h2>作戦方針</h2><small>月次判定</small></div><div class="war-plan-list">
-          ${warPlanButton("interdict", "街道遮断", "隊商と軍需を抑え、大陸公路を圧迫する。")}
-          ${warPlanButton("pass", "峠確保", "限定目的に合う均衡策。補給線を短く保つ。")}
-          ${warPlanButton("siege", "城砦攻囲", "成果・軍需消費・損耗が大きい。")}
+        <section class="war-consequence-grid">
+          <span><small>自軍損失</small><strong>${formatValue(state.war.losses)}</strong></span>
+          <span><small>敵軍損失</small><strong>${formatValue(state.war.enemyLosses)}</strong></span>
+          <span><small>${state.war.side === "defender" ? "国内破壊" : "敵地破壊"}</small><strong>${formatValue(state.war.side === "defender" ? state.war.homeDamage : state.war.devastation, 1)}</strong></span>
+          <span><small>避難民</small><strong>${formatValue(state.war.displaced)}</strong></span>
+          <span><small>住民被害</small><strong>${formatValue(state.war.civilianLosses)}</strong></span>
+        </section>
+        ${enemyCommanderCard(enemyCommander, state.war.lastEnemyAction)}
+        <section class="panel-section"><div class="section-heading"><h2>作戦方針</h2><small>現在：${WAR_PLANS[state.war.plan].name}</small></div><div class="war-plan-list">
+          ${planOptions.map((plan) => warPlanButton(plan.id, plan.name, plan.description)).join("")}
         </div></section>
         <section class="panel-section"><div class="section-heading"><h2>陣形</h2><small>${FORMATIONS[military.force.formation].name}</small></div><div class="formation-list">${formationButtons()}</div></section>
-        <section class="panel-section"><p class="adviser-note"><strong>${state.war.lastEnemyAction.label}</strong><br>${state.war.lastEnemyAction.reason}</p>${peace ? `<p class="adviser-note"><strong>攻勢限界 ${peace.culminatingRisk}%</strong><br>${peace.recommendation}</p>` : ""}<button class="peace-button" type="button" data-peace>講和条件を提示する</button></section>
+        <section class="panel-section">
+          ${peace ? `<p class="adviser-note"><strong>攻勢限界 ${peace.culminatingRisk}%</strong><br>${peace.recommendation}</p>` : ""}
+          <div class="peace-option-list">${peaceOptions.map((option) => `<button class="peace-button" type="button" data-peace-settlement="${option.id}" ${option.allowed ? "" : "disabled"}><strong>${option.name}</strong><small>${option.reason}</small></button>`).join("")}</div>
+        </section>
       </div>
     `;
     return;
@@ -1111,9 +1380,11 @@ function renderMilitaryPanel() {
         </div>
         <p class="adviser-note">軍団長と副将の相性 ${Math.round(military.mutualBond)}。統率・武力・知力・功績・相性に、防備と駐屯容量を加えて組織力を算出。</p>
       </section>
+      <section class="panel-section"><div class="section-heading"><h2>想定敵将</h2><small>主敵ヴァルカ</small></div>${enemyCommanderCard(enemyCommander)}</section>
       <section class="panel-section"><div class="section-heading"><h2>陣形</h2><small>指揮官能力と組合せて計算</small></div><div class="formation-list">${formationButtons()}</div></section>
-      <section class="panel-section"><div class="section-heading"><h2>軍事任務</h2><small>担当武将を任命</small></div><div class="command-list">${commandCards("military", "orta")}</div></section>
+      <section class="panel-section"><div class="section-heading"><h2>軍事支出</h2><small>国家支出から選択</small></div><div class="spending-shortcut-list">${spendingShortcut("military_affairs", "訓練・動員・軍務人材の具体策を選ぶ")}${spendingShortcut("research_development", "測量と軍事情報の具体策を選ぶ")}</div></section>
       <section class="panel-section"><div class="metric-stack">${meter("加重練度", military.training)}${meter("大陸機動", military.mobility)}${meter("第三国介入", metrics.interventionRisk)}</div></section>
+      ${renderOccupationGovernance()}
     </div>
   `;
 }
@@ -1133,7 +1404,7 @@ function renderPeoplePanel() {
     const officer = getOfficerReport(state, officerId);
     return `
       <article class="officer-card ${officer.allegiance !== "serving" ? "is-outsider" : ""}">
-        <header><span class="officer-seal">${officer.portrait}</span><div><strong>${officer.name}</strong><small>${officer.rank} · ${WORLD.provinces[officer.location].name}</small></div><b>${allegianceLabel(officer.allegiance)}</b></header>
+        <header>${officerSeal(officer)}<div><strong>${officer.name}</strong><small>${officer.rank} · ${WORLD.provinces[officer.location].name}</small></div><b>${allegianceLabel(officer.allegiance)}</b></header>
         <div class="officer-stat-grid">${statCells(officer.stats)}</div>
         <div class="officer-state-line"><span>忠誠 ${officer.loyalty}</span><span>意欲 ${officer.stamina}</span><span>功績 ${officer.merit}</span></div>
         <p><strong>${officer.policy}</strong> · ${officer.traits.join(" / ")}<br>${assignmentLabel(officer)}</p>
@@ -1144,13 +1415,14 @@ function renderPeoplePanel() {
     <header class="panel-heading"><span>OFFICERS</span><h1>人物と官職</h1><p>能力・忠誠・意欲・功績・所在地を任務へ接続</p></header>
     <div class="panel-body">
       <section class="panel-section"><div class="section-heading"><h2>人物一覧</h2><small>${Object.keys(state.officers).length}名</small></div><div class="officer-list">${cards}</div></section>
-      <section class="panel-section"><div class="section-heading"><h2>人事任務</h2><small>仕官・勧誘・登用</small></div><div class="command-list">${commandCards("people", "selene")}</div></section>
+      <section class="panel-section"><div class="section-heading"><h2>人材に関する支出</h2><small>目的別に分類</small></div><div class="spending-shortcut-list">${spendingShortcut("research_development", "測量士を研究職へ登用する")}${spendingShortcut("military_affairs", "軍務人材を勧誘する")}${spendingShortcut("foreign_aid", "外交顧問を登用する")}</div></section>
     </div>
   `;
 }
 
 function renderLeftPanel() {
-  if (view.panel === "city") renderCityPanel();
+  if (view.panel === "spending") renderSpendingPanel();
+  else if (view.panel === "city") renderCityPanel();
   else if (view.panel === "world") renderWorldPanel();
   else if (view.panel === "diplomacy") renderDiplomacyPanel();
   else if (view.panel === "military") renderMilitaryPanel();
@@ -1175,14 +1447,55 @@ function valueColor(value, inverse = false) {
   return `hsl(${hue} 34% ${42 + normalized * 0.08}%)`;
 }
 
+function setMapMarkerText(id, value) {
+  const node = document.getElementById(id);
+  if (node) node.textContent = value;
+}
+
+function renderStrategicMapState() {
+  const cityMarkerIds = { selene: "mapForceSelene", nereia: "mapForceNereia", orta: "mapForceOrta" };
+  Object.entries(cityMarkerIds).forEach(([cityId, markerId]) => {
+    const city = deriveCityMetrics(state, cityId);
+    setMapMarkerText(markerId, `兵 ${formatValue(city.troops)} · 防 ${Math.round(city.defense)}`);
+  });
+
+  const enemy = state.foreignStates.valka;
+  setMapMarkerText("mapForceValka", `兵 ${formatValue(enemy.army)} · 組 ${Math.round(enemy.organization)}`);
+
+  const military = getMilitarySummary(state);
+  const formation = FORMATIONS[state.forces.frontier_guard.formation];
+  const planLabels = { interdict: "街道遮断", pass: "峠確保", siege: "城砦攻囲" };
+  const ownOrder = state.war ? `${planLabels[state.war.plan] ?? "戦役中"} · 士気${Math.round(state.forces.frontier_guard.morale)}` : `${formation.name} · 待機`;
+  const enemyOrder = state.war?.lastEnemyAction?.label ?? "峠を警戒";
+  setMapMarkerText("frontierArmyStrength", `兵 ${formatValue(military.army)} · 補給${military.supply}`);
+  setMapMarkerText("frontierArmyOrder", ownOrder);
+  setMapMarkerText("enemyArmyStrength", `兵 ${formatValue(enemy.army)} · 結束${Math.round(enemy.cohesion)}`);
+  setMapMarkerText("enemyArmyOrder", enemyOrder);
+
+  const frontierArmy = document.getElementById("frontierArmyMarker");
+  const enemyArmy = document.getElementById("enemyArmyMarker");
+  const ownPositions = { interdict: "translate(620 390)", pass: "translate(642 356)", siege: "translate(675 365)" };
+  frontierArmy?.setAttribute("transform", state.war ? ownPositions[state.war.plan] ?? ownPositions.pass : "translate(590 390)");
+  enemyArmy?.setAttribute("transform", state.war ? "translate(700 255)" : "translate(700 225)");
+
+  const passMarker = document.getElementById("passStatusMarker");
+  const borderResolved = state.issues.border.status === "resolved" || state.agreements.transit;
+  passMarker?.classList.toggle("is-war", Boolean(state.war));
+  passMarker?.classList.toggle("is-secure", borderResolved && !state.war);
+  setMapMarkerText("passStatusText", state.war ? `交戦中 ${state.war.score >= 0 ? "+" : ""}${Math.round(state.war.score)}` : borderResolved ? "通行確保" : "国境緊張");
+}
+
 function renderMap() {
-  elements.strategyMap.className.baseVal = `strategy-map map-mode-${view.mapMode} scale-${view.scale}`;
+  elements.strategyMap.className.baseVal = `strategy-map map-mode-${view.mapMode} scale-${view.scale}${state.war ? " is-at-war" : ""}`;
+  elements.strategyMap.setAttribute("viewBox", MAP_VIEWBOXES[view.scale] ?? MAP_VIEWBOXES.world);
   const labels = {
-    political: ["POLITICAL MAP", WORLD.continent.name], terrain: ["TERRAIN MAP", "地形・標高・水系"], diplomatic: ["DIPLOMATIC MAP", "大陸諸国の友好・敵対"],
+    political: ["CASTLE & TERRITORY MAP", WORLD.continent.name], terrain: ["TERRAIN MAP", "地形・標高・水系"], diplomatic: ["DIPLOMATIC MAP", "大陸諸国の友好・敵対"],
     supply: ["SUPPLY MAP", "月次食料収支"], unrest: ["PUBLIC ORDER MAP", "都市治安"],
   };
   elements.mapModeEyebrow.textContent = labels[view.mapMode][0];
-  elements.mapCaptionTitle.textContent = labels[view.mapMode][1];
+  elements.mapCaptionTitle.textContent = view.mapMode === "political"
+    ? view.scale === "world" ? "エルドリア世界圏 · 十か国" : "セレナ・ヴァルカ国境戦域"
+    : labels[view.mapMode][1];
   elements.mapModeBar.querySelectorAll("[data-map-mode]").forEach((button) => button.classList.toggle("is-active", button.dataset.mapMode === view.mapMode));
   elements.mapScaleSwitch.querySelectorAll("[data-scale]").forEach((button) => button.classList.toggle("is-active", button.dataset.scale === view.scale));
   elements.strategyMap.querySelectorAll(".province[data-place-id]").forEach((node) => { node.style.fill = ""; });
@@ -1199,6 +1512,7 @@ function renderMap() {
   } else if (view.selectedId) {
     elements.strategyMap.querySelectorAll(`[data-place-id="${view.selectedId}"]`).forEach((node) => node.classList.add("is-selected"));
   }
+  renderStrategicMapState();
 }
 
 function clampForMap(value) {
@@ -1278,7 +1592,12 @@ function renderSelection() {
   }
   const country = getCountryReport(state, view.selectedId);
   if (!country) { elements.selectionCard.innerHTML = ""; return; }
-  const note = view.selectedId === "valka" ? "灰冠峠の関税と隊商差押えを巡って対立。城砦・国境軍・補給路が一つの戦争構造を作る。" : `${country.stance}。関係・戦力・介入意志が大陸均衡とヴァルカ戦の拡大リスクへ反映される。`;
+  const foundation = getGreatPowerFoundation(country.id);
+  const note = view.selectedId === "valka"
+    ? "灰冠峠の関税と隊商差押えを巡って対立。城砦・国境軍・補給路が一つの戦争構造を作る。"
+    : foundation
+      ? `${foundation.type}として成立指数 ${foundation.score}。${foundation.environment}`
+      : `${country.stance}。関係・戦力・介入意志が大陸均衡とヴァルカ戦の拡大リスクへ反映される。`;
   const tileCount = elements.strategyMap.querySelector(`.country-group[data-country="${view.selectedId}"]`)?.dataset.tileCount ?? "?";
   const territoryFact = view.selectedTileName ? `${view.selectedTileName} · ${view.selectedTerrain}` : `領域タイル ${tileCount}`;
   elements.selectionCard.innerHTML = `<header><h3>${country.name}</h3><span>関係 ${country.relation >= 0 ? "+" : ""}${country.relation}</span></header><p>${note}</p><div class="selection-facts"><span>${territoryFact}</span><span>推定戦力 ${formatValue(country.power)}</span><span>機動 ${country.mobility}</span><span>${country.stance}</span></div>`;
@@ -1301,6 +1620,7 @@ function orderCostLabel(order) {
 }
 
 function renderCityPlan(ledger) {
+  const planCityId = view.panel === "spending" ? view.spendingCityId : view.selectedCityId;
   const governance = getGovernance(state);
   const reservedMoney = state.pendingOrders.reduce((sum, order) => sum + (order.cost?.money ?? 0), 0);
   const warnings = getTurnWarnings(state);
@@ -1310,22 +1630,22 @@ function renderCityPlan(ledger) {
       <header><strong>${orderLabel(order)}</strong><button type="button" data-cancel-order="${order.id}" aria-label="命令を取り消す">取消</button></header>
       <small>${WORLD.provinces[order.cityId].name} · ${orderCostLabel(order)}${order.forced ? ` · 強行（失敗率 ${(order.forcedPoints ?? 0) * FORCED_ORDER_RULES.failureChancePerPoint}%）` : ""}</small>
     </article>
-  `).join("") : '<p class="plan-empty">命令はまだありません。都市タブから今月の行動を追加できます。</p>';
+  `).join("") : '<p class="plan-empty">支出はまだありません。「支出」から分類と具体策を選んでください。</p>';
   const forecastRows = preview?.report.cities.map((city) => `
     <div class="plan-forecast-row"><strong>${city.name.replace(/王都|河港|城塞市/, "")}</strong><span>金 ${signed(city.changes.money, 1)}</span><span>食 ${signed(city.changes.food)}</span><small>月末 金${formatValue(city.after.money, 1)} / 食${formatValue(city.after.food)}</small></div>
   `).join("") ?? "";
-  const active = state.commandQueue.filter((task) => task.cityId === view.selectedCityId).map((task) => {
+  const active = state.commandQueue.filter((task) => task.cityId === planCityId).map((task) => {
     const progress = Math.max(0, (task.durationTurns - task.remainingTurns) / Math.max(1, task.durationTurns) * 100);
     return `<div class="outliner-item"><strong>${COMMANDS[task.commandId].name}</strong><small>${getOfficerReport(state, task.officerId).name} · 残り${task.remainingTurns}か月</small><div class="queue-track"><span style="width:${progress}%"></span></div></div>`;
   }).join("");
-  const projects = state.cities[view.selectedCityId].projects.map((project) => `<div class="outliner-item"><strong>${FACILITIES[project.facilityId].name} Lv.${project.targetLevel}</strong><small>建設中 · 残り${project.remainingTurns}か月</small></div>`).join("");
+  const projects = state.cities[planCityId].projects.map((project) => `<div class="outliner-item"><strong>${FACILITIES[project.facilityId].name} Lv.${project.targetLevel}</strong><small>建設中 · 残り${project.remainingTurns}か月</small></div>`).join("");
   return `
     <section class="plan-tray">
       <header><span>MONTHLY PLAN</span><h2>今月の計画</h2><p>${formatDate(state)}に確定する予約命令</p></header>
       <div class="plan-budget"><div><small>統治力</small><strong>${governance.used} / ${governance.max}</strong><span>強行上限 ${governance.hardLimit}</span></div><div><small>予約費用</small><strong>金 ${formatValue(reservedMoney, 1)}</strong><span>${state.pendingOrders.length}件</span></div></div>
       <div class="planned-orders">${planned}</div>
       ${forecastRows ? `<section class="plan-forecast"><h3>予約反映後の月末予測</h3>${forecastRows}<p>命令費・完成施設・通常収支・戦争を含む。未選択の事件効果は含みません。</p></section>` : ""}
-      ${(active || projects) ? `<section class="plan-progress"><h3>${WORLD.provinces[view.selectedCityId].name}で進行中</h3>${active}${projects}</section>` : ""}
+      ${(active || projects) ? `<section class="plan-progress"><h3>${WORLD.provinces[planCityId].name}で進行中</h3>${active}${projects}</section>` : ""}
       <section class="plan-warnings"><h3>進行前の確認</h3>${warnings.length ? warnings.map((warning) => `<p>⚠ ${warning}</p>`).join("") : '<p class="is-clear">警告はありません。</p>'}</section>
       <button type="button" class="plan-end-month" data-end-month ${state.phase === "event" || state.council.pending ? "disabled" : ""}>月を終える<span>生産・消費・事件を一括処理</span></button>
     </section>
@@ -1334,7 +1654,7 @@ function renderCityPlan(ledger) {
 
 function renderOutliner() {
   const ledger = deriveRealmLedger(state);
-  if (view.panel === "city") {
+  if (view.panel === "city" || view.panel === "spending") {
     elements.outlinerContent.innerHTML = renderCityPlan(ledger);
     return;
   }
@@ -1349,8 +1669,10 @@ function renderOutliner() {
     return `<div class="outliner-item"><strong>${command.name} · ${officer.name}</strong><small>${WORLD.provinces[item.cityId].name} · 残り ${item.remainingTurns}か月 · 予測 ${item.forecast.grade}</small><div class="queue-track"><span style="width:${progress}%"></span></div></div>`;
   }).join("") : '<div class="outliner-item"><small>実行中の任務はありません。</small></div>';
   const war = state.war ? `<section class="outliner-section"><h3>戦争</h3><div class="outliner-item danger"><strong>灰冠峠戦役</strong><small>戦勝点 ${state.war.score.toFixed(1)} · ${WAR_OBJECTIVES[state.war.objectiveId].name}</small></div></section>` : "";
+  const occupations = (state.occupations ?? []).filter((occupation) => occupation.status === "occupied").map((occupation) => `<div class="outliner-item ${occupation.resistance >= 70 ? "danger" : ""}"><strong>${occupation.name}</strong><small>${OCCUPATION_POLICIES[occupation.policy].name} · 統制 ${occupation.control.toFixed(0)} · 抵抗 ${occupation.resistance.toFixed(0)}</small></div>`).join("");
+  const occupationSection = occupations ? `<section class="outliner-section"><h3>占領統治</h3>${occupations}</section>` : "";
   const logs = state.log.slice(0, 4).map((entry) => `<div class="outliner-item"><strong>${entry.title}</strong><small>${entry.date} · ${entry.text}</small></div>`).join("");
-  elements.outlinerContent.innerHTML = `${mission}${council}${war}<section class="outliner-section"><h3>都市台帳</h3>${cities}</section><section class="outliner-section"><h3>任務</h3>${queue}</section><section class="outliner-section"><h3>年代記</h3>${logs}</section>`;
+  elements.outlinerContent.innerHTML = `${mission}${council}${war}${occupationSection}<section class="outliner-section"><h3>都市台帳</h3>${cities}</section><section class="outliner-section"><h3>任務</h3>${queue}</section><section class="outliner-section"><h3>年代記</h3>${logs}</section>`;
 }
 
 function renderTicker() {
@@ -1363,14 +1685,28 @@ function renderWarCouncil() {
   if (!view.warCouncilOpen) return;
   const report = getWarCouncilReport(state, view.objectiveId);
   const objective = WAR_OBJECTIVES[view.objectiveId];
+  const estimate = getWarDeclarationEstimate(state, view.objectiveId);
   const support = getWarSupport(state);
-  elements.objectiveTabs.innerHTML = Object.values(WAR_OBJECTIVES).map((item) => `<button class="objective-tab ${item.id === view.objectiveId ? "is-active" : ""}" type="button" data-objective="${item.id}"><strong>${item.name}</strong><small>${item.scope === "limited" ? "限定目的" : "全面目的"} · 拡大リスク ${item.escalationRisk}</small></button>`).join("");
+  elements.objectiveTabs.innerHTML = Object.values(WAR_OBJECTIVES).filter((item) => item.mode !== "defensive").map((item) => `<button class="objective-tab ${item.id === view.objectiveId ? "is-active" : ""}" type="button" data-objective="${item.id}" aria-pressed="${item.id === view.objectiveId}"><strong>${item.name}</strong><small>${item.scope === "limited" ? "限定目的" : "全面目的"} · 拡大リスク ${item.escalationRisk}</small></button>`).join("");
   const factors = report.factors.map((factor) => `<div class="factor-row"><strong>${factor.label}</strong><b class="${factor.value < 0 ? "is-negative" : ""}">${signed(factor.value)}</b><small>${factor.detail}</small></div>`).join("");
   const military = getMilitarySummary(state);
-  elements.warCouncilReport.innerHTML = `<div class="council-report"><aside class="ai-verdict"><div class="score-ring"><strong>${signed(report.score)}</strong><small>確度 ${report.confidence}%</small></div><h3>${report.posture}</h3><p>${report.summary}</p><p>軍団長 ${military.commander.name}<br>副将 ${military.deputy.name}<br>${FORMATIONS[military.force.formation].name}</p></aside><div><div class="factor-table">${factors}</div><div class="strategic-notes"><article class="strategic-note"><strong>重心候補 · ${report.center.label}</strong><small>${report.center.explanation}</small></article><article class="strategic-note"><strong>止める地点</strong><small>${report.limit}</small></article></div></div></div>`;
+  const enemyCommander = getEnemyCommander(state);
+  elements.warCouncilReport.innerHTML = `<div class="council-report"><aside class="ai-verdict"><div class="score-ring"><strong>${signed(report.score)}</strong><small>確度 ${report.confidence}%</small></div><h3>${report.posture}</h3><p>${report.summary}</p><p>軍団長 ${military.commander.name}<br>副将 ${military.deputy.name}<br>${FORMATIONS[military.force.formation].name}</p>${enemyCommanderCard(enemyCommander, null, true)}</aside><div><div class="factor-table">${factors}</div><div class="strategic-notes"><article class="strategic-note"><strong>重心候補 · ${report.center.label}</strong><small>${report.center.explanation}</small></article><article class="strategic-note"><strong>止める地点</strong><small>${report.limit}</small></article></div></div></div>`;
   const penalties = [];
   if (state.justification < 50) penalties.push("開戦事由不足により国境農民が徴発を拒否します");
   if (support < 40) penalties.push("都市治安から算出した国内支持が不足しています");
+  const estimateMonths = estimate.estimatedMonths === null ? "見通し不成立" : `約${estimate.estimatedMonths}か月`;
+  const totalValue = (value) => value === null ? "算出不能" : formatValue(value);
+  elements.warCostEstimate.innerHTML = `
+    <div class="war-estimate-heading"><strong>AI開戦概算</strong><small>現在の戦力・${estimate.planName}・${estimate.formationName}を同じ条件で継続した場合</small></div>
+    <div class="war-estimate-grid">
+      <span><small>講和可能まで</small><strong>${estimateMonths}</strong><em>戦勝点 ${estimate.peaceScoreThreshold} が目安</em></span>
+      <span><small>追加兵糧</small><strong>${formatValue(estimate.foodPerMonth)} / 月</strong><em>累計 ${totalValue(estimate.totalFood)}</em></span>
+      <span><small>自軍損失</small><strong>${formatValue(estimate.troopLossPerMonth)} / 月</strong><em>累計 ${totalValue(estimate.totalTroopLoss)}</em></span>
+      <span><small>避難民</small><strong>${formatValue(estimate.displacedPerMonth)} / 月</strong><em>累計 ${totalValue(estimate.totalDisplaced)}</em></span>
+    </div>
+    <p class="war-estimate-reserve ${estimate.foodRisk ? "is-danger" : ""}">${estimate.projectedProvisions === null ? "戦果見通しが立たず、累計備蓄は算出できません。" : `同じ収支が続いた場合の終戦時食料：約${formatValue(Math.max(0, estimate.projectedProvisions))}${estimate.foodRisk ? "。すでに州単位の食料備蓄が危険域です。" : "。"}`}</p>
+    <small class="war-estimate-note">概算は敵の対応、事件、命令、陣形変更で変動します。確約ではありません。</small>`;
   elements.declarationWarning.textContent = penalties.length ? `警告：${penalties.join("。")}` : `${objective.description} 現在の正当性と都市支持なら宣戦できます。`;
   elements.declareWarButton.textContent = `「${objective.name}」で宣戦布告`;
 }
@@ -1383,11 +1719,11 @@ function officerCandidateCard(officer, commandId, cityId) {
     : command.taskType === "diplomacy" || command.taskType === "recruitment"
       ? `政治 ${officer.stats.politics} · 魅力 ${officer.stats.charisma}`
       : `知力 ${officer.stats.intelligence} · 政治 ${officer.stats.politics}`;
-  return `<button type="button" class="candidate-card" data-assign-officer="${officer.id}"><span class="officer-seal large">${officer.portrait}</span><div><header><strong>${officer.name}</strong><b>${forecast.grade}</b></header><small>${officer.rank} · ${WORLD.provinces[officer.location].name}</small><p>${relevant}<br>忠誠 ${officer.loyalty} · 意欲 ${officer.stamina} · ${officer.policy}</p></div><em>${forecast.range[0]}〜${forecast.range[1]}</em></button>`;
+  return `<button type="button" class="candidate-card" data-assign-officer="${officer.id}">${officerSeal(officer, "large")}<div><header><strong>${officer.name}</strong><b>${forecast.grade}</b></header><small>${officer.rank} · ${WORLD.provinces[officer.location].name}</small><p>${relevant}<br>忠誠 ${officer.loyalty} · 意欲 ${officer.stamina} · ${officer.policy}</p></div><em>${forecast.range[0]}〜${forecast.range[1]}</em></button>`;
 }
 
 function forceCandidateCard(officer) {
-  return `<button type="button" class="candidate-card" data-force-officer="${officer.id}"><span class="officer-seal large">${officer.portrait}</span><div><header><strong>${officer.name}</strong><b>${officer.policy}</b></header><small>${officer.rank} · 忠誠 ${officer.loyalty}</small><p>統率 ${officer.stats.leadership} · 武力 ${officer.stats.war} · 知力 ${officer.stats.intelligence}</p></div><em>任命</em></button>`;
+  return `<button type="button" class="candidate-card" data-force-officer="${officer.id}">${officerSeal(officer, "large")}<div><header><strong>${officer.name}</strong><b>${officer.policy}</b></header><small>${officer.rank} · 忠誠 ${officer.loyalty}</small><p>統率 ${officer.stats.leadership} · 武力 ${officer.stats.war} · 知力 ${officer.stats.intelligence}</p></div><em>任命</em></button>`;
 }
 
 function renderAssignmentModal() {
@@ -1521,12 +1857,30 @@ function followGuidance(button) {
     renderPanelFromTop();
     return;
   }
+  if (action === "open_spending") {
+    view.panel = "spending";
+    view.spendingCategoryId = "social_security";
+    view.spendingCityId = WORLD.nation.capital;
+    view.scale = "country";
+    renderPanelFromTop();
+    return;
+  }
   if (action === "open_military") {
     view.panel = "military";
     view.scale = "country";
     view.selectedType = "country";
     view.selectedId = "valka";
     view.selectedCountryId = "valka";
+    renderPanelFromTop();
+    return;
+  }
+  if (action === "open_war_council") {
+    view.panel = "diplomacy";
+    view.scale = "country";
+    view.selectedType = "country";
+    view.selectedId = "valka";
+    view.selectedCountryId = "valka";
+    view.warCouncilOpen = true;
     renderPanelFromTop();
     return;
   }
@@ -1547,7 +1901,13 @@ function followGuidance(button) {
     view.selectedId = view.selectedCityId;
     view.cityTab = "reports";
     view.scale = "city";
-    renderPanelFromTop();
+    const latestReport = state.monthlyReports[0];
+    if (latestReport && state.lastViewedReportId !== latestReport.id) {
+      commit(acknowledgeMonthReport(state, latestReport.id), "月次報告を確認しました。次月の方針を決められます。", "ui");
+      elements.leftPanel.scrollTop = 0;
+    } else {
+      renderPanelFromTop();
+    }
   }
 }
 
@@ -1562,6 +1922,8 @@ function playNavigationCue(event) {
     "[data-open-guide]",
     "[data-guide-action]",
     "[data-panel]",
+    "[data-spending-category]",
+    "[data-spending-city]",
     "[data-world-mode]",
     "[data-statistics-nation]",
     "[data-world-nation]",
@@ -1610,6 +1972,21 @@ document.addEventListener("click", (event) => {
   if (panelButton) {
     clearTileDetailSelection();
     view.panel = panelButton.dataset.panel;
+    renderPanelFromTop();
+    return;
+  }
+  const spendingCategoryButton = event.target.closest("[data-spending-category]");
+  if (spendingCategoryButton) {
+    if (view.panel === "city") view.spendingCityId = view.selectedCityId;
+    else if (view.panel === "military") view.spendingCityId = "orta";
+    view.spendingCategoryId = spendingCategoryButton.dataset.spendingCategory;
+    view.panel = "spending";
+    renderPanelFromTop();
+    return;
+  }
+  const spendingCityButton = event.target.closest("[data-spending-city]");
+  if (spendingCityButton) {
+    view.spendingCityId = spendingCityButton.dataset.spendingCity;
     renderPanelFromTop();
     return;
   }
@@ -1821,8 +2198,32 @@ document.addEventListener("click", (event) => {
     catch (error) { showToast(error.message, "danger"); }
     return;
   }
-  if (event.target.closest("[data-peace]")) {
-    try { commit(negotiatePeace(state), "講和結果を年代記に記しました。", "peace"); }
+  const peaceButton = event.target.closest("[data-peace-settlement]");
+  if (peaceButton) {
+    const objective = WAR_OBJECTIVES[state.war.objectiveId];
+    const settlement = getPeaceOptions(state).find((option) => option.id === peaceButton.dataset.peaceSettlement);
+    if (!window.confirm(`「${settlement.name}」を提示します。\n\n政治目的：${objective.name}\n戦勝点 ${state.war.score.toFixed(1)} / 戦争期間 ${state.war.months}か月\n${settlement.description}\n\n講和が成立すると戦争は終了します。続けますか？`)) return;
+    try { commit(negotiatePeace(state, settlement.id), "講和結果を年代記に記しました。", "peace"); }
+    catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
+  const occupationPolicy = event.target.closest("[data-occupation-policy]");
+  if (occupationPolicy) {
+    try { commit(setOccupationPolicy(state, occupationPolicy.dataset.occupationId, occupationPolicy.dataset.occupationPolicy), "占領統治方針を更新しました。"); }
+    catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
+  const garrisonButton = event.target.closest("[data-occupation-garrison]");
+  if (garrisonButton) {
+    try { commit(setOccupationGarrison(state, garrisonButton.dataset.occupationGarrison, Number(garrisonButton.dataset.garrisonValue)), "駐屯兵力を更新しました。"); }
+    catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
+  const releaseButton = event.target.closest("[data-release-occupation]");
+  if (releaseButton) {
+    const occupation = state.occupations.find((item) => item.id === releaseButton.dataset.releaseOccupation);
+    if (!window.confirm(`${occupation.name}の軍事占領を終了し、自治政府へ権限を移します。撤兵後は占領政策を実施できません。続けますか？`)) return;
+    try { commit(releaseOccupation(state, occupation.id), "占領地域から撤兵しました。", "peace"); }
     catch (error) { showToast(error.message, "danger"); }
   }
 });
@@ -1848,8 +2249,9 @@ document.querySelector("#resetButton").addEventListener("click", (event) => {
   button.dataset.armed = "false";
   button.textContent = "最初から";
   localStorage.removeItem(STORAGE_KEY);
+  LEGACY_STORAGE_KEYS.forEach((key) => localStorage.removeItem(key));
   state = createInitialState();
-  Object.assign(view, { panel: "council", mapMode: "political", scale: "country", selectedType: null, selectedId: null, selectedTileName: null, selectedTerrain: null, selectedTerrainType: null, tileWindowOpen: false, selectedCityId: "selene", cityTab: "overview", selectedFacilityId: "farmland", selectedCountryId: "valka", objectiveId: "transit", warCouncilOpen: false, assignmentOpen: false, guideOpen: true });
+  Object.assign(view, { panel: "council", spendingCategoryId: "social_security", spendingCityId: "selene", mapMode: "political", scale: "country", selectedType: null, selectedId: null, selectedTileName: null, selectedTerrain: null, selectedTerrainType: null, tileWindowOpen: false, selectedCityId: "selene", cityTab: "overview", selectedFacilityId: "farmland", selectedCountryId: "valka", objectiveId: "transit", warCouncilOpen: false, assignmentOpen: false, guideOpen: true });
   render();
   audio.play("reset");
   showToast("新しい年代記を始めました。");
@@ -1877,6 +2279,11 @@ elements.assignmentModal.addEventListener("click", (event) => { if (event.target
 elements.guideModal.addEventListener("click", (event) => { if (event.target === elements.guideModal) { view.guideOpen = false; renderGuideModal(); } });
 elements.declareWarButton.addEventListener("click", () => {
   try {
+    const estimate = getWarDeclarationEstimate(state, view.objectiveId);
+    const objective = WAR_OBJECTIVES[view.objectiveId];
+    const duration = estimate.estimatedMonths === null ? "講和時期は見通せません" : `講和可能まで約${estimate.estimatedMonths}か月`;
+    const totalFood = estimate.totalFood === null ? "算出不能" : formatValue(estimate.totalFood);
+    if (!window.confirm(`${objective.name}で宣戦します。\n${duration}、追加兵糧は累計約${totalFood}のAI概算です。\n宣戦後、月末ごとに損耗と住民被害が発生します。続行しますか？`)) return;
     const next = declareWar(state, view.objectiveId);
     view.warCouncilOpen = false;
     view.panel = "military";
@@ -1892,4 +2299,5 @@ elements.strategyMap.addEventListener("keydown", (event) => {
 });
 window.addEventListener("beforeunload", () => persist());
 
+subdivideTerritoryTiles(elements.strategyMap);
 render();

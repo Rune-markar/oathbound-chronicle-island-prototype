@@ -91,6 +91,13 @@ export function evaluateWarDecision(context) {
 }
 
 export function chooseOpponentAction(context) {
+  if (context.enemyRole === "attacker") {
+    if (context.enemy.organization < 34) return { id: "regroup", label: "攻勢を再編する", reason: "損耗した部隊をまとめ、次の攻撃に備える。" };
+    if (context.warScore < -32) return { id: "assault", label: "防衛線を突破する", reason: "守備側が後退している間に、東境州への進入口を奪う。" };
+    if (context.own.supply < 48) return { id: "raid_supply", label: "後方兵站を襲う", reason: "正面攻撃と並行して、守備軍の兵糧集積を崩す。" };
+    if (context.own.exhaustion > 48) return { id: "bombard", label: "陣地を遠隔攻撃する", reason: "消耗した守備軍へ圧力をかけ、反撃準備を妨げる。" };
+    return { id: "advance", label: "峠口へ前進する", reason: "偵察隊と主力を段階的に進め、防衛線の弱点を探る。" };
+  }
   if (context.enemy.organization < 34) return { id: "entrench", label: "国境城砦に籠る", reason: "組織力を回復し、攻囲側の補給消耗を待つ。" };
   if (context.warScore > 28 && context.objective.scope === "limited") return { id: "seek_terms", label: "限定講和を探る", reason: "峠の保持費用が政治的利益を上回り始めている。" };
   if (context.own.supply < 48) return { id: "raid_supply", label: "輜重隊を襲う", reason: "主力決戦を避け、大陸公路の補給線を断つ。" };

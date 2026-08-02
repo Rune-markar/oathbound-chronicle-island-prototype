@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
 import {
   DIPLOMATIC_DELEGATES,
   NOTION_OTHER_RACE_IDS,
@@ -18,15 +19,18 @@ test("全17種族に固有の女性代表グラフィックと多様な年齢・
   assert.ok(representatives.every(Boolean));
   assert.equal(new Set(representatives.map((item) => item.image)).size, peopleIds.length);
   assert.ok(representatives.every((item) => item.image.endsWith(".webp")));
+  assert.ok(representatives.every((item) => existsSync(new URL(`../${item.image.slice(2)}`, import.meta.url))));
   assert.ok(new Set(representatives.map((item) => item.apparentAge)).size >= 6);
   assert.ok(new Set(representatives.map((item) => item.expression)).size >= 12);
 });
 
 test("外交対象国は確度を明記した種族代表へ接続する", () => {
-  assert.deepEqual(Object.keys(DIPLOMATIC_DELEGATES).sort(), ["forest_alliance", "heavens_gate", "izmenia", "lustrond", "valka", "vinia"]);
+  assert.deepEqual(Object.keys(DIPLOMATIC_DELEGATES).sort(), ["avanheln", "deadland", "forest_alliance", "heavens_gate", "izmenia", "lustrond", "valka", "vinia"]);
   assert.equal(getDiplomaticDelegate("vinia").people.id, "elf");
   assert.equal(getDiplomaticDelegate("forest_alliance").certainty, "関連種族");
   assert.equal(getDiplomaticDelegate("valka").certainty, "暫定代表");
+  assert.equal(getDiplomaticDelegate("deadland").people.id, "undead");
+  assert.equal(getDiplomaticDelegate("avanheln").people.id, "dragon");
   assert.equal(getDiplomaticDelegate("unknown"), null);
 });
 
