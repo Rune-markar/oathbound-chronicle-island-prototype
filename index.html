@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#172224" />
-    <title>誓界記 — セレナ島侯国</title>
+    <title>誓界記 — セレナ王国</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='8' fill='%23172224'/%3E%3Ctext x='32' y='45' text-anchor='middle' font-size='38' fill='%23ead28d'%3E誓%3C/text%3E%3C/svg%3E" />
     <link rel="stylesheet" href="./styles.css" />
   </head>
@@ -14,47 +14,62 @@
     <header class="grand-topbar">
       <button class="realm-identity" id="realmHome" type="button" aria-label="国家画面を開く">
         <span class="shield"><i>誓</i></span>
-        <span><strong>セレナ島侯国</strong><small>島政院</small></span>
+        <span><strong>セレナ王国</strong><small>王国評議会</small></span>
       </button>
 
       <div class="resource-ledger" id="resourceLedger" aria-label="国家資源"></div>
 
-      <div class="date-controls" aria-label="時間操作">
-        <div class="speed-controls" id="speedControls">
-          <button type="button" data-speed="0" class="is-active" aria-label="一時停止">Ⅱ</button>
-          <button type="button" data-speed="1" aria-label="速度1">›</button>
-          <button type="button" data-speed="2" aria-label="速度2">»</button>
-          <button type="button" data-speed="3" aria-label="速度3">»›</button>
-        </div>
-        <button class="date-button" id="advanceDayButton" type="button">
-          <strong id="dateLabel">誓暦317年 青月12日</strong>
-          <small>クリックで一日進行</small>
+      <div class="date-controls" aria-label="月次ターン">
+        <button class="audio-toggle" id="audioToggle" type="button" aria-label="BGMと効果音をミュートする" aria-pressed="false">
+          <span id="audioIcon" aria-hidden="true">♫</span>
+          <span><strong>音響</strong><small id="audioStatus">開始</small></span>
+        </button>
+        <button class="date-button month-end-button" id="endMonthButton" type="button">
+          <strong id="dateLabel">誓暦317年 青月</strong>
+          <small id="dateHint">月を終える</small>
         </button>
       </div>
     </header>
 
+    <section class="campaign-bar" id="campaignBar" aria-live="polite">
+      <div class="campaign-bar-goal"><small>主目標 · セレナ王</small><strong>灰冠峠の国境危機を収束させる</strong></div>
+      <div class="campaign-bar-next"><small>次にすること</small><strong>今季の方針を一つ選ぶ</strong></div>
+    </section>
+
     <div class="strategy-shell">
       <aside class="left-dock" aria-label="国家メニュー">
         <nav class="primary-tabs" id="primaryTabs">
-          <button class="is-active" type="button" data-panel="realm"><span>♜</span>国政</button>
+          <button class="is-active" type="button" data-panel="council"><span>♜</span>評定</button>
+          <button type="button" data-panel="city"><span>城</span>都市</button>
           <button type="button" data-panel="diplomacy"><span>⚖</span>外交</button>
           <button type="button" data-panel="military"><span>⚔</span>軍事</button>
           <button type="button" data-panel="people"><span>♟</span>人材</button>
+          <button type="button" data-panel="world"><span>界</span>世界</button>
         </nav>
         <section class="ledger-panel" id="leftPanel" aria-live="polite"></section>
       </aside>
 
       <main class="map-stage">
         <div class="alert-rack" id="alertRack" aria-label="重要通知"></div>
+        <section class="city-workspace is-hidden" id="cityWorkspace" aria-live="polite"></section>
 
         <div class="map-caption">
           <span id="mapModeEyebrow">POLITICAL MAP</span>
-          <strong id="mapCaptionTitle">白礁海峡周辺</strong>
+          <strong id="mapCaptionTitle">エルドリア大陸</strong>
         </div>
 
+        <aside class="terrain-legend" aria-label="地図凡例">
+          <strong>MAP KEY</strong>
+          <span><i class="legend-border"></i>太線：国境</span>
+          <span><i class="legend-tile"></i>細線：領域タイル</span>
+          <span><i class="legend-forest"></i>森林</span>
+          <span><i class="legend-mountain"></i>山岳</span>
+          <span><i class="legend-wetland"></i>湿地</span>
+        </aside>
+
         <svg id="strategyMap" class="strategy-map" viewBox="0 0 1000 650" role="img" aria-labelledby="mapTitle mapDescription">
-          <title id="mapTitle">セレナ島侯国と白礁海峡周辺の戦略地図</title>
-          <desc id="mapDescription">三都市、六村、ヴァルカ海岸公領、灯台諸島会議と海路を選択できる地図</desc>
+          <title id="mapTitle">エルドリア大陸の複数国家とセレナ王国の戦略地図</title>
+          <desc id="mapDescription">七国家を構成する複数の領域タイルと、森林、平原、丘陵、山岳、湿地、乾燥地、河川、街道を重ねた地勢図</desc>
           <defs>
             <linearGradient id="sea" x1="0" y1="0" x2="1" y2="1">
               <stop offset="0" stop-color="#55797c" />
@@ -66,65 +81,164 @@
             <filter id="landShadow" x="-20%" y="-20%" width="140%" height="140%">
               <feDropShadow dx="0" dy="8" stdDeviation="8" flood-color="#102e34" flood-opacity=".4" />
             </filter>
+            <g id="terrainTree">
+              <path d="M0-9L-5-2H-2L-7 4H-1V9H2V4H7L2-2H5Z" />
+            </g>
+            <g id="terrainMountain">
+              <path d="M-10 8L-2-8L3 1L7-5L14 8Z" />
+              <path class="snow" d="M-5-2L-2-8L1-2L3 1L5-1L7-5L10 1" />
+            </g>
+            <g id="terrainMarsh">
+              <path d="M-10 6H10M-7 2Q-3-2 1 2T9 2M-5 7V-5M4 7V-3" />
+            </g>
+            <g id="terrainHill">
+              <path d="M-11 7Q-5-6 2 7Q7-2 12 7" />
+            </g>
           </defs>
           <rect width="1000" height="650" fill="url(#sea)" />
           <rect width="1000" height="650" fill="url(#seaLines)" />
 
-          <g class="sea-routes" aria-hidden="true">
-            <path data-route="white_reef" d="M565 310 C640 282 696 277 746 289" />
-            <path data-route="south_road" d="M505 482 C595 521 646 535 716 530" />
+          <path class="continent-backdrop" d="M67 82 C208 31 411 35 563 44 C735 36 898 54 946 126 L950 505 C918 584 769 613 609 592 C442 611 286 614 149 566 C70 521 44 423 55 302 C42 200 46 122 67 82Z" filter="url(#landShadow)" />
+
+          <g class="country-group forest-alliance" data-country="forest_alliance" data-tile-count="6">
+            <path class="province map-tile terrain-forest tile-deep" data-place-type="country" data-place-id="forest_alliance" data-tile-name="北樹海" data-terrain="forest" data-terrain-label="原生林" d="M80 90L330 70Q282 120 210 165Q125 130 80 90Z" />
+            <path class="province map-tile terrain-hills tile-light" data-place-type="country" data-place-id="forest_alliance" data-tile-name="緑冠丘陵" data-terrain="hills" data-terrain-label="森林丘陵" d="M330 70L350 230Q300 175 210 165Q282 120 330 70Z" />
+            <path class="province map-tile terrain-forest" data-place-type="country" data-place-id="forest_alliance" data-tile-name="東樹林" data-terrain="forest" data-terrain-label="針葉樹林" d="M350 230L300 270Q268 205 210 165Q300 175 350 230Z" />
+            <path class="province map-tile terrain-plains tile-light" data-place-type="country" data-place-id="forest_alliance" data-tile-name="木漏平野" data-terrain="plains" data-terrain-label="森林平野" d="M300 270L120 250Q158 205 210 165Q268 205 300 270Z" />
+            <path class="province map-tile terrain-wetland tile-muted" data-place-type="country" data-place-id="forest_alliance" data-tile-name="藍沼地" data-terrain="wetland" data-terrain-label="湿地" d="M120 250L65 175Q115 160 210 165Q158 205 120 250Z" />
+            <path class="province map-tile terrain-forest tile-deep" data-place-type="country" data-place-id="forest_alliance" data-tile-name="西方林海" data-terrain="forest" data-terrain-label="深林" d="M65 175L80 90Q125 130 210 165Q115 160 65 175Z" />
+            <path class="nation-outline" d="M80 90L330 70L350 230L300 270L120 250L65 175Z" />
           </g>
-          <g class="sea-labels">
-            <text x="642" y="254">白礁海峡</text>
-            <text x="588" y="550">南方商路</text>
+          <g class="country-group vinia" data-country="vinia" data-tile-count="5">
+            <path class="province map-tile terrain-highlands tile-muted" data-place-type="country" data-place-id="vinia" data-tile-name="白霜台地" data-terrain="highlands" data-terrain-label="高原" d="M330 70L660 65Q585 110 490 155Q400 105 330 70Z" />
+            <path class="province map-tile terrain-mountains tile-deep" data-place-type="country" data-place-id="vinia" data-tile-name="北嶺山麓" data-terrain="mountains" data-terrain-label="山麓" d="M660 65L630 240Q580 180 490 155Q585 110 660 65Z" />
+            <path class="province map-tile terrain-hills" data-place-type="country" data-place-id="vinia" data-tile-name="琥珀丘" data-terrain="hills" data-terrain-label="丘陵" d="M630 240L520 270Q535 210 490 155Q580 180 630 240Z" />
+            <path class="province map-tile terrain-plains tile-light" data-place-type="country" data-place-id="vinia" data-tile-name="王領平野" data-terrain="plains" data-terrain-label="肥沃平原" d="M520 270L350 230Q405 185 490 155Q535 210 520 270Z" />
+            <path class="province map-tile terrain-forest tile-deep" data-place-type="country" data-place-id="vinia" data-tile-name="西境林" data-terrain="forest" data-terrain-label="混交林" d="M350 230L330 70Q400 105 490 155Q405 185 350 230Z" />
+            <path class="nation-outline" d="M330 70L660 65L630 240L520 270L350 230Z" />
+          </g>
+          <g class="country-group heavens-gate" data-country="heavens_gate" data-tile-count="6">
+            <path class="province map-tile terrain-mountains tile-deep" data-place-type="country" data-place-id="heavens_gate" data-tile-name="天門連峰" data-terrain="mountains" data-terrain-label="高山" d="M660 65L915 95Q855 125 785 165Q710 115 660 65Z" />
+            <path class="province map-tile terrain-highlands tile-muted" data-place-type="country" data-place-id="heavens_gate" data-tile-name="蒼穹台地" data-terrain="highlands" data-terrain-label="高原" d="M915 95L940 180Q880 170 785 165Q855 125 915 95Z" />
+            <path class="province map-tile terrain-hills" data-place-type="country" data-place-id="heavens_gate" data-tile-name="東照丘" data-terrain="hills" data-terrain-label="丘陵" d="M940 180L900 270Q845 225 785 165Q880 170 940 180Z" />
+            <path class="province map-tile terrain-plains tile-light" data-place-type="country" data-place-id="heavens_gate" data-tile-name="門前平" data-terrain="plains" data-terrain-label="高原平野" d="M900 270L740 260Q760 215 785 165Q845 225 900 270Z" />
+            <path class="province map-tile terrain-mountains tile-deep" data-place-type="country" data-place-id="heavens_gate" data-tile-name="西天険" data-terrain="mountains" data-terrain-label="険阻山地" d="M740 260L630 240Q690 190 785 165Q760 215 740 260Z" />
+            <path class="province map-tile terrain-highlands" data-place-type="country" data-place-id="heavens_gate" data-tile-name="巡礼高道" data-terrain="highlands" data-terrain-label="岩石高原" d="M630 240L660 65Q710 115 785 165Q690 190 630 240Z" />
+            <path class="nation-outline" d="M660 65L915 95L940 180L900 270L740 260L630 240Z" />
+          </g>
+          <g class="country-group lustrond" data-country="lustrond" data-tile-count="6">
+            <path class="province map-tile terrain-forest tile-deep" data-place-type="country" data-place-id="lustrond" data-tile-name="北境樹林" data-terrain="forest" data-terrain-label="温帯林" d="M120 250L270 350Q230 350 185 385Q145 310 120 250Z" />
+            <path class="province map-tile terrain-hills" data-place-type="country" data-place-id="lustrond" data-tile-name="白壁丘陵" data-terrain="hills" data-terrain-label="石灰丘陵" d="M270 350L340 420Q270 395 185 385Q230 350 270 350Z" />
+            <path class="province map-tile terrain-plains tile-light" data-place-type="country" data-place-id="lustrond" data-tile-name="公都盆地" data-terrain="plains" data-terrain-label="盆地平野" d="M340 420L250 490Q235 445 185 385Q270 395 340 420Z" />
+            <path class="province map-tile terrain-wetland tile-muted" data-place-type="country" data-place-id="lustrond" data-tile-name="葦舟沢" data-terrain="wetland" data-terrain-label="河岸湿地" d="M250 490L95 470Q145 445 185 385Q235 445 250 490Z" />
+            <path class="province map-tile terrain-coast tile-light" data-place-type="country" data-place-id="lustrond" data-tile-name="西浜段丘" data-terrain="coast" data-terrain-label="海岸段丘" d="M95 470L65 375Q110 390 185 385Q145 445 95 470Z" />
+            <path class="province map-tile terrain-plains" data-place-type="country" data-place-id="lustrond" data-tile-name="北西牧野" data-terrain="plains" data-terrain-label="草原" d="M65 375L120 250Q145 310 185 385Q110 390 65 375Z" />
+            <path class="nation-outline" d="M120 250L270 350L340 420L250 490L95 470L65 375Z" />
+          </g>
+          <g class="country-group izmenia" data-country="izmenia" data-tile-count="7">
+            <path class="province map-tile terrain-hills" data-place-type="country" data-place-id="izmenia" data-tile-name="北門丘" data-terrain="hills" data-terrain-label="丘陵" d="M700 390L700 450Q725 485 760 510Q720 440 700 390Z" />
+            <path class="province map-tile terrain-plains tile-light" data-place-type="country" data-place-id="izmenia" data-tile-name="王都平" data-terrain="plains" data-terrain-label="乾燥平野" d="M700 450L900 440Q845 480 760 510Q725 485 700 450Z" />
+            <path class="province map-tile terrain-badlands tile-deep" data-place-type="country" data-place-id="izmenia" data-tile-name="赤礫東境" data-terrain="badlands" data-terrain-label="荒地" d="M900 440L940 455Q870 500 760 510Q845 480 900 440Z" />
+            <path class="province map-tile terrain-badlands" data-place-type="country" data-place-id="izmenia" data-tile-name="灼風台地" data-terrain="badlands" data-terrain-label="乾燥台地" d="M940 455L870 585Q825 555 760 510Q870 500 940 455Z" />
+            <path class="province map-tile terrain-coast tile-light" data-place-type="country" data-place-id="izmenia" data-tile-name="南海岸" data-terrain="coast" data-terrain-label="海岸平野" d="M870 585L570 560Q665 545 760 510Q825 555 870 585Z" />
+            <path class="province map-tile terrain-wetland tile-muted" data-place-type="country" data-place-id="izmenia" data-tile-name="銀脈河口" data-terrain="wetland" data-terrain-label="三角州" d="M570 560L530 400Q625 455 760 510Q665 545 570 560Z" />
+            <path class="province map-tile terrain-hills tile-deep" data-place-type="country" data-place-id="izmenia" data-tile-name="西境崖" data-terrain="hills" data-terrain-label="岩丘" d="M530 400L700 390Q720 440 760 510Q625 455 530 400Z" />
+            <path class="nation-outline" d="M700 390L700 450L900 440L940 455L870 585L570 560L530 400Z" />
+          </g>
+          <g class="country-group valka" data-country="valka" data-tile-count="6">
+            <path class="province map-tile terrain-mountains tile-deep" data-place-type="country" data-place-id="valka" data-tile-name="灰冠北稜" data-terrain="mountains" data-terrain-label="山岳" d="M670 265L740 260Q765 295 790 350Q720 300 670 265Z" />
+            <path class="province map-tile terrain-highlands" data-place-type="country" data-place-id="valka" data-tile-name="鉄門高地" data-terrain="highlands" data-terrain-label="城塞高地" d="M740 260L900 270Q850 315 790 350Q765 295 740 260Z" />
+            <path class="province map-tile terrain-hills tile-light" data-place-type="country" data-place-id="valka" data-tile-name="東部丘陵" data-terrain="hills" data-terrain-label="岩石丘陵" d="M900 270L900 440Q850 400 790 350Q850 315 900 270Z" />
+            <path class="province map-tile terrain-plains" data-place-type="country" data-place-id="valka" data-tile-name="南境牧野" data-terrain="plains" data-terrain-label="乾燥草原" d="M900 440L700 450Q765 415 790 350Q850 400 900 440Z" />
+            <path class="province map-tile terrain-hills tile-muted" data-place-type="country" data-place-id="valka" data-tile-name="関税丘" data-terrain="hills" data-terrain-label="丘陵" d="M700 450L700 390Q730 370 790 350Q765 415 700 450Z" />
+            <path class="province map-tile terrain-mountains tile-deep" data-place-type="country" data-place-id="valka" data-tile-name="灰冠峠口" data-terrain="mountains" data-terrain-label="峠" d="M700 390L670 265Q720 300 790 350Q730 370 700 390Z" />
+            <path class="nation-outline" d="M670 265L740 260L900 270L900 440L700 450L700 390Z" />
+          </g>
+          <g class="country-group selena" data-country="selena" data-tile-count="3">
+            <path class="province map-tile terrain-plains tile-light" data-place-type="province" data-place-id="selene" data-tile-name="セレネ中央州" data-terrain="plains" data-terrain-label="河畔平野" d="M300 270L520 270Q548 330 530 400Q438 432 340 420L270 350Z" />
+            <path class="province map-tile terrain-hills tile-deep" data-place-type="province" data-place-id="orta" data-tile-name="オルタ東境州" data-terrain="hills" data-terrain-label="山麓丘陵" d="M520 270L670 265L700 390Q620 410 530 400Q548 330 520 270Z" />
+            <path class="province map-tile terrain-wetland tile-muted" data-place-type="province" data-place-id="nereia" data-tile-name="ネレイア南河州" data-terrain="wetland" data-terrain-label="河川低地" d="M340 420Q438 432 530 400L570 560L330 570L250 490Z" />
+            <path class="nation-outline" d="M300 270L520 270L670 265L700 390L530 400L570 560L330 570L250 490L340 420L270 350Z" />
           </g>
 
-          <g class="country-group selena" data-country="selena" filter="url(#landShadow)">
-            <path class="province" data-place-type="province" data-place-id="selene" d="M171 121 C225 62 348 51 431 95 C476 119 495 173 471 230 C453 271 414 294 378 323 C323 320 270 304 224 273 C173 238 141 178 171 121Z" />
-            <path class="province" data-place-type="province" data-place-id="nereia" d="M378 323 C420 291 452 269 471 230 C532 244 589 288 607 346 C624 403 595 461 541 489 C487 517 438 482 393 454 C405 410 397 366 378 323Z" />
-            <path class="province" data-place-type="province" data-place-id="orta" d="M224 273 C271 304 324 320 378 323 C398 368 405 410 393 454 C360 493 326 549 263 540 C198 531 147 473 151 411 C154 353 194 315 224 273Z" />
+          <g class="terrain-contours" aria-hidden="true">
+            <path d="M95 112C155 78 245 82 310 108M82 146C154 112 246 119 331 151M676 100C742 76 845 88 914 126M655 139C735 111 855 127 928 166" />
+            <path d="M690 292C752 278 840 292 884 331M690 324C756 309 844 327 894 371M568 450C649 430 753 451 842 492" />
+          </g>
+          <g class="terrain-symbols" aria-hidden="true">
+            <g class="terrain-cluster forest-symbols">
+              <use href="#terrainTree" transform="translate(120 128)" /><use href="#terrainTree" transform="translate(150 112) scale(.8)" /><use href="#terrainTree" transform="translate(175 146) scale(1.1)" /><use href="#terrainTree" transform="translate(112 193) scale(.9)" /><use href="#terrainTree" transform="translate(272 188) scale(.8)" />
+            </g>
+            <g class="terrain-cluster mountain-symbols">
+              <use href="#terrainMountain" transform="translate(622 118)" /><use href="#terrainMountain" transform="translate(686 112) scale(1.15)" /><use href="#terrainMountain" transform="translate(744 126) scale(.9)" /><use href="#terrainMountain" transform="translate(842 154) scale(1.1)" />
+              <use href="#terrainMountain" transform="translate(652 300) scale(.85)" /><use href="#terrainMountain" transform="translate(702 292) scale(1.1)" /><use href="#terrainMountain" transform="translate(746 282) scale(.82)" />
+            </g>
+            <g class="terrain-cluster hill-symbols">
+              <use href="#terrainHill" transform="translate(302 370)" /><use href="#terrainHill" transform="translate(602 358)" /><use href="#terrainHill" transform="translate(832 384)" /><use href="#terrainHill" transform="translate(865 405) scale(.8)" />
+            </g>
+            <g class="terrain-cluster marsh-symbols">
+              <use href="#terrainMarsh" transform="translate(126 430)" /><use href="#terrainMarsh" transform="translate(400 520)" /><use href="#terrainMarsh" transform="translate(530 528)" />
+            </g>
           </g>
 
-          <g class="country-group valka" data-country="valka" filter="url(#landShadow)">
-            <path class="province" data-place-type="province" data-place-id="valka_keep" d="M726 166 C782 136 856 157 883 211 C907 259 881 320 831 346 C782 370 715 340 696 291 C678 247 685 188 726 166Z" />
+          <g class="land-routes" aria-hidden="true">
+            <path class="imperial-road" data-route="imperial_road" d="M235 155 C330 220 390 260 420 315 C490 314 520 315 565 315 C630 315 685 317 735 320 C775 255 810 190 820 125" />
+            <path class="river-route" data-route="silver_river" d="M355 105 C390 185 405 255 420 315 C430 370 445 415 465 455 C560 480 650 500 760 500" />
+            <path class="pass-route" data-route="ash_pass" d="M565 315 C610 286 652 289 700 318" />
           </g>
-
-          <g class="country-group lantern" data-country="lantern" filter="url(#landShadow)">
-            <path class="province" data-place-type="province" data-place-id="twinlight" d="M690 486 C719 463 758 467 773 496 C788 526 770 561 737 571 C706 579 672 555 671 522 C671 508 678 495 690 486Z" />
-            <path class="islet" d="M809 521 C826 507 849 512 856 530 C863 548 849 567 830 565 C811 563 798 539 809 521Z" />
+          <g class="terrain-labels">
+            <text class="terrain-name" x="118" y="214">黎明樹海</text>
+            <text class="terrain-name" x="690" y="104">天門連峰</text>
+            <text class="terrain-name" x="790" y="548">赤礫荒地</text>
+            <text class="route-name" x="590" y="282">灰冠峠</text>
+            <text class="route-name" x="462" y="505">銀脈河</text>
+            <text class="route-name" x="300" y="235">大陸公路</text>
           </g>
 
           <g class="city-layer">
-            <g class="map-node city" role="button" tabindex="0" data-place-type="province" data-place-id="selene" transform="translate(390 210)">
+            <g class="map-node city" role="button" tabindex="0" data-place-type="province" data-place-id="selene" transform="translate(420 315)">
               <circle r="13" /><path d="M-8 7V-6L0-13L8-6V7Z" /><text y="29">王都セレネ</text>
             </g>
-            <g class="map-node city" role="button" tabindex="0" data-place-type="province" data-place-id="nereia" transform="translate(515 378)">
-              <circle r="13" /><path d="M-8 7V-6L0-13L8-6V7Z" /><text y="29">港都ネレイア</text>
+            <g class="map-node city" role="button" tabindex="0" data-place-type="province" data-place-id="nereia" transform="translate(465 455)">
+              <circle r="13" /><path d="M-8 7V-6L0-13L8-6V7Z" /><text y="29">河港ネレイア</text>
             </g>
-            <g class="map-node city" role="button" tabindex="0" data-place-type="province" data-place-id="orta" transform="translate(325 438)">
-              <circle r="13" /><path d="M-8 7V-6L0-13L8-6V7Z" /><text y="29">鐘楼市オルタ</text>
+            <g class="map-node city" role="button" tabindex="0" data-place-type="province" data-place-id="orta" transform="translate(565 315)">
+              <circle r="13" /><path d="M-8 7V-6L0-13L8-6V7Z" /><text y="29">城塞市オルタ</text>
             </g>
-            <g class="map-node city foreign" role="button" tabindex="0" data-place-type="country" data-place-id="valka" transform="translate(790 255)">
-              <circle r="15" /><path d="M-9 8V-7L0-15L9-7V8Z" /><text y="32">岬城ヴァルカ</text>
+            <g class="map-node city foreign" role="button" tabindex="0" data-place-type="country" data-place-id="valka" transform="translate(735 320)">
+              <circle r="15" /><path d="M-9 8V-7L0-15L9-7V8Z" /><text y="32">鉄門城ヴァルカ</text>
             </g>
-            <g class="map-node city neutral" role="button" tabindex="0" data-place-type="country" data-place-id="lantern" transform="translate(725 520)">
-              <circle r="12" /><path d="M-7 7V-5L0-12L7-5V7Z" /><text y="28">双灯港</text>
-            </g>
+            <g class="map-node city neutral" role="button" tabindex="0" data-place-type="country" data-place-id="vinia" transform="translate(500 130)"><circle r="12" /><path d="M-7 7V-5L0-12L7-5V7Z" /><text y="28">ヴィニア</text></g>
+            <g class="map-node city neutral" role="button" tabindex="0" data-place-type="country" data-place-id="forest_alliance" transform="translate(235 155)"><circle r="12" /><path d="M-7 7V-5L0-12L7-5V7Z" /><text y="28">森の連合国</text></g>
+            <g class="map-node city neutral" role="button" tabindex="0" data-place-type="country" data-place-id="lustrond" transform="translate(225 435)"><circle r="12" /><path d="M-7 7V-5L0-12L7-5V7Z" /><text y="28">ルストロンド</text></g>
+            <g class="map-node city neutral" role="button" tabindex="0" data-place-type="country" data-place-id="izmenia" transform="translate(760 500)"><circle r="12" /><path d="M-7 7V-5L0-12L7-5V7Z" /><text y="28">イズメニア</text></g>
+            <g class="map-node city neutral" role="button" tabindex="0" data-place-type="country" data-place-id="heavens_gate" transform="translate(820 125)"><circle r="12" /><path d="M-7 7V-5L0-12L7-5V7Z" /><text y="28">ヘブンズゲート</text></g>
           </g>
 
           <g class="village-layer">
-            <g class="map-node village" role="button" tabindex="0" data-place-type="village" data-place-id="mugiwano" transform="translate(338 176)"><circle r="6" /><text y="18">麦輪</text></g>
-            <g class="map-node village" role="button" tabindex="0" data-place-type="village" data-place-id="tsukishiro" transform="translate(456 182)"><circle r="6" /><text y="18">月代</text></g>
-            <g class="map-node village" role="button" tabindex="0" data-place-type="village" data-place-id="shionari" transform="translate(584 334)"><circle r="6" /><text y="18">潮鳴</text></g>
-            <g class="map-node village" role="button" tabindex="0" data-place-type="village" data-place-id="aonagi" transform="translate(574 432)"><circle r="6" /><text y="18">青凪</text></g>
-            <g class="map-node village" role="button" tabindex="0" data-place-type="village" data-place-id="haimugi" transform="translate(274 397)"><circle r="6" /><text y="18">灰麦</text></g>
-            <g class="map-node village" role="button" tabindex="0" data-place-type="village" data-place-id="kanezaka" transform="translate(364 492)"><circle r="6" /><text y="18">鐘坂</text></g>
+            <g class="map-node village" role="button" tabindex="0" data-place-type="village" data-place-id="mugiwano" transform="translate(370 275)"><circle r="6" /><text y="18">麦輪</text></g>
+            <g class="map-node village" role="button" tabindex="0" data-place-type="village" data-place-id="tsukishiro" transform="translate(405 365)"><circle r="6" /><text y="18">月代</text></g>
+            <g class="map-node village" role="button" tabindex="0" data-place-type="village" data-place-id="shionari" transform="translate(420 505)"><circle r="6" /><text y="18">汐成</text></g>
+            <g class="map-node village" role="button" tabindex="0" data-place-type="village" data-place-id="aonagi" transform="translate(520 485)"><circle r="6" /><text y="18">青凪</text></g>
+            <g class="map-node village" role="button" tabindex="0" data-place-type="village" data-place-id="haimugi" transform="translate(610 270)"><circle r="6" /><text y="18">灰麦</text></g>
+            <g class="map-node village" role="button" tabindex="0" data-place-type="village" data-place-id="kanezaka" transform="translate(620 365)"><circle r="6" /><text y="18">鐘坂</text></g>
           </g>
 
           <g class="map-ornament" transform="translate(80 555)">
             <circle r="35" /><path d="M0-26L6-6L0 0L-6-6Z M0 26L6 6L0 0L-6 6Z" /><text y="5">N</text>
           </g>
         </svg>
+
+        <section class="tile-detail-window is-hidden" id="tileDetailWindow" role="dialog" aria-labelledby="tileDetailTitle">
+          <button class="tile-detail-close" type="button" data-close-tile aria-label="領域情報を閉じる">×</button>
+          <header>
+            <span>TERRITORY DOSSIER</span>
+            <h2 id="tileDetailTitle"></h2>
+            <p id="tileDetailMeta"></p>
+          </header>
+          <p class="tile-detail-note" id="tileDetailNote"></p>
+          <div class="tile-detail-grid" id="tileDetailGrid"></div>
+        </section>
 
         <section class="selection-card" id="selectionCard" aria-live="polite"></section>
 
@@ -137,6 +251,7 @@
 
         <div class="map-mode-bar" id="mapModeBar" aria-label="地図モード">
           <button type="button" data-map-mode="political" class="is-active"><i class="mode-swatch political"></i><span>政治</span></button>
+          <button type="button" data-map-mode="terrain"><i class="mode-swatch terrain"></i><span>地形</span></button>
           <button type="button" data-map-mode="diplomatic"><i class="mode-swatch diplomatic"></i><span>外交</span></button>
           <button type="button" data-map-mode="supply"><i class="mode-swatch supply"></i><span>補給</span></button>
           <button type="button" data-map-mode="unrest"><i class="mode-swatch unrest"></i><span>不穏</span></button>
@@ -146,21 +261,84 @@
       </main>
 
       <aside class="outliner">
-        <header><span>OUTLINER</span><strong>島政院摘要</strong></header>
+        <header><span>OUTLINER</span><strong>王国政務摘要</strong></header>
         <div id="outlinerContent"></div>
         <footer>
           <button id="saveButton" type="button">記録</button>
           <button id="resetButton" type="button">最初から</button>
+          <button type="button" data-open-guide>遊び方</button>
           <a href="https://github.com/Rune-markar/oathbound-chronicle-island-prototype/blob/main/CHANGELOG.md" target="_blank" rel="noopener noreferrer">更新履歴</a>
         </footer>
       </aside>
+    </div>
+
+    <div class="modal-backdrop is-hidden" id="guideModal" role="dialog" aria-modal="true" aria-labelledby="guideTitle">
+      <section class="guide-board">
+        <button class="modal-close" type="button" data-close-guide aria-label="閉じる">×</button>
+        <header class="guide-header">
+          <span>CAMPAIGN BRIEF / あなたの役割</span>
+          <h1 id="guideTitle">三州を治め、灰冠峠の危機を解決する</h1>
+          <p>あなたはセレナ王です。数字を増やすこと自体ではなく、国境問題の原因を見抜き、限られた統治力と人材で解決することが目的です。</p>
+        </header>
+        <div class="guide-content">
+          <section class="guide-mission">
+            <header><div><small>今回の主目標</small><h2>灰冠峠の国境危機を収束させる</h2></div><b id="guideProgress">0 / 3 達成</b></header>
+            <p>三州の金・食料・治安・民心を守りながら、次の三課題を解決します。</p>
+            <div class="campaign-objective-list" id="guideObjectiveList"></div>
+          </section>
+          <section class="guide-turn-loop">
+            <div><small>毎月はこの順番だけを追う</small><h2>方針 → 命令 → 月末 → 報告</h2></div>
+            <ol id="guideLoop"></ol>
+          </section>
+          <aside class="guide-note">
+            <strong>迷ったときは</strong>
+            <p>画面上部の「次にすること」を押してください。世界地図・各種台帳は判断材料であり、すべてを見る必要はありません。</p>
+          </aside>
+
+          <details class="guide-advanced">
+            <summary><span><b>詳細ルールと国家AI</b><small>必要になったときだけ開く</small></span><i>＋</i></summary>
+          <section class="guide-basics">
+            <header><small>CORE SYSTEMS</small><h2>統治で覚える五つのこと</h2></header>
+            <div>
+              <article><b>統治力と人物</b><p>命令には担当武将と統治力が必要です。成果幅は能力、忠誠、意欲、功績、特性、所在地、季節方針から決まります。</p></article>
+              <article><b>都市の因果</b><p>税、配給、徴兵、移民、施設、派閥は連動します。命令予約後は右側の翌月予測と警告を確認してください。</p></article>
+              <article><b>直轄と太守委任</b><p>統治委任では、太守が州庫を使って日常政務を自動処理します。朝廷が使える金・兵糧・兵は、名目総量ではなく戸籍と行政到達から決まります。</p></article>
+              <article><b>強行命令</b><p>通常枠を最大2点超過できます。1点ごとに失敗率15%、全都市の腐敗+0.6、民心-0.8、翌月統治力-1です。</p></article>
+              <article><b>戦争と講和</b><p>政治目的、正当性、補給、情報、第三国介入を先に評価します。限定目的を達成したら攻勢限界前の講和が基本です。</p></article>
+            </div>
+          </section>
+
+          <section class="guide-nation-models">
+            <header>
+              <div><small>NATIONAL LOGIC MODELS</small><h2>他国家は何を守り、どう反応するか</h2></div>
+              <p>各国の友好度・敵意・軍事力・機動・組織力・結束・介入意志は、推定戦力と第三国介入リスクへ反映されます。</p>
+            </header>
+            <div class="guide-model-scope"><b>現在の実装範囲</b><span>月ごとの戦争行動を自律選択するのはヴァルカです。他国は大陸均衡へ影響する段階で、個別の外交命令・参戦イベントは今後の拡張範囲です。</span></div>
+            <div class="nation-logic-grid">
+              <article class="nation-logic valka"><header><i>関</i><div><small>国境対立</small><h3>ヴァルカ公国</h3></div></header><p><b>守るもの：</b>峠関税と辺境諸侯の自治。</p><p>組織崩壊時は籠城、セレナの軍需不足時は輜重襲撃、疲弊時は局地反撃。限定戦で不利になると講和を探ります。</p></article>
+              <article class="nation-logic vinia"><header><i>衡</i><div><small>均衡維持</small><h3>ヴィニア</h3></div></header><p><b>守るもの：</b>北方公路と大陸中央の均衡。</p><p>限定目的と早期講和は容認しやすく、体制変更・長期戦・交通網の独占を警戒します。</p></article>
+              <article class="nation-logic forest"><header><i>商</i><div><small>通商協調</small><h3>森の連合国</h3></div></header><p><b>守るもの：</b>安全で予見可能な交易。</p><p>セレナに友好的で機動力は高め。介入意志は低く、交易協定を好み、長期の街道遮断を嫌います。</p></article>
+              <article class="nation-logic lustrond"><header><i>静</i><div><small>慎重中立</small><h3>ルストロンド公国</h3></div></header><p><b>守るもの：</b>南西交易路と保護領の安全。</p><p>限定戦は静観しやすい一方、保護領秩序の動揺ではヘブンズゲート側の判断に影響されます。</p></article>
+              <article class="nation-logic izmenia"><header><i>機</i><div><small>機会待ち</small><h3>イズメニア</h3></div></header><p><b>守るもの：</b>損失を抑えた勢力拡大。</p><p>他国の疲弊と交易路変化を観察し、長期戦・軍需不足・外交孤立を介入の好機と見ます。</p></article>
+              <article class="nation-logic heavens"><header><i>秩</i><div><small>大陸秩序</small><h3>ヘブンズゲート王国</h3></div></header><p><b>守るもの：</b>既存秩序と保護領。</p><p>最大級の軍事力と介入意志を持ち、政権屈服・長期攻囲・保護領への脅威へ強く反応します。</p></article>
+            </div>
+            <p class="guide-model-formula"><b>第三国介入リスク：</b>敵意、セレナへの負の友好度、介入意志、戦争状態から上がり、外交的なつながりから緩和されます。</p>
+          </section>
+          </details>
+        </div>
+        <footer class="guide-footer">
+          <span>政策・施設・戦争・国家論理の詳細は完全版マニュアルに収録しています。</span>
+          <a href="./manual.html" target="_blank" rel="noopener noreferrer">完全版を開く</a>
+          <button type="button" data-close-guide>統治を始める</button>
+        </footer>
+      </section>
     </div>
 
     <div class="modal-backdrop is-hidden" id="warCouncilModal" role="dialog" aria-modal="true" aria-labelledby="warCouncilTitle">
       <section class="war-council">
         <button class="modal-close" id="closeWarCouncil" type="button" aria-label="閉じる">×</button>
         <div class="council-header">
-          <span>WAR COUNCIL / 白礁海峡</span>
+          <span>WAR COUNCIL / 灰冠峠</span>
           <h2 id="warCouncilTitle">戦争は目的ではなく、政治の手段である</h2>
           <p>要求を先に定め、必要な力と止める地点をAI参謀が説明します。</p>
         </div>
@@ -170,6 +348,35 @@
           <p id="declarationWarning"></p>
           <button class="war-button" id="declareWarButton" type="button">この目的で宣戦布告</button>
         </div>
+      </section>
+    </div>
+
+    <div class="modal-backdrop is-hidden" id="assignmentModal" role="dialog" aria-modal="true" aria-labelledby="assignmentTitle">
+      <section class="assignment-board">
+        <button class="modal-close" id="closeAssignment" type="button" aria-label="閉じる">×</button>
+        <header class="assignment-header">
+          <span>OFFICER ASSIGNMENT</span>
+          <h2 id="assignmentTitle">担当武将を任命</h2>
+          <p id="assignmentSummary"></p>
+        </header>
+        <div class="assignment-ledger" id="assignmentLedger"></div>
+        <div class="officer-candidates" id="officerCandidates"></div>
+      </section>
+    </div>
+
+    <div class="modal-backdrop is-hidden" id="eventModal" role="dialog" aria-modal="true" aria-labelledby="eventTitle">
+      <section class="event-board">
+        <header class="event-header">
+          <span>URGENT CITY EVENT</span>
+          <h2 id="eventTitle">都市事件</h2>
+          <p id="eventSummary"></p>
+        </header>
+        <div class="event-art" aria-hidden="false">
+          <img id="eventArt" alt="" />
+          <span>現地急報</span>
+        </div>
+        <div class="event-location" id="eventLocation"></div>
+        <div class="event-choices" id="eventChoices"></div>
       </section>
     </div>
 

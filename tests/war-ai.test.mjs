@@ -4,25 +4,25 @@ import { evaluatePeaceDecision, evaluateWarDecision } from "../src/war-ai.js";
 
 function context(overrides = {}) {
   return {
-    objective: { name: "通航保障", scope: "limited", politicalValue: 70, description: "海峡を通す" },
+    objective: { name: "国境通行権", scope: "limited", politicalValue: 70, description: "灰冠峠を通す" },
     politics: { justification: 65, support: 55, escalationRisk: 20 },
-    own: { army: 2200, fleet: 8, training: 65, organization: 68, navalReadiness: 70, exhaustion: 0 },
-    enemy: { army: 1900, fleet: 7, training: 58, organization: 62, navalReadiness: 63, cohesion: 60, capital: "岬城" },
-    geography: { straitName: "白礁海峡", straitValue: 86, seaControl: 68, straitAccess: 72 },
+    own: { army: 2200, supportColumns: 9, training: 65, organization: 68, mobility: 70, exhaustion: 0 },
+    enemy: { name: "ヴァルカ公国", army: 1900, supportColumns: 7, training: 58, organization: 62, mobility: 63, cohesion: 60, capital: "鉄門城" },
+    geography: { chokepointName: "灰冠峠", chokepointValue: 86, maneuver: 68, access: 72 },
     logistics: { supply: 70, distance: 18 },
     intelligence: 70,
     ...overrides,
   };
 }
 
-test("war AI recommends a supported limited operation with sea access", () => {
+test("war AI recommends a supported limited operation with pass access", () => {
   const report = evaluateWarDecision(context());
   assert.equal(report.posture, "実行可能");
-  assert.equal(report.center.label, "白礁海峡");
+  assert.equal(report.center.label, "灰冠峠");
   assert.ok(report.score > 18);
 });
 
-test("war AI rejects a politically weak and escalatory campaign", () => {
+test("war AI rejects a politically weak, poorly supplied, escalatory campaign", () => {
   const report = evaluateWarDecision(context({
     objective: { name: "示威", scope: "total", politicalValue: 15, description: "目的が曖昧" },
     politics: { justification: 20, support: 22, escalationRisk: 90 },
@@ -33,7 +33,7 @@ test("war AI rejects a politically weak and escalatory campaign", () => {
   assert.ok(report.score < 0);
 });
 
-test("peace advice detects the point where further attack is too costly", () => {
+test("peace advice detects the culminating point of an offensive", () => {
   const report = evaluatePeaceDecision({
     warScore: 38,
     objectiveProgress: 72,

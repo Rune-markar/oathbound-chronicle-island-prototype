@@ -1,5 +1,6 @@
 tmp/
 .codex-work/
+.codex_tmp/
 .playwright-cli/
 output/
 *.pptx
