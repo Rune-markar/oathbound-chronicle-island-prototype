@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f1efe8" />
+    <title>誓界記 — 小島国プロトタイプ</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="noise" aria-hidden="true"></div>
+
+    <header class="topbar">
+      <a class="brand" href="#" aria-label="誓界記 ホーム">
+        <span class="brand-mark">誓</span>
+        <span><strong>誓界記</strong><small>OATHBOUND CHRONICLE</small></span>
+      </a>
+      <div class="season-clock" aria-label="現在日時">
+        <span>白潮暦 312年・冬支度期</span>
+        <strong id="dayLabel">第1日 / 8日</strong>
+      </div>
+      <div class="top-actions">
+        <a class="text-button" href="https://github.com/Rune-markar/oathbound-chronicle-island-prototype/blob/main/CHANGELOG.md" target="_blank" rel="noopener noreferrer">更新履歴</a>
+        <button class="text-button" id="saveButton" type="button">記録する</button>
+        <button class="primary-button next-day-button" id="nextDayButton" type="button">
+          一日進める
+          <span aria-hidden="true">→</span>
+        </button>
+      </div>
+    </header>
+
+    <main class="game-shell">
+      <section class="metric-ribbon" aria-label="島国の主要指標">
+        <article class="metric objective-metric">
+          <span class="metric-label">北方備蓄</span>
+          <div><strong id="deliveredMetric">0</strong><span> / 48樽</span></div>
+          <div class="progress-track"><span id="deliveryProgress"></span></div>
+        </article>
+        <article class="metric">
+          <span class="metric-label">国庫</span>
+          <div><strong id="treasuryMetric">80</strong><span> 王冠貨</span></div>
+          <small id="treasuryTrend">施策と買上げに使用</small>
+        </article>
+        <article class="metric">
+          <span class="metric-label">正統性</span>
+          <div><strong id="legitimacyMetric">64</strong><span> / 100</span></div>
+          <small id="legitimacyTrend">布告を受け入れる根拠</small>
+        </article>
+        <article class="metric">
+          <span class="metric-label">誓債</span>
+          <div><strong id="debtMetric">0</strong><span> 件</span></div>
+          <small id="debtTrend">破られた保護の記憶</small>
+        </article>
+        <article class="metric action-metric">
+          <span class="metric-label">本日の行動</span>
+          <div class="action-pips" id="actionPips" aria-label="残り行動点"></div>
+          <small>調査・対話・制度整備</small>
+        </article>
+      </section>
+
+      <div class="workspace">
+        <aside class="left-rail">
+          <nav class="scale-nav" aria-label="世界の縮尺">
+            <p class="rail-label">WORLD SCALE</p>
+            <button class="scale-button is-active" data-scale="country" type="button">
+              <span>01</span><strong>島国</strong><small>法・国庫・誓約</small>
+            </button>
+            <button class="scale-button" data-scale="city" type="button">
+              <span>02</span><strong>都市群</strong><small>倉庫・街道・機関</small>
+            </button>
+            <button class="scale-button" data-scale="village" type="button">
+              <span>03</span><strong>村々</strong><small>在庫・生活・証言</small>
+            </button>
+          </nav>
+
+          <section class="player-card">
+            <div class="portrait" aria-hidden="true">レ</div>
+            <div>
+              <span>あなた</span>
+              <strong>レナ・アルディス</strong>
+              <small id="roleLabel">島政院の記録官</small>
+              <small class="player-location" id="playerLocationLabel">現在地：王都セレネ</small>
+            </div>
+          </section>
+
+          <section class="objective-card">
+            <span class="eyebrow">CURRENT OATH</span>
+            <h2>風待ちの徴発</h2>
+            <p>北岬の守備隊へ、8日目までに穀物48樽を届ける。</p>
+            <div class="deadline-line"><span>残り</span><strong id="daysRemaining">8日</strong></div>
+          </section>
+        </aside>
+
+        <section class="map-column">
+          <div class="map-heading">
+            <div>
+              <span class="eyebrow" id="scaleEyebrow">NATION / ONE ISLAND</span>
+              <h1 id="mapTitle">セレナ島侯国</h1>
+              <p id="mapSubtitle">三つの都市圏と六つの村が、同じ備蓄と命令を共有する。</p>
+            </div>
+            <div class="map-legend" aria-label="地図の凡例">
+              <span><i class="legend-city"></i>都市</span>
+              <span><i class="legend-village"></i>村</span>
+              <span><i class="legend-route"></i>穀物便</span>
+            </div>
+          </div>
+
+          <div class="map-frame" id="mapFrame" data-scale="country">
+            <svg id="islandMap" viewBox="0 0 900 650" role="img" aria-labelledby="mapSvgTitle mapSvgDesc">
+              <title id="mapSvgTitle">セレナ島侯国の地図</title>
+              <desc id="mapSvgDesc">三都市と六つの村、穀物輸送路を示す操作可能な地図</desc>
+              <defs>
+                <linearGradient id="seaGradient" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0" stop-color="#dcebf0" />
+                  <stop offset="1" stop-color="#b9d4dc" />
+                </linearGradient>
+                <linearGradient id="landGradient" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0" stop-color="#d6d7b9" />
+                  <stop offset="0.55" stop-color="#bac7a1" />
+                  <stop offset="1" stop-color="#94aa89" />
+                </linearGradient>
+                <filter id="landShadow" x="-20%" y="-20%" width="140%" height="140%">
+                  <feDropShadow dx="0" dy="9" stdDeviation="9" flood-color="#19384a" flood-opacity="0.24" />
+                </filter>
+                <pattern id="waves" width="40" height="28" patternUnits="userSpaceOnUse">
+                  <path d="M0 16 Q10 8 20 16 T40 16" fill="none" stroke="#fff" stroke-opacity=".27" stroke-width="1.5" />
+                </pattern>
+              </defs>
+              <rect width="900" height="650" fill="url(#seaGradient)" />
+              <rect width="900" height="650" fill="url(#waves)" opacity=".7" />
+              <g id="mapCamera">
+                <path class="island-shadow" d="M455 50 C541 59 625 112 653 194 C681 274 638 326 680 389 C716 443 673 532 604 565 C526 603 456 575 392 596 C316 621 229 568 214 493 C202 430 239 389 220 335 C196 267 232 191 294 158 C354 126 372 43 455 50Z" fill="#5d7c87" opacity=".28" transform="translate(0 14)" />
+                <path class="island" d="M455 50 C541 59 625 112 653 194 C681 274 638 326 680 389 C716 443 673 532 604 565 C526 603 456 575 392 596 C316 621 229 568 214 493 C202 430 239 389 220 335 C196 267 232 191 294 158 C354 126 372 43 455 50Z" fill="url(#landGradient)" stroke="#6e886e" stroke-width="4" filter="url(#landShadow)" />
+                <path d="M305 188 C359 208 381 183 423 140 C467 97 522 112 583 164" class="contour" />
+                <path d="M268 313 C340 277 385 299 447 266 C522 226 579 258 629 292" class="contour" />
+                <path d="M267 468 C351 430 410 466 465 429 C528 387 596 411 650 450" class="contour" />
+                <path d="M426 92 C438 149 414 202 426 264 C438 330 481 362 467 433 C455 496 470 538 507 570" class="river" />
+                <g id="territoryLayer"></g>
+                <g id="routeLayer"></g>
+                <g id="nodeLayer"></g>
+              </g>
+              <g class="compass" transform="translate(812 82)">
+                <circle r="31" fill="#f8f7f1" fill-opacity=".8" stroke="#31546a" stroke-width="1" />
+                <path d="M0 -24 L7 0 L0 24 L-7 0Z" fill="#16384d" />
+                <text y="-38" text-anchor="middle">N</text>
+              </g>
+            </svg>
+            <div class="map-note" id="mapNote">
+              <span class="pulse-dot"></span>
+              <span>地図上の都市・村を選択できます</span>
+            </div>
+          </div>
+
+          <section class="causal-strip" aria-label="現在の因果鎖">
+            <div class="causal-title">
+              <span class="eyebrow">VISIBLE CAUSALITY</span>
+              <strong>いま起きていること</strong>
+            </div>
+            <div class="causal-chain" id="causalChain"></div>
+          </section>
+        </section>
+
+        <aside class="inspector" id="inspector" aria-live="polite"></aside>
+      </div>
+
+      <section class="chronicle-panel">
+        <div class="chronicle-heading">
+          <div>
+            <span class="eyebrow">THE WORLD REMEMBERS</span>
+            <h2>島国年代記</h2>
+          </div>
+          <button class="text-button" id="resetButton" type="button">最初から</button>
+        </div>
+        <ol class="chronicle-list" id="chronicleList"></ol>
+      </section>
+    </main>
+
+    <div class="modal-backdrop" id="introModal" role="dialog" aria-modal="true" aria-labelledby="introTitle">
+      <section class="intro-card">
+        <span class="eyebrow">PLAYABLE PROTOTYPE / CHAPTER 01</span>
+        <h2 id="introTitle">風待ちの徴発</h2>
+        <p class="intro-lead">一つの命令を、島国として決め、都市で運び、村の暮らしとして受け止める。</p>
+        <div class="intro-grid">
+          <div><span>舞台</span><strong>1島国・3都市・6村</strong></div>
+          <div><span>期限</span><strong>8日間</strong></div>
+          <div><span>目的</span><strong>穀物48樽</strong></div>
+        </div>
+        <p>北方の海が荒れ、守備隊の冬備蓄が失われた。島政院は村々へ穀物を求めている。ただし台帳は古く、街道は不揃いで、誰が余裕を持つのかさえ分からない。</p>
+        <button class="primary-button intro-start" id="startButton" type="button">記録官として始める <span>→</span></button>
+      </section>
+    </div>
+
+    <div class="modal-backdrop is-hidden" id="resultModal" role="dialog" aria-modal="true" aria-labelledby="resultTitle">
+      <section class="result-card">
+        <span class="eyebrow">CHRONICLE SEALED</span>
+        <h2 id="resultTitle">結末</h2>
+        <p class="result-lead" id="resultLead"></p>
+        <div class="result-stats" id="resultStats"></div>
+        <p id="resultBody"></p>
+        <div class="result-actions">
+          <button class="text-button" id="closeResultButton" type="button">年代記を見る</button>
+          <button class="primary-button" id="replayButton" type="button">もう一度試す</button>
+        </div>
+      </section>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <script type="module" src="src/app.js"></script>
+  </body>
+</html>
