@@ -20,6 +20,7 @@ const SPEED_DELAYS = [0, 1100, 550, 250];
 let state = loadState() ?? createInitialState();
 let timer = null;
 let toastTimer = null;
+let resetArmTimer = null;
 const view = {
   panel: "realm",
   mapMode: "political",
@@ -590,8 +591,22 @@ document.querySelector("#realmHome").addEventListener("click", () => {
   render();
 });
 document.querySelector("#saveButton").addEventListener("click", () => persist(true));
-document.querySelector("#resetButton").addEventListener("click", () => {
-  if (!window.confirm("現在の年代記を破棄し、最初から始めますか？")) return;
+document.querySelector("#resetButton").addEventListener("click", (event) => {
+  const button = event.currentTarget;
+  if (button.dataset.armed !== "true") {
+    button.dataset.armed = "true";
+    button.textContent = "もう一度押すと初期化";
+    showToast("現在の年代記を破棄する場合は、もう一度押してください。", "danger");
+    clearTimeout(resetArmTimer);
+    resetArmTimer = setTimeout(() => {
+      button.dataset.armed = "false";
+      button.textContent = "最初から";
+    }, 10000);
+    return;
+  }
+  clearTimeout(resetArmTimer);
+  button.dataset.armed = "false";
+  button.textContent = "最初から";
   setSpeed(0);
   localStorage.removeItem(STORAGE_KEY);
   state = createInitialState();
@@ -601,6 +616,7 @@ document.querySelector("#resetButton").addEventListener("click", () => {
   view.selectedId = null;
   view.warCouncilOpen = false;
   render();
+  showToast("新しい年代記を始めました。");
 });
 document.querySelector("#closeWarCouncil").addEventListener("click", () => {
   view.warCouncilOpen = false;
