@@ -130,7 +130,7 @@ export const PEOPLE_REPRESENTATIVES = Object.freeze({
 });
 
 export const DIPLOMATIC_DELEGATES = Object.freeze({
-  valka: { peopleId: "human", certainty: "暫定代表", note: "ヴァルカの構成種族は原案未詳。外交窓口として人間代表を表示。" },
+  valka: { peopleId: "human", name: "リュドミラ・ヴァルケン", office: "灰冠峠会談全権使", certainty: "公国全権", note: "鉄門城の関税評議会を代表し、通行権と共同監視条項の交渉権を委ねられている。" },
   vinia: { peopleId: "elf", certainty: "構成種族", note: "国家設定で明記されたエルフの代表。" },
   forest_alliance: { peopleId: "beastfolk", certainty: "関連種族", note: "三族の内訳は未確定。関連種族の代表として表示。" },
   lustrond: { peopleId: "human", certainty: "構成種族", note: "国家設定で明記された人間の代表。" },

@@ -1,6 +1,8 @@
 import {
   ADMINISTRATION_MANDATES,
   ADMINISTRATION_MODES,
+  AFTERMATH_POLICIES,
+  BORDER_SETTLEMENTS,
   AUTHORITY_DOMAINS,
   AUTHORITY_REFORM_STAGES,
   AUTHORITY_TRANSFER_METHODS,
@@ -22,8 +24,10 @@ import {
   WORLD,
   acknowledgeMonthReport,
   adoptDoctrine,
+  answerOfficerDemand,
   appointForceOfficer,
   cancelOrder,
+  chooseAftermathPolicy,
   commitMonth,
   createInitialState,
   declareWar,
@@ -50,10 +54,14 @@ import {
   getGreatPowerFoundation,
   getHistoricalOverview,
   getFoodSecurityStatus,
+  getAftermathDecisionStatus,
+  getForeignDispatches,
   getMilitarySummary,
   getPeaceOptions,
   getOfficerReport,
+  getOfficerPoliticalReport,
   getTaskForecast,
+  getTownAdministration,
   getTurnGuidance,
   getTurnWarnings,
   getWarCouncilReport,
@@ -61,9 +69,12 @@ import {
   getWarSupport,
   getWarPlanOptions,
   getWarStage,
+  isTownCommand,
   negotiatePeace,
   normalizeWarState,
   queueOrder,
+  resolveBorderNegotiation,
+  resolveAftermathDecisionChoice,
   resolveEventChoice,
   releaseOccupation,
   setFormation,
@@ -97,8 +108,8 @@ import {
   getWorldStatisticsSummary,
 } from "./world-statistics.js";
 
-const STORAGE_KEY = "oathbound-continental-grand-strategy-v8";
-const LEGACY_STORAGE_KEYS = ["oathbound-continental-grand-strategy-v7", "oathbound-continental-grand-strategy-v6"];
+const STORAGE_KEY = "oathbound-continental-grand-strategy-v9";
+const LEGACY_STORAGE_KEYS = ["oathbound-continental-grand-strategy-v8", "oathbound-continental-grand-strategy-v7", "oathbound-continental-grand-strategy-v6"];
 
 const CITY_ART = Object.freeze({
   selene: "./assets/generated/city-selene.webp",
@@ -166,8 +177,8 @@ function cityArt(cityId) {
 }
 
 let state = loadState() ?? createInitialState();
+if (state.campaign?.ending) state.council.pending = false;
 let toastTimer = null;
-let resetArmTimer = null;
 let previewCache = { state: null, value: null };
 const view = {
   panel: "council",
@@ -185,6 +196,8 @@ const view = {
   tileAnchorY: 0.5,
   selectedCityId: "selene",
   cityTab: "overview",
+  selectedTownId: "mugiwano",
+  townTab: "overview",
   selectedAuthorityDomain: "justice",
   selectedFacilityId: "farmland",
   warCouncilOpen: false,
@@ -194,11 +207,18 @@ const view = {
   assignmentMode: null,
   pendingCommandId: null,
   pendingCityId: null,
+  pendingTownId: null,
   pendingForceRole: null,
   atlasMode: "nations",
   selectedNationId: "forest_alliance",
   selectedPeopleId: "acrane",
+  worldNationFilter: "all",
+  worldGuideOpen: true,
+  focusedTownCommandId: null,
   guideOpen: state.turn === 0 && state.council.history.length === 0,
+  endingOpen: Boolean(state.campaign?.ending && state.lastViewedEndingId !== state.campaign.ending.id),
+  resetOpen: false,
+  expertMode: false,
 };
 
 const elements = {
@@ -210,6 +230,7 @@ const elements = {
   audioToggle: document.querySelector("#audioToggle"),
   audioIcon: document.querySelector("#audioIcon"),
   audioStatus: document.querySelector("#audioStatus"),
+  analysisToggle: document.querySelector("#analysisToggle"),
   leftPanel: document.querySelector("#leftPanel"),
   primaryTabs: document.querySelector("#primaryTabs"),
   alertRack: document.querySelector("#alertRack"),
@@ -247,6 +268,9 @@ const elements = {
   eventLocation: document.querySelector("#eventLocation"),
   eventChoices: document.querySelector("#eventChoices"),
   guideModal: document.querySelector("#guideModal"),
+  endingModal: document.querySelector("#endingModal"),
+  endingContent: document.querySelector("#endingContent"),
+  resetModal: document.querySelector("#resetModal"),
   toast: document.querySelector("#toast"),
 };
 
@@ -255,7 +279,7 @@ function loadState() {
     const raw = localStorage.getItem(STORAGE_KEY) ?? LEGACY_STORAGE_KEYS.map((key) => localStorage.getItem(key)).find(Boolean);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    if (![6, 7, 8].includes(parsed.version)) return null;
+    if (![6, 7, 8, 9].includes(parsed.version)) return null;
     parsed.fiscal ??= { publicDebt: 24, totalDebtRepaid: 0 };
     parsed.fiscal.publicDebt = Number.isFinite(parsed.fiscal.publicDebt) ? parsed.fiscal.publicDebt : 24;
     parsed.fiscal.totalDebtRepaid = Number.isFinite(parsed.fiscal.totalDebtRepaid) ? parsed.fiscal.totalDebtRepaid : 0;
@@ -275,6 +299,7 @@ function persist(showMessage = false) {
 
 function commit(nextState, message = "", cue = "confirm") {
   state = nextState;
+  if (state.campaign?.ending && state.phase !== "event" && state.lastViewedEndingId !== state.campaign.ending.id) view.endingOpen = true;
   persist();
   render();
   if (cue) audio.play(cue);
@@ -380,18 +405,27 @@ function renderResources() {
     { icon: "兵", value: formatValue(ledger.mobilizableTroops), label: `動員可能 / 駐屯 ${formatValue(ledger.troops)}` },
     { icon: "道", value: `${military.mobility} / ${military.supply}`, label: "機動 / 軍需" },
     { icon: "♛", value: state.legitimacy, label: "正統性" },
-    { icon: "令", value: `${ledger.governance.used}/${ledger.governance.max}`, label: `統治力 · 待機${ledger.availableOfficers}名` },
+    { icon: "令", value: `${ledger.governance.used}/${ledger.governance.max}`, label: `統治力 · 待機${ledger.availableOfficers}名`, className: "is-governance", title: "クリックして今月の使い道を確認", action: "governance" },
   ];
-  elements.resourceLedger.innerHTML = resources.map(({ icon, value, label, className = "", title = "" }) => `
-    <div class="resource-item ${className}"${title ? ` title="${title}" aria-label="${title}"` : ""}><i>${icon}</i><strong>${value}</strong><small>${label}</small></div>
-  `).join("");
+  elements.resourceLedger.innerHTML = resources.map(({ icon, value, label, className = "", title = "", action = "" }) => {
+    const tag = action ? "button" : "div";
+    const actionData = action ? ` type="button" data-resource-action="${action}"` : "";
+    return `<${tag} class="resource-item ${className}"${actionData}${title ? ` title="${title}" aria-label="${title}"` : ""}><i>${icon}</i><strong>${value}</strong><small>${label}</small></${tag}>`;
+  }).join("");
 }
 
 function renderTimeControls() {
   elements.dateLabel.textContent = formatDate(state);
   const season = deriveCityMetrics(state, view.selectedCityId).season.name;
-  elements.dateHint.textContent = state.phase === "event" ? "事件対応が必要" : state.council.pending ? `${season}季評定を決定` : "月を終える";
+  elements.dateHint.textContent = state.phase === "event" ? "事件対応が必要" : state.campaign?.ending ? "完結 · 継続統治可能" : state.council.pending ? `${season}季評定を決定` : "月を終える";
   elements.endMonthButton.classList.toggle("is-blocked", state.phase === "event" || state.council.pending);
+}
+
+function renderAnalysisMode() {
+  document.body.classList.toggle("is-expert-mode", view.expertMode);
+  if (!elements.analysisToggle) return;
+  elements.analysisToggle.setAttribute("aria-pressed", String(view.expertMode));
+  elements.analysisToggle.querySelector("small").textContent = view.expertMode ? "閉じる" : "表示";
 }
 
 function renderTabs() {
@@ -413,8 +447,11 @@ function renderCampaignBar() {
   const campaign = getCampaignStatus(state);
   const guidance = getTurnGuidance(state);
   const foodSecurity = getFoodSecurityStatus(state, getPlanningPreview());
-  const foodRisk = foodSecurity.primaryCity && foodSecurity.severity !== "stable"
-    ? `<div class="campaign-food-alert is-${foodSecurity.severity}" role="status"><b>${foodSecurity.severity === "danger" ? "食料危機" : "食料注意"} · ${foodSecurity.primaryCity.name}</b><span>次月末 ${formatValue(Math.max(0, foodSecurity.primaryCity.after))} / 約${foodSecurity.primaryCity.afterRunway.toFixed(1)}か月分</span></div>`
+  const foodTarget = foodSecurity.primaryCity && foodSecurity.severity !== "stable"
+    ? townTargetForCommand(foodSecurity.primaryCity.cityId, "city.cultivate")
+    : null;
+  const foodRisk = foodTarget
+    ? `<button class="campaign-food-alert is-${foodSecurity.severity}" type="button" data-food-emergency-town="${foodTarget.townId}" data-food-emergency-city="${foodSecurity.primaryCity.cityId}"><b>${foodSecurity.severity === "danger" ? "食料危機" : "食料注意"} · ${foodSecurity.primaryCity.name}</b><span>次月末 ${formatValue(Math.max(0, foodSecurity.primaryCity.after))} / 約${foodSecurity.primaryCity.afterRunway.toFixed(1)}か月分</span><em>${foodTarget.name}の対策へ →</em></button>`
     : "";
   const flow = campaign.loop.map((item, index) => {
     const step = index + 1;
@@ -422,12 +459,12 @@ function renderCampaignBar() {
     const complete = campaign.complete || guidance.step > step;
     return `<span class="${active ? "is-active" : ""} ${complete ? "is-complete" : ""}"><i>${complete ? "✓" : step}</i>${item.label}</span>`;
   }).join("");
-  const commandData = guidance.commandId ? ` data-command-id="${guidance.commandId}" data-city-id="${guidance.cityId}"` : "";
+  const commandData = guidance.commandId ? ` data-command-id="${guidance.commandId}" data-city-id="${guidance.cityId}"${guidance.townId ? ` data-town-id="${guidance.townId}"` : ""}` : "";
   elements.campaignBar.innerHTML = `
     <div class="campaign-bar-goal">
-      <small>主目標 · ${campaign.role}</small>
+      <small>${campaign.act.name} · ${campaign.role}</small>
       <strong>${campaign.title}</strong>
-      <span>${campaign.completedCount} / ${campaign.totalCount} 達成</span>
+      <span>${campaign.completedCount} / ${campaign.totalCount} 課題達成 · ${campaign.act.description}</span>
     </div>
     <div class="campaign-bar-next ${foodRisk ? "has-food-risk" : ""}">
       <small>次にすること · STEP ${guidance.step}/4 ${guidance.stepLabel}</small>
@@ -454,14 +491,84 @@ function renderGuideModal() {
   elements.guideModal.querySelector("#guideProgress").textContent = `${campaign.completedCount} / ${campaign.totalCount} 達成`;
 }
 
+function endingResourceSummary() {
+  const reports = state.monthlyReports ?? [];
+  const oldest = reports.at(-1);
+  const sum = (cities, side, key) => cities?.reduce((total, city) => total + (city[side]?.[key] ?? 0), 0) ?? 0;
+  const ledger = deriveRealmLedger(state);
+  return [
+    { label: "州庫", start: sum(oldest?.cities, "before", "money"), end: ledger.treasury, digits: 1 },
+    { label: "食料", start: sum(oldest?.cities, "before", "food"), end: ledger.provisions, digits: 0 },
+    { label: "正統性", start: 64, end: state.legitimacy, digits: 0 },
+  ];
+}
+
+function campaignRecordLabel(value) {
+  return BORDER_SETTLEMENTS[value]?.name
+    ?? AFTERMATH_POLICIES[value]?.name
+    ?? (["limited_war", "war_settlement"].includes(value) ? "限定戦争" : value);
+}
+
+function renderEndingModal() {
+  const campaign = getCampaignStatus(state);
+  const open = Boolean(view.endingOpen && campaign.ending && state.phase !== "event");
+  elements.endingModal.classList.toggle("is-hidden", !open);
+  if (!open) return;
+  const settlement = BORDER_SETTLEMENTS[campaign.resolution]?.name ?? (campaign.resolution ? "戦争講和" : "国境決着");
+  const aftermath = AFTERMATH_POLICIES[campaign.aftermathPolicy]?.name ?? "戦後秩序";
+  const decisions = [...(state.campaign?.history ?? [])].reverse().slice(-6).map((record) => `
+    <li><span>誓暦${record.year}年 ${record.month}月</span><strong>${record.title}</strong><small>${[...(record.causes ?? []), ...(record.effects ?? [])].slice(0, 3).map(campaignRecordLabel).join(" · ")}</small></li>
+  `).join("");
+  const resources = endingResourceSummary().map((item) => {
+    const delta = item.end - item.start;
+    return `<article><small>${item.label}</small><strong>${formatValue(item.start, item.digits)} → ${formatValue(item.end, item.digits)}</strong><span class="${delta < 0 ? "is-negative" : "is-positive"}">${signed(delta, item.digits)}</span></article>`;
+  }).join("");
+  elements.endingContent.innerHTML = `
+    <header class="ending-header"><span>CAMPAIGN COMPLETE · セレナ王</span><h1 id="endingTitle">${campaign.ending.name}</h1><p>${campaign.ending.description}</p></header>
+    <div class="ending-route"><span><small>国境決着</small><strong>${settlement}</strong></span><i>→</i><span><small>定着方針</small><strong>${aftermath}</strong></span></div>
+    <section class="ending-objectives"><header><h2>三つの課題</h2><b>${campaign.completedCount} / ${campaign.totalCount}</b></header><div class="campaign-objective-list">${campaignObjectiveItems(campaign)}</div></section>
+    <section class="ending-ledger"><header><h2>王国の変化</h2><small>${state.campaign.completedTurn ?? state.turn}ターンで完結</small></header><div>${resources}</div></section>
+    <section class="ending-decisions"><header><h2>この歴史を作った判断</h2><small>年代記から抜粋</small></header><ol>${decisions || "<li><strong>国境危機を収束させた。</strong></li>"}</ol></section>
+    <footer class="ending-actions"><button type="button" data-ending-reports>国家報告を詳しく見る</button><button class="is-primary" type="button" data-ending-continue>この世界で統治を続ける</button></footer>
+  `;
+}
+
+function renderResetModal() {
+  elements.resetModal.classList.toggle("is-hidden", !view.resetOpen);
+}
+
+function acknowledgeEnding() {
+  if (state.campaign?.ending) {
+    state = { ...state, lastViewedEndingId: state.campaign.ending.id };
+    persist();
+  }
+  view.endingOpen = false;
+}
+
+function resetChronicle() {
+  localStorage.removeItem(STORAGE_KEY);
+  LEGACY_STORAGE_KEYS.forEach((key) => localStorage.removeItem(key));
+  state = createInitialState();
+  Object.assign(view, {
+    panel: "council", spendingCategoryId: "social_security", spendingCityId: "selene", mapMode: "political", scale: "country",
+    selectedType: null, selectedId: null, selectedTileName: null, selectedTerrain: null, selectedTerrainType: null, tileWindowOpen: false,
+    selectedCityId: "selene", cityTab: "overview", selectedTownId: "mugiwano", townTab: "overview", selectedAuthorityDomain: "justice",
+    selectedFacilityId: "farmland", selectedCountryId: "valka", objectiveId: "transit", warCouncilOpen: false, assignmentOpen: false,
+    pendingTownId: null, guideOpen: true, endingOpen: false, resetOpen: false, expertMode: false, worldNationFilter: "all", focusedTownCommandId: null,
+  });
+  render();
+  audio.play("reset");
+  showToast("新しい年代記を始めました。");
+}
+
 function costLabel(command) {
   const names = { money: "金", draftPopulation: "徴募" };
   return Object.entries(command.cost).map(([key, value]) => `${names[key]}${value}`).join(" · ");
 }
 
 function spendingCommandCards(categoryId, cityId = WORLD.nation.capital) {
-  return Object.values(COMMANDS)
-    .filter((command) => command.spendingCategory === categoryId)
+  const cards = Object.values(COMMANDS)
+    .filter((command) => command.spendingCategory === categoryId && !isTownCommand(command))
     .map((command) => {
       const targetCityId = command.defaultCityId ?? cityId ?? WORLD.nation.capital;
       const availability = getCommandAvailability(state, command.id, null, targetCityId);
@@ -473,7 +580,8 @@ function spendingCommandCards(categoryId, cityId = WORLD.nation.capital) {
           ${availability.allowed ? '<span class="assign-prompt">担当武将を選ぶ →</span>' : ""}
         </button>
       `;
-    }).join("");
+    });
+  return cards.length ? cards.join("") : `<div class="spending-moved-note"><strong>この分類の現地施策は町政へ移設されました。</strong><small>町を選び、生活支援・衛生・治安・開墾などを実行してください。</small><button type="button" data-panel="town">町政を開く →</button></div>`;
 }
 
 function spendingShortcut(categoryId, text) {
@@ -524,6 +632,21 @@ function seasonName() {
   return `${deriveCityMetrics(state, view.selectedCityId).season.name}季`;
 }
 
+function townTargetForCommand(cityId, commandId) {
+  const towns = (WORLD.provinces[cityId]?.villages ?? []).map((townId) => getTownAdministration(state, townId));
+  const metric = {
+    "welfare.relief": (town) => town.support,
+    "welfare.health": (town) => town.sanitation,
+    "city.patrol": (town) => town.security,
+    "city.drill": (town) => town.preparedness,
+    "research.administration": (town) => town.forecast.administrativeCapacity,
+    "city.cultivate": (town) => town.forecast.foodSecurity,
+    "city.commerce": (town) => town.commerce,
+    "city.repair": (town) => town.infrastructure,
+  }[commandId] ?? ((town) => town.forecast.administrativeCapacity);
+  return towns.sort((left, right) => metric(left) - metric(right))[0] ?? null;
+}
+
 function renderCouncilPanel() {
   const ledger = deriveRealmLedger(state);
   const administration = ledger.administration;
@@ -538,12 +661,16 @@ function renderCouncilPanel() {
   const proposalCards = proposals.map((proposal) => {
     const officer = getOfficerReport(state, proposal.officerId);
     const command = COMMANDS[proposal.commandId];
-    const availability = getCommandAvailability(state, proposal.commandId, proposal.officerId, proposal.cityId);
+    const town = isTownCommand(command) ? townTargetForCommand(proposal.cityId, proposal.commandId) : null;
+    const availability = getCommandAvailability(state, proposal.commandId, proposal.officerId, proposal.cityId, town?.townId);
+    const action = town
+      ? `data-open-town-command="${town.townId}"`
+      : `data-command="${command.id}" data-city-id="${proposal.cityId}"`;
     return `
       <article class="proposal-card">
         <header>${officerSeal(officer)}<div><strong>${officer.name}</strong><small>${officer.role}の提案</small></div><b>${proposal.forecast.grade}</b></header>
         <p>「${proposal.reason}」</p>
-        <button type="button" data-command="${command.id}" data-city-id="${proposal.cityId}" ${availability.allowed ? "" : "disabled"}>${command.name}を任務化 · 予測 ${proposal.forecast.range[0]}〜${proposal.forecast.range[1]}</button>
+        <button type="button" ${action} ${availability.allowed ? "" : "disabled"}>${town ? `${town.name}の町政で${command.name}を見る` : `${command.name}を任務化 · 予測 ${proposal.forecast.range[0]}〜${proposal.forecast.range[1]}`}</button>
       </article>
     `;
   }).join("");
@@ -593,7 +720,7 @@ function renderSpendingPanel() {
   const selected = SPENDING_CATEGORIES[view.spendingCategoryId] ?? SPENDING_CATEGORIES.social_security;
   const reservedMoney = state.pendingOrders.reduce((sum, order) => sum + (order.cost?.money ?? 0), 0);
   const categories = Object.values(SPENDING_CATEGORIES).map((category) => {
-    const commandCount = Object.values(COMMANDS).filter((command) => command.spendingCategory === category.id).length;
+    const commandCount = Object.values(COMMANDS).filter((command) => command.spendingCategory === category.id && !isTownCommand(command)).length;
     return `
       <button type="button" class="spending-category-card ${category.id === selected.id ? "is-active" : ""}" data-spending-category="${category.id}">
         <i>${category.icon}</i><span><strong>${category.name}</strong><small>具体策 ${commandCount}件</small></span>
@@ -607,7 +734,7 @@ function renderSpendingPanel() {
     <header class="panel-heading spending-heading">
       <span>NATIONAL EXPENDITURE</span>
       <h1>国家支出</h1>
-      <p>目的を選び、その配下から具体策を決める</p>
+      <p>国境・外交・軍事など国家規模の具体策を決める</p>
     </header>
     <div class="panel-body">
       <section class="panel-section">
@@ -619,7 +746,7 @@ function renderSpendingPanel() {
         </div>
       </section>
       <section class="panel-section">
-        <div class="section-heading"><h2>基本コマンド</h2><small>国家支出 6分類</small></div>
+        <div class="section-heading"><h2>国家規模コマンド</h2><small>町の内政は「町政」へ移設済み</small></div>
         <div class="spending-category-grid">${categories}</div>
       </section>
       <section class="panel-section spending-detail">
@@ -661,12 +788,11 @@ function renderCityPanel() {
         </div>
       </section>
       <section class="panel-section">
-        <div class="section-heading"><h2>国家支出から実行</h2><small>統治力 ${governance.used}/${governance.max}</small></div>
-        <div class="spending-shortcut-list">
-          ${spendingShortcut("social_security", `${city.name}の生活・衛生・治安を支える`)}
-          ${spendingShortcut("economic_investment", `${city.name}の生産・商業・基盤を育てる`)}
-          ${spendingShortcut("research_development", "制度・測量・行政技術を整える")}
-        </div>
+        <div class="section-heading"><h2>管内の町政</h2><small>統治力 ${governance.used}/${governance.max}</small></div>
+        <div class="town-shortcut-list">${WORLD.provinces[cityId].villages.map((townId) => {
+          const town = getTownAdministration(state, townId);
+          return `<button type="button" class="town-shortcut" data-select-town="${townId}"><strong>${town.name}</strong><small>${town.kind} · 行政処理 ${Math.round(town.forecast.administrativeCapacity)} · 課題 ${town.forecast.primaryNeed.label}</small><b>町政を開く →</b></button>`;
+        }).join("")}</div>
       </section>
       <section class="panel-section city-issue-list">
         <div class="section-heading"><h2>現在の課題</h2><small>${state.cities[cityId].issues.length}件</small></div>
@@ -680,6 +806,36 @@ const CITY_TABS = {
   overview: "概要", population: "人口", economy: "経済・政策",
   administration: "統治委任", facilities: "施設", factions: "派閥", history: "歴史", reports: "報告",
 };
+
+const TOWN_TABS = { overview: "概要", office: "行政台帳", commands: "施策・命令", records: "実施記録" };
+
+function townTabs() {
+  return Object.values(WORLD.villages).map((town) => `
+    <button type="button" data-select-town="${town.id}" class="${town.id === view.selectedTownId ? "is-active" : ""}">
+      <strong>${town.name}</strong><small>${WORLD.provinces[town.province].name.replace(/王都|河港|城塞市/, "")}</small>
+    </button>
+  `).join("");
+}
+
+function renderTownPanel() {
+  const town = getTownAdministration(state, view.selectedTownId);
+  const parent = deriveCityMetrics(state, town.cityId);
+  const governor = getOfficerReport(state, parent.governorId);
+  elements.leftPanel.innerHTML = `
+    <header class="panel-heading town-heading">
+      <span>TOWN ADMINISTRATION</span><h1>${town.name}</h1>
+      <p>${town.kind} · ${WORLD.provinces[town.cityId].name}管内</p>
+    </header>
+    <div class="panel-body">
+      <section class="panel-section"><div class="section-heading"><h2>町を選ぶ</h2><small>${Object.keys(WORLD.villages).length}町</small></div><nav class="town-selector">${townTabs()}</nav></section>
+      <section class="panel-section">
+        <article class="governor-card">${officerSeal(governor, "large")}<div><small>管轄太守</small><strong>${governor.name}</strong><p>${parent.name}から財源・担当者を配分</p></div></article>
+        <div class="realm-facts"><div><small>人口</small><strong>${formatValue(town.population)}</strong></div><div><small>行政処理</small><strong>${Math.round(town.forecast.administrativeCapacity)}</strong></div><div><small>陳情滞留</small><strong>${Math.round(town.petitionBacklog)}</strong></div><div><small>優先課題</small><strong>${town.forecast.primaryNeed.label}</strong></div></div>
+      </section>
+      <section class="panel-section"><p class="adviser-note"><strong>現地課題</strong><br>${town.issue}</p><button type="button" class="town-open-commands" data-town-tab="commands">この町の施策を開く</button></section>
+    </div>
+  `;
+}
 
 function deltaText(value, digits = 0) {
   const tone = value > 0 ? "positive" : value < 0 ? "negative" : "neutral";
@@ -710,6 +866,84 @@ function cityWorkspaceHeader(city, governor) {
       ${Object.entries(CITY_TABS).map(([id, label]) => `<button type="button" data-city-tab="${id}" class="${view.cityTab === id ? "is-active" : ""}">${label}</button>`).join("")}
     </nav>
   `;
+}
+
+function townWorkspaceHeader(town, governor) {
+  return `
+    <header class="city-workspace-header town-workspace-header" style="--city-art: url('${cityArt(town.cityId)}')">
+      <div><span>${town.kind} / ${WORLD.provinces[town.cityId].name}管内</span><h1>${town.name} 町政庁</h1><p>${town.issue}</p></div>
+      <div class="city-governor-badge">${officerSeal(governor)}<div><small>管轄太守</small><strong>${governor.name}</strong><b>町政命令は都市金庫から執行</b></div></div>
+    </header>
+    <nav class="city-workspace-tabs town-workspace-tabs" aria-label="町政画面タブ">
+      ${Object.entries(TOWN_TABS).map(([id, label]) => `<button type="button" data-town-tab="${id}" class="${view.townTab === id ? "is-active" : ""}">${label}</button>`).join("")}
+    </nav>
+  `;
+}
+
+function townNeedCard(need) {
+  const tone = need.value < 40 ? "is-critical" : need.value < 60 ? "is-warning" : "is-stable";
+  return `<article class="town-need-card ${tone}"><small>${need.label}</small><strong>${Math.round(need.value)}</strong><i style="--value:${Math.round(need.value)}%"></i></article>`;
+}
+
+function renderTownOverview(town) {
+  return `
+    <section class="town-overview-hero">
+      <article><small>町人口</small><strong>${formatValue(town.population)}</strong><span>翌月 ${signed(town.forecast.populationDelta)}</span></article>
+      <article><small>地域歳入寄与</small><strong>${formatValue(town.forecast.revenue, 1)}</strong><span>親都市の税収基盤</span></article>
+      <article><small>食料備蓄</small><strong>${formatValue(town.foodReserve)}</strong><span>翌月 ${signed(town.forecast.foodDelta)}</span></article>
+      <article><small>行政処理力</small><strong>${Math.round(town.forecast.administrativeCapacity)}</strong><span>陳情 ${signed(town.forecast.petitionDelta, 1)}/月</span></article>
+    </section>
+    <section class="town-need-grid">${town.forecast.needs.map(townNeedCard).join("")}</section>
+    <section class="city-detail-columns">
+      <article class="city-sheet"><header><h2>現地課題</h2><small>${town.kind}</small></header><p>${town.issue}</p><p>現在の最優先は「${town.forecast.primaryNeed.label}」。町ごとの値を改善し、管轄都市の村落生産・人口基盤へ積み上げます。</p></article>
+      <article class="city-sheet"><header><h2>親都市との関係</h2><small>${WORLD.provinces[town.cityId].name}</small></header><div class="city-inline-stats"><span>生産 <b>${Math.round(town.production)}</b></span><span>商業 <b>${Math.round(town.commerce)}</b></span><span>治安 <b>${Math.round(town.security)}</b></span><span>民心 <b>${Math.round(town.support)}</b></span></div><button type="button" class="town-parent-link" data-select-city="${town.cityId}">都市行政へ戻る →</button></article>
+    </section>
+  `;
+}
+
+function renderTownOffice(town) {
+  return `
+    <section class="town-office-grid">
+      ${cityMetricCard("戸籍把握率", town.registryCoverage, null, "%")}
+      ${cityMetricCard("行政到達", town.administrativeReach, null, "%")}
+      ${cityMetricCard("陳情滞留", town.petitionBacklog, null, "%")}
+      ${cityMetricCard("道路・水路基盤", town.infrastructure, null, "%")}
+      ${cityMetricCard("衛生", town.sanitation, null, "%")}
+      ${cityMetricCard("自警・備え", town.preparedness, null, "%")}
+    </section>
+    <section class="city-detail-columns">
+      <article class="city-sheet"><header><h2>行政負荷</h2><small>戸籍・到達・陳情から算出</small></header>${meter("処理能力", town.forecast.administrativeCapacity)}${meter("戸籍把握", town.registryCoverage)}${meter("行政到達", town.administrativeReach)}${meter("陳情解消", 100 - town.petitionBacklog)}</article>
+      <article class="city-sheet"><header><h2>翌月見通し</h2><small>町単位で月次更新</small></header><p>人口 ${signed(town.forecast.populationDelta)} · 食料備蓄 ${signed(town.forecast.foodDelta)} · 陳情滞留 ${signed(town.forecast.petitionDelta, 1)}。</p><p>行政技術は戸籍・到達・滞留を、補修は基盤と到達を直接改善します。</p></article>
+    </section>
+  `;
+}
+
+function townCommandCard(command, town) {
+  const availability = getCommandAvailability(state, command.id, null, town.cityId, town.townId);
+  return `
+    <button class="town-command-card ${view.focusedTownCommandId === command.id ? "is-recommended" : ""}" type="button" data-command="${command.id}" data-city-id="${town.cityId}" data-town-id="${town.townId}" ${availability.allowed ? "" : "disabled"}>
+      <header><strong>${command.name}</strong><b>${SPENDING_CATEGORIES[command.spendingCategory].name}</b></header>
+      <p>${command.description}</p><small>${availability.allowed ? `${command.durationTurns}か月 · 統治${command.governanceCost} · ${costLabel(command)}` : availability.reason}</small><span>${town.name}だけを直接改善 →</span>
+    </button>
+  `;
+}
+
+function renderTownCommands(town) {
+  const commands = Object.values(COMMANDS).filter(isTownCommand);
+  const groups = [...new Set(commands.map((command) => command.spendingCategory))];
+  return `
+    <section class="town-command-intro"><div><small>LOCAL EXECUTION</small><h2>${town.name}の施策</h2><p>費用は${WORLD.provinces[town.cityId].name}の都市金庫、担当者と統治力は国家枠を使います。効果対象はこの町です。</p></div><span>優先課題<strong>${town.forecast.primaryNeed.label} ${Math.round(town.forecast.primaryNeed.value)}</strong></span></section>
+    ${groups.map((categoryId) => `<section class="town-command-group"><header><h2>${SPENDING_CATEGORIES[categoryId].name}</h2><small>${commands.filter((command) => command.spendingCategory === categoryId).length}施策</small></header><div>${commands.filter((command) => command.spendingCategory === categoryId).map((command) => townCommandCard(command, town)).join("")}</div></section>`).join("")}
+  `;
+}
+
+function renderTownRecords(town) {
+  const records = town.history.length ? town.history.map((record) => {
+    const officer = getOfficerReport(state, record.officerId);
+    return `<article class="town-record"><span>誓暦${record.year}年 ${record.month}月</span><div><strong>${COMMANDS[record.commandId]?.name ?? record.commandId}</strong><small>${officer?.name ?? "担当者不明"} · 成果 ${record.outcome}</small></div></article>`;
+  }).join("") : '<p class="history-empty">この町で完了した施策はまだありません。</p>';
+  const pending = [...state.pendingOrders, ...state.commandQueue].filter((order) => order.townId === town.townId).map((order) => `<article class="town-record is-pending"><span>${state.pendingOrders.includes(order) ? "今月予約" : `残${order.remainingTurns}か月`}</span><div><strong>${COMMANDS[order.commandId].name}</strong><small>${getOfficerReport(state, order.officerId).name}</small></div></article>`).join("");
+  return `<section class="city-sheet town-records"><header><h2>実施記録</h2><small>町別に保存</small></header>${pending}${records}</section>`;
 }
 
 function renderCityOverview(city) {
@@ -1004,13 +1238,28 @@ function reportCausalRows(local) {
 }
 
 function reportActionRows(report, cityId) {
-  const actions = (report.actions ?? []).filter((action) => action.cityId === cityId);
-  if (!actions.length) return '<p class="report-empty-detail">この月に確定した都市命令はありません。</p>';
+  const actions = (report.actions ?? []).filter((action) => !cityId || action.cityId === cityId);
+  if (!actions.length) return `<p class="report-empty-detail">${cityId ? "この都市を対象とする確定施策はありません。王国全体の施策は上の国家活動で確認できます。" : "この月に確定した施策はありません。"}</p>`;
   return actions.map((action) => {
     const cost = [action.cost?.money ? `金 ${action.cost.money}` : "", action.cost?.draftPopulation ? `徴募 ${action.cost.draftPopulation}` : "", action.governanceCost ? `統治 ${action.governanceCost}` : ""].filter(Boolean).join(" · ");
     const status = action.status === "failed" ? "失敗" : action.status === "completed" ? "完了" : "進行中";
-    return `<div class="report-action ${action.status === "failed" ? "is-failed" : ""}"><strong>${action.title}</strong><span>${status}${cost ? ` · ${cost}` : ""}</span><small>${action.detail}</small></div>`;
+    const place = action.townId ? `${WORLD.villages[action.townId]?.name ?? action.townId} · ` : action.cityId ? `${WORLD.provinces[action.cityId]?.name ?? action.cityId} · ` : "";
+    return `<div class="report-action ${action.status === "failed" ? "is-failed" : ""}"><strong>${action.title}</strong><span>${place}${status}${cost ? ` · ${cost}` : ""}</span><small>${action.detail}</small></div>`;
   }).join("");
+}
+
+function nationalActivityCard(report) {
+  if (!report) return "";
+  const events = (report.events ?? []).map((item) => `<div class="national-event-row"><strong>${WORLD.provinces[item.cityId]?.name ?? item.cityId} · ${item.title}</strong><span>${item.choice}</span><small>${item.detail ?? ""}</small></div>`).join("");
+  return `
+    <details class="national-activity-card report-fold">
+      <summary><div><small>REALM-WIDE REGISTER</small><h2>今月の国家活動</h2></div><span>${(report.actions ?? []).length}施策 · ${(report.events ?? []).length}事件</span></summary>
+      <div class="national-activity-grid report-fold-body">
+        <article><h3>確定施策</h3><div class="report-actions">${reportActionRows(report, null)}</div></article>
+        <article><h3>重大事件</h3>${events || '<p class="report-empty-detail">この月の重大事件はありません。</p>'}</article>
+      </div>
+    </details>
+  `;
 }
 
 function reportWarRows(report) {
@@ -1024,6 +1273,23 @@ function reportWarRows(report) {
     entries.push(`<p class="report-war ${occupation.resistanceLoss ? "is-danger" : ""}"><strong>占領統治 · ${occupation.policyName}</strong><small>${occupation.supplied ? "費用・補給充足" : "費用または補給不足"} · 統制 ${signed(occupation.controlDelta, 1)} · 抵抗 ${signed(occupation.resistanceDelta, 1)} · 統合 ${signed(occupation.integrationDelta, 1)} · 避難民 ${signed(occupation.displacedDelta)}</small></p>`);
   });
   return entries.length ? `<h3>戦争・占領</h3>${entries.join("")}` : "";
+}
+
+function decisionHighlightsCard(report) {
+  const highlights = report?.highlights ?? [];
+  if (!highlights.length) return "";
+  return `
+    <section class="decision-highlights">
+      <header><div><small>DECISION BRIEF</small><h2>今月の重要変化</h2></div><span>先に3件だけ確認</span></header>
+      <div>${highlights.map((highlight) => `<details><summary><strong>${highlight.title}</strong><b>${highlight.change}</b></summary><dl><div><dt>なぜ</dt><dd>${highlight.cause}</dd></div><div><dt>次に効くこと</dt><dd>${highlight.effect}</dd></div><div><dt>残る記録</dt><dd>${highlight.legacy}</dd></div></dl></details>`).join("")}</div>
+    </section>`;
+}
+
+function reportStrategicRows(report) {
+  const dispatches = (report.foreignDispatches ?? []).slice(0, 3).map((dispatch) => `<div class="report-strategic-row"><strong>${dispatch.countryName} · ${dispatch.intent}</strong><span>${dispatch.effect}</span><small>国家意図：${dispatch.agenda}</small></div>`).join("");
+  const reactions = (report.officerReactions ?? []).slice(0, 3).map((reaction) => `<div class="report-strategic-row ${reaction.disposition < 0 ? "is-negative" : ""}"><strong>${reaction.title}</strong><span>${reaction.disposition > 0 ? "忠誠と人物関係が改善" : "忠誠と人物関係が悪化"}</span><small>${reaction.detail}</small></div>`).join("");
+  if (!dispatches && !reactions) return "";
+  return `<h3>人物政治・世界情勢</h3><div class="report-strategic-list">${reactions}${dispatches}</div>`;
 }
 
 function fiscalEntries(section, definitions) {
@@ -1070,27 +1336,33 @@ function fiscalReportCard(report) {
   const fiscal = report.fiscal;
   const positive = fiscal.balance >= 0;
   return `
-    <section class="fiscal-report-card">
-      <header>
+    <details class="fiscal-report-card report-fold">
+      <summary>
         <div><span>NATIONAL FINANCE · ${report.year} ${report.monthName}</span><h2>国家財政レポート</h2><p>全都市の税収、維持費、国家支出、臨時収支を集計</p></div>
         <div class="fiscal-balance ${positive ? "is-surplus" : "is-deficit"}"><small>当月${positive ? "黒字" : "赤字"}</small><strong>${signed(fiscal.balance, 1)}</strong><span>国庫 ${formatValue(fiscal.openingTreasury, 1)} → ${formatValue(fiscal.closingTreasury, 1)}</span></div>
-      </header>
-      ${fiscalCharts(fiscal)}
-      <p class="fiscal-note">支出は「社会保障・軍事関連・研究開発・対外援助・国債返済・経済投資」の六分類で集計しています。</p>
-    </section>
+      </summary>
+      <div class="report-fold-body">${fiscalCharts(fiscal)}
+        <p class="fiscal-note">支出は「社会保障・軍事関連・研究開発・対外援助・国債返済・経済投資」の六分類で集計しています。</p>
+      </div>
+    </details>
   `;
 }
 
 function renderCityReports(city) {
   const reports = state.monthlyReports.filter((report) => report.cities.some((item) => item.cityId === city.cityId)).slice(0, 18);
   const annual = state.annualReports.slice(0, 6);
-  const events = reports.flatMap((report) => report.events.filter((item) => item.cityId === city.cityId).map((item) => ({ ...item, year: report.year, monthName: report.monthName })));
+  const events = state.monthlyReports.flatMap((report) => report.events.map((item) => ({ ...item, year: report.year, monthName: report.monthName })));
   const latestFiscalReport = state.monthlyReports.find((report) => report.fiscal);
   return `
+    ${decisionHighlightsCard(reports[0])}
     ${latestFiscalReport ? fiscalReportCard(latestFiscalReport) : '<section class="fiscal-report-empty"><strong>国家財政レポート</strong><p>月を終えると、歳入・六分類支出・収支のグラフを作成します。</p></section>'}
+    ${nationalActivityCard(reports[0])}
     <section class="report-columns">
-      <article class="report-list monthly-report-list"><header><h2>月次報告</h2><small>${reports.length}件 · 実収支</small></header>${reports.length ? reports.map((report, index) => { const local = report.cities.find((item) => item.cityId === city.cityId); return `<details ${index === 0 ? "open" : ""}><summary><span>${report.year}年 ${report.monthName}</span><b>金 ${signed(local.changes.money, 1)} · 食 ${signed(local.changes.food)}</b></summary><div class="report-total-strip"><span>人口 <b>${signed(local.changes.population)}</b></span><span>治安 <b>${signed(local.changes.security, 1)}</b></span><span>民心 <b>${signed(local.changes.support, 1)}</b></span></div><h3>因果内訳</h3><div class="report-causal-grid">${reportCausalRows(local)}</div><h3>命令・委任政務</h3><div class="report-actions">${reportActionRows(report, city.cityId)}</div>${report.events.filter((item) => item.cityId === city.cityId).map((item) => `<p class="report-event">事件「${item.title}」— ${item.choice}<small>${item.detail ?? ""}</small></p>`).join("")}${reportWarRows(report)}</details>`; }).join("") : '<p class="empty-candidates">月を終えると報告が蓄積されます。</p>'}</article>
-      <div class="report-side-stack"><article class="report-list"><header><h2>年次総括</h2><small>${annual.length}件</small></header>${annual.length ? annual.map((report) => report.fiscal ? `<details class="annual-report"><summary><span>誓暦${report.year}年</span><b>${report.fiscal.balance >= 0 ? "黒字" : "赤字"} ${signed(report.fiscal.balance, 1)}</b></summary>${fiscalCharts(report.fiscal, true)}<small>${report.months}か月集計 · 重大事件 ${report.events}件</small></details>` : `<div class="annual-report"><strong>誓暦${report.year}年</strong><span>金 ${signed(report.totals.money, 1)} / 食料 ${signed(report.totals.food)} / 人口 ${signed(report.totals.population)}</span><small>重大事件 ${report.events}件</small></div>`).join("") : '<p class="empty-candidates">12月終了時に年次総括を作成します。</p>'}</article><article class="report-list"><header><h2>事件履歴</h2><small>${events.length}件</small></header>${events.length ? events.map((item) => `<div class="report-history-item"><strong>${item.year}年 ${item.monthName} · ${item.title}</strong><span>${item.choice}</span><small>${item.detail ?? ""}</small></div>`).join("") : '<p class="empty-candidates">この都市の重大事件はまだありません。</p>'}</article></div>
+      <article class="report-list monthly-report-list"><header><h2>月次報告</h2><small>${reports.length}件 · 要約を開いて内訳を確認</small></header>${reports.length ? reports.map((report) => { const local = report.cities.find((item) => item.cityId === city.cityId); return `<details><summary><span>${report.year}年 ${report.monthName}</span><b>金 ${signed(local.changes.money, 1)} · 食 ${signed(local.changes.food)}</b></summary><div class="report-total-strip"><span>人口 <b>${signed(local.changes.population)}</b></span><span>治安 <b>${signed(local.changes.security, 1)}</b></span><span>民心 <b>${signed(local.changes.support, 1)}</b></span></div><h3>因果内訳</h3><div class="report-causal-grid">${reportCausalRows(local)}</div><h3>命令・委任政務</h3><div class="report-actions">${reportActionRows(report, city.cityId)}</div>${report.events.filter((item) => item.cityId === city.cityId).map((item) => `<p class="report-event">事件「${item.title}」— ${item.choice}<small>${item.detail ?? ""}</small></p>`).join("")}${reportStrategicRows(report)}${reportWarRows(report)}</details>`; }).join("") : '<p class="empty-candidates">月を終えると報告が蓄積されます。</p>'}</article>
+      <div class="report-side-stack">
+        <details class="report-fold report-collection"><summary><strong>年次総括</strong><span>${annual.length}件</span></summary><article class="report-list">${annual.length ? annual.map((report) => report.fiscal ? `<details class="annual-report"><summary><span>誓暦${report.year}年</span><b>${report.fiscal.balance >= 0 ? "黒字" : "赤字"} ${signed(report.fiscal.balance, 1)}</b></summary>${report.ending ? `<p class="annual-ending"><strong>${report.ending.name}</strong><span>${report.ending.description}</span></p>` : ""}${fiscalCharts(report.fiscal, true)}${report.decisions?.length ? `<h3>年の主要決定</h3>${report.decisions.slice(0, 5).map((decision) => `<p class="annual-decision"><strong>${decision.title}</strong><span>${decision.change} · ${decision.effect}</span></p>`).join("")}` : ""}<small>${report.months}か月集計 · 重大事件 ${report.events}件</small></details>` : `<div class="annual-report"><strong>誓暦${report.year}年</strong><span>金 ${signed(report.totals.money, 1)} / 食料 ${signed(report.totals.food)} / 人口 ${signed(report.totals.population)}</span><small>重大事件 ${report.events}件</small></div>`).join("") : '<p class="empty-candidates">12月終了時に年次総括を作成します。</p>'}</article></details>
+        <details class="report-fold report-collection"><summary><strong>王国事件履歴</strong><span>${events.length}件</span></summary><article class="report-list">${events.length ? events.map((item) => `<div class="report-history-item"><strong>${item.year}年 ${item.monthName} · ${WORLD.provinces[item.cityId]?.name ?? item.cityId} · ${item.title}</strong><span>${item.choice}</span><small>${item.detail ?? ""}</small></div>`).join("") : '<p class="empty-candidates">王国内の重大事件はまだありません。</p>'}</article></details>
+      </div>
     </section>
   `;
 }
@@ -1157,10 +1429,23 @@ function renderCityHistory(city) {
 }
 
 function renderCityWorkspace() {
-  const active = view.panel === "city";
+  const active = view.panel === "city" || view.panel === "town";
   elements.mapStage.classList.toggle("is-city-mode", active);
   elements.cityWorkspace.classList.toggle("is-hidden", !active);
+  elements.cityWorkspace.setAttribute("aria-hidden", String(!active));
   if (!active) return;
+  if (view.panel === "town") {
+    const town = getTownAdministration(state, view.selectedTownId);
+    const governorId = state.cities[town.cityId].governorId;
+    const body = {
+      overview: renderTownOverview,
+      office: renderTownOffice,
+      commands: renderTownCommands,
+      records: renderTownRecords,
+    }[view.townTab](town);
+    elements.cityWorkspace.innerHTML = `${townWorkspaceHeader(town, getOfficerReport(state, governorId))}<div class="city-workspace-body town-workspace-body">${body}</div>`;
+    return;
+  }
   const city = withPlanningForecast(deriveCityMetrics(state, view.selectedCityId));
   const governor = getOfficerReport(state, city.governorId);
   const body = {
@@ -1198,7 +1483,13 @@ function renderWorldNations() {
   if (relations.suzerain) relationLines.push(`宗主国：${relations.suzerain.name}`);
   if (relations.protectorates.length) relationLines.push(`保護領：${relations.protectorates.map((nation) => nation.name).join(" / ")}`);
   if (!relationLines.length) relationLines.push("Notion上で国家間の従属関係なし");
-  const cards = Object.values(SETTING_NATIONS).map((nation) => `
+  const visibleNations = Object.values(SETTING_NATIONS).filter((nation) => (
+    view.worldNationFilter === "all"
+    || (view.worldNationFilter === "defined" && nation.knowledge === "defined")
+    || (view.worldNationFilter === "uncertain" && nation.knowledge !== "defined")
+    || (view.worldNationFilter === "linked" && (nation.suzerainId || nation.protectorateIds.length))
+  ));
+  const cards = visibleNations.map((nation) => `
     <button type="button" class="world-nation-card ${nation.id === selected.id ? "is-active" : ""}" data-world-nation="${nation.id}">
       <span class="world-sigil" style="--nation-color:${nation.color}">${nation.sigil}</span>
       <span><strong>${nation.name}</strong><small>${nation.polity}<br>${nation.peopleLabel}</small></span>
@@ -1206,6 +1497,16 @@ function renderWorldNations() {
     </button>
   `).join("");
   return `
+    ${view.worldGuideOpen ? `
+    <section class="world-onboarding" aria-label="世界台帳の見方">
+      <header><div><small>START HERE</small><h2>最初は三つだけ見ればよい</h2></div><button type="button" data-world-guide-toggle aria-label="世界台帳の案内を閉じる">閉じる</button></header>
+      <ol>
+        <li><b>1</b><span><strong>問いで絞る</strong><small>確定情報を見るか、未詳国を調べるかを選ぶ。</small></span></li>
+        <li><b>2</b><span><strong>一国を開く</strong><small>説明・構成種族・従属関係だけを先に読む。</small></span></li>
+        <li><b>3</b><span><strong>地図で位置を確認</strong><small>地図収録国なら選択国が世界図でも強調される。</small></span></li>
+      </ol>
+      <div class="world-onboarding-actions"><button type="button" data-world-filter="defined">確定国から見る</button><button type="button" data-world-filter="uncertain">未詳国を洗う</button><button type="button" data-world-filter="linked">従属関係を見る</button></div>
+    </section>` : ""}
     <section class="world-dossier" style="--nation-color:${selected.color}">
       <header><span class="world-sigil large">${selected.sigil}</span><div><small>${selected.polity}</small><h2>${selected.name}</h2><b class="knowledge-${selected.knowledge}">${knowledgeLabel(selected.knowledge)}</b></div></header>
       <p>${selected.description}</p>
@@ -1213,7 +1514,10 @@ function renderWorldNations() {
       <div class="world-relation-note">${relationLines.join("<br>")}</div>
     </section>
     <section class="panel-section">
-      <div class="section-heading"><h2>国家一覧</h2><small>Notion原案 10国家</small></div>
+      <div class="section-heading"><h2>国家一覧</h2><small>${visibleNations.length} / ${Object.keys(SETTING_NATIONS).length}国家</small></div>
+      <div class="world-filter-row" aria-label="国家一覧の絞り込み">
+        ${[["all", "すべて"], ["defined", "設定確定"], ["uncertain", "情報不足"], ["linked", "従属関係"]].map(([id, label]) => `<button type="button" data-world-filter="${id}" class="${view.worldNationFilter === id ? "is-active" : ""}">${label}</button>`).join("")}
+      </div>
       <div class="world-nation-list">${cards}</div>
     </section>
   `;
@@ -1343,6 +1647,7 @@ function renderWorldPanel() {
       <span>KNOWN WORLD ARCHIVE</span>
       <h1>異種族・国家・統計</h1>
       <p>確定設定と開幕時の推計値を分けて記録</p>
+      ${view.atlasMode === "nations" ? `<button class="world-guide-button" type="button" data-world-guide-toggle>${view.worldGuideOpen ? "案内を閉じる" : "見方を表示"}</button>` : ""}
       ${worldModeSwitch()}
     </header>
     <div class="panel-body">
@@ -1362,6 +1667,9 @@ function renderWorldPanel() {
 function renderDiplomacyPanel() {
   const metrics = deriveMetrics(state);
   const balance = getContinentalBalance(state);
+  const campaign = getCampaignStatus(state);
+  const aftermathDecision = getAftermathDecisionStatus(state);
+  const dispatches = getForeignDispatches(state, 12);
   const selected = getCountryReport(state, view.selectedCountryId) ?? getCountryReport(state, "valka");
   const delegate = getDiplomaticDelegate(selected.id);
   const isValka = selected.id === "valka";
@@ -1371,7 +1679,7 @@ function renderDiplomacyPanel() {
   const countryCards = balance.countries.filter((country) => country.id !== WORLD.nation.id).map((country) => `
     <button type="button" class="world-nation-card ${country.id === selected.id ? "is-active" : ""}" data-diplomacy-country="${country.id}">
       <span class="world-sigil" style="--nation-color:${country.color}">${country.name.slice(0, 1)}</span>
-      <span><strong>${country.name}</strong><small>${country.rank ? `${country.rank} · ` : ""}${country.stance} · 推定戦力 ${formatValue(country.power)}</small></span>
+      <span><strong>${country.name}</strong><small>${country.rank ? `${country.rank} · ` : ""}${country.agenda ?? country.stance} · ${country.intent ?? "情勢観測"}</small></span>
       <em class="${country.relation < 0 ? "knowledge-unknown" : "knowledge-defined"}">${country.relation >= 0 ? "+" : ""}${country.relation}</em>
     </button>`).join("");
   elements.leftPanel.innerHTML = `
@@ -1387,14 +1695,14 @@ function renderDiplomacyPanel() {
           <img src="${delegate.representative.image}" alt="${selected.name}の${delegate.people.name}女性代表">
           <div class="diplomatic-audience-copy">
             <span>${delegate.certainty} · ${delegate.representative.apparentAge}</span>
-            <strong>${delegate.people.name}代表</strong>
-            <small>${delegate.representative.role} · ${delegate.representative.expression}</small>
+            <strong>${delegate.name ?? `${delegate.people.name}代表`}</strong>
+            <small>${delegate.office ?? delegate.representative.role} · ${delegate.representative.expression}</small>
           </div>
         </div>
         <p class="diplomatic-cast-note">${delegate.note}</p>
         ` : ""}
         <div class="diplomatic-target">
-          <div class="mini-shield" style="background:${selected.color}">${selected.name.slice(0, 1)}</div><div><strong>${selected.name}</strong><small>${selected.capital} · ${selected.stance}</small></div><b class="relation-value">${selected.relation >= 0 ? "+" : ""}${selected.relation}</b>
+          <div class="mini-shield" style="background:${selected.color}">${selected.name.slice(0, 1)}</div><div><strong>${selected.name}</strong><small>${selected.capital} · ${selected.agenda ?? selected.stance}<br>今月の意図：${selected.intent ?? "情勢観測"}</small></div><b class="relation-value">${selected.relation >= 0 ? "+" : ""}${selected.relation}</b>
         </div>
         <div class="metric-stack" style="margin-top:12px">
           ${meter("推定組織", selected.organization)}
@@ -1419,14 +1727,30 @@ function renderDiplomacyPanel() {
         <div class="section-heading"><h2>灰冠峠の交渉</h2><small class="border-status-badge ${borderStatus.transitSecured ? "is-secured" : borderStatus.talksCompleted ? "is-pending" : ""}">${borderStatus.status}</small></div>
         <div class="border-progress-track" role="progressbar" aria-label="国境会談の工程" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${borderStatus.meetingProgress}"><i style="width:${borderStatus.meetingProgress}%"></i></div>
         <div class="border-progress-facts">
-          <span><small>会談工程</small><strong>${borderStatus.talksCompleted ? "1 / 1 完了" : "0 / 1"}</strong></span>
-          <span><small>関係</small><strong>${borderStatus.openingRelation} → ${borderStatus.relation >= 0 ? "+" : ""}${borderStatus.relation}</strong></span>
-          <span><small>通行権</small><strong>${borderStatus.transitSecured ? "確保" : "未保証"}</strong></span>
+          <span><small>受諾見込み</small><strong>${borderStatus.acceptance}</strong></span>
+          <span><small>交渉力</small><strong>${borderStatus.leverage}</strong></span>
+          <span><small>期限</small><strong>${borderStatus.deadlineRemaining === null ? "未設定" : `${Math.max(0, borderStatus.deadlineRemaining)}か月`}</strong></span>
+          <span><small>仲介国</small><strong>${borderStatus.mediator ? WORLD.countries[borderStatus.mediator]?.name ?? borderStatus.mediator : "なし"}</strong></span>
+          <span><small>交渉工程</small><strong>${borderStatus.hasBargainingMove ? "最終案" : borderStatus.talksCompleted ? "条件交換" : "会談準備"}</strong></span>
+          <span><small>実行した一手</small><strong>${borderStatus.bargainingLabel}</strong></span>
         </div>
         <p class="adviser-note">${borderStatus.description}</p>
+        ${borderStatus.concessions.length ? `<p class="diplomatic-concessions"><strong>提示済み譲歩</strong>${borderStatus.concessions.join(" / ")}</p>` : ""}
+        ${borderStatus.talksCompleted && !borderStatus.transitSecured ? `
+          <div class="section-heading negotiation-heading"><h2>外交決着案</h2><small>結果は第三幕へ持ち越される</small></div>
+          <div class="negotiation-offer-list">${borderStatus.offers.map((offer) => `<button type="button" data-border-settlement="${offer.id}" ${offer.allowed ? "" : "disabled"}><strong>${offer.name}</strong><span>${offer.description}</span><small>${offer.reason}</small></button>`).join("")}</div>
+        ` : ""}
       </section>
+      ${campaign.actId === "aftermath" ? `
+      <section class="panel-section aftermath-policy-panel">
+        <div class="section-heading"><h2>第三幕・定着方針</h2><small>${campaign.aftermathPolicy ? `${campaign.acts[2].progress} / ${campaign.acts[2].total}か月` : "一つを選択"}</small></div>
+        <div class="aftermath-policy-list">${Object.values(AFTERMATH_POLICIES).map((policy) => `<button type="button" data-aftermath-policy="${policy.id}" class="${campaign.aftermathPolicy === policy.id ? "is-active" : ""}" ${campaign.aftermathPolicy ? "disabled" : ""}><strong>${policy.name}</strong><span>${policy.description}</span><small>定着 ${policy.months}か月</small></button>`).join("")}</div>
+        ${aftermathDecision ? `<article class="aftermath-decision-card"><header><div><small>今月の必須裁定</small><h3>${aftermathDecision.title}</h3></div><b>${aftermathDecision.stage + 1} / ${AFTERMATH_POLICIES[aftermathDecision.policyId].months}</b></header><p>${aftermathDecision.prompt}</p><div class="aftermath-choice-list">${aftermathDecision.choices.map((choice) => `<button type="button" data-aftermath-choice="${choice.id}"><strong>${choice.name}</strong><span>${choice.description}</span><small>${choice.impact}</small></button>`).join("")}</div><em>いずれかを決めるまで月を終えられません。</em></article>` : campaign.aftermathPolicy && !campaign.ending ? `<p class="aftermath-ready-note">今月の裁定は完了しました。月末に定着が進み、次の課題が開きます。</p>` : ""}
+        ${(state.campaign.aftermathDecisions ?? []).length ? `<details class="aftermath-records"><summary>完了した裁定 ${(state.campaign.aftermathDecisions ?? []).length}件</summary>${state.campaign.aftermathDecisions.map((item) => `<p><strong>${item.title}</strong><span>${item.choice}</span><small>${item.impact}</small></p>`).join("")}</details>` : ""}
+        ${campaign.ending ? `<p class="campaign-ending-card"><strong>${campaign.ending.name}</strong><span>${campaign.ending.description}</span></p>` : ""}
+      </section>` : ""}
       <section class="panel-section">
-        <div class="section-heading"><h2>対外支出</h2><small>国家支出から選択</small></div>
+        <div class="section-heading"><h2>交渉手段</h2><small>統治力2・担当人物が必要</small></div>
         <div class="spending-shortcut-list">${spendingShortcut("foreign_aid", "使節・援助・対外公示の具体策を選ぶ")}${spendingShortcut("economic_investment", "交易協定への投資を選ぶ")}</div>
       </section>
       <section class="panel-section">
@@ -1435,6 +1759,10 @@ function renderDiplomacyPanel() {
         <button class="war-entry-button" type="button" data-open-war ${state.war ? "disabled" : ""}>⚔ 戦争という選択肢を検討</button>
       </section>
       ` : `<section class="panel-section"><div class="section-heading"><h2>国家評定</h2><small>外交台帳</small></div><p class="adviser-note"><strong>${selected.stance}</strong><br>推定兵力 ${formatValue(selected.army)}。この国の関係・敵意・介入意志は、ヴァルカ戦の第三国介入リスクへ反映されます。</p></section>`}
+      <section class="panel-section foreign-dispatch-panel">
+        <div class="section-heading"><h2>世界公報</h2><small>九か国が毎月更新</small></div>
+        <div class="foreign-dispatch-list">${dispatches.length ? dispatches.slice(0, 6).map((dispatch) => `<article><header><strong>${dispatch.countryName}</strong><b>${dispatch.intent}</b></header><span>${dispatch.agenda}</span><small>${dispatch.effect}</small></article>`).join("") : '<p class="empty-candidates">月末を迎えると各国の意図が公報へ届きます。</p>'}</div>
+      </section>
     </div>
   `;
 }
@@ -1570,12 +1898,15 @@ function assignmentLabel(officer) {
 function renderPeoplePanel() {
   const cards = Object.keys(state.officers).map((officerId) => {
     const officer = getOfficerReport(state, officerId);
+    const politics = getOfficerPoliticalReport(state, officerId);
+    const strongestBond = Object.entries(officer.bonds ?? {}).sort((left, right) => right[1] - left[1])[0];
     return `
       <article class="officer-card ${officer.allegiance !== "serving" ? "is-outsider" : ""}">
         <header>${officerSeal(officer)}<div><strong>${officer.name}</strong><small>${officer.rank} · ${WORLD.provinces[officer.location].name}</small></div><b>${allegianceLabel(officer.allegiance)}</b></header>
         <div class="officer-stat-grid">${statCells(officer.stats)}</div>
-        <div class="officer-state-line"><span>忠誠 ${officer.loyalty}</span><span>意欲 ${officer.stamina}</span><span>功績 ${officer.merit}</span></div>
+        <div class="officer-state-line"><span>忠誠 ${officer.loyalty}</span><span>意欲 ${officer.stamina}</span><span>功績 ${officer.merit}</span>${politics ? `<span class="political-standing is-${politics.standing === "対立" ? "danger" : politics.standing === "要注意" ? "warning" : "stable"}">${politics.standing}</span>` : ""}</div>
         <p><strong>${officer.policy}</strong> · ${officer.traits.join(" / ")}<br>${assignmentLabel(officer)}</p>
+        ${politics ? `<div class="officer-politics"><strong>${politics.faction} · ${politics.agenda}</strong><span>出自：${politics.origin}</span><span>野心：${politics.ambition}</span><span class="officer-demand">要求：${politics.demand}</span><small>政治力 ${politics.politicalCapital} · 不満 ${politics.resentment}${strongestBond ? ` · 親密 ${WORLD.characters[strongestBond[0]]?.name ?? strongestBond[0]} ${strongestBond[1]}` : ""}</small><small>${politics.consequence}</small>${politics.activePromise ? `<p class="officer-promise"><strong>受諾済み</strong><span>${politics.activePromise.agenda}を支持する任務を残り${politics.responseCooldown}か月以内に完了</span></p>` : politics.canRespond ? `<div class="officer-demand-actions">${politics.responses.map((response) => `<button type="button" data-officer-demand-response="${response.id}" data-officer-id="${officerId}"><strong>${response.name}</strong><small>${response.impact}</small></button>`).join("")}</div>` : officer.allegiance === "serving" ? `<small class="officer-demand-cooldown">再回答まであと${politics.responseCooldown}か月</small>` : ""}${politics.latestReaction ? `<em>直近：${politics.latestReaction.title}</em>` : ""}</div>` : ""}
       </article>
     `;
   }).join("");
@@ -1591,6 +1922,7 @@ function renderPeoplePanel() {
 function renderLeftPanel() {
   if (view.panel === "spending") renderSpendingPanel();
   else if (view.panel === "city") renderCityPanel();
+  else if (view.panel === "town") renderTownPanel();
   else if (view.panel === "world") renderWorldPanel();
   else if (view.panel === "diplomacy") renderDiplomacyPanel();
   else if (view.panel === "military") renderMilitaryPanel();
@@ -1600,7 +1932,7 @@ function renderLeftPanel() {
 
 function renderAlerts() {
   const alerts = [];
-  if (state.council.pending) alerts.push('<span class="alert-chip danger">季節評定 · 方針未決</span>');
+  if (state.council.pending && !state.campaign?.ending) alerts.push('<span class="alert-chip danger">季節評定 · 方針未決</span>');
   if (state.phase === "event" && state.pendingEvent) alerts.push(`<span class="alert-chip danger">都市事件 · ${EVENT_DEFINITIONS[state.pendingEvent.eventId].name}</span>`);
   if (state.war) alerts.push(`<span class="alert-chip danger">戦争中 · 戦勝点 ${state.war.score.toFixed(1)}</span>`);
   else if (!state.council.pending && state.issues.border.status === "active") alerts.push('<span class="alert-chip danger">国境問題 · 対応継続中</span>');
@@ -1791,9 +2123,8 @@ function renderSelection() {
     return;
   }
   if (view.selectedType === "village") {
-    const village = WORLD.villages[view.selectedId];
-    const city = deriveCityMetrics(state, village.province);
-    elements.selectionCard.innerHTML = `<header><h3>${village.name}</h3><span>${village.kind} · ${WORLD.provinces[village.province].name}</span></header><p>${village.issue}</p><div class="selection-facts"><span>人口 ${formatValue(village.population)}</span><span>${city.name}の村落構成として税収・産出へ反映</span></div>`;
+    const town = getTownAdministration(state, view.selectedId);
+    elements.selectionCard.innerHTML = `<header><h3>${town.name}</h3><span>${town.kind} · ${WORLD.provinces[town.province].name}</span></header><p>${town.issue}</p><div class="selection-facts"><span>人口 ${formatValue(town.population)}</span><span>行政処理 ${Math.round(town.forecast.administrativeCapacity)}</span><span>優先課題 ${town.forecast.primaryNeed.label}</span></div>`;
     return;
   }
   const country = getCountryReport(state, view.selectedId);
@@ -1825,8 +2156,26 @@ function orderCostLabel(order) {
   return costs.join(" · ");
 }
 
+function planningImpactRows(planned, baseline) {
+  if (!baseline) return "";
+  return [["money", "金", 1], ["food", "食", 0]].map(([key, label, digits]) => {
+    const before = baseline.changes[key] ?? 0;
+    const after = planned.changes[key] ?? 0;
+    const total = Number((after - before).toFixed(1));
+    const direct = Number(((planned.breakdown?.orders?.[key] ?? 0) - (baseline.breakdown?.orders?.[key] ?? 0)).toFixed(1));
+    const operation = Number(((planned.breakdown?.monthly?.[key] ?? 0) - (baseline.breakdown?.monthly?.[key] ?? 0)).toFixed(1));
+    const external = Number(((planned.breakdown?.external?.[key] ?? 0) - (baseline.breakdown?.external?.[key] ?? 0)).toFixed(1));
+    const reasons = [
+      direct ? `命令費・即時効果 ${signed(direct, digits)}` : "",
+      operation ? `生産・人物配置・政策連鎖 ${signed(operation, digits)}` : "",
+      external ? `戦争・外部要因 ${signed(external, digits)}` : "",
+    ].filter(Boolean).join(" / ") || "予約による差なし";
+    return `<span class="plan-impact ${total < 0 ? "is-negative" : total > 0 ? "is-positive" : ""}"><b>${label} ${signed(before, digits)} → ${signed(after, digits)}</b><em>予約の総合差 ${signed(total, digits)}</em><small>${reasons}</small></span>`;
+  }).join("");
+}
+
 function renderCityPlan(ledger) {
-  const planCityId = view.panel === "spending" ? view.spendingCityId : view.selectedCityId;
+  const planCityId = view.panel === "spending" ? view.spendingCityId : view.panel === "town" ? WORLD.villages[view.selectedTownId].province : view.selectedCityId;
   const governance = getGovernance(state);
   const reservedMoney = state.pendingOrders.reduce((sum, order) => sum + (order.cost?.money ?? 0), 0);
   const warnings = getTurnWarnings(state);
@@ -1834,11 +2183,11 @@ function renderCityPlan(ledger) {
   const planned = state.pendingOrders.length ? state.pendingOrders.map((order) => `
     <article class="planned-order ${order.forced ? "is-forced" : ""}">
       <header><strong>${orderLabel(order)}</strong><button type="button" data-cancel-order="${order.id}" aria-label="命令を取り消す">取消</button></header>
-      <small>${WORLD.provinces[order.cityId].name} · ${orderCostLabel(order)}${order.forced ? ` · 強行（失敗率 ${(order.forcedPoints ?? 0) * FORCED_ORDER_RULES.failureChancePerPoint}%）` : ""}</small>
+      <small>${order.townId ? `${WORLD.villages[order.townId].name} · ` : ""}${WORLD.provinces[order.cityId].name} · ${orderCostLabel(order)}${order.forced ? ` · 強行（失敗率 ${(order.forcedPoints ?? 0) * FORCED_ORDER_RULES.failureChancePerPoint}%）` : ""}</small>
     </article>
   `).join("") : '<p class="plan-empty">支出はまだありません。「支出」から分類と具体策を選んでください。</p>';
   const forecastRows = preview?.report.cities.map((city) => `
-    <div class="plan-forecast-row"><strong>${city.name.replace(/王都|河港|城塞市/, "")}</strong><span>金 ${signed(city.changes.money, 1)}</span><span>食 ${signed(city.changes.food)}</span><small>月末 金${formatValue(city.after.money, 1)} / 食${formatValue(city.after.food)}</small></div>
+    <div class="plan-forecast-row"><strong>${city.name.replace(/王都|河港|城塞市/, "")}</strong><span>金 ${signed(city.changes.money, 1)}</span><span>食 ${signed(city.changes.food)}</span><small>月末 金${formatValue(city.after.money, 1)} / 食${formatValue(city.after.food)}</small>${planningImpactRows(city, preview.baselineReport?.cities.find((item) => item.cityId === city.cityId))}</div>
   `).join("") ?? "";
   const active = state.commandQueue.filter((task) => task.cityId === planCityId).map((task) => {
     const progress = Math.max(0, (task.durationTurns - task.remainingTurns) / Math.max(1, task.durationTurns) * 100);
@@ -1850,7 +2199,7 @@ function renderCityPlan(ledger) {
       <header><span>MONTHLY PLAN</span><h2>今月の計画</h2><p>${formatDate(state)}に確定する予約命令</p></header>
       <div class="plan-budget"><div><small>統治力</small><strong>${governance.used} / ${governance.max}</strong><span>強行上限 ${governance.hardLimit}</span></div><div><small>予約費用</small><strong>金 ${formatValue(reservedMoney, 1)}</strong><span>${state.pendingOrders.length}件</span></div></div>
       <div class="planned-orders">${planned}</div>
-      ${forecastRows ? `<section class="plan-forecast"><h3>予約反映後の月末予測</h3>${forecastRows}<p>命令費・完成施設・通常収支・戦争を含む。未選択の事件効果は含みません。</p></section>` : ""}
+      ${forecastRows ? `<section class="plan-forecast"><h3>${preview.baselineReport ? "予約なしとの因果比較" : "予約反映後の月末予測"}</h3>${forecastRows}<p>命令費・即時効果、生産・人物配置・政策連鎖、戦争・外部要因を分離。未選択の事件効果は含みません。</p></section>` : ""}
       ${(active || projects) ? `<section class="plan-progress"><h3>${WORLD.provinces[planCityId].name}で進行中</h3>${active}${projects}</section>` : ""}
       <section class="plan-warnings"><h3>進行前の確認</h3>${warnings.length ? warnings.map((warning) => `<p>⚠ ${warning}</p>`).join("") : '<p class="is-clear">警告はありません。</p>'}</section>
       <button type="button" class="plan-end-month" data-end-month ${state.phase === "event" || state.council.pending ? "disabled" : ""}>月を終える<span>生産・消費・事件を一括処理</span></button>
@@ -1860,7 +2209,7 @@ function renderCityPlan(ledger) {
 
 function renderOutliner() {
   const ledger = deriveRealmLedger(state);
-  if (view.panel === "city" || view.panel === "spending") {
+  if (view.panel === "city" || view.panel === "town" || view.panel === "spending") {
     elements.outlinerContent.innerHTML = renderCityPlan(ledger);
     return;
   }
@@ -1951,11 +2300,12 @@ function renderAssignmentModal() {
   const command = COMMANDS[view.pendingCommandId];
   const cityId = command.defaultCityId ?? view.pendingCityId;
   const city = deriveCityMetrics(state, cityId);
+  const town = view.pendingTownId ? getTownAdministration(state, view.pendingTownId) : null;
   const governance = getGovernance(state);
   elements.assignmentTitle.textContent = `${command.name}の担当武将`;
-  elements.assignmentSummary.textContent = `${WORLD.provinces[cityId].name} · ${command.description}`;
+  elements.assignmentSummary.textContent = `${town ? `${town.name} · ` : ""}${WORLD.provinces[cityId].name} · ${command.description}`;
   elements.assignmentLedger.innerHTML = `<span>都市金 ${formatValue(city.money, 1)}</span><span>統治力 ${governance.used}/${governance.max}</span><span>期間 ${command.durationTurns}か月</span><span>費用 ${costLabel(command)}</span>`;
-  const candidates = getEligibleOfficers(state, command.id, cityId);
+  const candidates = getEligibleOfficers(state, command.id, cityId, view.pendingTownId);
   elements.officerCandidates.innerHTML = candidates.length ? candidates.map((officer) => officerCandidateCard(officer, command.id, cityId)).join("") : '<p class="empty-candidates">任命できる待機武将がいません。</p>';
 }
 
@@ -1977,6 +2327,7 @@ function renderEventModal() {
 }
 
 function render() {
+  renderAnalysisMode();
   renderCampaignBar();
   renderResources();
   renderTimeControls();
@@ -1993,6 +2344,8 @@ function render() {
   renderAssignmentModal();
   renderEventModal();
   renderGuideModal();
+  renderEndingModal();
+  renderResetModal();
 }
 
 function renderPanelFromTop() {
@@ -2000,11 +2353,12 @@ function renderPanelFromTop() {
   elements.leftPanel.scrollTop = 0;
 }
 
-function openCommandAssignment(commandId, cityId) {
+function openCommandAssignment(commandId, cityId, townId = null) {
   view.assignmentOpen = true;
   view.assignmentMode = "command";
   view.pendingCommandId = commandId;
   view.pendingCityId = cityId;
+  view.pendingTownId = townId;
   renderAssignmentModal();
 }
 
@@ -2036,6 +2390,7 @@ function closeAssignment() {
   view.assignmentMode = null;
   view.pendingCommandId = null;
   view.pendingCityId = null;
+  view.pendingTownId = null;
   view.pendingForceRole = null;
   renderAssignmentModal();
 }
@@ -2050,8 +2405,19 @@ function followGuidance(button) {
     return;
   }
   if (action === "open_command") {
-    openCommandAssignment(button.dataset.commandId, button.dataset.cityId);
+    openCommandAssignment(button.dataset.commandId, button.dataset.cityId, button.dataset.townId ?? null);
     renderGuideModal();
+    return;
+  }
+  if (action === "open_town") {
+    view.selectedTownId = button.dataset.townId ?? WORLD.provinces[button.dataset.cityId ?? WORLD.nation.capital].villages[0];
+    view.selectedCityId = WORLD.villages[view.selectedTownId].province;
+    view.selectedType = "village";
+    view.selectedId = view.selectedTownId;
+    view.panel = "town";
+    view.townTab = "commands";
+    view.scale = "village";
+    renderPanelFromTop();
     return;
   }
   if (action === "open_city") {
@@ -2080,6 +2446,15 @@ function followGuidance(button) {
     renderPanelFromTop();
     return;
   }
+  if (action === "open_diplomacy" || action === "open_aftermath") {
+    view.panel = "diplomacy";
+    view.scale = "country";
+    view.selectedType = "country";
+    view.selectedId = "valka";
+    view.selectedCountryId = "valka";
+    renderPanelFromTop();
+    return;
+  }
   if (action === "open_war_council") {
     view.panel = "diplomacy";
     view.scale = "country";
@@ -2101,6 +2476,11 @@ function followGuidance(button) {
     return;
   }
   if (action === "open_reports") {
+    if (state.campaign?.ending && state.lastViewedEndingId !== state.campaign.ending.id) {
+      view.endingOpen = true;
+      renderEndingModal();
+      return;
+    }
     view.panel = "city";
     view.selectedCityId = WORLD.nation.capital;
     view.selectedType = "province";
@@ -2131,17 +2511,26 @@ function playNavigationCue(event) {
     "[data-spending-category]",
     "[data-spending-city]",
     "[data-world-mode]",
+    "[data-world-guide-toggle]",
+    "[data-world-filter]",
     "[data-statistics-nation]",
     "[data-world-nation]",
     "[data-world-people]",
     "[data-select-city]",
+    "[data-select-town]",
+    "[data-open-town-command]",
     "[data-city-tab]",
+    "[data-town-tab]",
     "[data-select-facility]",
     "[data-command]",
     "[data-force-role]",
     "[data-map-mode]",
     "[data-scale]",
     "[data-diplomacy-country]",
+    "[data-border-settlement]",
+    "[data-aftermath-policy]",
+    "[data-aftermath-choice]",
+    "[data-officer-demand-response]",
     "[data-place-id]",
     "[data-open-war]",
     "[data-objective]",
@@ -2155,6 +2544,63 @@ document.addEventListener("pointerdown", (event) => {
 
 document.addEventListener("click", (event) => {
   playNavigationCue(event);
+  const resourceAction = event.target.closest("[data-resource-action]");
+  if (resourceAction) {
+    const ledger = deriveRealmLedger(state);
+    view.panel = ledger.governance.available > 0 && ledger.availableOfficers > 0 ? "spending" : "people";
+    if (view.panel === "spending") view.spendingCategoryId = "social_security";
+    renderPanelFromTop();
+    return;
+  }
+  const foodEmergency = event.target.closest("[data-food-emergency-town]");
+  if (foodEmergency) {
+    view.selectedTownId = foodEmergency.dataset.foodEmergencyTown;
+    view.selectedCityId = foodEmergency.dataset.foodEmergencyCity;
+    view.selectedType = "village";
+    view.selectedId = view.selectedTownId;
+    view.panel = "town";
+    view.townTab = "commands";
+    view.scale = "village";
+    view.focusedTownCommandId = "city.cultivate";
+    renderPanelFromTop();
+    return;
+  }
+  const worldFilter = event.target.closest("[data-world-filter]");
+  if (worldFilter) {
+    view.worldNationFilter = worldFilter.dataset.worldFilter;
+    view.worldGuideOpen = false;
+    renderPanelFromTop();
+    return;
+  }
+  if (event.target.closest("[data-world-guide-toggle]")) {
+    view.worldGuideOpen = !view.worldGuideOpen;
+    renderPanelFromTop();
+    return;
+  }
+  if (event.target.closest("[data-ending-continue]")) {
+    acknowledgeEnding();
+    render();
+    showToast("キャンペーン完結後の継続統治へ移りました。");
+    return;
+  }
+  if (event.target.closest("[data-ending-reports]")) {
+    acknowledgeEnding();
+    view.panel = "city";
+    view.selectedCityId = WORLD.nation.capital;
+    view.cityTab = "reports";
+    view.scale = "city";
+    renderPanelFromTop();
+    return;
+  }
+  if (event.target.closest("[data-cancel-reset]")) {
+    view.resetOpen = false;
+    renderResetModal();
+    return;
+  }
+  if (event.target.closest("[data-confirm-reset]")) {
+    resetChronicle();
+    return;
+  }
   if (event.target.closest("[data-close-tile]")) {
     closeTileDetail();
     return;
@@ -2178,6 +2624,14 @@ document.addEventListener("click", (event) => {
   if (panelButton) {
     clearTileDetailSelection();
     view.panel = panelButton.dataset.panel;
+    if (view.panel === "town") {
+      const localTowns = WORLD.provinces[view.selectedCityId]?.villages ?? [];
+      if (!WORLD.villages[view.selectedTownId] || (localTowns.length && !localTowns.includes(view.selectedTownId))) view.selectedTownId = localTowns[0] ?? Object.keys(WORLD.villages)[0];
+      view.selectedType = "village";
+      view.selectedId = view.selectedTownId;
+      view.selectedCityId = WORLD.villages[view.selectedTownId].province;
+      view.scale = "village";
+    }
     renderPanelFromTop();
     return;
   }
@@ -2213,6 +2667,11 @@ document.addEventListener("click", (event) => {
   const worldNationButton = event.target.closest("[data-world-nation]");
   if (worldNationButton) {
     view.selectedNationId = worldNationButton.dataset.worldNation;
+    if (WORLD.countries[view.selectedNationId]) {
+      view.selectedType = "country";
+      view.selectedId = view.selectedNationId;
+      view.scale = "world";
+    }
     view.atlasMode = "nations";
     view.panel = "world";
     renderPanelFromTop();
@@ -2236,9 +2695,26 @@ document.addEventListener("click", (event) => {
     renderPanelFromTop();
     return;
   }
+  const townButton = event.target.closest("[data-select-town]");
+  if (townButton) {
+    view.selectedTownId = townButton.dataset.selectTown;
+    view.selectedCityId = WORLD.villages[view.selectedTownId].province;
+    view.selectedType = "village";
+    view.selectedId = view.selectedTownId;
+    view.panel = "town";
+    view.scale = "village";
+    renderPanelFromTop();
+    return;
+  }
   const cityTabButton = event.target.closest("[data-city-tab]");
   if (cityTabButton) {
     view.cityTab = cityTabButton.dataset.cityTab;
+    render();
+    return;
+  }
+  const townTabButton = event.target.closest("[data-town-tab]");
+  if (townTabButton) {
+    view.townTab = townTabButton.dataset.townTab;
     render();
     return;
   }
@@ -2292,18 +2768,31 @@ document.addEventListener("click", (event) => {
     catch (error) { showToast(error.message, "danger"); }
     return;
   }
+  const townCommandLink = event.target.closest("[data-open-town-command]");
+  if (townCommandLink) {
+    view.selectedTownId = townCommandLink.dataset.openTownCommand;
+    view.selectedCityId = WORLD.villages[view.selectedTownId].province;
+    view.selectedType = "village";
+    view.selectedId = view.selectedTownId;
+    view.panel = "town";
+    view.townTab = "commands";
+    view.scale = "village";
+    renderPanelFromTop();
+    return;
+  }
   const commandButton = event.target.closest("[data-command]");
   if (commandButton) {
-    openCommandAssignment(commandButton.dataset.command, commandButton.dataset.cityId);
+    openCommandAssignment(commandButton.dataset.command, commandButton.dataset.cityId, commandButton.dataset.townId ?? null);
     return;
   }
   const assignButton = event.target.closest("[data-assign-officer]");
   if (assignButton) {
     const command = COMMANDS[view.pendingCommandId];
     const cityId = command.defaultCityId ?? view.pendingCityId;
+    const townId = isTownCommand(command) ? view.pendingTownId : null;
     const queued = queuePlannedOrder(
-      { kind: "command", commandId: command.id, officerId: assignButton.dataset.assignOfficer, cityId },
-      `${WORLD.characters[assignButton.dataset.assignOfficer].name}を「${command.name}」へ仮配置しました。`,
+      { kind: "command", commandId: command.id, officerId: assignButton.dataset.assignOfficer, cityId, townId },
+      `${WORLD.characters[assignButton.dataset.assignOfficer].name}を${townId ? `${WORLD.villages[townId].name}の` : ""}「${command.name}」へ仮配置しました。`,
     );
     if (queued) closeAssignment();
     return;
@@ -2386,6 +2875,43 @@ document.addEventListener("click", (event) => {
   if (scaleButton) { view.scale = scaleButton.dataset.scale; render(); return; }
   const diplomacyCountryButton = event.target.closest("[data-diplomacy-country]");
   if (diplomacyCountryButton) { view.selectedCountryId = diplomacyCountryButton.dataset.diplomacyCountry; renderPanelFromTop(); return; }
+  const borderSettlementButton = event.target.closest("[data-border-settlement]");
+  if (borderSettlementButton) {
+    const status = getBorderNegotiationStatus(state);
+    const offer = status.offers.find((item) => item.id === borderSettlementButton.dataset.borderSettlement);
+    if (!offer || !window.confirm(`「${offer.name}」で灰冠峠の通行権を確保します。\n\n${offer.description}\n\nこの決着は第三幕と年代記へ残ります。続けますか？`)) return;
+    try { commit(resolveBorderNegotiation(state, offer.id), `${offer.name}が成立しました。第三幕の定着方針を選んでください。`, "peace"); }
+    catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
+  const aftermathPolicyButton = event.target.closest("[data-aftermath-policy]");
+  if (aftermathPolicyButton) {
+    const policy = AFTERMATH_POLICIES[aftermathPolicyButton.dataset.aftermathPolicy];
+    if (!policy || !window.confirm(`第三幕の方針を「${policy.name}」に定めます。\n\n${policy.description}\n\n決定後は変更できません。続けますか？`)) return;
+    try { commit(chooseAftermathPolicy(state, policy.id), `第三幕を「${policy.name}」で進めます。`, "confirm"); }
+    catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
+  const aftermathChoiceButton = event.target.closest("[data-aftermath-choice]");
+  if (aftermathChoiceButton) {
+    const decision = getAftermathDecisionStatus(state);
+    const choice = decision?.choices.find((item) => item.id === aftermathChoiceButton.dataset.aftermathChoice);
+    if (!choice || !window.confirm(`「${decision.title}」を「${choice.name}」で裁定します。\n\n${choice.description}\n${choice.impact}\n\n結果は年代記と実際の国力へ残ります。続けますか？`)) return;
+    try { commit(resolveAftermathDecisionChoice(state, choice.id), `${decision.title}を「${choice.name}」で裁定しました。`, "confirm"); }
+    catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
+  const officerDemandButton = event.target.closest("[data-officer-demand-response]");
+  if (officerDemandButton) {
+    const officerId = officerDemandButton.dataset.officerId;
+    const politics = getOfficerPoliticalReport(state, officerId);
+    const response = politics?.responses.find((item) => item.id === officerDemandButton.dataset.officerDemandResponse);
+    const officerName = WORLD.characters[officerId]?.name ?? officerId;
+    if (!response || !window.confirm(`${officerName}の要求へ「${response.name}」と回答します。\n\n${response.impact}\n\n人物関係と将来の任務へ残ります。続けますか？`)) return;
+    try { commit(answerOfficerDemand(state, officerId, response.id), `${officerName}の要求へ「${response.name}」と回答しました。`, response.id === "refuse" ? "danger" : "confirm"); }
+    catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
   const place = event.target.closest("[data-place-id]");
   if (place) {
     const isTile = place.classList.contains("map-tile");
@@ -2408,7 +2934,7 @@ document.addEventListener("click", (event) => {
     view.tileWindowOpen = false;
     if (view.selectedType === "province" && state.cities[view.selectedId]) { view.selectedCityId = view.selectedId; view.panel = "city"; view.scale = "city"; }
     if (view.selectedType === "country" && view.selectedId !== WORLD.nation.id) { view.selectedCountryId = view.selectedId; view.panel = "diplomacy"; }
-    if (view.selectedType === "village") { view.selectedCityId = WORLD.villages[view.selectedId].province; view.panel = "city"; view.scale = "village"; }
+    if (view.selectedType === "village") { view.selectedTownId = view.selectedId; view.selectedCityId = WORLD.villages[view.selectedId].province; view.panel = "town"; view.scale = "village"; }
     renderPanelFromTop();
     return;
   }
@@ -2462,6 +2988,10 @@ elements.authorityOverlaySelect?.addEventListener("change", (event) => {
   view.mapMode = event.target.value;
   render();
 });
+elements.analysisToggle?.addEventListener("click", () => {
+  view.expertMode = !view.expertMode;
+  render();
+});
 elements.audioToggle.addEventListener("click", async () => {
   const enabled = await audio.toggle();
   if (enabled) audio.play("confirm");
@@ -2469,25 +2999,8 @@ elements.audioToggle.addEventListener("click", async () => {
 document.querySelector("#realmHome").addEventListener("click", () => { clearTileDetailSelection(); view.panel = "council"; view.scale = "country"; renderPanelFromTop(); });
 document.querySelector("#saveButton").addEventListener("click", () => persist(true));
 document.querySelector("#resetButton").addEventListener("click", (event) => {
-  const button = event.currentTarget;
-  if (button.dataset.armed !== "true") {
-    button.dataset.armed = "true";
-    button.textContent = "もう一度押すと初期化";
-    showToast("現在の年代記を破棄する場合は、もう一度押してください。", "danger");
-    clearTimeout(resetArmTimer);
-    resetArmTimer = setTimeout(() => { button.dataset.armed = "false"; button.textContent = "最初から"; }, 10000);
-    return;
-  }
-  clearTimeout(resetArmTimer);
-  button.dataset.armed = "false";
-  button.textContent = "最初から";
-  localStorage.removeItem(STORAGE_KEY);
-  LEGACY_STORAGE_KEYS.forEach((key) => localStorage.removeItem(key));
-  state = createInitialState();
-  Object.assign(view, { panel: "council", spendingCategoryId: "social_security", spendingCityId: "selene", mapMode: "political", scale: "country", selectedType: null, selectedId: null, selectedTileName: null, selectedTerrain: null, selectedTerrainType: null, tileWindowOpen: false, selectedCityId: "selene", cityTab: "overview", selectedAuthorityDomain: "justice", selectedFacilityId: "farmland", selectedCountryId: "valka", objectiveId: "transit", warCouncilOpen: false, assignmentOpen: false, guideOpen: true });
-  render();
-  audio.play("reset");
-  showToast("新しい年代記を始めました。");
+  view.resetOpen = true;
+  renderResetModal();
 });
 document.querySelector("#closeWarCouncil").addEventListener("click", () => { view.warCouncilOpen = false; renderWarCouncil(); });
 elements.warCouncilModal.addEventListener("click", (event) => { if (event.target === elements.warCouncilModal) { view.warCouncilOpen = false; renderWarCouncil(); } });
@@ -2505,6 +3018,11 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && view.guideOpen) {
     view.guideOpen = false;
     renderGuideModal();
+    return;
+  }
+  if (event.key === "Escape" && view.resetOpen) {
+    view.resetOpen = false;
+    renderResetModal();
   }
 });
 document.querySelector("#closeAssignment").addEventListener("click", closeAssignment);

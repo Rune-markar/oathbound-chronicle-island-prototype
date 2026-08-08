@@ -7,7 +7,7 @@ test("village population mix causally changes city production", () => {
   const state = createInitialState();
   const world = structuredClone(WORLD);
   const baseline = deriveCityMetrics(world, state, "selene");
-  world.villages.mugiwano.population += 4000;
+  state.towns.mugiwano.population += 4000;
   const ruralGrowth = deriveCityMetrics(world, state, "selene");
   assert.ok(ruralGrowth.supplyYield > baseline.supplyYield);
 });

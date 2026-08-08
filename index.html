@@ -20,6 +20,10 @@
       <div class="resource-ledger" id="resourceLedger" aria-label="国家資源"></div>
 
       <div class="date-controls" aria-label="月次ターン">
+        <button class="analysis-toggle" id="analysisToggle" type="button" aria-pressed="false">
+          <span aria-hidden="true">⌘</span>
+          <span><strong>専門台帳</strong><small>表示</small></span>
+        </button>
         <button class="audio-toggle" id="audioToggle" type="button" aria-label="BGMと効果音をミュートする" aria-pressed="false">
           <span id="audioIcon" aria-hidden="true">♫</span>
           <span><strong>音響</strong><small id="audioStatus">開始</small></span>
@@ -42,6 +46,7 @@
           <button class="is-active" type="button" data-panel="council"><span>♜</span>評定</button>
           <button type="button" data-panel="spending"><span>¤</span>支出</button>
           <button type="button" data-panel="city"><span>城</span>都市</button>
+          <button type="button" data-panel="town"><span>町</span>町政</button>
           <button type="button" data-panel="diplomacy"><span>⚖</span>外交</button>
           <button type="button" data-panel="military"><span>⚔</span>軍事</button>
           <button type="button" data-panel="people"><span>♟</span>人材</button>
@@ -325,12 +330,12 @@
           </g>
 
           <g class="village-layer">
-            <g class="map-node village" role="button" tabindex="0" data-place-type="village" data-place-id="mugiwano" transform="translate(370 275)"><circle r="6" /><text y="18">麦輪</text></g>
-            <g class="map-node village" role="button" tabindex="0" data-place-type="village" data-place-id="tsukishiro" transform="translate(405 365)"><circle r="6" /><text y="18">月代</text></g>
-            <g class="map-node village" role="button" tabindex="0" data-place-type="village" data-place-id="shionari" transform="translate(420 505)"><circle r="6" /><text y="18">汐成</text></g>
-            <g class="map-node village" role="button" tabindex="0" data-place-type="village" data-place-id="aonagi" transform="translate(520 485)"><circle r="6" /><text y="18">青凪</text></g>
-            <g class="map-node village" role="button" tabindex="0" data-place-type="village" data-place-id="haimugi" transform="translate(610 270)"><circle r="6" /><text y="18">灰麦</text></g>
-            <g class="map-node village" role="button" tabindex="0" data-place-type="village" data-place-id="kanezaka" transform="translate(620 365)"><circle r="6" /><text y="18">鐘坂</text></g>
+            <g class="map-node village" role="button" tabindex="0" data-place-type="village" data-place-id="mugiwano" transform="translate(370 275)"><circle class="village-hit" r="18" /><circle r="6" /><text y="18">麦輪</text></g>
+            <g class="map-node village" role="button" tabindex="0" data-place-type="village" data-place-id="tsukishiro" transform="translate(405 365)"><circle class="village-hit" r="18" /><circle r="6" /><text y="18">月代</text></g>
+            <g class="map-node village" role="button" tabindex="0" data-place-type="village" data-place-id="shionari" transform="translate(420 505)"><circle class="village-hit" r="18" /><circle r="6" /><text y="18">汐成</text></g>
+            <g class="map-node village" role="button" tabindex="0" data-place-type="village" data-place-id="aonagi" transform="translate(520 485)"><circle class="village-hit" r="18" /><circle r="6" /><text y="18">青凪</text></g>
+            <g class="map-node village" role="button" tabindex="0" data-place-type="village" data-place-id="haimugi" transform="translate(610 270)"><circle class="village-hit" r="18" /><circle r="6" /><text y="18">灰麦</text></g>
+            <g class="map-node village" role="button" tabindex="0" data-place-type="village" data-place-id="kanezaka" transform="translate(620 365)"><circle class="village-hit" r="18" /><circle r="6" /><text y="18">鐘坂</text></g>
           </g>
 
           <g class="map-ornament" transform="translate(90 965)">
@@ -506,6 +511,21 @@
         </div>
         <div class="event-location" id="eventLocation"></div>
         <div class="event-choices" id="eventChoices"></div>
+      </section>
+    </div>
+
+    <div class="modal-backdrop is-hidden" id="endingModal" role="dialog" aria-modal="true" aria-labelledby="endingTitle">
+      <section class="ending-board" id="endingContent"></section>
+    </div>
+
+    <div class="modal-backdrop is-hidden" id="resetModal" role="dialog" aria-modal="true" aria-labelledby="resetTitle">
+      <section class="reset-board">
+        <header><span>NEW CHRONICLE</span><h2 id="resetTitle">現在の年代記を破棄しますか？</h2></header>
+        <p>この端末に保存された進行状況を消去し、誓暦317年の最初から始めます。この操作は取り消せません。</p>
+        <div class="reset-actions">
+          <button type="button" data-cancel-reset>戻る</button>
+          <button class="is-danger" type="button" data-confirm-reset>年代記を破棄して最初から</button>
+        </div>
       </section>
     </div>
 

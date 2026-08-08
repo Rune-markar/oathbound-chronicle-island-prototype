@@ -55,6 +55,40 @@ import {
   getWarStage,
   occupationPolicyOutcome,
 } from "./war-system.js";
+import {
+  TOWN_COMMAND_IDS,
+  advanceTownAdministration,
+  applyTownCommand,
+  getTownAdministration as modelTownAdministration,
+  isTownCommand,
+  normalizeTownAdministration,
+} from "./town-administration.js";
+import {
+  AFTERMATH_DECISIONS,
+  AFTERMATH_POLICIES,
+  BORDER_SETTLEMENTS,
+  CAMPAIGN_ACTS,
+  FOREIGN_AGENDAS,
+  OFFICER_DEMAND_RESPONSES,
+  OFFICER_POLITICS,
+  advanceCampaignState,
+  advanceForeignAgendas,
+  advanceOfficerPromises,
+  applyAftermathDecision,
+  applyAftermathPolicy,
+  applyBorderSettlement,
+  applyDiplomacyCommand,
+  applyDoctrinePolitics,
+  applyOfficerCommandPolitics,
+  buildDecisionHighlights,
+  getBorderNegotiationState,
+  getDecisionExplanationState,
+  getEffectiveCampaignAct,
+  getOfficerPoliticalState,
+  getPendingAftermathDecision,
+  normalizeStrategicState,
+  respondToOfficerDemand,
+} from "./campaign-system.js";
 
 export {
   ADMINISTRATION_MANDATES,
@@ -74,6 +108,8 @@ export {
 };
 
 export { HISTORY_SCHEMA_VERSION, PRESSURE_DEFINITIONS };
+export { TOWN_COMMAND_IDS, isTownCommand };
+export { AFTERMATH_DECISIONS, AFTERMATH_POLICIES, BORDER_SETTLEMENTS, CAMPAIGN_ACTS, FOREIGN_AGENDAS, OFFICER_DEMAND_RESPONSES, OFFICER_POLITICS };
 
 export const FORCED_ORDER_RULES = {
   maximumOverage: 2,
@@ -279,18 +315,21 @@ export const COMMANDS = {
   "military.mobilize": command("military.mobilize", "military", "military_affairs", "東部国境軍を動員", "mobilize", { money: 7, draftPopulation: 180 }, "徴募可能人口から兵を集める。", { defaultCityId: "orta", repeatable: true, governanceCost: 2 }),
   "court.invite": command("court.invite", "people", "military_affairs", "放浪隊を軍務へ勧誘", "recruitment", { money: 7 }, "ダリオを誘い、友軍の放浪隊を結成する。", { defaultCityId: "orta", targetOfficerId: "dario" }),
   "research.administration": command("research.administration", "city", "research_development", "行政技術を研究", "harbor", { money: 7 }, "戸籍、会計、文書様式を研究し、行政効率と腐敗対策を改善する。", { repeatable: true }),
-  "admin.harbor_standard": command("admin.harbor_standard", "city", "research_development", "州間規格を統一", "harbor", { money: 8 }, "三州の車軸・荷札・通行時刻を一つの公路令に揃える。", { defaultCityId: "orta" }),
-  "navy.soundings": command("navy.soundings", "military", "research_development", "灰冠峠を測量", "scouting", { money: 5 }, "側道・渡河点・敵哨戒を確認し、軍情報を改善する。", { defaultCityId: "orta" }),
+  "admin.harbor_standard": command("admin.harbor_standard", "city", "research_development", "州間規格を統一", "harbor", { money: 8 }, "三州の車軸・荷札・通行時刻を一つの公路令に揃える。", { defaultCityId: "orta", durationTurns: 2, governanceCost: 2 }),
+  "navy.soundings": command("navy.soundings", "military", "research_development", "灰冠峠を測量", "scouting", { money: 5 }, "側道・渡河点・敵哨戒を確認し、軍情報を改善する。", { defaultCityId: "orta", durationTurns: 2, governanceCost: 2 }),
   "court.serve": command("court.serve", "people", "research_development", "測量士を研究職へ登用", "recruitment", { money: 4 }, "測量士イルヴァへ仕官を取り次ぐ。", { defaultCityId: "selene", targetOfficerId: "ilva" }),
-  "diplomacy.talks": command("diplomacy.talks", "diplomacy", "foreign_aid", "国境会談へ使節を派遣", "diplomacy", { money: 3 }, "隊商差押えの停止と関税引下げを交渉する。", { defaultCityId: "selene" }),
-  "diplomacy.aid": command("diplomacy.aid", "diplomacy", "foreign_aid", "国境商会を支援", "diplomacy", { money: 14 }, "ヴァルカの国境商会へ資金を供与する。", { defaultCityId: "selene" }),
-  "diplomacy.justify": command("diplomacy.justify", "diplomacy", "foreign_aid", "国境侵犯を対外公示", "justification", { money: 4 }, "差押え記録と条約違反を周辺諸国へ公開する。", { defaultCityId: "selene" }),
+  "diplomacy.talks": command("diplomacy.talks", "diplomacy", "foreign_aid", "相互通行を正式要求", "diplomacy", { money: 3 }, "隊商差押えの停止と相互通行権を正式議題にする。", { defaultCityId: "selene", durationTurns: 2, governanceCost: 2 }),
+  "diplomacy.concession": command("diplomacy.concession", "diplomacy", "foreign_aid", "共同関税案を提示", "diplomacy", { money: 5 }, "関税上限を相互化する譲歩で、条約の受諾見込みを高める。", { defaultCityId: "selene", governanceCost: 2, repeatable: true, requiresNegotiation: true }),
+  "diplomacy.mediation": command("diplomacy.mediation", "diplomacy", "foreign_aid", "第三国の仲介を招請", "diplomacy", { money: 6 }, "友好国を仲介者に立て、拒否の外交費用を高める。", { defaultCityId: "selene", durationTurns: 2, governanceCost: 2, repeatable: true, requiresNegotiation: true }),
+  "diplomacy.pressure": command("diplomacy.pressure", "diplomacy", "foreign_aid", "武装護送を公示", "justification", { money: 5 }, "隊商護送隊を編成し、武力を背景に限定妥協を迫る。", { defaultCityId: "orta", governanceCost: 2, repeatable: true, requiresNegotiation: true }),
+  "diplomacy.aid": command("diplomacy.aid", "diplomacy", "foreign_aid", "国境商会を支援", "diplomacy", { money: 14 }, "ヴァルカの国境商会へ資金を供与する。", { defaultCityId: "selene", governanceCost: 2 }),
+  "diplomacy.justify": command("diplomacy.justify", "diplomacy", "foreign_aid", "国境侵犯を対外公示", "justification", { money: 4 }, "差押え記録と条約違反を周辺諸国へ公開する。", { defaultCityId: "selene", governanceCost: 2 }),
   "court.recruit": command("court.recruit", "people", "foreign_aid", "外交顧問を登用", "recruitment", { money: 10 }, "ミレルを外交官として登用する。", { defaultCityId: "nereia", targetOfficerId: "mirel" }),
   "debt.principal": command("debt.principal", "fiscal", "debt_repayment", "国債元本を返済", "commerce", { money: 8 }, "王都金庫から国債元本を返済し、国家債務を8減らす。", { defaultCityId: "selene", repeatable: true, debtPayment: 8 }),
   "city.cultivate": command("city.cultivate", "city", "economic_investment", "開墾", "cultivate", { money: 4 }, "水路と共同地を整え、生産力と食料収支を改善する。", { repeatable: true }),
   "city.commerce": command("city.commerce", "city", "economic_investment", "商業振興", "commerce", { money: 5 }, "市場・倉札・信用を整え、月次収入を伸ばす。", { repeatable: true }),
   "city.repair": command("city.repair", "city", "economic_investment", "都市基盤を補修", "repair", { money: 5 }, "城壁・街道・埠頭を補修し、防備と造船力を増やす。", { repeatable: true }),
-  "diplomacy.trade": command("diplomacy.trade", "diplomacy", "economic_investment", "大陸交易協定を打診", "diplomacy", { money: 6 }, "相互の市場と街道使用を制度化する。", { defaultCityId: "selene" }),
+  "diplomacy.trade": command("diplomacy.trade", "diplomacy", "economic_investment", "大陸交易協定を打診", "diplomacy", { money: 6 }, "相互の市場と街道使用を制度化する。", { defaultCityId: "selene", governanceCost: 2 }),
 };
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
@@ -336,7 +375,7 @@ function foreignState(relation, army, mobility, training, organization, cohesion
 }
 
 export function normalizeWarState(state) {
-  state.version = 8;
+  state.version = 9;
   state.occupations ??= [];
   state.warHistory ??= [];
   Object.values(state.foreignStates ?? {}).forEach((country) => {
@@ -371,12 +410,19 @@ export function normalizeWarState(state) {
     occupation.history ??= [];
   });
   normalizeAdministrationState(WORLD, state);
+  normalizeTownAdministration(WORLD, state);
+  [...(state.pendingOrders ?? []), ...(state.commandQueue ?? [])].forEach((item) => {
+    if (item.kind === "command" && isTownCommand(item.commandId) && !item.townId) {
+      item.townId = WORLD.provinces[item.cityId]?.villages?.[0] ?? null;
+    }
+  });
+  normalizeStrategicState(WORLD, state);
   return normalizeHistoryState(WORLD, state);
 }
 
 export function createInitialState() {
   const state = {
-    version: 8, year: 317, month: 4, turn: 0, phase: "planning", nextOrderId: 1,
+    version: 9, year: 317, month: 4, turn: 0, phase: "planning", nextOrderId: 1,
     rngSeed: 3170401, eventCooldowns: {}, eventPity: 0, pendingOrders: [], pendingEvent: null, pendingMonthReport: null,
     monthlyReports: [], annualReports: [], lastViewedReportId: null, governancePenalty: 0,
     legitimacy: 68, justification: 58, warExhaustion: 0, intelNetwork: 33,
@@ -425,6 +471,7 @@ export function createInitialState() {
 }
 
 export function getCampaignStatus(state) {
+  normalizeStrategicState(WORLD, state);
   const completion = {
     transit: state.agreements.transit || state.issues.border.status === "resolved",
     standards: state.issues.standards.status === "resolved",
@@ -435,12 +482,35 @@ export function getCampaignStatus(state) {
     complete: Boolean(completion[objective.id]),
   }));
   const completedCount = objectives.filter((objective) => objective.complete).length;
+  const actId = getEffectiveCampaignAct(state);
+  const negotiation = getBorderNegotiationState(WORLD, state);
+  const acts = [
+    {
+      ...CAMPAIGN_ACTS.preparation,
+      complete: state.issues.standards.status === "resolved" && state.issues.reports.status === "resolved" && negotiation.talksCompleted,
+      progress: [state.issues.standards.status === "resolved", state.issues.reports.status === "resolved", negotiation.talksCompleted].filter(Boolean).length,
+      total: 3,
+    },
+    { ...CAMPAIGN_ACTS.resolution, complete: completion.transit, progress: completion.transit ? 1 : 0, total: 1 },
+    {
+      ...CAMPAIGN_ACTS.aftermath,
+      complete: Boolean(state.campaign.ending),
+      progress: state.campaign.aftermathMonths ?? 0,
+      total: state.campaign.aftermathPolicy ? AFTERMATH_POLICIES[state.campaign.aftermathPolicy].months : 2,
+    },
+  ];
   return {
     ...CAMPAIGN_BRIEF,
     objectives,
+    acts,
+    act: CAMPAIGN_ACTS[actId],
+    actId,
+    resolution: state.campaign.resolution,
+    aftermathPolicy: state.campaign.aftermathPolicy,
+    ending: state.campaign.ending,
     completedCount,
     totalCount: objectives.length,
-    complete: completedCount === objectives.length,
+    complete: Boolean(state.campaign.ending),
   };
 }
 
@@ -467,9 +537,9 @@ export function getTurnGuidance(state) {
   const campaign = getCampaignStatus(state);
   if (campaign.complete) {
     return {
-      step: 4, stepLabel: "主目標達成",
-      title: "灰冠峠の国境危機を収束させました",
-      description: "通行権・道路規格・敵情の三課題は解決済みです。報告を確認し、この王国をさらに運営できます。",
+      step: 4, stepLabel: "キャンペーン完結",
+      title: campaign.ending.name,
+      description: campaign.ending.description,
       action: "open_reports", actionLabel: "達成までの報告を見る",
     };
   }
@@ -483,21 +553,45 @@ export function getTurnGuidance(state) {
     };
   }
 
+  if (campaign.actId === "aftermath") {
+    const policy = campaign.aftermathPolicy ? AFTERMATH_POLICIES[campaign.aftermathPolicy] : null;
+    const pendingDecision = policy ? getPendingAftermathDecision(WORLD, state) : null;
+    return policy
+      ? {
+        step: 3, stepLabel: "戦後処理",
+        title: pendingDecision ? pendingDecision.title : `「${policy.name}」を定着させる`,
+        description: pendingDecision
+          ? `${pendingDecision.prompt} 裁定の結果は国境関係と国内資源へ直ちに残ります。`
+          : `${campaign.acts[2].progress} / ${campaign.acts[2].total}か月。通常政務と食料を維持しながら、新しい国境秩序を定着させてください。`,
+        action: pendingDecision ? "open_aftermath" : "end_month",
+        actionLabel: pendingDecision ? "第三幕の課題を裁定する" : "定着を一か月進める",
+      }
+      : {
+        step: 2, stepLabel: "戦後方針",
+        title: "得た通行権をどの秩序へ変えるか決める",
+        description: "和解会議、交易回廊、常備監視隊では、関係・商業・安全保障に残る結果が異なります。",
+        action: "open_aftermath", actionLabel: "第三幕の方針を選ぶ",
+      };
+  }
+
   if (!state.pendingOrders.length) {
     const foodSecurity = getFoodSecurityStatus(state);
     const foodEmergency = foodSecurity.primaryCity?.severity === "danger"
       ? foodSecurity.primaryCity
       : null;
     if (foodEmergency) {
-      const availability = getCommandAvailability(state, "city.cultivate", null, foodEmergency.cityId);
+      const townId = WORLD.provinces[foodEmergency.cityId].villages
+        .map((id) => getTownAdministration(state, id))
+        .sort((left, right) => left.forecast.foodSecurity - right.forecast.foodSecurity)[0]?.townId;
       return {
         step: 2, stepLabel: "食料危機",
         title: `${foodEmergency.name}の食料収支を立て直す`,
         description: `次月末の備蓄は${Math.max(0, Math.round(foodEmergency.after)).toLocaleString("ja-JP")}、現在の減少幅では約${foodEmergency.afterRunway.toFixed(1)}か月分です。開戦や追加支出より先に、食料生産を確保してください。`,
-        action: availability.allowed ? "open_command" : "open_spending",
-        actionLabel: availability.allowed ? "開墾の担当武将を選ぶ" : "経済投資を確認する",
-        commandId: availability.allowed ? "city.cultivate" : null,
+        action: "open_town",
+        actionLabel: `${WORLD.villages[townId]?.name ?? "管内の町"}の町政を開く`,
+        commandId: "city.cultivate",
         cityId: foodEmergency.cityId,
+        townId,
       };
     }
     if (state.war) {
@@ -519,9 +613,9 @@ export function getTurnGuidance(state) {
     if (!recommended && state.issues.border.status === "active" && state.completedCommands.includes("diplomacy.talks")) {
       return {
         step: 2, stepLabel: "国境決着",
-        title: "国境通行権を要求する方法を決める",
-        description: "国境会談で関係は改善しましたが、通行権はまだ保証されていません。軍事画面で限定目的と開戦条件を確認してください。",
-        action: "open_war_council", actionLabel: "戦争評定で要求を定める",
+        title: "条約・武装妥協・限定戦争を比較する",
+        description: "受諾見込み、譲歩、第三国仲介、交渉力、期限を確認し、通行権を得る手段を選んでください。",
+        action: "open_diplomacy", actionLabel: "外交決着を比較する",
       };
     }
     return {
@@ -619,6 +713,10 @@ export function getTaskForecast(state, commandId, officerId, cityId = null) {
   return modelTaskForecast(WORLD, state, item, officerId, item.defaultCityId ?? cityId ?? WORLD.nation.capital);
 }
 
+export function getTownAdministration(state, townId) {
+  return modelTownAdministration(WORLD, state, townId);
+}
+
 export function getCountryReport(state, countryId) {
   const country = WORLD.countries[countryId];
   if (!country) return null;
@@ -683,31 +781,40 @@ export function getMilitarySummary(state) {
 }
 
 function resolveCityId(item, cityId) { return item.defaultCityId ?? cityId ?? WORLD.nation.capital; }
+function resolveTownId(item, cityId, townId) {
+  if (!isTownCommand(item)) return null;
+  const resolved = townId ?? WORLD.provinces[cityId]?.villages?.[0] ?? null;
+  return WORLD.villages[resolved]?.province === cityId ? resolved : null;
+}
 function reservedOfficers(state) { return new Set(state.pendingOrders.map((order) => order.officerId).filter(Boolean)); }
 
-export function getCommandAvailability(state, commandId, officerId = null, cityId = null) {
+export function getCommandAvailability(state, commandId, officerId = null, cityId = null, townId = null) {
   const item = COMMANDS[commandId];
   if (!item) return { allowed: false, reason: "不明な命令" };
   const targetCityId = resolveCityId(item, cityId);
   const city = state.cities[targetCityId];
   if (!city) return { allowed: false, reason: "対象都市が不明" };
+  const targetTownId = resolveTownId(item, targetCityId, townId);
+  if (isTownCommand(item) && !targetTownId) return { allowed: false, reason: "対象の町が不明" };
   if (item.debtPayment && (state.fiscal?.publicDebt ?? 24) <= 0) return { allowed: false, reason: "返済すべき国債がありません" };
+  if (item.requiresNegotiation && state.negotiation?.status !== "open") return { allowed: false, reason: "正式交渉の開始後に選べます" };
+  if (item.requiresNegotiation && (state.agreements.transit || state.issues.border.status === "resolved")) return { allowed: false, reason: "国境通行権は確保済みです" };
   if (!item.repeatable && (state.completedCommands.includes(commandId) || state.commandQueue.some((task) => task.commandId === commandId) || state.pendingOrders.some((order) => order.commandId === commandId))) return { allowed: false, reason: "実行済みまたは予約中" };
-  if (state.commandQueue.some((task) => task.commandId === commandId && task.cityId === targetCityId)) return { allowed: false, reason: "同じ任務を実行中" };
+  if ([...state.commandQueue, ...state.pendingOrders].some((task) => task.commandId === commandId && task.cityId === targetCityId && (!targetTownId || task.townId === targetTownId))) return { allowed: false, reason: "同じ任務を実行中または予約中" };
   const reservedMoney = state.pendingOrders.filter((order) => order.cityId === targetCityId).reduce((sum, order) => sum + (order.cost?.money ?? 0), 0);
   const reservedDraft = state.pendingOrders.filter((order) => order.cityId === targetCityId).reduce((sum, order) => sum + (order.cost?.draftPopulation ?? 0), 0);
   if (city.resources.money - reservedMoney < (item.cost.money ?? 0)) return { allowed: false, reason: "都市金が不足" };
   if (city.military.draftPopulation - reservedDraft < (item.cost.draftPopulation ?? 0)) return { allowed: false, reason: "徴募可能人口が不足" };
-  if (!officerId) return { allowed: true, reason: "担当人物を選択", cityId: targetCityId };
+  if (!officerId) return { allowed: true, reason: "担当人物を選択", cityId: targetCityId, townId: targetTownId };
   const officer = getOfficer(WORLD, state, officerId);
   if (!officer || officer.allegiance !== "serving") return { allowed: false, reason: "配下人物のみ担当可能" };
   if (officer.assignment || reservedOfficers(state).has(officerId)) return { allowed: false, reason: "別の任務を担当中または予約中" };
   if (officer.stamina < 20) return { allowed: false, reason: "意欲不足" };
-  return { allowed: true, reason: `${item.durationTurns}か月 · 統治力${item.governanceCost}`, cityId: targetCityId };
+  return { allowed: true, reason: `${item.durationTurns}か月 · 統治力${item.governanceCost}`, cityId: targetCityId, townId: targetTownId };
 }
 
-export function getEligibleOfficers(state, commandId, cityId = null) {
-  return getAvailableOfficers(WORLD, state).filter((officer) => getCommandAvailability(state, commandId, officer.id, cityId).allowed);
+export function getEligibleOfficers(state, commandId, cityId = null, townId = null) {
+  return getAvailableOfficers(WORLD, state).filter((officer) => getCommandAvailability(state, commandId, officer.id, cityId, townId).allowed);
 }
 
 function assertGovernance(state, cost, force) {
@@ -736,10 +843,10 @@ export function queueOrder(state, specification) {
   let order;
   if (kind === "command") {
     const item = COMMANDS[specification.commandId];
-    const availability = getCommandAvailability(state, specification.commandId, specification.officerId, specification.cityId);
+    const availability = getCommandAvailability(state, specification.commandId, specification.officerId, specification.cityId, specification.townId);
     if (!availability.allowed) throw new Error(availability.reason);
     const forcedPoints = assertGovernance(state, item.governanceCost, specification.force);
-    order = { id: orderId(next), kind, commandId: item.id, cityId: availability.cityId, officerId: specification.officerId, cost: clone(item.cost), governanceCost: item.governanceCost, durationTurns: item.durationTurns, forced: forcedPoints > 0, forcedPoints };
+    order = { id: orderId(next), kind, commandId: item.id, cityId: availability.cityId, townId: availability.townId, officerId: specification.officerId, cost: clone(item.cost), governanceCost: item.governanceCost, durationTurns: item.durationTurns, forced: forcedPoints > 0, forcedPoints };
   } else if (kind === "facility") {
     const city = state.cities[specification.cityId];
     const upgrade = city && getFacilityUpgradeSpec(city, specification.facilityId);
@@ -786,6 +893,7 @@ function completeCommand(state, task) {
   const city = state.cities[task.cityId];
   const outcome = deterministicOutcome(task, state.turn);
   const delta = improvement(outcome);
+  applyTownCommand(WORLD, state, task, delta, outcome);
   switch (task.commandId) {
     case "city.cultivate": city.resources.production = clamp(city.resources.production + delta, 0, 100); break;
     case "city.commerce": city.resources.commerce = clamp(city.resources.commerce + delta, 0, 100); break;
@@ -819,11 +927,13 @@ function completeCommand(state, task) {
     case "court.recruit": state.officers.mirel.allegiance = "serving"; state.officers.mirel.rank = "外交顧問"; state.officers.mirel.rankLevel = 2; break;
     default: break;
   }
+  if (item.group === "diplomacy") applyDiplomacyCommand(WORLD, state, task, outcome);
   if (!item.repeatable && !state.completedCommands.includes(task.commandId)) state.completedCommands.push(task.commandId);
   const officer = state.officers[task.officerId];
   officer.assignment = null; officer.location = task.cityId; officer.merit += Math.max(3, Math.round(outcome / 9)); officer.stamina = clamp(officer.stamina - 14, 0, 100);
-  logEntry(state, "達成", item.name, `${WORLD.characters[task.officerId].name}が成果 ${outcome}。`, outcome >= 70 ? "success" : "neutral");
-  return { outcome, delta, detail: `成果 ${outcome} / 基本改善 ${delta}` };
+  const reactions = applyOfficerCommandPolitics(WORLD, state, task, outcome);
+  logEntry(state, "達成", item.name, `${task.townId ? `${WORLD.villages[task.townId].name}で` : ""}${WORLD.characters[task.officerId].name}が成果 ${outcome}。`, outcome >= 70 ? "success" : "neutral");
+  return { outcome, delta, reactions, detail: `成果 ${outcome} / 基本改善 ${delta}${reactions.length ? ` / 人物反応 ${reactions.length}件` : ""}` };
 }
 
 function payOrder(city, order) {
@@ -855,7 +965,7 @@ function orderSpendingCategory(order) {
 
 function actionRecord(order) {
   return {
-    id: order.id, kind: order.kind, cityId: order.cityId, title: orderTitle(order),
+    id: order.id, kind: order.kind, cityId: order.cityId, townId: order.townId ?? null, title: orderTitle(order),
     status: "started", detail: "実行を開始", cost: clone(order.cost ?? {}),
     commandId: order.commandId ?? null, spendingCategory: orderSpendingCategory(order),
     governanceCost: order.governanceCost, forced: order.forced, forcedPoints: order.forcedPoints ?? 0,
@@ -883,7 +993,7 @@ function startOrders(state) {
       const forecast = getTaskForecast(state, order.commandId, order.officerId, order.cityId);
       const task = { ...order, remainingTurns: order.durationTurns, forecast };
       state.commandQueue.push(task); state.officers[order.officerId].assignment = task.id;
-      action.detail = `${WORLD.characters[order.officerId].name}が着手 / 完了まで${order.durationTurns}か月`;
+      action.detail = `${order.townId ? `${WORLD.villages[order.townId].name}で` : ""}${WORLD.characters[order.officerId].name}が着手 / 完了まで${order.durationTurns}か月`;
     }
     if (order.kind === "facility") {
       city.projects.push({ ...order, remainingTurns: order.durationTurns });
@@ -939,8 +1049,8 @@ function progressWork(state, actions) {
   state.commandQueue.filter((task) => task.remainingTurns <= 0).forEach((task) => {
     const result = completeCommand(state, task);
     const action = actions.find((item) => item.id === task.id);
-    if (action) { action.status = "completed"; action.detail = result.detail; action.outcome = result.outcome; }
-    else actions.push({ id: `complete-${task.id}`, kind: "command", cityId: task.cityId, title: COMMANDS[task.commandId].name, status: "completed", detail: result.detail, outcome: result.outcome, cost: {}, governanceCost: 0, forced: false });
+    if (action) { action.status = "completed"; action.detail = result.detail; action.outcome = result.outcome; action.reactions = result.reactions; }
+    else actions.push({ id: `complete-${task.id}`, kind: "command", commandId: task.commandId, cityId: task.cityId, title: COMMANDS[task.commandId].name, status: "completed", detail: result.detail, outcome: result.outcome, reactions: result.reactions, cost: {}, governanceCost: 0, forced: false });
   });
   state.commandQueue = state.commandQueue.filter((task) => task.remainingTurns > 0);
 }
@@ -1379,7 +1489,13 @@ function annualReport(state, year) {
     openingTreasury: reports.at(-1)?.fiscal?.openingTreasury ?? null,
     closingTreasury: reports[0]?.fiscal?.closingTreasury ?? null,
   };
-  return { id: `annual-${year}`, year, totals, fiscal, months: reports.length, events: reports.reduce((sum, report) => sum + report.events.length, 0) };
+  const decisions = reports.flatMap((report) => report.highlights ?? []).slice(0, 8);
+  const ending = reports.find((report) => report.campaign?.ending)?.campaign.ending ?? null;
+  return {
+    id: `annual-${year}`, year, totals, fiscal, months: reports.length,
+    events: reports.reduce((sum, report) => sum + report.events.length, 0),
+    decisions, ending,
+  };
 }
 
 function finalizeMonth(state, report) {
@@ -1388,7 +1504,12 @@ function finalizeMonth(state, report) {
   state.turn += 1; state.month += 1;
   if (state.month > 12) { state.month = 1; state.year += 1; }
   state.phase = "planning"; state.pendingEvent = null; state.pendingMonthReport = null;
-  if ([3, 6, 9, 12].includes(state.month)) { state.council.pending = true; state.council.seasonKey = `${state.year}-${state.month}`; }
+  if (state.campaign?.ending) {
+    state.council.pending = false;
+  } else if ([3, 6, 9, 12].includes(state.month)) {
+    state.council.pending = true;
+    state.council.seasonKey = `${state.year}-${state.month}`;
+  }
   getServingOfficers(WORLD, state).forEach((officer) => { if (!state.officers[officer.id].assignment) state.officers[officer.id].stamina = clamp(state.officers[officer.id].stamina + 8, 0, 100); });
   logEntry(state, "月次", `${report.season} ${report.monthName}の月次報告`, `都市金 ${report.realm.money >= 0 ? "+" : ""}${report.realm.money.toFixed(1)}、食料 ${report.realm.food >= 0 ? "+" : ""}${Math.round(report.realm.food).toLocaleString("ja-JP")}。`, "info");
   return state;
@@ -1415,25 +1536,36 @@ function refreshReportTotals(state, report) {
 export function commitMonth(state) {
   if (state.phase !== "planning") throw new Error("先に事件への対応を決めてください");
   if (state.council.pending) throw new Error("季節評定の方針を先に決めてください");
+  const pendingAftermathDecision = getPendingAftermathDecision(WORLD, state);
+  if (pendingAftermathDecision) throw new Error(`第三幕「${pendingAftermathDecision.title}」を先に裁定してください`);
   const next = normalizeWarState(clone(state));
   const opening = Object.fromEntries(Object.entries(next.cities).map(([cityId, city]) => [cityId, clone(city.resources)]));
   const actions = startOrders(next);
   progressWork(next, actions);
+  advanceOfficerPromises(WORLD, next);
   actions.push(...resolveAuthorityReforms(WORLD, next));
   actions.push(...resolveDelegatedAdministration(WORLD, next));
   actions.push(...applyAdministrativeOverload(WORLD, next));
   const cities = Object.keys(next.cities).map((cityId) => applyCityMonth(next, cityId, opening[cityId]));
+  const towns = advanceTownAdministration(WORLD, next);
+  const foreignDispatches = advanceForeignAgendas(WORLD, next);
   const aggression = maybeStartDefensiveWar(next);
   const war = resolveWarMonth(next);
   const occupations = resolveOccupations(next);
+  advanceCampaignState(WORLD, next);
   const monthName = formatDate(next).split(" ")[1];
   const report = {
     id: `month-${next.year}-${next.month}`, year: next.year, month: next.month, monthName,
-    season: seasonForMonth(next.month).name, cities, aggression, war, occupations, events: [], actions, realm: {},
+    season: seasonForMonth(next.month).name, cities, towns, aggression, war, occupations, events: [], actions,
+    foreignDispatches, officerReactions: clone(next.monthlyPoliticalReactions),
+    campaign: { act: next.campaign.act, resolution: next.campaign.resolution, aftermathPolicy: next.campaign.aftermathPolicy, ending: clone(next.campaign.ending) },
+    realm: {},
   };
+  next.monthlyPoliticalReactions = [];
   refreshReportTotals(next, report);
   const historyEvents = advanceHistoricalSimulation(WORLD, next, { actions, report });
   report.historyEvents = historyEvents.map((event) => ({ id: event.id, title: event.title, type: event.type, locations: event.locations }));
+  report.highlights = buildDecisionHighlights(next, report);
   const event = drawEvent(next);
   if (event) { next.phase = "event"; next.pendingEvent = event; next.pendingMonthReport = report; return next; }
   return finalizeMonth(next, report);
@@ -1468,6 +1600,7 @@ export function resolveEventChoice(state, choiceId) {
   city.issues = city.issues.filter((issue) => issue.id !== definition.id);
   logEntry(next, "事件", `${definition.name} — ${choice.name}`, `${WORLD.provinces[next.pendingEvent.cityId].name}で「${choice.name}」を選択した。`, "danger");
   refreshReportTotals(next, next.pendingMonthReport);
+  next.pendingMonthReport.highlights = buildDecisionHighlights(next, next.pendingMonthReport);
   return finalizeMonth(next, next.pendingMonthReport);
 }
 
@@ -1480,9 +1613,20 @@ export function acknowledgeMonthReport(state, reportId = state.monthlyReports?.[
 
 export function deriveMonthPreview(state) {
   if (state.phase !== "planning" || state.council.pending) return null;
+  // A third-act ruling deliberately blocks the real month end.  Forecasting
+  // must not invoke that guarded path or the pending decision card cannot be
+  // rendered for the player to resolve it.
+  if (getPendingAftermathDecision(WORLD, state)) return null;
   const projected = commitMonth(state);
   const report = projected.phase === "event" ? projected.pendingMonthReport : projected.monthlyReports[0];
-  return { report, pendingEvent: projected.pendingEvent, phase: projected.phase };
+  let baselineReport = null;
+  if (state.pendingOrders.length) {
+    const baselineState = clone(state);
+    baselineState.pendingOrders = [];
+    const baseline = commitMonth(baselineState);
+    baselineReport = baseline.phase === "event" ? baseline.pendingMonthReport : baseline.monthlyReports[0];
+  }
+  return { report, baselineReport, pendingEvent: projected.pendingEvent, phase: projected.phase };
 }
 
 export function getFoodSecurityStatus(state, preview = undefined) {
@@ -1528,27 +1672,80 @@ export function getFoodSecurityStatus(state, preview = undefined) {
 }
 
 export function getBorderNegotiationStatus(state) {
-  const relation = state.foreignStates.valka.relation;
-  const talksCompleted = state.completedCommands.includes("diplomacy.talks");
-  const transitSecured = Boolean(state.agreements.transit || state.issues.border.status === "resolved");
-  return {
-    relation,
-    openingRelation: -31,
-    relationshipGain: relation + 31,
-    talksCompleted,
-    transitSecured,
-    meetingProgress: talksCompleted || transitSecured ? 100 : 0,
-    status: transitSecured
-      ? "通行権を確保"
-      : talksCompleted
-        ? "会談完了・通行権は未保証"
-        : "国境会談は未実施",
-    description: transitSecured
-      ? "講和または協定により、灰冠峠の通行権は条約化されています。"
-      : talksCompleted
-        ? "一度限りの国境会談で関係は改善しましたが、通行権そのものは得られません。残る決着手段と代償を戦争評定で比較してください。"
-        : "国境会談は関係改善の準備工程です。会談だけで通行権が自動的に得られるわけではありません。",
-  };
+  normalizeStrategicState(WORLD, state);
+  return getBorderNegotiationState(WORLD, state);
+}
+
+export function resolveBorderNegotiation(state, settlementId) {
+  const next = normalizeWarState(clone(state));
+  const result = applyBorderSettlement(WORLD, next, settlementId);
+  recordHistoricalEvent(WORLD, next, {
+    id: `history-border-settlement-${next.year}-${next.month}-${settlementId}`,
+    type: "diplomatic_settlement",
+    title: result.name,
+    summary: `ヴァルカとの交渉で「${result.name}」を成立させ、灰冠峠の相互通行権を確保した。`,
+    actors: [WORLD.nation.id, "valka"], locations: ["orta", "valka_keep"],
+    causedBy: ["issue-border", `negotiation-acceptance-${getBorderNegotiationStatus(next).acceptance}`],
+    effects: ["agreement-transit", `campaign-resolution-${settlementId}`],
+  });
+  logEntry(next, "外交", result.name, "灰冠峠の通行権を外交決着で確保した。第三幕の定着方針を決める。", "success");
+  return next;
+}
+
+export function chooseAftermathPolicy(state, policyId) {
+  const next = normalizeWarState(clone(state));
+  const policy = applyAftermathPolicy(WORLD, next, policyId);
+  recordHistoricalEvent(WORLD, next, {
+    id: `history-aftermath-${next.year}-${next.month}-${policyId}`,
+    type: "aftermath_policy",
+    title: policy.name,
+    summary: policy.description,
+    actors: [WORLD.nation.id], locations: ["orta"],
+    causedBy: ["agreement-transit"], effects: [`aftermath-${policyId}`],
+  });
+  logEntry(next, "戦後", policy.name, `${policy.description} ${policy.months}か月かけて定着させる。`, "info");
+  return next;
+}
+
+export function getAftermathDecisionStatus(state) {
+  normalizeStrategicState(WORLD, state);
+  return getPendingAftermathDecision(WORLD, state);
+}
+
+export function resolveAftermathDecisionChoice(state, choiceId) {
+  const next = normalizeWarState(clone(state));
+  const result = applyAftermathDecision(WORLD, next, choiceId);
+  recordHistoricalEvent(WORLD, next, {
+    id: `history-aftermath-decision-${next.year}-${next.month}-${result.decisionId}`,
+    type: "aftermath_decision",
+    title: `${result.title}：${result.choice}`,
+    summary: result.impact,
+    actors: [WORLD.nation.id, "valka"], locations: ["orta"],
+    causedBy: [`aftermath-${next.campaign.aftermathPolicy}`], effects: [`aftermath-choice-${result.choiceId}`],
+  });
+  logEntry(next, "戦後", result.title, `${result.choice}。${result.impact}`, "info");
+  return next;
+}
+
+export function answerOfficerDemand(state, officerId, responseId) {
+  const next = normalizeWarState(clone(state));
+  const result = respondToOfficerDemand(WORLD, next, officerId, responseId);
+  logEntry(next, "人物", result.reaction.title, result.reaction.detail, responseId === "refuse" ? "danger" : "info");
+  return next;
+}
+
+export function getOfficerPoliticalReport(state, officerId) {
+  normalizeStrategicState(WORLD, state);
+  return getOfficerPoliticalState(state, officerId);
+}
+
+export function getForeignDispatches(state, limit = 9) {
+  normalizeStrategicState(WORLD, state);
+  return state.foreignDispatches.slice(0, limit);
+}
+
+export function getDecisionExplanations(state) {
+  return getDecisionExplanationState(state);
 }
 
 export function getWarDeclarationEstimate(state, objectiveId = "transit") {
@@ -1609,7 +1806,11 @@ export function getTurnWarnings(state) {
     if (authorityGap) warnings.push(`${WORLD.provinces[region.cityId].name}の${authorityGap.name}で法令と実務が${Math.round(authorityGap.legalShare - authorityGap.practicalShare)}点乖離`);
   });
   if (ledger.administration.unintegratedCities > 0) warnings.push(`州郡化前の都市 ${ledger.administration.unintegratedCities}：名目人口・兵・兵糧の全量は動員できません`);
-  if (ledger.governance.available > 0) warnings.push(`未使用統治力 ${ledger.governance.available}`);
+  if (ledger.governance.available > 0) {
+    warnings.push(ledger.availableOfficers > 0
+      ? `未使用統治力 ${ledger.governance.available}（担当可能な待機人物 ${ledger.availableOfficers}名）`
+      : `未使用統治力 ${ledger.governance.available}（担当可能人物なし：任務完了を待つか、施設・政策を検討）`);
+  }
   ledger.cities.forEach((city) => {
     const local = preview?.report.cities.find((item) => item.cityId === city.cityId);
     if ((local?.after.money ?? city.money + city.netIncome) < 0) warnings.push(`${city.name}で財政赤字の見込み`);
@@ -1630,7 +1831,7 @@ export function getTurnWarnings(state) {
     if (occupation.resistance >= 70) warnings.push(`${occupation.name}で武装抵抗が激化：抵抗 ${occupation.resistance.toFixed(0)}`);
     if (occupation.garrison < occupation.requiredGarrison) warnings.push(`${occupation.name}の駐屯兵が必要数を下回っています`);
   });
-  if (ledger.availableOfficers > 0) warnings.push(`待機中の人物 ${ledger.availableOfficers}名`);
+  if (ledger.availableOfficers > 0 && ledger.governance.available <= 0) warnings.push(`待機中の人物 ${ledger.availableOfficers}名（統治力を使い切っているため新規任務は不可）`);
   const previewMoney = preview?.report.cities.reduce((sum, city) => sum + city.after.money, 0);
   if ((previewMoney ?? ledger.treasury + ledger.netIncome) < 0) warnings.push("国家全体で給与遅配の危険");
   return warnings;
@@ -1641,7 +1842,9 @@ export function adoptDoctrine(state, doctrineId) {
   if (!state.council.pending) throw new Error("今季の評定は終了しています");
   const next = clone(state); next.council.doctrine = doctrineId; next.council.pending = false;
   next.council.history.unshift({ seasonKey: next.council.seasonKey, doctrineId });
+  const reactions = applyDoctrinePolitics(WORLD, next, doctrineId);
   logEntry(next, "評定", DOCTRINES[doctrineId].name, DOCTRINES[doctrineId].description, "success");
+  reactions.slice(0, 2).forEach((reaction) => logEntry(next, "人物", reaction.title, reaction.detail, reaction.disposition > 0 ? "info" : "danger"));
   return next;
 }
 
@@ -1703,6 +1906,9 @@ export function declareWar(state, objectiveId) {
   const shortfall = Math.max(0, 50 - next.justification) + Math.max(0, 40 - support);
   if (shortfall > 0) { next.legitimacy = clamp(next.legitimacy - Math.ceil(shortfall / 4), 0, 100); next.cities.orta.resources.security = clamp(next.cities.orta.resources.security - 18, 0, 100); logEntry(next, "国内", "国境農民が徴発を拒否", "十分な正当性のない宣戦に東境州が反発した。", "danger"); }
   next.war = createWarState("valka", objectiveId, "attacker");
+  next.campaign.resolution = objectiveId === "submission" ? "occupation" : "limited_war";
+  next.campaign.act = "resolution";
+  next.negotiation.status = "war";
   recordHistoricalEvent(WORLD, next, {
     id: `history-war-declared-${next.year}-${next.month}-${objectiveId}`,
     type: "war_declared",
@@ -1791,6 +1997,17 @@ export function negotiatePeace(state, settlementId = "auto") {
   if (success && war.objectiveId === "submission") {
     const policy = choice.id === "occupation" ? "military" : "autonomy";
     next.occupations.push(createOccupation(next, war, policy));
+    next.agreements.transit = true;
+    next.issues.border.status = "resolved";
+  }
+  if (success && next.agreements.transit) {
+    next.campaign.resolution = war.objectiveId === "transit" ? "limited_war" : war.objectiveId === "pass_control" ? "war_settlement" : "occupation";
+    next.campaign.act = "aftermath";
+    next.campaign.actStartedTurn = next.turn;
+    next.negotiation.status = "settled";
+    next.negotiation.outcome = next.campaign.resolution;
+  } else if (!success) {
+    next.negotiation.status = "stalled";
   }
   const target = next.foreignStates[war.targetCountryId];
   target.relation = clamp(target.relation + (choice.id === "ceasefire" ? -2 : choice.id === "occupation" ? -22 : 6), -100, 100);

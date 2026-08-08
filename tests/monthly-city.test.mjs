@@ -37,14 +37,15 @@ function numericLeaves(value, path = "state", result = []) {
   return result;
 }
 
-test("save v8 contains the continental monthly city, war, and causal history lifecycle schema", () => {
+test("save v9 contains town, city, war, and causal history lifecycle schemas", () => {
   const state = createInitialState();
   const city = state.cities.selene;
-  assert.equal(state.version, 8);
+  assert.equal(state.version, 9);
   assert.equal(state.history.schemaVersion, 1);
   assert.deepEqual(state.occupations, []);
   assert.deepEqual(state.warHistory, []);
   assert.deepEqual(state.fiscal, { publicDebt: 24, totalDebtRepaid: 0 });
+  assert.equal(Object.keys(state.towns).length, 6);
   assert.deepEqual(Object.keys(city.resources).sort(), ["commerce", "defense", "food", "money", "population", "production", "security", "support"]);
   assert.deepEqual(Object.keys(city.internal).sort(), ["administrativeEfficiency", "corruption", "fear", "foodPreservation", "housingCapacity", "sanitation"]);
   assert.deepEqual(Object.keys(city.military).sort(), ["draftPopulation", "sailors", "ships", "shipyard", "training", "troops"]);
@@ -89,7 +90,7 @@ test("governance allows exactly two forced points beyond its normal maximum", ()
   let state = ready(createInitialState());
   state = queueOrder(state, { kind: "command", commandId: "city.commerce", officerId: "edras", cityId: "selene" });
   state = queueOrder(state, { kind: "command", commandId: "city.patrol", officerId: "mara", cityId: "nereia" });
-  state = queueOrder(state, { kind: "command", commandId: "diplomacy.talks", officerId: "sera", cityId: "selene" });
+  state = queueOrder(state, { kind: "command", commandId: "welfare.health", officerId: "sera", cityId: "selene" });
   assert.throws(() => queueOrder(state, { kind: "command", commandId: "military.mobilize", officerId: "gaius", cityId: "orta" }), (error) => error.code === "FORCE_REQUIRED");
   state = queueOrder(state, { kind: "command", commandId: "military.mobilize", officerId: "gaius", cityId: "orta", force: true });
   state = queueOrder(state, { kind: "facility", cityId: "selene", facilityId: "granary", force: true });
@@ -234,12 +235,25 @@ test("pending policy and facility orders change the pure month preview without m
   const baseline = deriveMonthPreview(base).report.cities.find((city) => city.cityId === "nereia");
   let planned = queueOrder(base, { kind: "policy", cityId: "nereia", policyId: "rationing", optionId: "restricted" });
   planned = queueOrder(planned, { kind: "facility", cityId: "nereia", facilityId: "farmland" });
-  const preview = deriveMonthPreview(planned).report.cities.find((city) => city.cityId === "nereia");
+  const plannedPreview = deriveMonthPreview(planned);
+  const preview = plannedPreview.report.cities.find((city) => city.cityId === "nereia");
+  const comparison = plannedPreview.baselineReport.cities.find((city) => city.cityId === "nereia");
   assert.notEqual(preview.changes.food, baseline.changes.food);
+  assert.deepEqual(comparison.changes, baseline.changes);
   assert.ok(preview.changes.money < baseline.changes.money);
   assert.equal(planned.cities.nereia.policies.rationing, "normal");
   assert.equal(planned.cities.nereia.facilities.farmland.level, 1);
   assert.equal(planned.pendingOrders.length, 2);
+});
+
+test("unused governance explains when no officer can take another assignment", () => {
+  const state = ready(createInitialState());
+  Object.values(state.officers).filter((officer) => officer.allegiance === "serving").forEach((officer, index) => {
+    officer.assignment = `busy-${index}`;
+  });
+  const warnings = getTurnWarnings(state);
+  assert.ok(warnings.some((warning) => /未使用統治力/.test(warning) && /担当可能人物なし/.test(warning)));
+  assert.ok(!warnings.some((warning) => /^待機中の人物/.test(warning)));
 });
 
 test("a starting city issue produces a major event no later than the third month", () => {

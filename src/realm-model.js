@@ -148,8 +148,14 @@ export function deriveOfficerScore(world, state, officerId, taskType, cityId = n
   return clamp(Math.round(statScore * loyaltyFactor * staminaFactor * locationFactor + traitBonus + experienceBonus + doctrineBonus), 1, 120);
 }
 
-function villageNetwork(world, cityId, regionalPopulation) {
-  const villages = world.provinces[cityId].villages.map((id) => world.villages[id]);
+function villageNetwork(world, state, cityId, regionalPopulation) {
+  const villages = world.provinces[cityId].villages.map((id) => ({
+    ...world.villages[id],
+    ...(state.towns?.[id] ?? {}),
+    id,
+    name: world.villages[id].name,
+    kind: world.villages[id].kind,
+  }));
   const population = villages.reduce((sum, village) => sum + village.population, 0);
   const populationByKind = villages.reduce((result, village) => {
     result[village.kind] = (result[village.kind] ?? 0) + village.population;
@@ -158,8 +164,8 @@ function villageNetwork(world, cityId, regionalPopulation) {
   const share = (kind) => (populationByKind[kind] ?? 0) / Math.max(1, regionalPopulation);
   return {
     villages, population,
-    agricultureSupport: share("農村"), fishingSupport: share("漁村"),
-    shipbuildingSupport: share("造船村"), miningSupport: share("鉱村"),
+    agricultureSupport: share("農村"), fishingSupport: share("河漁村"),
+    shipbuildingSupport: share("舟運村"), miningSupport: share("鉱村"),
   };
 }
 
@@ -299,7 +305,7 @@ export function deriveCityMetrics(world, state, cityId) {
   const internal = city.internal;
   const military = city.military;
   const governor = governorBonuses(world, state, cityId);
-  const village = villageNetwork(world, cityId, resources.population);
+  const village = villageNetwork(world, state, cityId, resources.population);
   const doctrine = DOCTRINES[state.council.doctrine] ?? DOCTRINES.balanced;
   const season = seasonForMonth(state.month);
   const facilities = facilitySummary(city);

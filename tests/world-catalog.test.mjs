@@ -28,7 +28,9 @@ test("外交対象国は確度を明記した種族代表へ接続する", () =>
   assert.deepEqual(Object.keys(DIPLOMATIC_DELEGATES).sort(), ["avanheln", "deadland", "forest_alliance", "heavens_gate", "izmenia", "lustrond", "valka", "vinia"]);
   assert.equal(getDiplomaticDelegate("vinia").people.id, "elf");
   assert.equal(getDiplomaticDelegate("forest_alliance").certainty, "関連種族");
-  assert.equal(getDiplomaticDelegate("valka").certainty, "暫定代表");
+  assert.equal(getDiplomaticDelegate("valka").certainty, "公国全権");
+  assert.equal(getDiplomaticDelegate("valka").name, "リュドミラ・ヴァルケン");
+  assert.equal(getDiplomaticDelegate("valka").office, "灰冠峠会談全権使");
   assert.equal(getDiplomaticDelegate("deadland").people.id, "undead");
   assert.equal(getDiplomaticDelegate("avanheln").people.id, "dragon");
   assert.equal(getDiplomaticDelegate("unknown"), null);

@@ -116,7 +116,7 @@ test("campaign guidance gives the player one explicit objective and a four-step 
   afterTalks.completedCommands.push("diplomacy.talks");
   afterTalks.issues.standards.status = "resolved";
   afterTalks.issues.reports.status = "resolved";
-  assert.equal(getTurnGuidance(afterTalks).action, "open_war_council");
+  assert.equal(getTurnGuidance(afterTalks).action, "open_diplomacy");
 
   state = queueOrder(state, { kind: "command", commandId: orderGuidance.commandId, officerId: "edras", cityId: orderGuidance.cityId });
   assert.equal(getTurnGuidance(state).action, "end_month");
@@ -130,8 +130,9 @@ test("campaign guidance gives the player one explicit objective and a four-step 
   state.issues.border.status = "resolved";
   state.issues.standards.status = "resolved";
   state.issues.reports.status = "resolved";
-  assert.equal(getCampaignStatus(state).complete, true);
-  assert.equal(getTurnGuidance(state).action, "open_reports");
+  assert.equal(getCampaignStatus(state).actId, "aftermath");
+  assert.equal(getCampaignStatus(state).complete, false);
+  assert.equal(getTurnGuidance(state).action, "open_aftermath");
 });
 
 test("commerce, security, policies, and village composition change real monthly outcomes", () => {
@@ -293,10 +294,10 @@ test("border negotiation distinguishes the completed meeting from secured transi
   state.completedCommands.push("diplomacy.talks");
   state.foreignStates.valka.relation = -23;
   const afterTalks = getBorderNegotiationStatus(state);
-  assert.equal(afterTalks.meetingProgress, 100);
+  assert.ok(afterTalks.meetingProgress > 25 && afterTalks.meetingProgress < 100);
   assert.equal(afterTalks.relationshipGain, 8);
   assert.equal(afterTalks.transitSecured, false);
-  assert.match(afterTalks.status, /未保証/);
+  assert.match(afterTalks.status, /正式交渉中/);
 });
 
 test("war declaration estimate exposes duration and cumulative human and food costs", () => {

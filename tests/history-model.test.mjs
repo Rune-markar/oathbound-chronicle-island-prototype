@@ -20,7 +20,7 @@ import {
 
 test("historical state links every seeded privilege to a causal origin and a current institutional legacy", () => {
   const state = createInitialState();
-  assert.equal(state.version, 8);
+  assert.equal(state.version, 9);
   assert.equal(state.history.schemaVersion, 1);
   assert.ok(state.history.events.length >= 4);
   assert.ok(state.history.events.every((event) => event.causedBy.length >= 1 && event.effects.length >= 1));
@@ -40,7 +40,7 @@ test("a v7 save receives an immediate pressure snapshot instead of displaying ze
   legacy.version = 7;
   const migrated = normalizeWarState(legacy);
   const pressures = Object.values(migrated.history.pressures).flatMap(Object.values);
-  assert.equal(migrated.version, 8);
+  assert.equal(migrated.version, 9);
   assert.ok(pressures.some((pressure) => pressure.value > 0));
   assert.ok(pressures.every((pressure) => pressure.updatedAt === `${migrated.year}-${String(migrated.month).padStart(2, "0")}`));
 });
