@@ -19,12 +19,32 @@ import {
 import {
   ADMINISTRATION_MANDATES,
   ADMINISTRATION_MODES,
+  AUTHORITY_DOMAINS,
+  AUTHORITY_REFORM_STAGES,
+  AUTHORITY_TRANSFER_METHODS,
+  applyAdministrativeOverload,
+  deriveCentralizationResult as modelCentralizationResult,
   deriveAdministrationNetwork as modelAdministrationNetwork,
   deriveCityAdministration as modelCityAdministration,
+  deriveRegionAuthority as modelRegionAuthority,
+  getAuthorityReformOptions as modelAuthorityReformOptions,
   getCityAdministrationConfig,
   normalizeAdministrationState,
+  resolveAuthorityReforms,
   resolveDelegatedAdministration,
+  startAuthorityReform as modelStartAuthorityReform,
 } from "./administration-model.js";
+import {
+  HISTORY_SCHEMA_VERSION,
+  PRESSURE_DEFINITIONS,
+  advanceHistoricalSimulation,
+  getHistoricalOverview as modelHistoricalOverview,
+  normalizeHistoryState,
+  recordHistoricalEvent,
+  recordResolvedWorldEvent,
+  registerEventPressure,
+  traceHistoricalCauses as modelTraceHistoricalCauses,
+} from "./history-model.js";
 import { chooseOpponentAction, evaluatePeaceDecision, evaluateWarDecision } from "./war-ai.js";
 import {
   OCCUPATION_POLICIES,
@@ -39,6 +59,9 @@ import {
 export {
   ADMINISTRATION_MANDATES,
   ADMINISTRATION_MODES,
+  AUTHORITY_DOMAINS,
+  AUTHORITY_REFORM_STAGES,
+  AUTHORITY_TRANSFER_METHODS,
   DOCTRINES,
   FACILITIES,
   FACTION_DEFINITIONS,
@@ -49,6 +72,8 @@ export {
   getWarPlanOptions,
   getWarStage,
 };
+
+export { HISTORY_SCHEMA_VERSION, PRESSURE_DEFINITIONS };
 
 export const FORCED_ORDER_RULES = {
   maximumOverage: 2,
@@ -311,7 +336,7 @@ function foreignState(relation, army, mobility, training, organization, cohesion
 }
 
 export function normalizeWarState(state) {
-  state.version = 7;
+  state.version = 8;
   state.occupations ??= [];
   state.warHistory ??= [];
   Object.values(state.foreignStates ?? {}).forEach((country) => {
@@ -345,12 +370,13 @@ export function normalizeWarState(state) {
     occupation.requiredGarrison ??= 420;
     occupation.history ??= [];
   });
-  return state;
+  normalizeAdministrationState(WORLD, state);
+  return normalizeHistoryState(WORLD, state);
 }
 
 export function createInitialState() {
   const state = {
-    version: 7, year: 317, month: 4, turn: 0, phase: "planning", nextOrderId: 1,
+    version: 8, year: 317, month: 4, turn: 0, phase: "planning", nextOrderId: 1,
     rngSeed: 3170401, eventCooldowns: {}, eventPity: 0, pendingOrders: [], pendingEvent: null, pendingMonthReport: null,
     monthlyReports: [], annualReports: [], lastViewedReportId: null, governancePenalty: 0,
     legitimacy: 68, justification: 58, warExhaustion: 0, intelNetwork: 33,
@@ -393,7 +419,9 @@ export function createInitialState() {
   };
   startingProblems().forEach((issue) => state.cities[issue.cityId].issues.push(issue));
   normalizeAdministrationState(WORLD, state);
-  return normalizeWarState(state);
+  const normalized = normalizeWarState(state);
+  advanceHistoricalSimulation(WORLD, normalized);
+  return normalized;
 }
 
 export function getCampaignStatus(state) {
@@ -536,6 +564,30 @@ export function deriveRealmLedger(state) {
 }
 export function deriveAdministrationNetwork(state) { return modelAdministrationNetwork(WORLD, state, deriveRealmLedger(state).cities); }
 export function getCityAdministration(state, cityId) { return modelCityAdministration(WORLD, state, cityId, deriveCityMetrics(state, cityId)); }
+export function getRegionAuthority(state, cityId) { return modelRegionAuthority(WORLD, state, cityId); }
+export function getCentralizationResult(state) { return modelCentralizationResult(WORLD, state); }
+export function getAuthorityReform(state, cityId, domainId) { return modelAuthorityReformOptions(WORLD, state, cityId, domainId); }
+export function startAuthorityReform(state, cityId, domainId, methodId, options = {}) {
+  if (state.phase !== "planning") throw new Error("事件対応中は権限改革を開始できません");
+  const next = modelStartAuthorityReform(WORLD, state, cityId, domainId, methodId, options);
+  const reform = next.administration.reforms.at(-1);
+  const legacyCauses = next.history.institutionalLegacies
+    .filter((legacy) => legacy.regionId === cityId && legacy.domain === domainId)
+    .map((legacy) => legacy.id);
+  recordHistoricalEvent(WORLD, next, {
+    id: `history-${reform.id}-started`,
+    type: "institutional_reform_started",
+    title: `${WORLD.provinces[cityId].name}で${AUTHORITY_DOMAINS[domainId].name}改革を開始`,
+    summary: `${AUTHORITY_TRANSFER_METHODS[methodId].name}方式${options.forced ? "（準備工程を省略）" : ""}で中央移管に着手した。`,
+    actors: [WORLD.nation.id, "central_court", reform.affectedGroupId].filter(Boolean),
+    locations: [cityId],
+    causedBy: legacyCauses.length ? legacyCauses : [`local-authority-${cityId}-${domainId}`],
+    effects: [reform.id],
+  });
+  return next;
+}
+export function getHistoricalOverview(state, regionId = null) { return modelHistoricalOverview(WORLD, state, regionId); }
+export function traceHistoricalCauses(state, eventId, maximumDepth = 5) { return modelTraceHistoricalCauses(state, eventId, maximumDepth); }
 export function getOfficerReport(state, officerId) { return getOfficer(WORLD, state, officerId); }
 export function getGovernance(state) { return deriveGovernance(WORLD, state); }
 export function getCityBreakdown(state, cityId) { return formatBreakdown(deriveCityMetrics(state, cityId)); }
@@ -1111,6 +1163,15 @@ function maybeStartDefensiveWar(state) {
   const enemy = state.foreignStates.valka;
   if (enemy.relation > -65 || enemy.hostility < 75) return null;
   state.war = createWarState("valka", "homeland_defense", "defender");
+  recordHistoricalEvent(WORLD, state, {
+    id: `history-invasion-${state.year}-${state.month}-valka`,
+    type: "foreign_invasion",
+    title: "ヴァルカ軍が東境州へ侵攻",
+    summary: "国境交渉の決裂と敵対度の上昇が武力侵攻として顕在化した。",
+    actors: ["valka", WORLD.nation.id], locations: ["orta"],
+    causedBy: ["foreign-hostility-valka", "issue-border"],
+    effects: [`war-state-${state.year}-${state.month}-valka`],
+  });
   logEntry(state, "侵攻", "ヴァルカ軍が東境州へ侵攻", "国境交渉が決裂し、灰冠峠から侵攻軍が前進した。東部国境軍は防衛戦闘へ移る。", "danger");
   return { countryId: "valka", objectiveId: "homeland_defense" };
 }
@@ -1200,13 +1261,14 @@ function drawEvent(state) {
   const candidates = [];
   Object.values(EVENT_DEFINITIONS).forEach((definition) => Object.keys(state.cities).forEach((cityId) => {
     const key = `${definition.id}:${cityId}`;
-    if ((state.eventCooldowns[key] ?? 0) === 0) candidates.push({ eventId: definition.id, cityId, weight: 5 + eventRisk(state, definition, cityId) });
+    const pressure = registerEventPressure(WORLD, state, definition.id, cityId, eventRisk(state, definition, cityId));
+    if ((state.eventCooldowns[key] ?? 0) === 0 && pressure.eligible) candidates.push({ eventId: definition.id, cityId, weight: pressure.value });
   }));
   if (!candidates.length) return null;
   const maximum = Math.max(...candidates.map((item) => item.weight), 0);
   const pity = state.eventPity ?? 0;
   const guaranteed = pity >= 2;
-  if (!guaranteed && nextRandom(state) > clamp(0.12 + maximum / 360, 0.12, 0.48)) {
+  if (!guaranteed && nextRandom(state) > clamp(0.08 + maximum / 145, 0.12, 0.52)) {
     state.eventPity = pity + 1;
     return null;
   }
@@ -1357,7 +1419,9 @@ export function commitMonth(state) {
   const opening = Object.fromEntries(Object.entries(next.cities).map(([cityId, city]) => [cityId, clone(city.resources)]));
   const actions = startOrders(next);
   progressWork(next, actions);
+  actions.push(...resolveAuthorityReforms(WORLD, next));
   actions.push(...resolveDelegatedAdministration(WORLD, next));
+  actions.push(...applyAdministrativeOverload(WORLD, next));
   const cities = Object.keys(next.cities).map((cityId) => applyCityMonth(next, cityId, opening[cityId]));
   const aggression = maybeStartDefensiveWar(next);
   const war = resolveWarMonth(next);
@@ -1368,6 +1432,8 @@ export function commitMonth(state) {
     season: seasonForMonth(next.month).name, cities, aggression, war, occupations, events: [], actions, realm: {},
   };
   refreshReportTotals(next, report);
+  const historyEvents = advanceHistoricalSimulation(WORLD, next, { actions, report });
+  report.historyEvents = historyEvents.map((event) => ({ id: event.id, title: event.title, type: event.type, locations: event.locations }));
   const event = drawEvent(next);
   if (event) { next.phase = "event"; next.pendingEvent = event; next.pendingMonthReport = report; return next; }
   return finalizeMonth(next, report);
@@ -1381,9 +1447,19 @@ export function resolveEventChoice(state, choiceId) {
   if (!choice) throw new Error("事件の選択肢が不明です");
   const city = next.cities[next.pendingEvent.cityId];
   applyEffect(city, choice.effect);
+  const historyEvent = recordResolvedWorldEvent(WORLD, next, {
+    pendingEventId: next.pendingEvent.id,
+    eventId: definition.id,
+    regionId: next.pendingEvent.cityId,
+    title: definition.name,
+    choiceName: choice.name,
+    detail: choice.detail,
+    effect: choice.effect,
+  });
   const eventResult = {
     eventId: definition.id, cityId: next.pendingEvent.cityId, choiceId,
     title: definition.name, choice: choice.name, detail: choice.detail,
+    historyEventId: historyEvent.id,
     moneyEffect: choice.effect.resources?.money ?? 0,
     spendingCategory: EVENT_SPENDING_CATEGORIES[definition.id] ?? "social_security",
   };
@@ -1526,6 +1602,12 @@ export function getTurnWarnings(state) {
   const foodSecurity = getFoodSecurityStatus(state, preview);
   const warnings = [];
   if (ledger.administration.overextension > 0) warnings.push(`行政網が処理限界を${ledger.administration.overextension}%超過：直轄を減らすか、役所と人材を整備してください`);
+  const activeAuthorityReforms = state.administration?.reforms?.filter((reform) => reform.status === "active") ?? [];
+  if (activeAuthorityReforms.length) warnings.push(`権限改革 ${activeAuthorityReforms.length}件が進行中：一時行政負荷 ${ledger.administration.temporaryLoad}`);
+  ledger.administration.authority.regions.forEach((region) => {
+    const authorityGap = region.domains.find((domain) => domain.legalShare - domain.practicalShare >= 22);
+    if (authorityGap) warnings.push(`${WORLD.provinces[region.cityId].name}の${authorityGap.name}で法令と実務が${Math.round(authorityGap.legalShare - authorityGap.practicalShare)}点乖離`);
+  });
   if (ledger.administration.unintegratedCities > 0) warnings.push(`州郡化前の都市 ${ledger.administration.unintegratedCities}：名目人口・兵・兵糧の全量は動員できません`);
   if (ledger.governance.available > 0) warnings.push(`未使用統治力 ${ledger.governance.available}`);
   ledger.cities.forEach((city) => {
@@ -1621,6 +1703,15 @@ export function declareWar(state, objectiveId) {
   const shortfall = Math.max(0, 50 - next.justification) + Math.max(0, 40 - support);
   if (shortfall > 0) { next.legitimacy = clamp(next.legitimacy - Math.ceil(shortfall / 4), 0, 100); next.cities.orta.resources.security = clamp(next.cities.orta.resources.security - 18, 0, 100); logEntry(next, "国内", "国境農民が徴発を拒否", "十分な正当性のない宣戦に東境州が反発した。", "danger"); }
   next.war = createWarState("valka", objectiveId, "attacker");
+  recordHistoricalEvent(WORLD, next, {
+    id: `history-war-declared-${next.year}-${next.month}-${objectiveId}`,
+    type: "war_declared",
+    title: `${objective.name}を掲げてヴァルカへ宣戦`,
+    summary: `国境問題と交渉の行き詰まりを受け、限定目的「${objective.name}」の戦役を開始した。`,
+    actors: [WORLD.nation.id, "valka"], locations: ["orta", "valka_keep"],
+    causedBy: ["issue-border", `war-justification-${Math.round(next.justification)}`],
+    effects: [`war-state-${next.year}-${next.month}-valka`],
+  });
   logEntry(next, "宣戦", `${objective.name}を要求`, `政治目的「${objective.name}」のためヴァルカへ宣戦した。`, "danger");
   return next;
 }
@@ -1630,6 +1721,15 @@ export function startDefensiveWar(state, countryId = "valka") {
   if (!state.foreignStates[countryId]) throw new Error("侵攻国が不明です");
   const next = normalizeWarState(clone(state));
   next.war = createWarState(countryId, "homeland_defense", "defender");
+  recordHistoricalEvent(WORLD, next, {
+    id: `history-invasion-${next.year}-${next.month}-${countryId}`,
+    type: "foreign_invasion",
+    title: `${WORLD.countries[countryId].name}軍が東境州へ侵攻`,
+    summary: "国境交渉の決裂と敵対度の上昇が武力侵攻として顕在化した。",
+    actors: [countryId, WORLD.nation.id], locations: ["orta"],
+    causedBy: [`foreign-hostility-${countryId}`, "issue-border"],
+    effects: [`war-state-${next.year}-${next.month}-${countryId}`],
+  });
   logEntry(next, "侵攻", `${WORLD.countries[countryId].name}軍が東境州へ侵攻`, "東部国境軍は防衛戦闘へ移り、都市と住民の退路を確保する。", "danger");
   return next;
 }
@@ -1703,6 +1803,16 @@ export function negotiatePeace(state, settlementId = "auto") {
     homeDamage: war.homeDamage, displaced: war.displaced, civilianLosses: war.civilianLosses,
   });
   next.warHistory = next.warHistory.slice(0, 60);
+  const warCauseEvent = [...next.history.events].reverse().find((event) => ["war_declared", "foreign_invasion"].includes(event.type) && event.actors.includes(war.targetCountryId));
+  recordHistoricalEvent(WORLD, next, {
+    id: `history-peace-${next.year}-${next.month}-${war.targetCountryId}`,
+    type: "peace_settlement",
+    title: `${WORLD.countries[war.targetCountryId].name}との戦役を終結`,
+    summary: `${war.months}か月の戦役を「${result}」で終えた。自軍損失 ${war.losses}、避難民 ${war.displaced}。`,
+    actors: [WORLD.nation.id, war.targetCountryId], locations: ["orta", "valka_keep"],
+    causedBy: [warCauseEvent?.id ?? `war-state-${next.year}-${next.month}-${war.targetCountryId}`],
+    effects: [`settlement-${choice.id}`, success ? `objective-${war.objectiveId}-result` : "unresolved-border-tension"],
+  });
   next.war = null; next.warExhaustion = clamp(next.warExhaustion - (success ? 8 : 4), 0, 100);
   logEntry(next, "講和", result, `${war.months}か月の戦役を終了。兵の損失 ${war.losses}、敵軍推定損失 ${war.enemyLosses}、累計避難民 ${war.displaced}。`, success ? "success" : "danger");
   return next;

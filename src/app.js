@@ -1,6 +1,9 @@
 import {
   ADMINISTRATION_MANDATES,
   ADMINISTRATION_MODES,
+  AUTHORITY_DOMAINS,
+  AUTHORITY_REFORM_STAGES,
+  AUTHORITY_TRANSFER_METHODS,
   COMMANDS,
   DOCTRINES,
   EVENT_DEFINITIONS,
@@ -9,6 +12,7 @@ import {
   FACTION_DEFINITIONS,
   FORCED_ORDER_RULES,
   FORMATIONS,
+  PRESSURE_DEFINITIONS,
   POLICY_DEFINITIONS,
   OCCUPATION_POLICIES,
   REVENUE_CATEGORIES,
@@ -31,6 +35,9 @@ import {
   formatDate,
   getCityBreakdown,
   getCityAdministration,
+  getCentralizationResult,
+  getAuthorityReform,
+  getRegionAuthority,
   getCampaignStatus,
   getBorderNegotiationStatus,
   getCommandAvailability,
@@ -41,6 +48,7 @@ import {
   getEnemyCommander,
   getGovernance,
   getGreatPowerFoundation,
+  getHistoricalOverview,
   getFoodSecurityStatus,
   getMilitarySummary,
   getPeaceOptions,
@@ -61,6 +69,7 @@ import {
   setFormation,
   setAdministrationMandate,
   setAdministrationMode,
+  startAuthorityReform,
   setOccupationGarrison,
   setOccupationPolicy,
   setWarPlan,
@@ -88,8 +97,8 @@ import {
   getWorldStatisticsSummary,
 } from "./world-statistics.js";
 
-const STORAGE_KEY = "oathbound-continental-grand-strategy-v7";
-const LEGACY_STORAGE_KEYS = ["oathbound-continental-grand-strategy-v6"];
+const STORAGE_KEY = "oathbound-continental-grand-strategy-v8";
+const LEGACY_STORAGE_KEYS = ["oathbound-continental-grand-strategy-v7", "oathbound-continental-grand-strategy-v6"];
 
 const CITY_ART = Object.freeze({
   selene: "./assets/generated/city-selene.webp",
@@ -137,6 +146,21 @@ const MAP_VIEWBOXES = Object.freeze({
   village: "250 175 540 400",
 });
 
+const AUTHORITY_MAP_LABELS = Object.freeze({
+  effective_control: ["EFFECTIVE CONTROL MAP", "総合実効支配"],
+  tax_control: ["TAX CONTROL MAP", "徴税支配"],
+  military_control: ["MILITARY CONTROL MAP", "軍事支配"],
+  justice_control: ["JUSTICE CONTROL MAP", "司法支配"],
+  population_knowledge: ["POPULATION KNOWLEDGE MAP", "人口把握率"],
+  information_accuracy: ["INFORMATION ACCURACY MAP", "情報精度"],
+  administrative_load: ["ADMINISTRATIVE LOAD MAP", "行政負荷"],
+  communication_time: ["COMMUNICATION DELAY MAP", "通信所要時間"],
+  local_power: ["LOCAL POWER MAP", "地方勢力"],
+  grievance: ["HISTORICAL GRIEVANCE MAP", "歴史的不満"],
+  loyalty: ["CENTRAL LOYALTY MAP", "中央への忠誠"],
+  uniformity: ["INSTITUTIONAL UNIFORMITY MAP", "制度統一度"],
+});
+
 function cityArt(cityId) {
   return CITY_ART[cityId] ?? CITY_ART.selene;
 }
@@ -161,6 +185,7 @@ const view = {
   tileAnchorY: 0.5,
   selectedCityId: "selene",
   cityTab: "overview",
+  selectedAuthorityDomain: "justice",
   selectedFacilityId: "farmland",
   warCouncilOpen: false,
   objectiveId: "transit",
@@ -194,6 +219,7 @@ const elements = {
   mapModeEyebrow: document.querySelector("#mapModeEyebrow"),
   mapCaptionTitle: document.querySelector("#mapCaptionTitle"),
   mapModeBar: document.querySelector("#mapModeBar"),
+  authorityOverlaySelect: document.querySelector("#authorityOverlaySelect"),
   mapScaleSwitch: document.querySelector("#mapScaleSwitch"),
   tileDetailWindow: document.querySelector("#tileDetailWindow"),
   tileDetailTitle: document.querySelector("#tileDetailTitle"),
@@ -229,7 +255,7 @@ function loadState() {
     const raw = localStorage.getItem(STORAGE_KEY) ?? LEGACY_STORAGE_KEYS.map((key) => localStorage.getItem(key)).find(Boolean);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    if (![6, 7].includes(parsed.version)) return null;
+    if (![6, 7, 8].includes(parsed.version)) return null;
     parsed.fiscal ??= { publicDebt: 24, totalDebtRepaid: 0 };
     parsed.fiscal.publicDebt = Number.isFinite(parsed.fiscal.publicDebt) ? parsed.fiscal.publicDebt : 24;
     parsed.fiscal.totalDebtRepaid = Number.isFinite(parsed.fiscal.totalDebtRepaid) ? parsed.fiscal.totalDebtRepaid : 0;
@@ -652,7 +678,7 @@ function renderCityPanel() {
 
 const CITY_TABS = {
   overview: "概要", population: "人口", economy: "経済・政策",
-  administration: "統治委任", facilities: "施設", factions: "派閥", reports: "報告",
+  administration: "統治委任", facilities: "施設", factions: "派閥", history: "歴史", reports: "報告",
 };
 
 function deltaText(value, digits = 0) {
@@ -766,6 +792,11 @@ function renderCityEconomy(city) {
 function renderCityAdministration(city) {
   const administration = getCityAdministration(state, city.cityId);
   const network = deriveAdministrationNetwork(state);
+  const region = getRegionAuthority(state, city.cityId);
+  const centralization = getCentralizationResult(state);
+  const selectedDomain = region.domains.find((domain) => domain.id === view.selectedAuthorityDomain) ?? region.domains[0];
+  view.selectedAuthorityDomain = selectedDomain.id;
+  const reform = getAuthorityReform(state, city.cityId, selectedDomain.id);
   const modeCards = Object.values(ADMINISTRATION_MODES).map((mode) => `
     <button type="button" data-administration-mode="${mode.id}" data-city-id="${city.cityId}" class="${administration.mode === mode.id ? "is-active" : ""}" ${administration.mode === mode.id ? "disabled" : ""}>
       <strong>${mode.name}</strong><small>${mode.description}</small>
@@ -781,18 +812,94 @@ function renderCityAdministration(city) {
   const lastAction = administration.lastAction
     ? `<strong>${administration.lastAction.title}</strong><p>${administration.lastAction.detail}</p>`
     : "<strong>まだ委任政務の報告はありません</strong><p>太守委任では、月末に州庫の範囲で危機対応と日常整備を一件処理します。</p>";
+  const capabilityLabels = {
+    information: "情報", administration: "行政", fiscal: "財政",
+    enforcement: "強制", infrastructure: "インフラ", standardization: "規格化",
+  };
+  const capabilityCards = Object.entries(network.capabilities).map(([id, value]) => `
+    <div><small>${capabilityLabels[id]}</small><strong>${Math.round(value)}</strong><i style="--value:${Math.round(value)}%"></i></div>
+  `).join("");
+  const domainButtons = region.domains.map((domain) => `
+    <button type="button" data-authority-domain="${domain.id}" class="authority-domain-button ${domain.id === selectedDomain.id ? "is-active" : ""}">
+      <span>${domain.name}</span><strong>${Math.round(domain.effectiveControl)}%</strong><small>法 ${Math.round(domain.legalShare)} / 実 ${Math.round(domain.practicalShare)}</small>
+    </button>
+  `).join("");
+  const factorLabels = {
+    legalAuthority: "法的権限", information: "情報把握", administration: "行政処理",
+    enforcement: "強制力", compliance: "地域服従", connectivity: "交通通信", institution: "制度浸透",
+  };
+  const factorCards = Object.entries(selectedDomain.factors).map(([id, value]) => `
+    <div><small>${factorLabels[id]}</small><strong>${Math.round(value)}%</strong><i style="--value:${Math.round(value)}%"></i></div>
+  `).join("");
+  const privileges = selectedDomain.privileges.length
+    ? selectedDomain.privileges.map((privilege) => `
+      <article class="historical-privilege">
+        <header><div><small>${privilege.originYear}年成立</small><strong>${privilege.name}</strong></div><b>慣習 ${privilege.entrenchment}</b></header>
+        <p>${privilege.originalReason}</p>
+        <span>${privilege.grantedRights.join(" · ")}</span>
+      </article>
+    `).join("")
+    : '<p class="empty-candidates">この分野に記録された特権はありません。</p>';
+  const activeReform = reform.active;
+  const activeStage = activeReform ? AUTHORITY_REFORM_STAGES[activeReform.stageIndex] : null;
+  const reformStatus = activeReform ? `
+    <article class="authority-reform-progress">
+      <header><div><small>進行中 · ${AUTHORITY_TRANSFER_METHODS[activeReform.method].name}</small><h3>${activeStage.name}</h3></div><b>${Math.round(activeReform.progress)}%</b></header>
+      <div class="reform-stage-track">${AUTHORITY_REFORM_STAGES.map((stage, index) => `<span class="${index < activeReform.stageIndex ? "is-done" : index === activeReform.stageIndex ? "is-current" : ""}">${stage.name}</span>`).join("")}</div>
+      <p>${activeStage.description}${activeReform.forced ? " 準備工程を飛ばした強行改革です。" : ""}</p>
+    </article>
+  ` : "";
+  const methodCards = reform.methods.map((method) => `
+    <article class="authority-method-card">
+      <header><div><small>権力移管方式</small><h3>${method.name}</h3></div><b>金 ${method.cost}</b></header>
+      <p>${method.description}</p>
+      <div><span>法的移管 +${method.estimatedLegalGain}</span><span>実務移管 +${method.estimatedPracticalGain}</span><span class="${method.backlashRisk >= 45 ? "is-danger" : ""}">反動 ${method.backlashRisk}</span></div>
+      <button type="button" data-start-authority-reform data-city-id="${city.cityId}" data-domain-id="${selectedDomain.id}" data-method-id="${method.id}" ${activeReform || !method.affordable ? "disabled" : ""}>${activeReform ? "改革進行中" : method.affordable ? `${method.name}で工程を開始` : "州庫留保が不足"}</button>
+    </article>
+  `).join("");
+  const grievanceRows = region.grievances.length
+    ? region.grievances.map((grievance) => `<div class="grievance-row"><strong>${grievance.createdYear}年 · 第${grievance.generation}世代</strong><span>${grievance.narrative}</span><b>強度 ${Math.round(grievance.strength)}</b></div>`).join("")
+    : '<p class="empty-candidates">記録された歴史的不満はありません。</p>';
+  const populationEstimate = region.populationEstimate.exact
+    ? formatValue(region.populationEstimate.min)
+    : `${formatValue(region.populationEstimate.min)} ～ ${formatValue(region.populationEstimate.max)}`;
   return `
-    <section class="economy-summary">
-      <article><small>戸籍人口</small><strong>${formatValue(administration.registeredPopulation)}</strong><span>名目人口の ${administration.registerCoverage}% · 全土 ${network.registrationRate}%</span></article>
-      <article><small>行政到達</small><strong>${administration.reach}</strong><span>実効統制 ${administration.control} · ${administration.stage.name}</span></article>
-      <article><small>中央へ届く国力</small><strong>兵 ${formatValue(administration.mobilizableTroops)}</strong><span>兵糧 ${formatValue(administration.deliverableFood)} / 金 ${formatValue(administration.remittableMoney, 1)}</span></article>
+    <section class="authority-hero">
+      <article><small>総合実効支配</small><strong>${Math.round(region.overallControl)}%</strong><span>法的 ${Math.round(region.legalCentralization)}% / 実務 ${Math.round(region.practicalCentralization)}%</span></article>
+      <article><small>推定人口</small><strong>${populationEstimate}</strong><span>情報精度 ${region.informationPrecision}% / 戸籍 ${region.populationKnowledge}%</span></article>
+      <article><small>中央行政</small><strong>${network.load} / ${network.capacity}</strong><span>負荷率 ${network.utilization}%${network.overload > 0 ? ` · 超過 ${network.overload}` : " · 処理余力あり"}</span></article>
+      <article><small>中央集権度（結果）</small><strong>${centralization.resultIndex}%</strong><span>直接操作不可 · 実効支配と制度から算出</span></article>
     </section>
-    <section class="city-detail-columns">
-      <article class="city-sheet"><header><h2>統治方式</h2><small>直轄は精密、委任は拡張向け</small></header><div class="policy-options">${modeCards}</div></article>
-      <article class="city-sheet"><header><h2>${administration.stage.name}</h2><small>統合 ${administration.integration}%</small></header><p>${administration.stage.description}</p><p>併合地は軍政・帰順・戸籍編入・州郡化を経る。人口や在庫は、戸籍と輸送路が整うまで中央国力へ全量算入されない。</p></article>
-      <article class="city-sheet"><header><h2>直近の委任報告</h2><small>${administration.modeName} · ${administration.mandateName}</small></header>${lastAction}</article>
+    <section class="authority-capability-panel">
+      <header><div><small>STATE CAPABILITIES</small><h2>中央政府の代替能力</h2></div><p>地方勢力を排除した後、この能力で実務を引き受ける。</p></header>
+      <div class="authority-capability-grid">${capabilityCards}</div>
     </section>
-    <section class="policy-grid">${mandateCards}</section>
+    <section class="authority-workbench">
+      <aside class="authority-domain-list"><header><small>REGION × AUTHORITY</small><h2>権限台帳</h2></header>${domainButtons}</aside>
+      <div class="authority-domain-detail">
+        <header class="authority-domain-heading"><div><small>${AUTHORITY_DOMAINS[selectedDomain.id].group.toUpperCase()}</small><h2>${selectedDomain.name}</h2></div><b>実効 ${Math.round(selectedDomain.effectiveControl)}%</b></header>
+        <div class="authority-share-strip"><span>中央・法的権限 <b>${Math.round(selectedDomain.legalShare)}%</b></span><span>中央・実務権限 <b>${Math.round(selectedDomain.practicalShare)}%</b></span><span>最大地方保有者 <b>${selectedDomain.dominantLocalHolder?.name ?? "なし"}</b></span></div>
+        <div class="authority-factor-grid">${factorCards}</div>
+        <article class="replacement-capacity-card">
+          <header><div><small>代替制度なしの廃止は危険</small><h3>地方が処理中の仕事 ${selectedDomain.localWorkload}</h3></div><b class="${selectedDomain.replacementCoverage < 80 ? "is-danger" : ""}">代替 ${selectedDomain.replacementCoverage}%</b></header>
+          <p>中央側の処理可能量 ${selectedDomain.replacementCapacity}。改革準備度 ${selectedDomain.reformReadiness}%${selectedDomain.replacementCoverage < 80 ? "。今すぐ権限を奪うと、未処理・闇行政・旧勢力復活が発生しやすい。" : "。移管後の実務を引き受けられる見込みがある。"}</p>
+        </article>
+        <section class="historical-privilege-list"><header><h3>歴史的権利</h3><small>過去の妥協が現在の正統性を持つ</small></header>${privileges}</section>
+        ${reformStatus}
+        <section class="authority-method-grid">${methodCards}</section>
+        <button class="forced-reform-button" type="button" data-force-authority-reform data-city-id="${city.cityId}" data-domain-id="${selectedDomain.id}" data-method-id="eliminate" ${activeReform || !reform.forced.affordable ? "disabled" : ""}><strong>${reform.forced.affordable ? "準備工程を飛ばして強行" : "州庫留保が不足"}</strong><span>${reform.forced.warning} 反動 ${reform.forced.backlashRisk} / 金 ${reform.forced.cost}</span></button>
+      </div>
+    </section>
+    <section class="historical-grievance-panel"><header><div><small>HISTORICAL GRIEVANCES</small><h2>歴史的不満</h2></div><b>地域圧力 ${region.grievancePressure}</b></header>${grievanceRows}</section>
+    <details class="legacy-administration-panel">
+      <summary>太守委任・州郡統合の運用設定</summary>
+      <section class="city-detail-columns">
+        <article class="city-sheet"><header><h2>統治方式</h2><small>直轄は精密、委任は拡張向け</small></header><div class="policy-options">${modeCards}</div></article>
+        <article class="city-sheet"><header><h2>${administration.stage.name}</h2><small>統合 ${administration.integration}%</small></header><p>${administration.stage.description}</p><p>戸籍人口 ${formatValue(administration.registeredPopulation)} · 動員可能兵 ${formatValue(administration.mobilizableTroops)} · 兵糧 ${formatValue(administration.deliverableFood)}。</p></article>
+        <article class="city-sheet"><header><h2>直近の委任報告</h2><small>${administration.modeName} · ${administration.mandateName}</small></header>${lastAction}</article>
+      </section>
+      <section class="policy-grid">${mandateCards}</section>
+    </details>
   `;
 }
 
@@ -988,6 +1095,67 @@ function renderCityReports(city) {
   `;
 }
 
+function historyEventDate(event) {
+  return `誓暦${event.year}年${event.month ? ` ${event.month}月` : ""}`;
+}
+
+function renderCityHistory(city) {
+  const history = getHistoricalOverview(state, city.cityId);
+  const strongest = history.pressures[0];
+  const pressureCards = history.pressures.map((pressure) => {
+    const definition = PRESSURE_DEFINITIONS[pressure.pressureId];
+    const trend = pressure.trend > 0 ? `+${pressure.trend.toFixed(1)}` : pressure.trend.toFixed(1);
+    const drivers = pressure.drivers.slice(0, 3).map((driver) => `<li><span>${driver.label}</span><b>${Math.round(driver.value)}</b></li>`).join("");
+    return `
+      <article class="history-pressure-card is-stage-${pressure.stageIndex}">
+        <header><div><small>${definition.id.toUpperCase()} PRESSURE</small><h3>${definition.name}</h3></div><b>${Math.round(pressure.value)}</b></header>
+        <div class="history-pressure-track"><i style="width:${pressure.value}%"></i></div>
+        <p><strong>${pressure.stage}</strong><span>前月比 ${trend}</span></p>
+        <ul>${drivers}</ul>
+      </article>
+    `;
+  }).join("");
+  const legacies = history.institutionalLegacies.map((legacy) => {
+    const origin = history.events.find((event) => event.id === legacy.originEventId);
+    return `
+      <article class="institutional-legacy-card">
+        <header><div><small>INSTITUTIONAL LEGACY · ${legacy.domain}</small><h3>${legacy.name}</h3></div><b>${Math.round(legacy.persistence)}</b></header>
+        <p>${legacy.currentEffect}</p>
+        <footer><span>${origin ? historyEventDate(origin) : `誓暦${legacy.originYear}年`}</span><strong>${origin?.title ?? "起源記録を照合中"}</strong></footer>
+      </article>
+    `;
+  }).join("");
+  const eras = history.eras.map((era) => `
+    <details class="history-era" ${era === history.eras.at(-1) ? "open" : ""}>
+      <summary><span>${era.startYear === era.endYear ? `誓暦${era.startYear}年` : `誓暦${era.startYear}–${era.endYear}年`}</span><strong>${era.title}</strong><b>${era.events.length}件</b></summary>
+      ${era.events.map((event) => `<article><small>${historyEventDate(event)} · ${event.type}</small><h3>${event.title}</h3><p>${event.summary}</p></article>`).join("")}
+    </details>
+  `).join("");
+  const accounts = history.accounts.map((event) => `
+    <article class="historical-account-card">
+      <header><small>${historyEventDate(event)}</small><h3>${event.title}</h3></header>
+      <dl><div><dt>世界の事実</dt><dd>${event.accounts.worldTruth}</dd></div><div><dt>公的記録</dt><dd>${event.accounts.historicalRecord}</dd></div><div><dt>人々の記憶</dt><dd>${event.accounts.publicBelief}</dd></div></dl>
+    </article>
+  `).join("");
+  const trace = history.latestTrace.length
+    ? history.latestTrace.map((edge) => `<li style="--trace-depth:${edge.depth}"><span>${edge.relation === "enabled_by" ? "成立条件" : "原因"}</span><strong>${edge.from.label}</strong><small>→ ${edge.to.label}</small></li>`).join("")
+    : '<li class="is-empty"><strong>起源より前の記録は残っていません。</strong></li>';
+  return `
+    <section class="history-hero">
+      <article><small>CURRENT PRESSURE</small><strong>${strongest ? `${strongest.stage} · ${Math.round(strongest.value)}` : "安定"}</strong><span>${strongest ? PRESSURE_DEFINITIONS[strongest.pressureId].name : "圧力なし"}</span></article>
+      <article><small>INSTITUTIONAL LEGACIES</small><strong>${history.institutionalLegacies.length}件</strong><span>現在の統治ルールへ接続</span></article>
+      <article><small>CAUSAL EVENTS</small><strong>${history.events.length}件</strong><span>原因と結果を持つ記録</span></article>
+    </section>
+    <section class="history-pressure-panel"><header><div><small>PRESSURE → MANIFESTATION</small><h2>蓄積圧力</h2></div><p>事件は無作為に生えず、閾値を越えた危機の発生月だけが揺らぎます。</p></header><div class="history-pressure-grid">${pressureCards}</div></section>
+    <section class="history-ledger-grid">
+      <article class="history-ledger"><header><small>EVENT STORE → ERA COMPILER</small><h2>${WORLD.provinces[city.cityId].name}年代記</h2></header>${eras}</article>
+      <aside class="history-causal-trace"><header><small>CAUSAL DAG</small><h2>最新記録の原因</h2></header><ol>${trace}</ol></aside>
+    </section>
+    <section class="institutional-legacy-panel"><header><div><small>PAST → CURRENT RULES</small><h2>制度的負債</h2></div><p>過去に譲渡した権限が、現在の中央集権化を制約します。</p></header><div>${legacies || '<p class="history-empty">この地域に有効な制度的負債はありません。</p>'}</div></section>
+    <section class="historical-account-panel"><header><div><small>TRUTH ≠ BELIEF</small><h2>事実・記録・記憶</h2></div><p>同じ事件でも、内部事実と人々の理解を分離して保存します。</p></header><div>${accounts}</div></section>
+  `;
+}
+
 function renderCityWorkspace() {
   const active = view.panel === "city";
   elements.mapStage.classList.toggle("is-city-mode", active);
@@ -997,7 +1165,7 @@ function renderCityWorkspace() {
   const governor = getOfficerReport(state, city.governorId);
   const body = {
     overview: renderCityOverview, population: renderCityPopulation, economy: renderCityEconomy,
-    administration: renderCityAdministration, facilities: renderCityFacilities, factions: renderCityFactions, reports: renderCityReports,
+    administration: renderCityAdministration, facilities: renderCityFacilities, factions: renderCityFactions, history: renderCityHistory, reports: renderCityReports,
   }[view.cityTab](city);
   elements.cityWorkspace.innerHTML = `${cityWorkspaceHeader(city, governor)}<div class="city-workspace-body">${body}</div>`;
 }
@@ -1491,20 +1659,28 @@ function renderMap() {
   const labels = {
     political: ["CASTLE & TERRITORY MAP", WORLD.continent.name], terrain: ["TERRAIN MAP", "地形・標高・水系"], diplomatic: ["DIPLOMATIC MAP", "大陸諸国の友好・敵対"],
     supply: ["SUPPLY MAP", "月次食料収支"], unrest: ["PUBLIC ORDER MAP", "都市治安"],
+    ...AUTHORITY_MAP_LABELS,
   };
   elements.mapModeEyebrow.textContent = labels[view.mapMode][0];
   elements.mapCaptionTitle.textContent = view.mapMode === "political"
     ? view.scale === "world" ? "エルドリア世界圏 · 十か国" : "セレナ・ヴァルカ国境戦域"
     : labels[view.mapMode][1];
   elements.mapModeBar.querySelectorAll("[data-map-mode]").forEach((button) => button.classList.toggle("is-active", button.dataset.mapMode === view.mapMode));
+  if (elements.authorityOverlaySelect) elements.authorityOverlaySelect.value = AUTHORITY_MAP_LABELS[view.mapMode] ? view.mapMode : "";
   elements.mapScaleSwitch.querySelectorAll("[data-scale]").forEach((button) => button.classList.toggle("is-active", button.dataset.scale === view.scale));
   elements.strategyMap.querySelectorAll(".province[data-place-id]").forEach((node) => { node.style.fill = ""; });
+  const authorityNetwork = AUTHORITY_MAP_LABELS[view.mapMode] ? deriveAdministrationNetwork(state) : null;
   Object.keys(state.cities).forEach((cityId) => {
     const node = elements.strategyMap.querySelector(`.province[data-place-id="${cityId}"]`);
     if (!node) return;
     const city = deriveCityMetrics(state, cityId);
     if (view.mapMode === "supply") node.style.fill = valueColor(clampForMap(50 + city.supplyBalance / 120));
     if (view.mapMode === "unrest") node.style.fill = valueColor(city.publicOrder);
+    if (authorityNetwork) {
+      const region = authorityNetwork.authority.regions.find((item) => item.cityId === cityId);
+      const overlay = authorityOverlayValue(region, view.mapMode);
+      node.style.fill = valueColor(overlay.value, overlay.inverse);
+    }
   });
   elements.strategyMap.querySelectorAll(".is-selected").forEach((node) => node.classList.remove("is-selected"));
   if (view.selectedTileName) {
@@ -1513,6 +1689,34 @@ function renderMap() {
     elements.strategyMap.querySelectorAll(`[data-place-id="${view.selectedId}"]`).forEach((node) => node.classList.add("is-selected"));
   }
   renderStrategicMapState();
+}
+
+function averageAuthorityDomain(region, domainIds) {
+  const domains = region.domains.filter((domain) => domainIds.includes(domain.id));
+  return domains.reduce((sum, domain) => sum + domain.effectiveControl, 0) / Math.max(1, domains.length);
+}
+
+function authorityOverlayValue(region, mode) {
+  if (!region) return { value: 0, inverse: false, label: "情報なし" };
+  const values = {
+    effective_control: { value: region.overallControl, label: `総合実効支配 ${Math.round(region.overallControl)}%` },
+    tax_control: { value: averageAuthorityDomain(region, ["tax_rights", "tax_collection", "customs"]), label: "徴税支配" },
+    military_control: { value: averageAuthorityDomain(region, ["military_command", "conscription"]), label: "軍事支配" },
+    justice_control: { value: averageAuthorityDomain(region, ["justice", "policing"]), label: "司法支配" },
+    population_knowledge: { value: region.populationKnowledge, label: `人口把握 ${region.populationKnowledge}%` },
+    information_accuracy: { value: region.informationPrecision, label: `情報精度 ${region.informationPrecision}%` },
+    administrative_load: { value: region.administrativeLoadRatio, inverse: true, label: `行政負荷率 ${region.administrativeLoadRatio}%` },
+    communication_time: { value: clampForMap(region.communicationDays * 6), inverse: true, label: `命令到達 ${region.communicationDays}日` },
+    local_power: { value: 100 - region.practicalCentralization, inverse: true, label: `地方勢力 ${Math.round(100 - region.practicalCentralization)}%` },
+    grievance: { value: region.grievancePressure, inverse: true, label: `歴史的不満 ${region.grievancePressure}` },
+    loyalty: { value: region.loyalty, label: `中央への忠誠 ${region.loyalty}` },
+    uniformity: { value: region.institutionalUniformity, label: `制度統一 ${region.institutionalUniformity}%` },
+  };
+  const selected = values[mode] ?? { value: 0, label: "情報なし" };
+  if (!["effective_control", "population_knowledge", "information_accuracy", "administrative_load", "communication_time", "local_power", "grievance", "loyalty", "uniformity"].includes(mode)) {
+    selected.label = `${AUTHORITY_MAP_LABELS[mode]?.[1] ?? "統治"} ${Math.round(selected.value)}%`;
+  }
+  return selected;
 }
 
 function clampForMap(value) {
@@ -1580,8 +1784,10 @@ function renderSelection() {
   }
   if (view.selectedType === "province" && state.cities[view.selectedId]) {
     const city = deriveCityMetrics(state, view.selectedId);
+    const region = AUTHORITY_MAP_LABELS[view.mapMode] ? getRegionAuthority(state, view.selectedId) : null;
+    const overlayFact = region ? `<span>${authorityOverlayValue(region, view.mapMode).label}</span>` : "";
     const tileFact = view.selectedTileName ? `<span>${view.selectedTileName} · ${view.selectedTerrain}</span>` : "";
-    elements.selectionCard.innerHTML = `<header><h3>${city.name}</h3><span>${getOfficerReport(state, city.governorId).name}</span></header><p>${city.note}</p><div class="selection-facts">${tileFact}<span>人口 ${formatValue(city.population)}</span><span>月収支 ${signed(city.netIncome, 1)}</span><span>治安 ${formatValue(city.publicOrder, 1)}</span></div>`;
+    elements.selectionCard.innerHTML = `<header><h3>${city.name}</h3><span>${getOfficerReport(state, city.governorId).name}</span></header><p>${city.note}</p><div class="selection-facts">${tileFact}${overlayFact}<span>人口 ${formatValue(city.population)}</span><span>月収支 ${signed(city.netIncome, 1)}</span><span>治安 ${formatValue(city.publicOrder, 1)}</span></div>`;
     return;
   }
   if (view.selectedType === "village") {
@@ -2036,6 +2242,28 @@ document.addEventListener("click", (event) => {
     render();
     return;
   }
+  const authorityDomainButton = event.target.closest("[data-authority-domain]");
+  if (authorityDomainButton) {
+    view.selectedAuthorityDomain = authorityDomainButton.dataset.authorityDomain;
+    render();
+    return;
+  }
+  const reformButton = event.target.closest("[data-start-authority-reform], [data-force-authority-reform]");
+  if (reformButton) {
+    const forced = reformButton.hasAttribute("data-force-authority-reform");
+    if (forced && !window.confirm("準備工程を飛ばして権限を移管します。法令と実務の乖離、行政過負荷、長期的な歴史的不満が発生します。続けますか？")) return;
+    try {
+      const next = startAuthorityReform(
+        state,
+        reformButton.dataset.cityId,
+        reformButton.dataset.domainId,
+        reformButton.dataset.methodId,
+        { forced },
+      );
+      commit(next, forced ? "準備不足のまま権限移管を強行しました。" : "権限改革を可視化工程から開始しました。", forced ? "event" : "confirm");
+    } catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
   const administrationModeButton = event.target.closest("[data-administration-mode]");
   if (administrationModeButton) {
     try {
@@ -2229,6 +2457,11 @@ document.addEventListener("click", (event) => {
 });
 
 elements.endMonthButton.addEventListener("click", endMonth);
+elements.authorityOverlaySelect?.addEventListener("change", (event) => {
+  if (!event.target.value) return;
+  view.mapMode = event.target.value;
+  render();
+});
 elements.audioToggle.addEventListener("click", async () => {
   const enabled = await audio.toggle();
   if (enabled) audio.play("confirm");
@@ -2251,7 +2484,7 @@ document.querySelector("#resetButton").addEventListener("click", (event) => {
   localStorage.removeItem(STORAGE_KEY);
   LEGACY_STORAGE_KEYS.forEach((key) => localStorage.removeItem(key));
   state = createInitialState();
-  Object.assign(view, { panel: "council", spendingCategoryId: "social_security", spendingCityId: "selene", mapMode: "political", scale: "country", selectedType: null, selectedId: null, selectedTileName: null, selectedTerrain: null, selectedTerrainType: null, tileWindowOpen: false, selectedCityId: "selene", cityTab: "overview", selectedFacilityId: "farmland", selectedCountryId: "valka", objectiveId: "transit", warCouncilOpen: false, assignmentOpen: false, guideOpen: true });
+  Object.assign(view, { panel: "council", spendingCategoryId: "social_security", spendingCityId: "selene", mapMode: "political", scale: "country", selectedType: null, selectedId: null, selectedTileName: null, selectedTerrain: null, selectedTerrainType: null, tileWindowOpen: false, selectedCityId: "selene", cityTab: "overview", selectedAuthorityDomain: "justice", selectedFacilityId: "farmland", selectedCountryId: "valka", objectiveId: "transit", warCouncilOpen: false, assignmentOpen: false, guideOpen: true });
   render();
   audio.play("reset");
   showToast("新しい年代記を始めました。");

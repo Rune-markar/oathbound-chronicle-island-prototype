@@ -37,10 +37,11 @@ function numericLeaves(value, path = "state", result = []) {
   return result;
 }
 
-test("save v7 contains the continental monthly city and war lifecycle schema", () => {
+test("save v8 contains the continental monthly city, war, and causal history lifecycle schema", () => {
   const state = createInitialState();
   const city = state.cities.selene;
-  assert.equal(state.version, 7);
+  assert.equal(state.version, 8);
+  assert.equal(state.history.schemaVersion, 1);
   assert.deepEqual(state.occupations, []);
   assert.deepEqual(state.warHistory, []);
   assert.deepEqual(state.fiscal, { publicDebt: 24, totalDebtRepaid: 0 });

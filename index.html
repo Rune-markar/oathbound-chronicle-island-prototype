@@ -365,6 +365,21 @@
           <button type="button" data-map-mode="diplomatic"><i class="mode-swatch diplomatic"></i><span>外交</span></button>
           <button type="button" data-map-mode="supply"><i class="mode-swatch supply"></i><span>補給</span></button>
           <button type="button" data-map-mode="unrest"><i class="mode-swatch unrest"></i><span>不穏</span></button>
+          <label class="authority-overlay-picker"><span>統治オーバーレイ</span><select id="authorityOverlaySelect" aria-label="統治オーバーレイ">
+            <option value="">選択...</option>
+            <option value="effective_control">総合実効支配</option>
+            <option value="tax_control">徴税支配</option>
+            <option value="military_control">軍事支配</option>
+            <option value="justice_control">司法支配</option>
+            <option value="population_knowledge">人口把握率</option>
+            <option value="information_accuracy">情報精度</option>
+            <option value="administrative_load">行政負荷</option>
+            <option value="communication_time">通信所要時間</option>
+            <option value="local_power">地方勢力</option>
+            <option value="grievance">歴史的不満</option>
+            <option value="loyalty">中央への忠誠</option>
+            <option value="uniformity">制度統一度</option>
+          </select></label>
         </div>
 
         <div class="chronicle-ticker" id="chronicleTicker"></div>
