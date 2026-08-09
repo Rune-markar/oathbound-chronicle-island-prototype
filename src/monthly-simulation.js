@@ -55,6 +55,7 @@ import {
   getWarStage,
   occupationPolicyOutcome,
 } from "./war-system.js";
+import { advanceWarTheater, createWarTheater, normalizeWarTheater } from "./war-map.js";
 import {
   TOWN_COMMAND_IDS,
   advanceTownAdministration,
@@ -393,6 +394,21 @@ export function normalizeWarState(state) {
     state.war.displaced ??= 0;
     state.war.civilianLosses ??= 0;
     state.war.stage ??= getWarStage(state.war)?.id ?? "opening";
+    const enemy = state.foreignStates?.[state.war.targetCountryId] ?? {};
+    const ownArmy = Object.values(state.cities ?? {}).reduce((sum, city) => sum + (city.military?.troops ?? 0), 0);
+    state.war.theater = normalizeWarTheater(state.war.theater, {
+      targetCountryId: state.war.targetCountryId,
+      objectiveId: state.war.objectiveId,
+      side: state.war.side,
+      ownArmy,
+      enemyArmy: enemy.army ?? 0,
+      ownMorale: state.forces?.frontier_guard?.morale ?? 60,
+      enemyMorale: enemy.cohesion ?? 60,
+      ownSupply: 60,
+      enemySupply: enemy.organization ?? 58,
+      year: state.year,
+      month: state.month,
+    });
   }
   state.occupations.forEach((occupation) => {
     occupation.status ??= "occupied";
@@ -1201,6 +1217,19 @@ function resolveWarMonth(state) {
   const damage = war.side === "defender"
     ? applyHomeWarDamage(state, war, plan, opponentAction)
     : applyForeignWarDamage(state, war, plan, delta);
+  const latestMilitary = getMilitarySummary(state);
+  war.theater = advanceWarTheater(war.theater, {
+    delta,
+    score: war.score,
+    objectiveProgress: war.objectiveProgress,
+    ownLoss,
+    enemyLoss,
+    ownSupply: latestMilitary.supply,
+    enemySupply: enemy.organization,
+    planId: plan.id,
+    enemyActionId: opponentAction.id,
+    side: war.side,
+  });
   war.peace = evaluatePeaceDecision({ warScore: war.score, objectiveProgress: war.objectiveProgress, objective, own: { exhaustion: state.warExhaustion, organization: military.organization, supply: military.supply } });
   war.stage = getWarStage(war).id;
   logEntry(state, "戦争", `${plan.name} — ${opponentAction.label}`, `戦況 ${delta >= 0 ? "+" : ""}${delta.toFixed(1)}。兵 ${ownLoss}、食料 ${plan.foodCost.toLocaleString("ja-JP")}、施設被害 ${damage.damage.toFixed(1)}、避難民 ${damage.displaced}。`, delta >= 0 ? "success" : "danger");
@@ -1272,7 +1301,7 @@ function maybeStartDefensiveWar(state) {
   if (state.war || state.turn < 2) return null;
   const enemy = state.foreignStates.valka;
   if (enemy.relation > -65 || enemy.hostility < 75) return null;
-  state.war = createWarState("valka", "homeland_defense", "defender");
+  state.war = createWarState(state, "valka", "homeland_defense", "defender");
   recordHistoricalEvent(WORLD, state, {
     id: `history-invasion-${state.year}-${state.month}-valka`,
     type: "foreign_invasion",
@@ -1885,7 +1914,9 @@ export function getWarCouncilReport(state, objectiveId = "transit") {
   });
 }
 
-function createWarState(targetCountryId, objectiveId, side = "attacker") {
+function createWarState(state, targetCountryId, objectiveId, side = "attacker") {
+  const military = getMilitarySummary(state);
+  const enemy = state.foreignStates[targetCountryId];
   return {
     targetCountryId, objectiveId, side, plan: side === "defender" ? "defend" : "pass",
     score: 0, months: 0, objectiveProgress: 0, losses: 0, enemyLosses: 0,
@@ -1895,6 +1926,19 @@ function createWarState(targetCountryId, objectiveId, side = "attacker") {
       ? { id: "advance", label: "峠口へ前進する", reason: "侵攻路を確保し、守備側の反応を測る。" }
       : { id: "screen", label: "峠を警戒する", reason: "主力を温存し関所と国境城砦を守る。" },
     peace: null,
+    theater: createWarTheater({
+      targetCountryId,
+      objectiveId,
+      side,
+      ownArmy: military.army,
+      enemyArmy: enemy.army,
+      ownMorale: state.forces.frontier_guard.morale,
+      enemyMorale: enemy.cohesion,
+      ownSupply: military.supply,
+      enemySupply: enemy.organization,
+      year: state.year,
+      month: state.month,
+    }),
   };
 }
 
@@ -1905,7 +1949,7 @@ export function declareWar(state, objectiveId) {
   const next = normalizeWarState(clone(state)); const support = getWarSupport(next);
   const shortfall = Math.max(0, 50 - next.justification) + Math.max(0, 40 - support);
   if (shortfall > 0) { next.legitimacy = clamp(next.legitimacy - Math.ceil(shortfall / 4), 0, 100); next.cities.orta.resources.security = clamp(next.cities.orta.resources.security - 18, 0, 100); logEntry(next, "国内", "国境農民が徴発を拒否", "十分な正当性のない宣戦に東境州が反発した。", "danger"); }
-  next.war = createWarState("valka", objectiveId, "attacker");
+  next.war = createWarState(next, "valka", objectiveId, "attacker");
   next.campaign.resolution = objectiveId === "submission" ? "occupation" : "limited_war";
   next.campaign.act = "resolution";
   next.negotiation.status = "war";
@@ -1926,7 +1970,7 @@ export function startDefensiveWar(state, countryId = "valka") {
   if (state.war) throw new Error("すでに戦争中です");
   if (!state.foreignStates[countryId]) throw new Error("侵攻国が不明です");
   const next = normalizeWarState(clone(state));
-  next.war = createWarState(countryId, "homeland_defense", "defender");
+  next.war = createWarState(next, countryId, "homeland_defense", "defender");
   recordHistoricalEvent(WORLD, next, {
     id: `history-invasion-${next.year}-${next.month}-${countryId}`,
     type: "foreign_invasion",

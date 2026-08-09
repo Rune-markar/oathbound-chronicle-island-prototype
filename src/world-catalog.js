@@ -16,6 +16,41 @@ export const WORLD_SETTING_SOURCES = Object.freeze({
   },
 });
 
+// 国家・種族とは別に扱う、通常の軍事力や生態分類の尺度が通用しない単独個体。
+// リヴァイアサンはユーザー指定で追加されたゲーム内設定であり、Notion原案由来ではない。
+export const EXTREME_CREATURES = Object.freeze({
+  leviathan: Object.freeze({
+    id: "leviathan",
+    name: "リヴァイアサン",
+    epithet: "黒潮回廊を渡る海の境界災害",
+    classification: "超規格外生物",
+    sourceKind: "追加世界設定",
+    certainty: "存在確定・全容未詳",
+    currentState: "外洋を低速遊弋中",
+    habitat: "冥海と南竜海を結ぶ深海航路「黒潮回廊」",
+    estimatedLength: "全長1,600〜2,400 m",
+    observedPart: "浮上した背部だけで約410 m",
+    description: "大陸外洋の海底熱脈と魔力脈を追って回遊する単独個体。船や都市を獲物として狙う習性は確認されていないが、進路を変えないまま艦隊・港湾・沿岸地形を破壊し得るため、各国は生物ではなく移動する自然境界として扱う。",
+    ecology: "数十年単位で深海を巡り、海底火山帯の熱・鉱物・高密度魔力を摂取する。浮上は摂餌後の放熱と推定されるが、全身を目視して生還した記録はない。",
+    signs: Object.freeze([
+      "三日前から方位磁針と魔力計が同じ方向へ偏る",
+      "無風でも長周期のうねりが発生し、海面が青白く発光する",
+      "魚群と大型海獣が一斉に沿岸へ逃げ、直後に低い海鳴りが続く",
+    ]),
+    strategicEffects: Object.freeze([
+      "危険域では艦隊決戦・封鎖・上陸作戦が成立しない",
+      "回遊予測が外れると外洋交易路は一季節単位で迂回を強いられる",
+      "沿岸国は討伐軍ではなく観測所・避難港・共同警報網へ予算を割く",
+    ]),
+    doctrine: "交戦・捕獲・誘導を禁ずる。観測して退避し、進路上の港と艦隊を空にすることだけが現実的な対処とされる。",
+    location: Object.freeze({ x: 680, y: 660, label: "黒潮回廊・現在推定域" }),
+  }),
+});
+
+export function getExtremeCreature(creatureId) {
+  return EXTREME_CREATURES[creatureId] ?? null;
+}
+
 export const NOTION_OTHER_RACE_IDS = Object.freeze([
   "acrane",
   "elf",
@@ -248,5 +283,6 @@ export function getWorldCatalogSummary() {
     nations: nations.length,
     unknownNations: nations.filter((nation) => nation.knowledge === "unknown").length,
     protectorates: nations.filter((nation) => nation.suzerainId).length,
+    extremeCreatures: Object.keys(EXTREME_CREATURES).length,
   };
 }

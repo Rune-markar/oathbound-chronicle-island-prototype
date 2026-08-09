@@ -3,11 +3,13 @@ import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import {
   DIPLOMATIC_DELEGATES,
+  EXTREME_CREATURES,
   NOTION_OTHER_RACE_IDS,
   PEOPLES,
   PEOPLE_REPRESENTATIVES,
   SETTING_NATIONS,
   getDiplomaticDelegate,
+  getExtremeCreature,
   getNationRelations,
   getNationsForPeople,
   getWorldCatalogSummary,
@@ -68,5 +70,19 @@ test("不明な設定を推測値で埋めない", () => {
     nations: 10,
     unknownNations: 2,
     protectorates: 2,
+    extremeCreatures: 1,
   });
+});
+
+test("リヴァイアサンを種族と分離した超規格外生物として記録する", () => {
+  const leviathan = getExtremeCreature("leviathan");
+  assert.equal(Object.keys(EXTREME_CREATURES).length, 1);
+  assert.equal(leviathan.name, "リヴァイアサン");
+  assert.equal(leviathan.classification, "超規格外生物");
+  assert.match(leviathan.estimatedLength, /1,600〜2,400 m/);
+  assert.equal(leviathan.signs.length, 3);
+  assert.equal(leviathan.strategicEffects.length, 3);
+  assert.match(leviathan.doctrine, /交戦・捕獲・誘導を禁ずる/);
+  assert.equal(PEOPLES.leviathan, undefined);
+  assert.equal(getExtremeCreature("unknown"), null);
 });

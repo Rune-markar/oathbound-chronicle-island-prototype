@@ -111,3 +111,15 @@ test("strategic map exposes castle garrisons, armies, routes, and a live pass st
   assert.match(appSource, /renderStrategicMapState\(\);/);
   assert.match(appSource, /state\.war \? `交戦中/);
 });
+
+test("world scale marks Leviathan as a selectable extreme-creature hazard", () => {
+  assert.match(markup, /class="leviathan-layer world-only"/);
+  assert.match(markup, /data-place-type="creature" data-place-id="leviathan"/);
+  assert.match(markup, /超規格外生物/);
+  assert.match(markup, /class="leviathan-danger-zone"/);
+  assert.match(markup, /legend-leviathan/);
+  assert.match(styleSource, /\.strategy-map:not\(\.scale-world\) \.world-only/);
+  assert.match(styleSource, /\.leviathan-marker\.is-selected \.leviathan-danger-zone/);
+  assert.match(appSource, /view\.selectedType === "creature"/);
+  assert.match(appSource, /data-show-creature-on-map/);
+});

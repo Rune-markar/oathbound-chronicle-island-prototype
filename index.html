@@ -59,6 +59,13 @@
         <div class="alert-rack" id="alertRack" aria-label="重要通知"></div>
         <section class="city-workspace is-hidden" id="cityWorkspace" aria-live="polite"></section>
 
+        <div class="war-map-switch is-hidden" id="warMapSwitch" aria-label="戦争地図の表示切替">
+          <button type="button" data-war-map-view="theater">戦域盤</button>
+          <button type="button" data-war-map-view="atlas">大陸図</button>
+        </div>
+
+        <section class="war-board is-hidden" id="warBoard" aria-live="polite" aria-label="地域別戦域ボード"></section>
+
         <div class="map-caption">
           <span id="mapModeEyebrow">POLITICAL MAP</span>
           <strong id="mapCaptionTitle">エルドリア大陸</strong>
@@ -71,6 +78,7 @@
           <span><i class="legend-castle"></i>城郭：兵数・防備</span>
           <span><i class="legend-army"></i>軍勢：兵力・作戦</span>
           <span><i class="legend-front"></i>街道：進軍・補給線</span>
+          <span><i class="legend-leviathan"></i>危険域：超規格外生物</span>
           <span><i class="legend-forest"></i>森林</span>
           <span><i class="legend-mountain"></i>山岳</span>
           <span><i class="legend-wetland"></i>湿地</span>
@@ -78,7 +86,7 @@
 
         <svg id="strategyMap" class="strategy-map scale-country" viewBox="20 35 960 585" role="img" aria-labelledby="mapTitle mapDescription">
           <title id="mapTitle">城郭・街道・軍勢を中心とするエルドリア戦略地図</title>
-          <desc id="mapDescription">十国家を構成する百八十六の小領域に、城郭の兵数と防備、国境軍、敵軍、進軍街道、補給線を重ねた戦略地図</desc>
+          <desc id="mapDescription">十国家を構成する百八十六の小領域に、城郭、軍勢、街道、補給線、外洋を回遊する超規格外生物リヴァイアサンの現在推定域を重ねた戦略地図</desc>
           <defs>
             <linearGradient id="sea" x1="0" y1="0" x2="1" y2="1">
               <stop offset="0" stop-color="#55797c" />
@@ -271,6 +279,19 @@
             <text class="route-name" x="590" y="282">灰冠峠</text>
             <text class="route-name" x="462" y="505">銀脈河</text>
             <text class="route-name" x="300" y="235">大陸公路</text>
+          </g>
+
+          <g class="leviathan-layer world-only" aria-label="超規格外生物の現在推定域">
+            <g class="map-node leviathan-marker" role="button" tabindex="0" data-place-type="creature" data-place-id="leviathan" transform="translate(680 660)" aria-label="超規格外生物リヴァイアサン、黒潮回廊の現在推定域">
+              <circle class="leviathan-danger-zone" r="76" />
+              <path class="leviathan-wake" d="M-91 15C-60-4-31-4 0 15S60 34 93 14M-83 33C-52 18-25 19 6 35S58 48 83 34" />
+              <path class="leviathan-body" d="M-62 2C-48-18-21-28 12-24C42-20 63-8 69 7C55 3 45 6 35 13C16 27-15 30-40 21C-53 17-62 11-62 2Z" />
+              <path class="leviathan-spines" d="M-37-12L-26-35L-15-17L0-42L12-18L29-34L34-12" />
+              <circle class="leviathan-eye" cx="48" cy="-5" r="3" />
+              <rect class="leviathan-plate" x="-72" y="47" width="144" height="38" rx="4" />
+              <text class="leviathan-rank" y="61">超規格外生物</text>
+              <text class="leviathan-name" y="77">リヴァイアサン</text>
+            </g>
           </g>
 
           <g class="city-layer castle-layer">

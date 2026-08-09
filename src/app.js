@@ -87,10 +87,12 @@ import {
 } from "./simulation.js";
 import {
   NOTION_OTHER_RACE_IDS,
+  EXTREME_CREATURES,
   PEOPLES,
   PEOPLE_REPRESENTATIVES,
   SETTING_NATIONS,
   getDiplomaticDelegate,
+  getExtremeCreature,
   getNationRelations,
   getNationsForPeople,
   getPeopleForNation,
@@ -98,6 +100,7 @@ import {
 } from "./world-catalog.js";
 import { createGameAudio } from "./audio.js";
 import { subdivideTerritoryTiles } from "./map-tiles.js";
+import { WAR_MAP_TERRAINS, getWarRegion } from "./war-map.js";
 import {
   RESOURCE_CATEGORIES,
   STATISTICS_BASIS,
@@ -200,6 +203,9 @@ const view = {
   townTab: "overview",
   selectedAuthorityDomain: "justice",
   selectedFacilityId: "farmland",
+  warMapView: state.war ? "theater" : "atlas",
+  warRegionId: state.war?.theater?.activeRegionId ?? null,
+  selectedWarHexId: null,
   warCouncilOpen: false,
   objectiveId: "transit",
   selectedCountryId: "valka",
@@ -212,6 +218,7 @@ const view = {
   atlasMode: "nations",
   selectedNationId: "forest_alliance",
   selectedPeopleId: "acrane",
+  selectedCreatureId: "leviathan",
   worldNationFilter: "all",
   worldGuideOpen: true,
   focusedTownCommandId: null,
@@ -236,6 +243,8 @@ const elements = {
   alertRack: document.querySelector("#alertRack"),
   mapStage: document.querySelector(".map-stage"),
   cityWorkspace: document.querySelector("#cityWorkspace"),
+  warBoard: document.querySelector("#warBoard"),
+  warMapSwitch: document.querySelector("#warMapSwitch"),
   strategyMap: document.querySelector("#strategyMap"),
   mapModeEyebrow: document.querySelector("#mapModeEyebrow"),
   mapCaptionTitle: document.querySelector("#mapCaptionTitle"),
@@ -298,7 +307,17 @@ function persist(showMessage = false) {
 }
 
 function commit(nextState, message = "", cue = "confirm") {
+  const wasAtWar = Boolean(state.war);
   state = nextState;
+  if (!wasAtWar && state.war) {
+    view.warMapView = "theater";
+    view.warRegionId = state.war.theater?.activeRegionId ?? null;
+    view.selectedWarHexId = null;
+  } else if (wasAtWar && !state.war) {
+    view.warMapView = "atlas";
+    view.warRegionId = null;
+    view.selectedWarHexId = null;
+  }
   if (state.campaign?.ending && state.phase !== "event" && state.lastViewedEndingId !== state.campaign.ending.id) view.endingOpen = true;
   persist();
   render();
@@ -553,7 +572,7 @@ function resetChronicle() {
     panel: "council", spendingCategoryId: "social_security", spendingCityId: "selene", mapMode: "political", scale: "country",
     selectedType: null, selectedId: null, selectedTileName: null, selectedTerrain: null, selectedTerrainType: null, tileWindowOpen: false,
     selectedCityId: "selene", cityTab: "overview", selectedTownId: "mugiwano", townTab: "overview", selectedAuthorityDomain: "justice",
-    selectedFacilityId: "farmland", selectedCountryId: "valka", objectiveId: "transit", warCouncilOpen: false, assignmentOpen: false,
+    selectedFacilityId: "farmland", selectedCountryId: "valka", objectiveId: "transit", warMapView: "atlas", warRegionId: null, selectedWarHexId: null, warCouncilOpen: false, assignmentOpen: false,
     pendingTownId: null, guideOpen: true, endingOpen: false, resetOpen: false, expertMode: false, worldNationFilter: "all", focusedTownCommandId: null,
   });
   render();
@@ -1464,6 +1483,7 @@ function worldModeSwitch() {
     <div class="world-mode-switch" role="group" aria-label="世界台帳の表示">
       <button type="button" data-world-mode="nations" class="${view.atlasMode === "nations" ? "is-active" : ""}">国家</button>
       <button type="button" data-world-mode="peoples" class="${view.atlasMode === "peoples" ? "is-active" : ""}">種族</button>
+      <button type="button" data-world-mode="creatures" class="${view.atlasMode === "creatures" ? "is-active" : ""}">巨獣</button>
       <button type="button" data-world-mode="statistics" class="${view.atlasMode === "statistics" ? "is-active" : ""}">統計</button>
     </div>
   `;
@@ -1560,6 +1580,32 @@ function renderWorldPeoples() {
   `;
 }
 
+function renderWorldCreatures() {
+  const creature = getExtremeCreature(view.selectedCreatureId) ?? EXTREME_CREATURES.leviathan;
+  const signRows = creature.signs.map((sign) => `<li>${sign}</li>`).join("");
+  const effectRows = creature.strategicEffects.map((effect) => `<li>${effect}</li>`).join("");
+  return `
+    <section class="world-dossier extreme-creature-dossier">
+      <header class="extreme-creature-heading">
+        <span class="extreme-creature-sigil" aria-hidden="true">鯨</span>
+        <div><small>${creature.sourceKind} · ${creature.classification}</small><h2>${creature.name}</h2><b>${creature.epithet}</b></div>
+      </header>
+      <div class="extreme-creature-status"><span>${creature.certainty}</span><strong>${creature.currentState}</strong></div>
+      <p>${creature.description}</p>
+      <div class="extreme-creature-metrics">
+        <div><small>推定規模</small><strong>${creature.estimatedLength}</strong><span>${creature.observedPart}</span></div>
+        <div><small>回遊域</small><strong>${creature.habitat}</strong><span>${creature.location.label}</span></div>
+      </div>
+      <article class="extreme-creature-note"><h3>生態仮説</h3><p>${creature.ecology}</p></article>
+      <article class="extreme-creature-note"><h3>接近兆候</h3><ol>${signRows}</ol></article>
+      <article class="extreme-creature-note is-strategic"><h3>国家戦略への影響</h3><ul>${effectRows}</ul></article>
+      <aside class="extreme-creature-doctrine"><small>CONTINENTAL PROTOCOL</small><strong>対処原則</strong><p>${creature.doctrine}</p></aside>
+      <button class="show-creature-map" type="button" data-show-creature-on-map="${creature.id}">世界地図で現在推定域を見る</button>
+    </section>
+    <p class="world-source-note">超規格外生物は種族・国家・通常の幻獣分類に含めません。観測済みの事実と推定を分け、討伐可能な戦力値には換算しません。</p>
+  `;
+}
+
 function statisticDistribution(title, items) {
   if (!items) {
     return `<article class="statistics-distribution is-unavailable"><header><h3>${title}</h3><small>未調査</small></header><p>信頼できる構成比がありません。</p></article>`;
@@ -1641,12 +1687,14 @@ function renderWorldPanel() {
   const summary = getWorldCatalogSummary();
   const content = view.atlasMode === "peoples"
     ? renderWorldPeoples()
-    : view.atlasMode === "statistics" ? renderWorldStatistics() : renderWorldNations();
+    : view.atlasMode === "creatures"
+      ? renderWorldCreatures()
+      : view.atlasMode === "statistics" ? renderWorldStatistics() : renderWorldNations();
   elements.leftPanel.innerHTML = `
     <header class="panel-heading world-heading">
       <span>KNOWN WORLD ARCHIVE</span>
-      <h1>異種族・国家・統計</h1>
-      <p>確定設定と開幕時の推計値を分けて記録</p>
+      <h1>国家・種族・巨獣・統計</h1>
+      <p>確定設定、観測事実、開幕時の推計値を分けて記録</p>
       ${view.atlasMode === "nations" ? `<button class="world-guide-button" type="button" data-world-guide-toggle>${view.worldGuideOpen ? "案内を閉じる" : "見方を表示"}</button>` : ""}
       ${worldModeSwitch()}
     </header>
@@ -1657,6 +1705,7 @@ function renderWorldPanel() {
           <div><small>国家</small><strong>${summary.nations}</strong></div>
           <div><small>神国保護領</small><strong>${summary.protectorates}</strong></div>
           <div><small>詳細不明国</small><strong>${summary.unknownNations}</strong></div>
+          <div><small>超規格外生物</small><strong>${summary.extremeCreatures}</strong></div>
         </div>
       </section>
       ${content}
@@ -1835,9 +1884,13 @@ function renderMilitaryPanel() {
     const stage = getWarStage(state.war);
     const planOptions = getWarPlanOptions(state.war.side);
     const peaceOptions = getPeaceOptions(state);
+    const theater = state.war.theater;
+    const activeRegion = getWarRegion(theater);
+    const theaterPhase = theater?.phase === "deployment" ? "初期展開" : "作戦進行";
     elements.leftPanel.innerHTML = `
       <header class="panel-heading"><span>WAR THEATRE / ${stage.name}</span><h1>${state.war.side === "defender" ? "東境州防衛戦" : "灰冠峠戦役"}</h1><p>目的「${objective.name}」 · 軍団長 ${military.commander.name}</p></header>
       <div class="panel-body">
+        <button class="open-war-board-button" type="button" data-war-map-view="theater"><span>REGIONAL BOARD · ROUND ${theater?.round ?? 0}</span><strong>${activeRegion?.name ?? "戦域盤"}</strong><small>${theaterPhase} · 3地域 / 105ヘクスを確認</small></button>
         <section class="war-status-block">
           <div class="war-score"><span>戦勝点</span><strong>${signed(state.war.score, 1)}</strong></div>
           <div class="metric-stack">${meter("目的達成", state.war.objectiveProgress)}${meter("組織力", military.organization)}${meter("軍需充足", military.supply)}${meter("戦争疲弊", state.warExhaustion)}</div>
@@ -1952,6 +2005,131 @@ function setMapMarkerText(id, value) {
   if (node) node.textContent = value;
 }
 
+const WAR_CONTROL_LABELS = Object.freeze({ friendly: "王国支配", enemy: "公国支配", contested: "係争中" });
+const WAR_REGION_STATUS_LABELS = Object.freeze({ frontline: "主戦線", friendly_rear: "王国後方", enemy_rear: "公国後方" });
+const WAR_LANDMARK_LABELS = Object.freeze({ fortress: "城砦", depot: "兵站拠点", objective: "作戦要地", pass: "峠道", settlement: "集落" });
+
+const WAR_TILE_SIZE = 68;
+
+function warTileCenter(q, r) {
+  return { x: 47 + q * WAR_TILE_SIZE + WAR_TILE_SIZE / 2, y: 66 + r * WAR_TILE_SIZE + WAR_TILE_SIZE / 2 };
+}
+
+function warTileBox(q, r) {
+  return { x: 47 + q * WAR_TILE_SIZE, y: 66 + r * WAR_TILE_SIZE, size: WAR_TILE_SIZE };
+}
+
+function warUnitCounter(unit, index) {
+  const center = warTileCenter(unit.q, unit.r);
+  const x = center.x + (index % 2 ? 20 : -20);
+  const y = center.y + (index > 1 ? 18 : -16);
+  return `
+    <g class="war-unit-counter is-${unit.side} is-${unit.type}" transform="translate(${x} ${y})" aria-label="${unit.name} 兵${unit.strength}">
+      <title>${unit.name} · 兵 ${formatValue(unit.strength)} · 士気 ${unit.morale} · 補給 ${unit.supply}</title>
+      <rect x="-22" y="-16" width="44" height="32" rx="3"></rect>
+      <text class="war-unit-symbol" x="-12" y="4">${unit.symbol}</text>
+      <text class="war-unit-strength" x="13" y="4">${Math.max(0, Math.round(unit.strength / 10))}</text>
+    </g>`;
+}
+
+function warForceSummary(units, side) {
+  const sideUnits = units.filter((unit) => unit.side === side);
+  const strength = sideUnits.reduce((sum, unit) => sum + unit.strength, 0);
+  const morale = sideUnits.reduce((sum, unit) => sum + unit.morale * unit.strength, 0) / Math.max(1, strength);
+  const supply = sideUnits.reduce((sum, unit) => sum + unit.supply * unit.strength, 0) / Math.max(1, strength);
+  return { strength, morale: Math.round(morale), supply: Math.round(supply) };
+}
+
+function renderWarBoard() {
+  const theater = state.war?.theater;
+  if (!theater) {
+    elements.warBoard.innerHTML = '<p class="war-board-empty">戦域情報を編成中です。</p>';
+    return;
+  }
+  const availableRegion = getWarRegion(theater, view.warRegionId);
+  const region = availableRegion ?? getWarRegion(theater);
+  view.warRegionId = region.id;
+  const selectedTile = region.tiles.find((tile) => tile.id === view.selectedWarHexId)
+    ?? region.tiles.find((tile) => tile.landmark?.kind === "objective")
+    ?? region.tiles.find((tile) => tile.landmark)
+    ?? region.tiles[0];
+  view.selectedWarHexId = selectedTile.id;
+  const selectedTerrain = WAR_MAP_TERRAINS[selectedTile.terrainId];
+  const routePoints = region.tiles
+    .filter((tile) => tile.road)
+    .sort((left, right) => left.q - right.q)
+    .map((tile) => {
+      const center = warTileCenter(tile.q, tile.r);
+      return `${center.x},${center.y}`;
+    }).join(" ");
+  const tileMarkup = region.tiles.map((tile) => {
+    const box = warTileBox(tile.q, tile.r);
+    const center = warTileCenter(tile.q, tile.r);
+    const terrain = WAR_MAP_TERRAINS[tile.terrainId];
+    const landmark = tile.landmark;
+    return `
+      <g class="war-map-tile terrain-${tile.terrainId} control-${tile.control} ${tile.id === selectedTile.id ? "is-selected" : ""}" role="button" tabindex="0" data-war-tile="${tile.id}" aria-label="${tile.name}、${terrain.name}、${WAR_CONTROL_LABELS[tile.control]}">
+        <rect class="war-tile-base" x="${box.x}" y="${box.y}" width="${box.size}" height="${box.size}"></rect>
+        <rect class="war-tile-texture" x="${box.x}" y="${box.y}" width="${box.size}" height="${box.size}" fill="url(#warTerrainTexture)"></rect>
+        ${landmark ? `<circle class="war-tile-landmark is-${landmark.kind}" cx="${center.x}" cy="${center.y}" r="7"><title>${landmark.name}</title></circle>` : ""}
+      </g>`;
+  }).join("");
+  const locationCounts = new Map();
+  const unitMarkup = theater.units.filter((unit) => unit.regionId === region.id).map((unit) => {
+    const key = `${unit.q},${unit.r}`;
+    const index = locationCounts.get(key) ?? 0;
+    locationCounts.set(key, index + 1);
+    return warUnitCounter(unit, index);
+  }).join("");
+  const regionTabs = theater.regionOrder.map((regionId) => {
+    const item = getWarRegion(theater, regionId);
+    return `<button type="button" data-war-region="${item.id}" class="${item.id === region.id ? "is-active" : ""} ${item.id === theater.activeRegionId ? "is-front" : ""}"><strong>${item.shortName}</strong><small>${WAR_REGION_STATUS_LABELS[item.status]}</small></button>`;
+  }).join("");
+  const friendly = warForceSummary(theater.units, "friendly");
+  const enemy = warForceSummary(theater.units, "enemy");
+  const localUnits = theater.units.filter((unit) => unit.regionId === region.id);
+  const unitRows = localUnits.length ? localUnits.map((unit) => `<div class="war-board-unit-row is-${unit.side}"><i>${unit.symbol}</i><span><strong>${unit.name}</strong><small>兵 ${formatValue(unit.strength)} · 士気 ${unit.morale} · 補給 ${unit.supply}</small></span></div>`).join("") : '<p class="war-board-no-units">この地域に常駐部隊はいません。</p>';
+  const phaseLabel = theater.phase === "deployment" ? "初期展開" : "作戦進行";
+  const initiativeLabel = theater.initiative === "friendly" ? "セレナ王国" : "ヴァルカ公国";
+  const lastResolution = theater.lastResolution
+    ? `<p class="war-board-last"><strong>前ラウンド</strong><span>戦況 ${signed(theater.lastResolution.delta, 1)} · ${WAR_PLANS[theater.lastResolution.planId]?.name ?? theater.lastResolution.planId}</span></p>`
+    : '<p class="war-board-last"><strong>開戦状態</strong><span>両軍が初期配置を完了。月末に第1ラウンドを解決します。</span></p>';
+  elements.warBoard.innerHTML = `
+    <header class="war-board-header">
+      <div><span>REGIONAL WAR BOARD / ROUND ${theater.round}</span><h2>${theater.name}</h2><p>${region.name} · ${region.subtitle}</p></div>
+      <div class="war-board-turn"><small>${phaseLabel}</small><strong>主導権 ${initiativeLabel}</strong><span>戦線圧力 ${signed(theater.pressure, 1)}</span></div>
+    </header>
+    <nav class="war-region-tabs" aria-label="地域盤選択">${regionTabs}</nav>
+    <div class="war-board-layout">
+      <div class="war-board-map-wrap">
+        <svg class="war-board-map" viewBox="0 0 570 490" role="img" aria-label="${region.name}の四角タイル戦域図">
+          <defs>
+            <pattern id="warTerrainTexture" width="180" height="180" patternUnits="userSpaceOnUse"><image href="./assets/generated/terrain-natural-texture.png" x="0" y="0" width="180" height="180" preserveAspectRatio="xMidYMid slice"></image></pattern>
+            <filter id="warCounterShadow" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="3" stdDeviation="2" flood-color="#0b1717" flood-opacity=".72"></feDropShadow></filter>
+          </defs>
+          <g class="war-tile-layer">${tileMarkup}</g>
+          <polyline class="war-board-road" points="${routePoints}"></polyline>
+          <g class="war-unit-layer">${unitMarkup}</g>
+        </svg>
+        <div class="war-board-legend"><span><i class="is-friendly"></i>王国</span><span><i class="is-contested"></i>係争</span><span><i class="is-enemy"></i>公国</span><span><b>数値</b>兵力×10</span></div>
+      </div>
+      <aside class="war-board-sidebar">
+        <section class="war-board-balance">
+          <div class="is-friendly"><small>セレナ王国軍</small><strong>${formatValue(friendly.strength)}</strong><span>士気 ${friendly.morale} · 補給 ${friendly.supply}</span></div>
+          <em>戦勝点<br><b>${signed(state.war.score, 1)}</b></em>
+          <div class="is-enemy"><small>ヴァルカ公国軍</small><strong>${formatValue(enemy.strength)}</strong><span>士気 ${enemy.morale} · 補給 ${enemy.supply}</span></div>
+        </section>
+        <section class="war-tile-dossier">
+          <header><small>SELECTED TILE · ${selectedTile.q + 1}-${selectedTile.r + 1}</small><h3>${selectedTile.name}</h3><span>${WAR_CONTROL_LABELS[selectedTile.control]}</span></header>
+          <div><span><small>地形</small><strong>${selectedTerrain.name}</strong></span><span><small>移動コスト</small><strong>${selectedTerrain.movement}</strong></span><span><small>防御修正</small><strong>+${selectedTerrain.defense}</strong></span><span><small>街道</small><strong>${selectedTile.road ? "接続" : "なし"}</strong></span></div>
+          ${selectedTile.landmark ? `<p><strong>${WAR_LANDMARK_LABELS[selectedTile.landmark.kind]}</strong>${selectedTile.landmark.name} · 戦略価値 ${selectedTile.landmark.value}</p>` : '<p>固有拠点のない通常地形です。</p>'}
+        </section>
+        <section class="war-board-local-forces"><header><h3>${region.shortName}の配置</h3><small>${localUnits.length}個部隊</small></header>${unitRows}</section>
+        ${lastResolution}
+      </aside>
+    </div>`;
+}
+
 function renderStrategicMapState() {
   const cityMarkerIds = { selene: "mapForceSelene", nereia: "mapForceNereia", orta: "mapForceOrta" };
   Object.entries(cityMarkerIds).forEach(([cityId, markerId]) => {
@@ -1986,6 +2164,16 @@ function renderStrategicMapState() {
 }
 
 function renderMap() {
+  const showWarBoard = Boolean(state.war && view.warMapView === "theater");
+  elements.warMapSwitch.classList.toggle("is-hidden", !state.war);
+  elements.warMapSwitch.querySelectorAll("[data-war-map-view]").forEach((button) => button.classList.toggle("is-active", button.dataset.warMapView === view.warMapView));
+  elements.mapStage.classList.toggle("is-war-board", showWarBoard);
+  elements.warBoard.classList.toggle("is-hidden", !showWarBoard);
+  elements.strategyMap.classList.toggle("is-hidden", showWarBoard);
+  if (showWarBoard) {
+    renderWarBoard();
+    return;
+  }
   elements.strategyMap.className.baseVal = `strategy-map map-mode-${view.mapMode} scale-${view.scale}${state.war ? " is-at-war" : ""}`;
   elements.strategyMap.setAttribute("viewBox", MAP_VIEWBOXES[view.scale] ?? MAP_VIEWBOXES.world);
   const labels = {
@@ -2112,6 +2300,12 @@ function renderSelection() {
   }
   if (!view.selectedId) {
     elements.selectionCard.innerHTML = "";
+    return;
+  }
+  if (view.selectedType === "creature") {
+    const creature = getExtremeCreature(view.selectedId);
+    if (!creature) { elements.selectionCard.innerHTML = ""; return; }
+    elements.selectionCard.innerHTML = `<header><h3>${creature.name}</h3><span>${creature.classification}</span></header><p>${creature.epithet}。${creature.doctrine}</p><div class="selection-facts"><span>${creature.currentState}</span><span>${creature.estimatedLength}</span><span>${creature.location.label}</span></div>`;
     return;
   }
   if (view.selectedType === "province" && state.cities[view.selectedId]) {
@@ -2526,6 +2720,9 @@ function playNavigationCue(event) {
     "[data-force-role]",
     "[data-map-mode]",
     "[data-scale]",
+    "[data-war-map-view]",
+    "[data-war-region]",
+    "[data-war-tile]",
     "[data-diplomacy-country]",
     "[data-border-settlement]",
     "[data-aftermath-policy]",
@@ -2653,6 +2850,15 @@ document.addEventListener("click", (event) => {
   const worldModeButton = event.target.closest("[data-world-mode]");
   if (worldModeButton) {
     view.atlasMode = worldModeButton.dataset.worldMode;
+    renderPanelFromTop();
+    return;
+  }
+  const creatureMapButton = event.target.closest("[data-show-creature-on-map]");
+  if (creatureMapButton) {
+    view.selectedCreatureId = creatureMapButton.dataset.showCreatureOnMap;
+    view.selectedType = "creature";
+    view.selectedId = view.selectedCreatureId;
+    view.scale = "world";
     renderPanelFromTop();
     return;
   }
@@ -2869,6 +3075,29 @@ document.addEventListener("click", (event) => {
     catch (error) { showToast(error.message, "danger"); }
     return;
   }
+  const warMapViewButton = event.target.closest("[data-war-map-view]");
+  if (warMapViewButton && state.war) {
+    view.warMapView = warMapViewButton.dataset.warMapView;
+    if (view.warMapView === "theater") {
+      view.warRegionId ??= state.war.theater?.activeRegionId ?? null;
+      view.panel = "military";
+    }
+    renderPanelFromTop();
+    return;
+  }
+  const warRegionButton = event.target.closest("[data-war-region]");
+  if (warRegionButton && state.war) {
+    view.warRegionId = warRegionButton.dataset.warRegion;
+    view.selectedWarHexId = null;
+    renderMap();
+    return;
+  }
+  const warTileButton = event.target.closest("[data-war-tile]");
+  if (warTileButton && state.war) {
+    view.selectedWarHexId = warTileButton.dataset.warTile;
+    renderWarBoard();
+    return;
+  }
   const modeButton = event.target.closest("[data-map-mode]");
   if (modeButton) { view.mapMode = modeButton.dataset.mapMode; render(); return; }
   const scaleButton = event.target.closest("[data-scale]");
@@ -2932,6 +3161,7 @@ document.addEventListener("click", (event) => {
       return;
     }
     view.tileWindowOpen = false;
+    if (view.selectedType === "creature") { view.selectedCreatureId = view.selectedId; view.atlasMode = "creatures"; view.panel = "world"; view.scale = "world"; }
     if (view.selectedType === "province" && state.cities[view.selectedId]) { view.selectedCityId = view.selectedId; view.panel = "city"; view.scale = "city"; }
     if (view.selectedType === "country" && view.selectedId !== WORLD.nation.id) { view.selectedCountryId = view.selectedId; view.panel = "diplomacy"; }
     if (view.selectedType === "village") { view.selectedTownId = view.selectedId; view.selectedCityId = WORLD.villages[view.selectedId].province; view.panel = "town"; view.scale = "village"; }
@@ -3044,6 +3274,12 @@ elements.declareWarButton.addEventListener("click", () => {
 });
 elements.strategyMap.addEventListener("keydown", (event) => {
   if ((event.key === "Enter" || event.key === " ") && event.target.matches("[data-place-id]")) {
+    event.preventDefault();
+    event.target.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  }
+});
+elements.warBoard.addEventListener("keydown", (event) => {
+  if ((event.key === "Enter" || event.key === " ") && event.target.matches("[data-war-tile]")) {
     event.preventDefault();
     event.target.dispatchEvent(new MouseEvent("click", { bubbles: true }));
   }
