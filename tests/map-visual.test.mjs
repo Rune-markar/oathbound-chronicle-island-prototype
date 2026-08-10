@@ -5,6 +5,7 @@ import { buildTerritorySectorPaths, TERRITORY_SECTOR_COUNT } from "../src/map-ti
 
 const markup = readFileSync(new URL("../index.html", import.meta.url), "utf8");
 const appSource = readFileSync(new URL("../src/app.js", import.meta.url), "utf8");
+const generatedWorldSource = readFileSync(new URL("../src/generated-world-system.js", import.meta.url), "utf8");
 const styleSource = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
 const oceanAsset = new URL("../assets/generated/world-map-ocean-painted.png", import.meta.url);
 const landAsset = new URL("../assets/generated/world-map-land-painted.png", import.meta.url);
@@ -25,6 +26,66 @@ test("every mapped nation subdivides each major region into three territory tile
     const outlinePath = block.match(/class="nation-outline"[^>]*d="([^"]+)"/)?.[1];
     assert.equal(landmassPath, outlinePath, `${countryId} coast must match its national outline exactly`);
   }
+});
+
+test("normal play generates the whole world, then zooms to region-level movement", () => {
+  assert.equal(markup.match(/data-launch-action="new"/g)?.length, 1);
+  assert.doesNotMatch(markup, /data-launch-action="new-generated"|FIXED WORLD/);
+  assert.match(markup, /人物ごとに地形と国家を生成/);
+  assert.match(markup, /地方でプレイ/);
+  assert.match(markup, /国家は一つ以上の地方で構成/);
+  assert.match(appSource, /const showGeneratedWorld = !showWarBoard/);
+  assert.match(appSource, /generatedMapScale: "region"/);
+  assert.match(appSource, /view\.atlasMode === "generated"\) view\.generatedMapScale = "region"/);
+  assert.match(appSource, /getGeneratedExpeditionReachableRegions\(state\)/);
+  assert.match(appSource, /expeditionTile/);
+  assert.match(appSource, /dataset\.generatedTileId = tile\.id/);
+  assert.doesNotMatch(appSource, /expeditionRegion\.markerIndex \?\? expeditionRegion\.anchorIndex/);
+  assert.match(appSource, /隣接地方/);
+  assert.match(appSource, /data-generated-region-candidate-id/);
+  assert.match(appSource, /data-generated-move-confirm/);
+  assert.doesNotMatch(appSource, /data-generated-region-destination-id/);
+  assert.match(appSource, /function generatedRegionViewport\(/);
+  assert.match(generatedWorldSource, /tile\.regionId/);
+  assert.doesNotMatch(appSource, /function renderGeneratedRegionCells/);
+  assert.doesNotMatch(appSource, /generated-region-layer/);
+  assert.match(generatedWorldSource, /width: 160/);
+  assert.match(generatedWorldSource, /height: 100/);
+  assert.match(generatedWorldSource, /expeditionRegionId/);
+  assert.match(generatedWorldSource, /pathRegionIds/);
+  assert.match(appSource, /pixelsPerTile: 12/);
+  assert.match(appSource, /illustrated-strategy-map-v6-regional-hd/);
+  assert.match(styleSource, /\.generated-world-copy\s*\{[^}]*width: 100%;[^}]*height: 100%;/s);
+  assert.match(appSource, /x \+ 0\.5 - viewport\.x/);
+  assert.match(appSource, /tile\.y \+ 0\.5 - viewport\.y/);
+  assert.doesNotMatch(appSource, /generatedDestinationId = tile\.id/);
+  for (const type of ["castle", "village", "fort"]) {
+    assert.match(markup, new RegExp(`class="is-${type}"`));
+  }
+});
+
+test("campaign information and generated movement commands live in the left dock", () => {
+  const leftDock = markup.match(/<aside class="left-dock"[^>]*>[\s\S]*?<\/aside>/)?.[0] ?? "";
+  assert.match(leftDock, /class="left-hud"/);
+  assert.match(leftDock, /class="grand-topbar"/);
+  assert.match(leftDock, /class="campaign-bar"/);
+  assert.match(leftDock, /id="leftPanel"/);
+  assert.match(appSource, /class="generated-command-status"/);
+  assert.match(appSource, /class="generated-move-command"/);
+  assert.match(styleSource, /\.strategy-shell\s*\{[^}]*height: 100vh;[^}]*grid-template-columns: 400px/s);
+});
+
+test("world, geopolitics, nation, and statistics panels share one generated-world representation", () => {
+  const generatedPanel = appSource.match(/function renderGeneratedWorldPanel\(\)[\s\S]*?function nationPeopleChips/)?.[0] ?? "";
+  const statisticsPanel = appSource.match(/function renderWorldStatistics\(\)[\s\S]*?function renderWorldPanel/)?.[0] ?? "";
+  assert.doesNotMatch(generatedPanel, /generated-world-overview|この人物の世界シード/);
+  assert.match(statisticsPanel, /generated-world-overview/);
+  assert.match(statisticsPanel, /この人物の世界シード/);
+  assert.match(statisticsPanel, /naturalBorderShare/);
+  assert.match(appSource, /function renderWorldGeopolitics\(\)/);
+  assert.match(appSource, /\["geopolitics", "nations", "statistics"\]\.includes\(view\.atlasMode\)/);
+  assert.match(appSource, /image\.src = generatedMapVisualCache\.url/);
+  assert.doesNotMatch(appSource, /data-generated-statistics-nation="\$\{item\.nationId\}"/);
 });
 
 test("terrain mode covers the map's major landform categories", () => {

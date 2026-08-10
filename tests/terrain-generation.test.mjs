@@ -3,12 +3,21 @@ import assert from "node:assert/strict";
 import {
   generateTerrain,
   selectStartLocations,
+  TERRAIN_GENERATION_DEFAULTS,
+  TERRAIN_TEMPLATES,
   traceRiver,
   validateTerrainWorld,
 } from "../src/terrain-generation.js";
 import { renderTerrainSvg } from "../src/terrain-renderer.js";
 
 const TEST_SIZE = { width: 48, height: 32, plateCount: 9, erosionIterations: 4 };
+
+test("production terrain defaults use the high-resolution world grid", () => {
+  assert.equal(TERRAIN_GENERATION_DEFAULTS.width, 160);
+  assert.equal(TERRAIN_GENERATION_DEFAULTS.height, 100);
+  assert.equal(TERRAIN_GENERATION_DEFAULTS.plateCount, 22);
+  assert.equal(TERRAIN_GENERATION_DEFAULTS.templateCount, 14);
+});
 
 function average(items, property) {
   return items.reduce((sum, item) => sum + item[property], 0) / Math.max(1, items.length);
@@ -32,6 +41,30 @@ test("terrain generation is deterministic by seed and changes with a different s
   assert.notDeepEqual(first.tiles.map((tile) => tile.elevation), different.tiles.map((tile) => tile.elevation));
   assert.equal(first.gridType, "square");
   assert.ok(first.tiles.every((tile) => Number.isInteger(tile.x) && Number.isInteger(tile.y)));
+});
+
+test("terrain is assembled from reusable coherent template pieces", () => {
+  const world = generateTerrain({ ...TEST_SIZE, seed: "template-pieces" });
+  assert.equal(world.terrainTemplates.length, world.config.templateCount);
+  assert.deepEqual(
+    new Set(world.terrainTemplates.map((piece) => piece.templateId)),
+    new Set(TERRAIN_TEMPLATES.map((template) => template.id)),
+  );
+  assert.ok(world.tiles.every((tile) => tile.terrainTemplateId && tile.terrainTemplateName && tile.terrainTemplatePieceId));
+  assert.deepEqual(
+    Object.keys(world.summary.templateCounts).sort(),
+    TERRAIN_TEMPLATES.map((template) => template.id).sort(),
+  );
+  let samePieceEdges = 0;
+  let comparedEdges = 0;
+  for (const tile of world.tiles) {
+    for (const neighbor of [tile.x + 1 < world.width ? tile.index + 1 : null, tile.y + 1 < world.height ? tile.index + world.width : null]) {
+      if (neighbor === null) continue;
+      comparedEdges += 1;
+      if (world.tiles[neighbor].terrainTemplatePieceId === tile.terrainTemplatePieceId) samePieceEdges += 1;
+    }
+  }
+  assert.ok(samePieceEdges / comparedEdges >= 0.82, "template pieces should form readable contiguous regions");
 });
 
 test("plate uplift creates mountain chains without overwhelming the playable land", () => {
@@ -103,8 +136,15 @@ test("terrain renders as a natural image over a square play grid without letter 
   const svg = renderTerrainSvg(world, { cellSize: 12, textureUrl: "./terrain-natural-texture.png" });
   assert.match(svg, /data-grid="square"/);
   assert.match(svg, /data-wrap="longitude"/);
+  assert.match(svg, /data-terrain-resolution="48x32"/);
+  assert.match(svg, /preserveAspectRatio="none"/);
+  assert.match(svg, /data-raster-resolution="576x384"/);
+  assert.match(svg, /data-map-style="illustrated-strategy"/);
   assert.match(svg, /<image href="\.\/terrain-natural-texture\.png"/);
   assert.match(svg, /filter id="organicTerrain"/);
+  assert.match(svg, /id="terrainDetails"/);
+  assert.match(svg, /id="coastlines"/);
+  assert.match(svg, /class="terrain-detail is-(mountain|hill|forest|marsh)"/);
   assert.match(svg, /stitchTiles="stitch"/);
   assert.doesNotMatch(svg, /<text\b/);
   assert.match(svg, /<path d="M/);

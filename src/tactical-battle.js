@@ -1054,6 +1054,22 @@ export function getReachableBattleTiles(battle, unitId) {
   });
 }
 
+export function getAttackableBattleTiles(battle, unitId) {
+  const unit = getBattleUnit(battle, unitId);
+  if (!unit || unit.side !== "player" || !activeForCombat(unit) || !isInCommandRange(battle, unit)) return [];
+  const stats = getEffectiveStats(battle, unit);
+  const magicSkill = unit.abilities.includes("magic") ? MAGIC_SKILLS[unit.activeSkill ?? "fire"] : null;
+  const canUseRangedAttack = stats.rangedAttack > 0 && !unit.engagedWith.length;
+  const range = magicSkill?.range ?? (canUseRangedAttack ? stats.range : 1);
+  const requiresLineOfSight = !magicSkill && canUseRangedAttack;
+  return battle.map.tiles.flatMap((tile) => {
+    const separation = distance(unit.position, tile.position);
+    if (separation < 1 || separation > range) return [];
+    if (requiresLineOfSight && !hasLineOfSight(battle, unit.position, tile.position)) return [];
+    return [{ position: { ...tile.position }, distance: separation, range: Number(range.toFixed(2)) }];
+  });
+}
+
 export function getReachableCommanderTiles(battle, commanderId) {
   const commander = getBattleCommander(battle, commanderId);
   if (!commander || commander.side !== "player" || commander.status !== "ACTIVE") return [];

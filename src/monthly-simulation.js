@@ -56,7 +56,13 @@ import {
   occupationPolicyOutcome,
 } from "./war-system.js";
 import { advanceWarTheater, createWarTheater, normalizeWarTheater } from "./war-map.js";
-import { createGeneratedWorldState, normalizeGeneratedWorldState } from "./generated-world-system.js";
+import {
+  advanceGeneratedWorldGeopolitics,
+  createCharacterWorldSeed,
+  createGeneratedWorldState,
+  normalizeGeneratedWorldState,
+  setGeneratedPlayerNation,
+} from "./generated-world-system.js";
 import {
   CENTRALIZATION_STAGES,
   HISTORY_POLICIES,
@@ -110,6 +116,43 @@ import {
   normalizeStrategicState,
   respondToOfficerDemand,
 } from "./campaign-system.js";
+import {
+  CAREER_ACTIONS,
+  CAREER_SCHEMA_VERSION,
+  CAREER_STAGES,
+  GOVERNANCE_COMMANDS,
+  LOCAL_AUTHORITIES,
+  NATIONAL_AUTHORITIES,
+  acceptServiceInvitation,
+  advanceCareerMonth as advancePlayerCareerMonth,
+  assertPlayerAuthority,
+  authorizePlayerAction,
+  deriveJurisdiction,
+  executeGovernanceCommand,
+  getCareerStage,
+  getGovernanceView,
+  grantDelegatedAuthority,
+  imposeProhibition,
+  initializeCareerState,
+  normalizeCareerState,
+  performCareerAction as performPlayerCareerAction,
+  submitPetition,
+} from "./player-career.js";
+import {
+  DELEGATABLE_ROLES,
+  DELEGATION_AUTHORITY_LEVELS,
+  DELEGATION_MANDATES,
+  ROLE_DELEGATION_SCHEMA_VERSION,
+  getDelegationCandidates as getRoleDelegationCandidates,
+  getRoleDelegationOverview,
+  handoffPreviousRole,
+  initializeRoleDelegationState,
+  normalizeRoleDelegationState,
+  reassignDelegatedRole as reassignRoleDelegation,
+  resolveRoleDelegations,
+  setDelegationAuthority as updateDelegationAuthority,
+  setDelegationMandate as updateDelegationMandate,
+} from "./role-delegation.js";
 
 export {
   ADMINISTRATION_MANDATES,
@@ -138,6 +181,28 @@ export {
   NATIONAL_REFORM_BUDGETS,
   NATIONAL_REFORM_SYSTEMS,
   REFORM_CONCESSIONS,
+};
+export {
+  CAREER_ACTIONS,
+  CAREER_SCHEMA_VERSION,
+  CAREER_STAGES,
+  DELEGATABLE_ROLES,
+  DELEGATION_AUTHORITY_LEVELS,
+  DELEGATION_MANDATES,
+  GOVERNANCE_COMMANDS,
+  LOCAL_AUTHORITIES,
+  NATIONAL_AUTHORITIES,
+  ROLE_DELEGATION_SCHEMA_VERSION,
+  acceptServiceInvitation,
+  authorizePlayerAction,
+  deriveJurisdiction,
+  executeGovernanceCommand,
+  getCareerStage,
+  getGovernanceView,
+  grantDelegatedAuthority,
+  imposeProhibition,
+  normalizeCareerState,
+  submitPetition,
 };
 
 export const FORCED_ORDER_RULES = {
@@ -404,7 +469,8 @@ function foreignState(relation, army, mobility, training, organization, cohesion
 }
 
 export function normalizeWarState(state) {
-  state.version = 9;
+  state.version = state.player ? 10 : 9;
+  if (state.player) state.scenarioMode = "generated";
   normalizeGeneratedWorldState(state);
   state.occupations ??= [];
   state.warHistory ??= [];
@@ -463,6 +529,8 @@ export function normalizeWarState(state) {
   });
   normalizeStrategicState(WORLD, state);
   normalizeHistoryState(WORLD, state);
+  normalizeCareerState(state);
+  normalizeRoleDelegationState(state);
   return normalizeCentralizationCampaign(WORLD, state);
 }
 
@@ -523,6 +591,66 @@ export function createInitialState(options = {}) {
   const normalized = normalizeWarState(state);
   advanceHistoricalSimulation(WORLD, normalized);
   return normalized;
+}
+
+export function createCareerInitialState(options = {}) {
+  const { generatedWorldRuntime = null, ...creationOptions } = options;
+  const seed = typeof options.seed === "string" && options.seed.trim() ? options.seed : createCharacterWorldSeed();
+  const state = initializeRoleDelegationState(initializeCareerState(createInitialState({
+    ...creationOptions,
+    scenarioMode: "generated",
+    seed,
+  }), creationOptions.player ?? creationOptions));
+  const normalized = normalizeWarState(state);
+  return setGeneratedPlayerNation(normalized, normalized.generatedWorld.playerNationId, generatedWorldRuntime);
+}
+
+export function getDelegationCandidates(state, roleId) {
+  return getRoleDelegationCandidates(WORLD, state, roleId);
+}
+
+export function getRoleDelegation(state) {
+  return getRoleDelegationOverview(WORLD, state);
+}
+
+export function reassignDelegatedRole(state, assignmentId, officerId) {
+  return reassignRoleDelegation(WORLD, state, assignmentId, officerId);
+}
+
+export function setDelegationMandate(state, assignmentId, mandateId) {
+  return updateDelegationMandate(state, assignmentId, mandateId);
+}
+
+export function setDelegationAuthority(state, assignmentId, authorityId) {
+  return updateDelegationAuthority(state, assignmentId, authorityId);
+}
+
+export function performCareerAction(state, actionId, delegation = {}) {
+  const fromRoleId = state.player?.stage;
+  let next = performPlayerCareerAction(state, actionId);
+  const toRoleId = next.player?.stage;
+  const role = DELEGATABLE_ROLES[fromRoleId];
+  if (fromRoleId !== toRoleId && role) {
+    const candidates = getRoleDelegationCandidates(WORLD, next, fromRoleId);
+    const successorId = delegation.successorId ?? candidates[0]?.id;
+    if (!successorId) throw new Error(`${role.name}を引き継ぐ仲間がいません`);
+    next = handoffPreviousRole(WORLD, next, {
+      fromRoleId,
+      toRoleId,
+      toRoleName: CAREER_STAGES[toRoleId]?.name,
+      successorId,
+      mandateId: delegation.mandateId,
+      authorityId: delegation.authorityId,
+    });
+  }
+  return next;
+}
+
+export function advanceCareerMonth(state) {
+  let next = advancePlayerCareerMonth(state);
+  resolveRoleDelegations(WORLD, next);
+  if (next.scenarioMode === "generated") next = advanceGeneratedWorldGeopolitics(next);
+  return next;
 }
 
 export function getCampaignStatus(state) {
@@ -719,12 +847,22 @@ export function getCentralizationCampaignStatus(state) { return deriveCentraliza
 export function getCentralizationDecisions(state) { return getCentralizationPrimaryDecisions(WORLD, state); }
 export function getHistoricalRuleEffects(state, regionId = null) { return deriveHistoricalRuleEffects(WORLD, state, regionId); }
 export function getLeviathanStatus(state) { return deriveLeviathanStatus(WORLD, state); }
-export function startNationalReformPackage(state, input) { return startNationalReform(WORLD, state, input); }
-export function chooseHistoryPolicy(state, policyId) { return adoptHistoryPolicy(WORLD, state, policyId); }
-export function chooseLeviathanPolicy(state, policyId) { return setLeviathanPolicy(WORLD, state, policyId); }
+export function startNationalReformPackage(state, input) {
+  assertPlayerAuthority(state, { authority: "centralization", scope: "nation", commandId: "centralization" });
+  return startNationalReform(WORLD, state, input);
+}
+export function chooseHistoryPolicy(state, policyId) {
+  assertPlayerAuthority(state, { authority: "national_law", scope: "nation", commandId: "national_law" });
+  return adoptHistoryPolicy(WORLD, state, policyId);
+}
+export function chooseLeviathanPolicy(state, policyId) {
+  assertPlayerAuthority(state, { authority: "national_budget", scope: "nation", commandId: "national_budget" });
+  return setLeviathanPolicy(WORLD, state, policyId);
+}
 export function getAuthorityReform(state, cityId, domainId) { return modelAuthorityReformOptions(WORLD, state, cityId, domainId); }
 export function startAuthorityReform(state, cityId, domainId, methodId, options = {}) {
   if (state.phase !== "planning") throw new Error("事件対応中は権限改革を開始できません");
+  assertPlayerAuthority(state, { authority: "centralization", scope: "nation", commandId: "centralization", targetTerritoryId: cityId });
   const next = modelStartAuthorityReform(WORLD, state, cityId, domainId, methodId, options);
   const reform = next.administration.reforms.at(-1);
   const legacyCauses = next.history.institutionalLegacies
@@ -752,6 +890,7 @@ export function setAdministrationMode(state, cityId, mode) {
   if (!ADMINISTRATION_MODES[mode]) throw new Error("不明な統治方式です");
   if (!state.cities[cityId]) throw new Error("対象都市が不明です");
   if (state.phase !== "planning") throw new Error("事件対応中は統治方式を変更できません");
+  assertPlayerAuthority(state, { authority: "local_budget", scope: "territory", targetTerritoryId: cityId });
   const next = clone(state);
   normalizeAdministrationState(WORLD, next);
   next.cities[cityId].administration.mode = mode;
@@ -763,6 +902,7 @@ export function setAdministrationMandate(state, cityId, mandate) {
   if (!ADMINISTRATION_MANDATES[mandate]) throw new Error("不明な委任方針です");
   if (!state.cities[cityId]) throw new Error("対象都市が不明です");
   if (state.phase !== "planning") throw new Error("事件対応中は委任方針を変更できません");
+  assertPlayerAuthority(state, { authority: "local_budget", scope: "territory", targetTerritoryId: cityId });
   const next = clone(state);
   normalizeAdministrationState(WORLD, next);
   next.cities[cityId].administration.mandate = mandate;
@@ -850,12 +990,27 @@ function resolveTownId(item, cityId, townId) {
 }
 function reservedOfficers(state) { return new Set(state.pendingOrders.map((order) => order.officerId).filter(Boolean)); }
 
+function existingCommandAuthority(item, targetCityId) {
+  if (item.group === "diplomacy") return { authority: "national_alliance", scope: "nation", commandId: "national_alliance", targetTerritoryId: targetCityId };
+  if (item.group === "fiscal") return { authority: "national_budget", scope: "nation", commandId: "national_budget", targetTerritoryId: targetCityId };
+  if (item.id === "admin.harbor_standard") return { authority: "centralization", scope: "nation", commandId: "centralization", targetTerritoryId: targetCityId };
+  if (item.id === "military.mobilize") return { authority: "local_conscription", scope: "territory", targetTerritoryId: targetCityId };
+  if (["city.drill", "navy.soundings"].includes(item.id)) return { authority: "local_military_organization", scope: "territory", targetTerritoryId: targetCityId };
+  if (item.group === "people") return { authority: "local_appointments", scope: "territory", targetTerritoryId: targetCityId };
+  if (item.id === "city.patrol") return { authority: "local_security", scope: "territory", targetTerritoryId: targetCityId };
+  if (["city.cultivate", "city.commerce", "research.administration"].includes(item.id)) return { authority: "local_economy", scope: "territory", targetTerritoryId: targetCityId };
+  if (["city.repair", "welfare.health"].includes(item.id)) return { authority: "local_construction", scope: "territory", targetTerritoryId: targetCityId };
+  return { authority: "local_budget", scope: "territory", targetTerritoryId: targetCityId };
+}
+
 export function getCommandAvailability(state, commandId, officerId = null, cityId = null, townId = null) {
   const item = COMMANDS[commandId];
   if (!item) return { allowed: false, reason: "不明な命令" };
   const targetCityId = resolveCityId(item, cityId);
   const city = state.cities[targetCityId];
   if (!city) return { allowed: false, reason: "対象都市が不明" };
+  const authorization = authorizePlayerAction(state, existingCommandAuthority(item, targetCityId));
+  if (!authorization.allowed) return { allowed: false, reason: authorization.reason, hidden: !authorization.visible, authorization };
   const targetTownId = resolveTownId(item, targetCityId, townId);
   if (isTownCommand(item) && !targetTownId) return { allowed: false, reason: "対象の町が不明" };
   if (item.debtPayment && (state.fiscal?.publicDebt ?? 24) <= 0) return { allowed: false, reason: "返済すべき国債がありません" };
@@ -869,13 +1024,22 @@ export function getCommandAvailability(state, commandId, officerId = null, cityI
   if (city.military.draftPopulation - reservedDraft < (item.cost.draftPopulation ?? 0)) return { allowed: false, reason: "徴募可能人口が不足" };
   if (!officerId) return { allowed: true, reason: "担当人物を選択", cityId: targetCityId, townId: targetTownId };
   const officer = getOfficer(WORLD, state, officerId);
-  if (!officer || officer.allegiance !== "serving") return { allowed: false, reason: "配下人物のみ担当可能" };
+  if (!officer) return { allowed: false, reason: "担当人物が不明" };
+  if (state.player && !state.player.householdRetainers.includes(officerId)) return { allowed: false, reason: "直属家臣のみ担当可能" };
+  if (!state.player && officer.allegiance !== "serving") return { allowed: false, reason: "配下人物のみ担当可能" };
   if (officer.assignment || reservedOfficers(state).has(officerId)) return { allowed: false, reason: "別の任務を担当中または予約中" };
   if (officer.stamina < 20) return { allowed: false, reason: "意欲不足" };
   return { allowed: true, reason: `${item.durationTurns}か月 · 統治力${item.governanceCost}`, cityId: targetCityId, townId: targetTownId };
 }
 
 export function getEligibleOfficers(state, commandId, cityId = null, townId = null) {
+  if (state.player) {
+    return state.player.householdRetainers
+      .map((officerId) => getOfficer(WORLD, state, officerId))
+      .filter(Boolean)
+      .filter((officer) => !officer.assignment && officer.stamina >= 20)
+      .filter((officer) => getCommandAvailability(state, commandId, officer.id, cityId, townId).allowed);
+  }
   return getAvailableOfficers(WORLD, state).filter((officer) => getCommandAvailability(state, commandId, officer.id, cityId, townId).allowed);
 }
 
@@ -905,12 +1069,15 @@ export function queueOrder(state, specification) {
   let order;
   if (kind === "command") {
     const item = COMMANDS[specification.commandId];
+    if (!item) throw new Error("不明な命令です");
+    assertPlayerAuthority(state, existingCommandAuthority(item, resolveCityId(item, specification.cityId)));
     const availability = getCommandAvailability(state, specification.commandId, specification.officerId, specification.cityId, specification.townId);
     if (!availability.allowed) throw new Error(availability.reason);
     const forcedPoints = assertGovernance(state, item.governanceCost, specification.force);
     order = { id: orderId(next), kind, commandId: item.id, cityId: availability.cityId, townId: availability.townId, officerId: specification.officerId, cost: clone(item.cost), governanceCost: item.governanceCost, durationTurns: item.durationTurns, forced: forcedPoints > 0, forcedPoints };
   } else if (kind === "facility") {
     const city = state.cities[specification.cityId];
+    assertPlayerAuthority(state, { authority: "local_construction", scope: "territory", targetTerritoryId: specification.cityId });
     const upgrade = city && getFacilityUpgradeSpec(city, specification.facilityId);
     if (!upgrade) throw new Error("この施設はこれ以上強化できません");
     if (city.projects.some((project) => project.facilityId === specification.facilityId) || state.pendingOrders.some((item) => item.kind === "facility" && item.cityId === specification.cityId && item.facilityId === specification.facilityId)) throw new Error("同じ施設を建設中です");
@@ -921,6 +1088,16 @@ export function queueOrder(state, specification) {
   } else if (kind === "policy") {
     const city = state.cities[specification.cityId];
     const definition = POLICY_DEFINITIONS[specification.policyId];
+    const authority = ["landTax", "commerceTax"].includes(specification.policyId)
+      ? "local_tax"
+      : specification.policyId === "conscription"
+        ? "local_conscription"
+        : specification.policyId === "securityPolicy"
+          ? "local_law"
+          : specification.policyId === "immigration"
+            ? "local_migration"
+            : "local_budget";
+    assertPlayerAuthority(state, { authority, scope: "territory", targetTerritoryId: specification.cityId });
     if (!city || !definition?.options[specification.optionId]) throw new Error("政策または選択肢が不明です");
     if (city.policies[specification.policyId] === specification.optionId) throw new Error("すでに採用中の方針です");
     if (state.pendingOrders.some((item) => item.kind === "policy" && item.cityId === specification.cityId && item.policyId === specification.policyId)) throw new Error("同じ政策変更を予約済みです");
@@ -929,6 +1106,7 @@ export function queueOrder(state, specification) {
   } else if (kind === "faction") {
     const city = state.cities[specification.cityId];
     const action = FACTION_ACTIONS[specification.action];
+    assertPlayerAuthority(state, { authority: "local_negotiation", scope: "territory", targetTerritoryId: specification.cityId });
     if (!city?.factions[specification.factionId] || !action) throw new Error("派閥命令が不明です");
     const reserved = state.pendingOrders.filter((item) => item.cityId === specification.cityId).reduce((sum, item) => sum + (item.cost?.money ?? 0), 0);
     if (city.resources.money - reserved < action.money) throw new Error("都市金が不足しています");
@@ -1766,6 +1944,7 @@ export function getBorderNegotiationStatus(state) {
 }
 
 export function resolveBorderNegotiation(state, settlementId) {
+  assertPlayerAuthority(state, { authority: "national_alliance", scope: "nation", commandId: "national_alliance" });
   const next = normalizeWarState(clone(state));
   const result = applyBorderSettlement(WORLD, next, settlementId);
   recordHistoricalEvent(WORLD, next, {
@@ -1782,6 +1961,7 @@ export function resolveBorderNegotiation(state, settlementId) {
 }
 
 export function chooseAftermathPolicy(state, policyId) {
+  assertPlayerAuthority(state, { authority: "national_law", scope: "nation", commandId: "national_law" });
   const next = normalizeWarState(clone(state));
   const policy = applyAftermathPolicy(WORLD, next, policyId);
   recordHistoricalEvent(WORLD, next, {
@@ -1802,6 +1982,7 @@ export function getAftermathDecisionStatus(state) {
 }
 
 export function resolveAftermathDecisionChoice(state, choiceId) {
+  assertPlayerAuthority(state, { authority: "national_law", scope: "nation", commandId: "national_law" });
   const next = normalizeWarState(clone(state));
   const result = applyAftermathDecision(WORLD, next, choiceId);
   recordHistoricalEvent(WORLD, next, {
@@ -1927,6 +2108,7 @@ export function getTurnWarnings(state) {
 }
 
 export function adoptDoctrine(state, doctrineId) {
+  assertPlayerAuthority(state, { authority: "national_budget", scope: "nation", commandId: "national_budget" });
   if (!DOCTRINES[doctrineId]) throw new Error("不明な評定方針です");
   if (!state.council.pending) throw new Error("今季の評定は終了しています");
   const next = clone(state); next.council.doctrine = doctrineId; next.council.pending = false;
@@ -1947,12 +2129,17 @@ export function getCouncilProposals(state) {
   return proposals.slice(0, 3).map((proposal) => ({ ...proposal, forecast: getTaskForecast(state, proposal.commandId, proposal.officerId, proposal.cityId) }));
 }
 
-export function setFormation(state, formationId) { if (!FORMATIONS[formationId]) throw new Error("不明な陣形です"); const next = clone(state); next.forces.frontier_guard.formation = formationId; return next; }
+export function setFormation(state, formationId) {
+  if (!FORMATIONS[formationId]) throw new Error("不明な陣形です");
+  assertPlayerAuthority(state, { authority: "local_military_organization", scope: "territory", targetTerritoryId: state.forces.frontier_guard.baseCityId });
+  const next = clone(state); next.forces.frontier_guard.formation = formationId; return next;
+}
 
 export function appointForceOfficer(state, role, officerId) {
   if (!["commanderId", "deputyId"].includes(role)) throw new Error("不明な軍団役職です");
   const officer = getOfficer(WORLD, state, officerId);
   if (!officer || officer.allegiance !== "serving") throw new Error("配下人物のみ任命できます");
+  assertPlayerAuthority(state, { authority: "local_appointments", scope: "territory", targetTerritoryId: state.forces.frontier_guard.baseCityId });
   const next = clone(state); const otherRole = role === "commanderId" ? "deputyId" : "commanderId";
   if (next.forces.frontier_guard[otherRole] === officerId) throw new Error("同じ人物を重複任命できません");
   next.forces.frontier_guard[role] = officerId;
@@ -2003,6 +2190,7 @@ function createWarState(state, targetCountryId, objectiveId, side = "attacker") 
 }
 
 export function declareWar(state, objectiveId) {
+  assertPlayerAuthority(state, { authority: "declare_war", scope: "nation", commandId: "declare_war" });
   if (state.war) throw new Error("すでに戦争中です");
   const objective = WAR_OBJECTIVES[objectiveId]; if (!objective) throw new Error("戦争目的が不明です");
   if (objective.mode === "defensive") throw new Error("防衛目的は敵国の侵攻時に発動します");
@@ -2046,6 +2234,7 @@ export function startDefensiveWar(state, countryId = "valka") {
 
 export function setWarPlan(state, planId) {
   if (!state.war) throw new Error("戦争中ではありません");
+  assertPlayerAuthority(state, { authority: "national_army", scope: "nation", commandId: "national_army" });
   const plan = WAR_PLANS[planId];
   if (!plan || !plan.roles.includes(state.war.side ?? "attacker")) throw new Error("現在の戦争立場では選べない作戦です");
   const next = clone(state); next.war.plan = planId; return next;
@@ -2078,6 +2267,7 @@ function createOccupation(state, war, policy = "autonomy") {
 }
 
 export function negotiatePeace(state, settlementId = "auto") {
+  assertPlayerAuthority(state, { authority: "make_peace", scope: "nation", commandId: "make_peace" });
   if (!state.war) throw new Error("戦争中ではありません");
   if (state.war.months < 1) throw new Error("講和条件は1か月以上の戦況を確定してから提示できます");
   const next = normalizeWarState(clone(state)); const war = next.war; const objective = WAR_OBJECTIVES[war.objectiveId];
@@ -2140,6 +2330,7 @@ export function negotiatePeace(state, settlementId = "auto") {
 }
 
 export function setOccupationPolicy(state, occupationId, policyId) {
+  assertPlayerAuthority(state, { authority: "national_law", scope: "nation", commandId: "national_law" });
   if (!OCCUPATION_POLICIES[policyId]) throw new Error("占領政策が不明です");
   const next = normalizeWarState(clone(state));
   const occupation = next.occupations.find((item) => item.id === occupationId);
@@ -2150,6 +2341,7 @@ export function setOccupationPolicy(state, occupationId, policyId) {
 }
 
 export function setOccupationGarrison(state, occupationId, amount) {
+  assertPlayerAuthority(state, { authority: "national_army", scope: "nation", commandId: "national_army" });
   const next = normalizeWarState(clone(state));
   const occupation = next.occupations.find((item) => item.id === occupationId);
   if (!occupation || occupation.status !== "occupied") throw new Error("駐屯対象がありません");
@@ -2162,6 +2354,7 @@ export function setOccupationGarrison(state, occupationId, amount) {
 }
 
 export function releaseOccupation(state, occupationId) {
+  assertPlayerAuthority(state, { authority: "make_peace", scope: "nation", commandId: "make_peace" });
   const next = normalizeWarState(clone(state));
   const occupation = next.occupations.find((item) => item.id === occupationId);
   if (!occupation || occupation.status !== "occupied") throw new Error("撤兵できる占領地域がありません");

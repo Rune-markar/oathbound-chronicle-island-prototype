@@ -84,13 +84,23 @@ export function buildSquareOperationalWorld(world, nationWorld = null) {
     throw new TypeError("Operational world requires a generated square-grid terrain world.");
   }
   const nationById = new Map((nationWorld?.nations ?? []).map((nation) => [nation.id, nation]));
+  const regionById = new Map((nationWorld?.regions ?? []).map((region) => [region.id, region]));
   const capitalByIndex = new Map((nationWorld?.nations ?? []).map((nation) => [nation.capitalIndex, nation.id]));
+  const objectsByIndex = (nationWorld?.objects ?? []).reduce((groups, object) => {
+    if (!groups.has(object.tileIndex)) groups.set(object.tileIndex, []);
+    groups.get(object.tileIndex).push(object);
+    return groups;
+  }, new Map());
   const ownership = nationWorld?.tileNationIds ?? Array(world.tiles.length).fill(null);
+  const regionalOwnership = nationWorld?.tileRegionIds ?? Array(world.tiles.length).fill(null);
   if (ownership.length !== world.tiles.length) throw new RangeError("Nation ownership must contain one value for every square tile.");
+  if (regionalOwnership.length !== world.tiles.length) throw new RangeError("Region ownership must contain one value for every square tile.");
 
   const tiles = world.tiles.map((tile) => {
     const nationId = ownership[tile.index];
+    const regionId = regionalOwnership[tile.index];
     const borderSides = [];
+    const regionBorderSides = [];
     for (const direction of SQUARE_CARDINAL_DIRECTIONS) {
       let x = tile.x + direction.dx;
       const y = tile.y + direction.dy;
@@ -98,8 +108,11 @@ export function buildSquareOperationalWorld(world, nationWorld = null) {
       if (x < 0 || x >= world.width || y < 0 || y >= world.height) continue;
       const neighborIndex = squareTileIndex(x, y, world.width);
       const neighborNationId = ownership[neighborIndex];
+      const neighborRegionId = regionalOwnership[neighborIndex];
       if (nationId && neighborNationId && nationId !== neighborNationId) borderSides.push(direction.name);
+      if (regionId && neighborRegionId && regionId !== neighborRegionId) regionBorderSides.push(direction.name);
     }
+    const worldObjects = (objectsByIndex.get(tile.index) ?? []).map((object) => ({ ...object }));
     return {
       id: `tile-${tile.x}-${tile.y}`,
       index: tile.index,
@@ -110,6 +123,9 @@ export function buildSquareOperationalWorld(world, nationWorld = null) {
       terrain: tile.terrain,
       relief: tile.relief,
       feature: tile.feature,
+      terrainTemplateId: tile.terrainTemplateId ?? null,
+      terrainTemplateName: tile.terrainTemplateName ?? null,
+      terrainTemplatePieceId: tile.terrainTemplatePieceId ?? null,
       elevation: tile.elevation,
       fertility: tile.fertility,
       freshwater: tile.freshwater,
@@ -120,8 +136,13 @@ export function buildSquareOperationalWorld(world, nationWorld = null) {
       resourcePotential: { ...tile.resourcePotential },
       nationId,
       nationName: nationById.get(nationId)?.name ?? null,
+      regionId,
+      regionName: regionById.get(regionId)?.name ?? null,
       capitalNationId: capitalByIndex.get(tile.index) ?? null,
+      worldObjects,
+      worldObjectIds: worldObjects.map((object) => object.id),
       borderSides,
+      regionBorderSides,
       passable: !["ocean", "coast", "lake"].includes(tile.terrain),
     };
   });

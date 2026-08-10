@@ -10,11 +10,11 @@ import {
 const clamp = (value, min = 0, max = 1) => Math.min(max, Math.max(min, value));
 
 export const TERRAIN_GENERATION_DEFAULTS = Object.freeze({
-  width: 72,
-  height: 48,
+  width: 160,
+  height: 100,
   seed: "eldoria",
   wrapX: true,
-  plateCount: 11,
+  plateCount: 22,
   landRatio: 0.44,
   worldAge: 0.58,
   rainfall: 1,
@@ -22,7 +22,200 @@ export const TERRAIN_GENERATION_DEFAULTS = Object.freeze({
   erosionIterations: 5,
   riverDensity: 0.0035,
   lakeDepth: 0.028,
+  templateCount: 14,
 });
+
+const TEMPLATE_GRID_SIZE = 5;
+
+function defineTerrainTemplate(template) {
+  return Object.freeze({
+    ...template,
+    elevationMap: Object.freeze([...template.elevationMap]),
+    moistureMap: Object.freeze([...template.moistureMap]),
+  });
+}
+
+// Each entry is a reusable 5 x 5 terrain piece. World generation rotates, places,
+// and softly joins these pieces instead of deciding every tile from unrelated noise.
+export const TERRAIN_TEMPLATES = Object.freeze([
+  defineTerrainTemplate({
+    id: "open-plains", name: "開けた平原", featureBias: -0.18,
+    elevationMap: [
+      -0.08, -0.06, -0.04, -0.05, -0.08,
+      -0.06, -0.03, 0.00, -0.02, -0.05,
+      -0.04, 0.00, 0.03, 0.00, -0.04,
+      -0.05, -0.02, 0.00, -0.03, -0.06,
+      -0.08, -0.05, -0.04, -0.06, -0.08,
+    ],
+    moistureMap: [
+      0.01, 0.02, 0.02, 0.02, 0.01,
+      0.02, 0.03, 0.04, 0.03, 0.02,
+      0.02, 0.04, 0.05, 0.04, 0.02,
+      0.02, 0.03, 0.04, 0.03, 0.02,
+      0.01, 0.02, 0.02, 0.02, 0.01,
+    ],
+  }),
+  defineTerrainTemplate({
+    id: "forest-belt", name: "森林帯", featureBias: 0.34,
+    elevationMap: [
+      0.00, 0.03, 0.05, 0.03, 0.00,
+      0.02, 0.06, 0.09, 0.06, 0.02,
+      0.04, 0.08, 0.11, 0.08, 0.04,
+      0.02, 0.06, 0.09, 0.06, 0.02,
+      0.00, 0.03, 0.05, 0.03, 0.00,
+    ],
+    moistureMap: [
+      0.12, 0.16, 0.19, 0.16, 0.12,
+      0.16, 0.22, 0.26, 0.22, 0.16,
+      0.19, 0.26, 0.31, 0.26, 0.19,
+      0.16, 0.22, 0.26, 0.22, 0.16,
+      0.12, 0.16, 0.19, 0.16, 0.12,
+    ],
+  }),
+  defineTerrainTemplate({
+    id: "mountain-spine", name: "山岳脊梁", featureBias: -0.12,
+    elevationMap: [
+      0.02, 0.18, 0.48, 0.20, 0.03,
+      0.04, 0.25, 0.66, 0.27, 0.05,
+      0.05, 0.30, 0.78, 0.32, 0.06,
+      0.04, 0.24, 0.64, 0.26, 0.04,
+      0.02, 0.16, 0.45, 0.18, 0.02,
+    ],
+    moistureMap: [
+      0.03, 0.06, 0.09, -0.05, -0.09,
+      0.04, 0.08, 0.12, -0.07, -0.12,
+      0.05, 0.10, 0.14, -0.08, -0.14,
+      0.04, 0.08, 0.12, -0.07, -0.12,
+      0.03, 0.06, 0.09, -0.05, -0.09,
+    ],
+  }),
+  defineTerrainTemplate({
+    id: "dry-plateau", name: "乾燥台地", featureBias: -0.35,
+    elevationMap: [
+      0.04, 0.08, 0.10, 0.08, 0.04,
+      0.08, 0.16, 0.20, 0.16, 0.08,
+      0.10, 0.20, 0.25, 0.20, 0.10,
+      0.08, 0.16, 0.20, 0.16, 0.08,
+      0.04, 0.08, 0.10, 0.08, 0.04,
+    ],
+    moistureMap: [
+      -0.12, -0.16, -0.18, -0.16, -0.12,
+      -0.16, -0.22, -0.26, -0.22, -0.16,
+      -0.18, -0.26, -0.31, -0.26, -0.18,
+      -0.16, -0.22, -0.26, -0.22, -0.16,
+      -0.12, -0.16, -0.18, -0.16, -0.12,
+    ],
+  }),
+  defineTerrainTemplate({
+    id: "river-valley", name: "河谷", featureBias: 0.06,
+    elevationMap: [
+      0.12, 0.07, -0.10, 0.07, 0.12,
+      0.14, 0.08, -0.13, 0.08, 0.14,
+      0.15, 0.09, -0.16, 0.09, 0.15,
+      0.14, 0.08, -0.13, 0.08, 0.14,
+      0.12, 0.07, -0.10, 0.07, 0.12,
+    ],
+    moistureMap: [
+      0.04, 0.12, 0.28, 0.12, 0.04,
+      0.05, 0.14, 0.32, 0.14, 0.05,
+      0.06, 0.16, 0.36, 0.16, 0.06,
+      0.05, 0.14, 0.32, 0.14, 0.05,
+      0.04, 0.12, 0.28, 0.12, 0.04,
+    ],
+  }),
+  defineTerrainTemplate({
+    id: "wetland-delta", name: "湿地デルタ", featureBias: 0.12,
+    elevationMap: [
+      -0.03, -0.05, -0.07, -0.05, -0.03,
+      -0.05, -0.09, -0.12, -0.09, -0.05,
+      -0.07, -0.12, -0.16, -0.12, -0.07,
+      -0.05, -0.09, -0.12, -0.09, -0.05,
+      -0.03, -0.05, -0.07, -0.05, -0.03,
+    ],
+    moistureMap: [
+      0.16, 0.21, 0.25, 0.21, 0.16,
+      0.21, 0.28, 0.34, 0.28, 0.21,
+      0.25, 0.34, 0.40, 0.34, 0.25,
+      0.21, 0.28, 0.34, 0.28, 0.21,
+      0.16, 0.21, 0.25, 0.21, 0.16,
+    ],
+  }),
+]);
+
+function createTerrainTemplateLayout(config, random) {
+  const columns = Math.max(3, Math.round(Math.sqrt(config.templateCount * config.width / config.height)));
+  const rows = Math.ceil(config.templateCount / columns);
+  const cellWidth = config.width / columns;
+  const cellHeight = config.height / rows;
+  const templateOffset = Math.floor(random() * TERRAIN_TEMPLATES.length);
+  const placements = Array.from({ length: config.templateCount }, (_, index) => {
+    const column = index % columns;
+    const row = Math.floor(index / columns);
+    const template = TERRAIN_TEMPLATES[(index + templateOffset) % TERRAIN_TEMPLATES.length];
+    return Object.freeze({
+      id: `piece-${index + 1}`,
+      templateId: template.id,
+      templateName: template.name,
+      centerX: Number(((column + 0.5 + (random() - 0.5) * 0.34) * cellWidth).toFixed(3)),
+      centerY: Number(((row + 0.5 + (random() - 0.5) * 0.34) * cellHeight).toFixed(3)),
+      width: Number((cellWidth * (1.5 + random() * 0.35)).toFixed(3)),
+      height: Number((cellHeight * (1.5 + random() * 0.35)).toFixed(3)),
+      rotation: Math.floor(random() * 4),
+    });
+  });
+  return Object.freeze({ placements: Object.freeze(placements) });
+}
+
+function rotateTemplateCoordinates(u, v, rotation) {
+  if (rotation === 1) return { u: v, v: 1 - u };
+  if (rotation === 2) return { u: 1 - u, v: 1 - v };
+  if (rotation === 3) return { u: 1 - v, v: u };
+  return { u, v };
+}
+
+function sampleTemplateMap(template, property, u, v, rotation) {
+  const rotated = rotateTemplateCoordinates(clamp(u), clamp(v), rotation);
+  const x = rotated.u * (TEMPLATE_GRID_SIZE - 1);
+  const y = rotated.v * (TEMPLATE_GRID_SIZE - 1);
+  const x0 = Math.floor(x);
+  const y0 = Math.floor(y);
+  const x1 = Math.min(TEMPLATE_GRID_SIZE - 1, x0 + 1);
+  const y1 = Math.min(TEMPLATE_GRID_SIZE - 1, y0 + 1);
+  const tx = smoothstep(x - x0);
+  const ty = smoothstep(y - y0);
+  const values = template[property];
+  const top = values[y0 * TEMPLATE_GRID_SIZE + x0] * (1 - tx) + values[y0 * TEMPLATE_GRID_SIZE + x1] * tx;
+  const bottom = values[y1 * TEMPLATE_GRID_SIZE + x0] * (1 - tx) + values[y1 * TEMPLATE_GRID_SIZE + x1] * tx;
+  return top * (1 - ty) + bottom * ty;
+}
+
+function sampleTerrainTemplates(layout, x, y, config) {
+  let elevation = 0;
+  let moisture = 0;
+  let totalWeight = 0;
+  let strongest = null;
+  for (const placement of layout.placements) {
+    const template = TERRAIN_TEMPLATES.find((entry) => entry.id === placement.templateId);
+    const dx = wrappedDeltaX(placement.centerX, x, config.width) / (placement.width / 2);
+    const dy = (y - placement.centerY) / (placement.height / 2);
+    const distance = Math.hypot(dx, dy);
+    const weight = smoothstep(clamp(1 - distance / 1.2));
+    const u = dx / 2 + 0.5;
+    const v = dy / 2 + 0.5;
+    const effectiveWeight = Math.max(0.015, weight);
+    elevation += sampleTemplateMap(template, "elevationMap", u, v, placement.rotation) * effectiveWeight;
+    moisture += sampleTemplateMap(template, "moistureMap", u, v, placement.rotation) * effectiveWeight;
+    totalWeight += effectiveWeight;
+    const affinity = 1 / Math.max(0.08, distance);
+    if (!strongest || affinity > strongest.affinity) strongest = { placement, template, affinity };
+  }
+  return {
+    elevation: elevation / Math.max(0.001, totalWeight),
+    moisture: moisture / Math.max(0.001, totalWeight),
+    placement: strongest.placement,
+    template: strongest.template,
+  };
+}
 
 function hashSeed(seed) {
   const text = String(seed);
@@ -90,6 +283,9 @@ function validateOptions(options) {
   if (!(config.landRatio >= 0.15 && config.landRatio <= 0.8)) throw new RangeError("landRatio must be between 0.15 and 0.8.");
   if (!(config.worldAge >= 0 && config.worldAge <= 1)) throw new RangeError("worldAge must be between 0 and 1.");
   if (!(config.rainfall >= 0.35 && config.rainfall <= 1.8)) throw new RangeError("rainfall must be between 0.35 and 1.8.");
+  if (!Number.isInteger(config.templateCount) || config.templateCount < TERRAIN_TEMPLATES.length || config.templateCount > 64) {
+    throw new RangeError(`templateCount must be an integer between ${TERRAIN_TEMPLATES.length} and 64.`);
+  }
   return config;
 }
 
@@ -177,7 +373,7 @@ function calculatePlateStress(config, plates, plateIds) {
   };
 }
 
-function generateElevation(config, plates, plateIds, stress, seed) {
+function generateElevation(config, plates, plateIds, stress, seed, templateLayout) {
   const raw = plateIds.map((plateId, index) => {
     const { x: tileX, y: tileY } = tileCoordinates(index, config.width);
     const plate = plates[plateId];
@@ -188,7 +384,9 @@ function generateElevation(config, plates, plateIds, stress, seed) {
     const polarEdge = Math.pow(Math.max(0, Math.abs((tileY / (config.height - 1)) * 2 - 1) - 0.72) / 0.28, 2) * 0.9;
     const uplift = stress.convergence[index] * (0.62 + (1 - plate.crustAge) * 0.28) + stress.transform[index] * 0.14;
     const rift = stress.divergence[index] * 0.34;
-    return plate.continentalBias + continentalShape + localRelief + uplift - rift - polarEdge;
+    const templateSample = sampleTerrainTemplates(templateLayout, tileX, tileY, config);
+    return plate.continentalBias + continentalShape * 0.78 + localRelief * 0.55
+      + uplift - rift - polarEdge + templateSample.elevation * 0.72;
   });
   const seaLevel = quantile(raw, 1 - config.landRatio);
   const maximumLand = Math.max(...raw.filter((value) => value > seaLevel), seaLevel + 0.01);
@@ -198,7 +396,7 @@ function generateElevation(config, plates, plateIds, stress, seed) {
     : -(seaLevel - value) / (seaLevel - minimumSea));
 }
 
-function calculateClimate(config, elevation, seed) {
+function calculateClimate(config, elevation, seed, templateLayout) {
   const size = config.width * config.height;
   const temperatureC = new Array(size);
   const precipitationNorm = new Array(size).fill(0);
@@ -230,7 +428,9 @@ function calculateClimate(config, elevation, seed) {
       const convective = Math.max(0, 1 - absoluteLatitude / 0.42) * 0.18;
       const subtropicalSubsidence = Math.exp(-Math.pow((absoluteLatitude - 0.38) / 0.13, 2)) * 0.21;
       const rainNoise = (fractalNoise(x / config.width * 7, y / config.height * 7, seed + 911, 2) - 0.5) * 0.12;
-      const rain = clamp((atmosphericMoisture * (0.3 + uplift * 1.7) + convective - subtropicalSubsidence + rainNoise) * config.rainfall);
+      const templateMoisture = sampleTerrainTemplates(templateLayout, x, y, config).moisture;
+      const rain = clamp((atmosphericMoisture * (0.3 + uplift * 1.7) + convective - subtropicalSubsidence
+        + rainNoise + templateMoisture * 0.62) * config.rainfall);
       precipitationNorm[index] = rain;
       precipitationMm[index] = Math.round(80 + rain * 3220);
       atmosphericMoisture = clamp(atmosphericMoisture * (0.982 - uplift * 0.5) - rain * 0.055 + 0.022, 0.04, 1);
@@ -340,10 +540,10 @@ function calculateHydrology(config, elevation, climate) {
   };
 }
 
-function erodeTerrain(config, elevation, seed) {
+function erodeTerrain(config, elevation, seed, templateLayout) {
   let eroded = [...elevation];
   for (let iteration = 0; iteration < config.erosionIterations; iteration += 1) {
-    const climate = calculateClimate(config, eroded, seed);
+    const climate = calculateClimate(config, eroded, seed, templateLayout);
     const hydrology = calculateHydrology(config, eroded, climate);
     const landCount = eroded.filter((value) => value > 0).length;
     const erodibility = 0.22 + config.worldAge * 0.42;
@@ -491,7 +691,7 @@ function classifyTerrain(temperatureC, precipitationMm) {
   return "grassland";
 }
 
-function buildTiles(config, plates, plateIds, stress, elevation, climate, hydrology, riverData, seed) {
+function buildTiles(config, plates, plateIds, stress, elevation, climate, hydrology, riverData, seed, templateLayout) {
   const slope = calculateSlope(config, elevation);
   const landElevations = elevation.filter((value) => value > 0);
   const landSlopes = slope.filter((_, index) => elevation[index] > 0);
@@ -514,6 +714,12 @@ function buildTiles(config, plates, plateIds, stress, elevation, climate, hydrol
 
   return elevation.map((height, index) => {
     const { x, y } = tileCoordinates(index, config.width);
+    const templateSample = sampleTerrainTemplates(templateLayout, x, y, config);
+    const terrainTemplate = {
+      terrainTemplateId: templateSample.template.id,
+      terrainTemplateName: templateSample.template.name,
+      terrainTemplatePieceId: templateSample.placement.id,
+    };
     const neighbors = neighborIndices(index, config);
     const isOcean = height <= 0;
     const isLake = lakeTiles.has(index);
@@ -523,6 +729,7 @@ function buildTiles(config, plates, plateIds, stress, elevation, climate, hydrol
         index,
         x,
         y,
+        ...terrainTemplate,
         latitude: Number((1 - (y / (config.height - 1)) * 2).toFixed(4)),
         plateId: plateIds[index],
         landmassId: null,
@@ -569,12 +776,13 @@ function buildTiles(config, plates, plateIds, stress, elevation, climate, hydrol
     const floodRisk = clamp(riverProximity * dischargeScale * flatness * (0.58 + climate.precipitationNorm[index] * 0.42));
     const floodplain = riverProximity > 0 && relief === "flat" && slope[index] < 0.07 && climate.temperatureC[index] > -3 && floodRisk > 0.18;
     const wetland = !floodplain && relief === "flat" && soilMoisture > 0.81 && climate.temperatureC[index] > 2;
-    const vegetationNoise = fractalNoise(x / config.width * 9, y / config.height * 9, seed + 1201, 3);
+    const vegetationNoise = fractalNoise(x / config.width * 5.5, y / config.height * 5.5, seed + 1201, 2);
+    const vegetationScore = vegetationNoise + templateSample.template.featureBias;
     let feature = null;
     if (floodplain) feature = "floodplain";
     else if (wetland) feature = "marsh";
-    else if (terrain === "grassland" && climate.temperatureC[index] > 21 && climate.precipitationMm[index] > 1750 && vegetationNoise > 0.38) feature = "rainforest";
-    else if ((terrain === "grassland" || terrain === "plains" || terrain === "tundra") && climate.precipitationMm[index] > 680 && vegetationNoise > 0.48) feature = "forest";
+    else if (terrain === "grassland" && climate.temperatureC[index] > 21 && climate.precipitationMm[index] > 1750 && vegetationScore > 0.48) feature = "rainforest";
+    else if ((terrain === "grassland" || terrain === "plains" || terrain === "tundra") && climate.precipitationMm[index] > 680 && vegetationScore > 0.52) feature = "forest";
 
     const plate = plates[plateIds[index]];
     const moistureFitness = Math.exp(-Math.pow((soilMoisture - 0.62) / 0.33, 2));
@@ -606,6 +814,7 @@ function buildTiles(config, plates, plateIds, stress, elevation, climate, hydrol
       index,
       x,
       y,
+      ...terrainTemplate,
       latitude: Number((1 - (y / (config.height - 1)) * 2).toFixed(4)),
       plateId: plateIds[index],
       landmassId: landmassIds[index],
@@ -664,6 +873,7 @@ function buildSummary(config, tiles, rivers) {
     terrainCounts: countBy(tiles, "terrain"),
     reliefCounts: countBy(land, "relief"),
     featureCounts: countBy(land, "feature"),
+    templateCounts: countBy(land, "terrainTemplateId"),
   };
 }
 
@@ -784,12 +994,13 @@ export function generateTerrain(options = {}) {
   const plates = createPlates(config, random);
   const plateIds = assignPlates(config, plates);
   const stress = calculatePlateStress(config, plates, plateIds);
-  const initialElevation = generateElevation(config, plates, plateIds, stress, seed);
-  const elevation = erodeTerrain(config, initialElevation, seed);
-  const climate = calculateClimate(config, elevation, seed);
+  const templateLayout = createTerrainTemplateLayout(config, random);
+  const initialElevation = generateElevation(config, plates, plateIds, stress, seed, templateLayout);
+  const elevation = erodeTerrain(config, initialElevation, seed, templateLayout);
+  const climate = calculateClimate(config, elevation, seed, templateLayout);
   const hydrology = calculateHydrology(config, elevation, climate);
   const riverData = extractRivers(config, elevation, hydrology);
-  const tiles = buildTiles(config, plates, plateIds, stress, elevation, climate, hydrology, riverData, seed);
+  const tiles = buildTiles(config, plates, plateIds, stress, elevation, climate, hydrology, riverData, seed, templateLayout);
   const world = {
     version: 1,
     gridType: "square",
@@ -798,6 +1009,7 @@ export function generateTerrain(options = {}) {
     height: config.height,
     config: Object.freeze({ ...config }),
     plates: plates.map((plate) => ({ ...plate })),
+    terrainTemplates: templateLayout.placements,
     tiles,
     rivers: riverData.rivers,
     riverSegments: riverData.segments,

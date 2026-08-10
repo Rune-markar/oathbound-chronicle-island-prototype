@@ -2,6 +2,8 @@ import {
   ADMINISTRATION_MANDATES,
   ADMINISTRATION_MODES,
   AFTERMATH_POLICIES,
+  DELEGATION_AUTHORITY_LEVELS,
+  DELEGATION_MANDATES,
   BORDER_SETTLEMENTS,
   AUTHORITY_DOMAINS,
   AUTHORITY_REFORM_STAGES,
@@ -37,6 +39,7 @@ import {
   chooseHistoryPolicy,
   chooseLeviathanPolicy,
   commitMonth,
+  createCareerInitialState,
   createInitialState,
   declareWar,
   deriveCityMetrics,
@@ -61,6 +64,9 @@ import {
   getEligibleOfficers,
   getEnemyCommander,
   getGovernance,
+  getGovernanceView,
+  getDelegationCandidates,
+  getRoleDelegation,
   getGreatPowerFoundation,
   getHistoricalOverview,
   getHistoricalRuleEffects,
@@ -84,6 +90,12 @@ import {
   isTownCommand,
   negotiatePeace,
   normalizeWarState,
+  acceptServiceInvitation,
+  advanceCareerMonth,
+  executeGovernanceCommand,
+  getCareerStage,
+  performCareerAction,
+  reassignDelegatedRole,
   queueOrder,
   resolveBorderNegotiation,
   resolveAftermathDecisionChoice,
@@ -92,8 +104,11 @@ import {
   setFormation,
   setAdministrationMandate,
   setAdministrationMode,
+  setDelegationAuthority,
+  setDelegationMandate,
   startAuthorityReform,
   startNationalReformPackage,
+  submitPetition,
   setOccupationGarrison,
   setOccupationPolicy,
   setWarPlan,
@@ -125,13 +140,18 @@ import {
 } from "./world-statistics.js";
 import {
   buildGeneratedWorld,
+  buildGeneratedWorldAsync,
+  createCharacterWorldSeed,
+  createGeneratedWorldState,
+  getGeneratedExpeditionReachableRegions,
+  getGeneratedGeopoliticalView,
   getGeneratedWorldView,
-  moveGeneratedExpedition,
+  moveGeneratedExpeditionToRegion,
   refreshGeneratedWorldForDate,
-  regenerateGeneratedWorld,
-  selectGeneratedWorldTile,
+  selectGeneratedWorldRegion,
   setGeneratedPlayerNation,
 } from "./generated-world-system.js";
+import { GEOPOLITICAL_MODEL_REFERENCES, GEOPOLITICAL_PULL_SET } from "./geopolitical-world.js";
 import { terrainSvgDataUrl } from "./terrain-renderer.js";
 import {
   BATTLE_FORTIFICATION_TYPES,
@@ -154,6 +174,7 @@ import {
   getBattleFortification,
   getBattleSummary,
   getBattleUnit,
+  getAttackableBattleTiles,
   getEffectiveStats,
   getFortificationAura,
   getLogisticsState,
@@ -168,6 +189,7 @@ import {
   planUnitTarget,
   setUnitFacing,
 } from "./tactical-battle.js";
+import { buildTacticalEffects } from "./tactical-effects.js";
 import {
   BATTLE_LOGISTICS_PLANS,
   createBattlePreparation,
@@ -190,8 +212,8 @@ import {
   PERSUASION_APPROACHES,
 } from "./commander-disposition.js";
 
-const STORAGE_KEY = "oathbound-continental-grand-strategy-v9";
-const LEGACY_STORAGE_KEYS = ["oathbound-continental-grand-strategy-v8", "oathbound-continental-grand-strategy-v7", "oathbound-continental-grand-strategy-v6"];
+const STORAGE_KEY = "oathbound-career-chronicle-v10";
+const LEGACY_STORAGE_KEYS = ["oathbound-continental-grand-strategy-v9", "oathbound-continental-grand-strategy-v8", "oathbound-continental-grand-strategy-v7", "oathbound-continental-grand-strategy-v6"];
 
 const CITY_ART = Object.freeze({
   selene: "./assets/generated/city-selene.webp",
@@ -260,7 +282,7 @@ const GENERATED_TERRAIN_LABELS = Object.freeze({
 });
 
 const GENERATED_RELIEF_LABELS = Object.freeze({ flat: "平地", hills: "丘陵", mountains: "山岳", water: "水面" });
-const GENERATED_BORDER_LABELS = Object.freeze({ north: "北", east: "東", south: "南", west: "西" });
+const GENERATED_WORLD_OBJECT_LABELS = Object.freeze({ castle: "城", village: "村", fort: "砦" });
 const TACTICAL_ORDER_VISUALS = Object.freeze({
   hold: Object.freeze({ label: "待機", className: "is-order-hold" }),
   advance: Object.freeze({ label: "進撃", className: "is-order-advance" }),
@@ -270,24 +292,20 @@ const TACTICAL_ORDER_VISUALS = Object.freeze({
   pursue: Object.freeze({ label: "追撃", className: "is-order-pursue" }),
 });
 
-const GENERATED_DIRECTIONS = Object.freeze([
-  Object.freeze({ id: "north", label: "北", dx: 0, dy: -1 }),
-  Object.freeze({ id: "west", label: "西", dx: -1, dy: 0 }),
-  Object.freeze({ id: "east", label: "東", dx: 1, dy: 0 }),
-  Object.freeze({ id: "south", label: "南", dx: 0, dy: 1 }),
-]);
-
 function cityArt(cityId) {
   return CITY_ART[cityId] ?? CITY_ART.selene;
 }
 
-let state = refreshGeneratedWorldForDate(loadState() ?? createInitialState());
+let state = refreshGeneratedWorldForDate(loadState() ?? createCareerInitialState());
 if (state.centralizationCampaign?.ending) state.council.pending = false;
 let toastTimer = null;
 let previewCache = { state: null, value: null };
 let generatedMapVisualCache = { key: null, url: null };
+let tacticalEffectTimer = null;
+let tacticalEffectsPlaying = false;
 const view = {
   launchOpen: true,
+  generation: { active: false, progress: 0, stage: "idle", label: "", error: null },
   battlePreparation: null,
   tacticalBattle: null,
   tacticalResult: null,
@@ -298,7 +316,7 @@ const view = {
   selectedTacticalCommanderId: null,
   selectedTacticalFortificationId: null,
   tacticalInspectorDismissed: false,
-  panel: "council",
+  panel: "career",
   spendingCategoryId: "social_security",
   spendingCityId: "selene",
   mapMode: "political",
@@ -330,14 +348,17 @@ const view = {
   pendingCityId: null,
   pendingTownId: null,
   pendingForceRole: null,
-  atlasMode: "nations",
+  atlasMode: "generated",
+  generatedMapScale: "region",
+  pendingGeneratedDestinationId: null,
+  selectedGeneratedNationId: state.generatedWorld?.playerNationId ?? null,
   selectedNationId: "forest_alliance",
   selectedPeopleId: "acrane",
   selectedCreatureId: "leviathan",
   worldNationFilter: "all",
   worldGuideOpen: true,
   focusedTownCommandId: null,
-  guideOpen: state.turn === 0 && state.council.history.length === 0,
+  guideOpen: false,
   endingOpen: Boolean(
     (state.centralizationCampaign?.ending && state.lastViewedCentralizationEndingId !== state.centralizationCampaign.ending.id)
     || (state.campaign?.ending && state.lastViewedEndingId !== state.campaign.ending.id)
@@ -348,6 +369,13 @@ const view = {
 
 const elements = {
   launchScreen: document.querySelector("#launchScreen"),
+  launchGeneration: document.querySelector("#launchGeneration"),
+  launchGenerationStatus: document.querySelector("#launchGenerationStatus"),
+  launchGenerationLabel: document.querySelector("#launchGenerationLabel"),
+  launchGenerationPercent: document.querySelector("#launchGenerationPercent"),
+  launchGenerationProgress: document.querySelector("#launchGenerationProgress"),
+  launchGenerationBar: document.querySelector("#launchGenerationBar"),
+  launchGenerationDetail: document.querySelector("#launchGenerationDetail"),
   battlePreparationScreen: document.querySelector("#battlePreparationScreen"),
   battlePreparationTitle: document.querySelector("#battlePreparationTitle"),
   battleParticipantCount: document.querySelector("#battleParticipantCount"),
@@ -432,10 +460,10 @@ const elements = {
 
 function loadState() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY) ?? LEGACY_STORAGE_KEYS.map((key) => localStorage.getItem(key)).find(Boolean);
+    const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    if (![6, 7, 8, 9].includes(parsed.version)) return null;
+    if (parsed.version !== 10 || !parsed.player) return null;
     parsed.fiscal ??= { publicDebt: 24, totalDebtRepaid: 0 };
     parsed.fiscal.publicDebt = Number.isFinite(parsed.fiscal.publicDebt) ? parsed.fiscal.publicDebt : 24;
     parsed.fiscal.totalDebtRepaid = Number.isFinite(parsed.fiscal.totalDebtRepaid) ? parsed.fiscal.totalDebtRepaid : 0;
@@ -492,6 +520,10 @@ function renderAudioControl(audioState = audio.getState()) {
 }
 
 function endMonth() {
+  if (state.player) {
+    commit(advanceCareerMonth(state), "一か月が経過しました。人物、主君、地域社会の関係が動きます。", "month");
+    return;
+  }
   if (state.council.pending) {
     view.panel = "council";
     renderPanelFromTop();
@@ -570,6 +602,28 @@ function withPlanningForecast(city) {
 }
 
 function renderResources() {
+  if (state.player) {
+    const player = state.player;
+    const metrics = player.metrics;
+    const stage = getCareerStage(state);
+    const resources = [
+      { icon: "人", value: stage.name, label: player.title },
+      { icon: "⚔", value: formatValue(metrics.martialMerit), label: "武勲" },
+      { icon: "政", value: formatValue(metrics.civilMerit), label: "政績" },
+      { icon: "名", value: formatValue(metrics.renown), label: "名声" },
+      { icon: "信", value: formatValue(metrics.liegeTrust), label: player.affiliation.liegeName ? `${player.affiliation.liegeName}の信頼` : "主君なし" },
+      { icon: "¤", value: formatValue(metrics.wealth), label: "個人財産" },
+    ];
+    elements.resourceLedger.innerHTML = resources.map(({ icon, value, label }) => `<div class="resource-item career-resource"><i>${icon}</i><strong>${value}</strong><small>${label}</small></div>`).join("");
+    const identity = document.querySelector("#realmHome");
+    if (identity) {
+      identity.setAttribute("aria-label", "人物・経歴画面を開く");
+      identity.querySelector(".shield i").textContent = player.name.slice(0, 1);
+      identity.querySelector("strong").textContent = player.name;
+      identity.querySelector("small").textContent = `${stage.name} · ${player.title}`;
+    }
+    return;
+  }
   const ledger = deriveRealmLedger(state);
   const military = getMilitarySummary(state);
   const foodSecurity = getFoodSecurityStatus(state, getPlanningPreview());
@@ -593,8 +647,8 @@ function renderResources() {
 function renderTimeControls() {
   elements.dateLabel.textContent = formatDate(state);
   const season = deriveCityMetrics(state, view.selectedCityId).season.name;
-  elements.dateHint.textContent = state.phase === "event" ? "事件対応が必要" : state.centralizationCampaign?.ending ? "完全集権化 · 継続統治" : state.council.pending ? `${season}季評定を決定` : "月を終える";
-  elements.endMonthButton.classList.toggle("is-blocked", state.phase === "event" || state.council.pending);
+  elements.dateHint.textContent = state.player ? "月を進める" : state.phase === "event" ? "事件対応が必要" : state.centralizationCampaign?.ending ? "完全集権化 · 継続統治" : state.council.pending ? `${season}季評定を決定` : "月を終える";
+  elements.endMonthButton.classList.toggle("is-blocked", !state.player && (state.phase === "event" || state.council.pending));
 }
 
 function renderAnalysisMode() {
@@ -605,7 +659,13 @@ function renderAnalysisMode() {
 }
 
 function renderTabs() {
+  const stage = getCareerStage(state);
+  const allowed = state.player
+    ? new Set(["career", "world", ...(stage?.governance ? ["governance"] : [])])
+    : null;
+  if (allowed && !allowed.has(view.panel)) view.panel = stage?.governance ? "governance" : "career";
   elements.primaryTabs.querySelectorAll("[data-panel]").forEach((button) => {
+    button.hidden = Boolean(allowed && !allowed.has(button.dataset.panel));
     button.classList.toggle("is-active", button.dataset.panel === view.panel);
   });
 }
@@ -620,6 +680,26 @@ function campaignObjectiveItems(campaign, compact = false) {
 }
 
 function renderCampaignBar() {
+  if (state.player) {
+    const player = state.player;
+    const stage = getCareerStage(state);
+    const next = {
+      individual: "依頼を果たし、仕官の誘いを得る",
+      retainer: "主君の命令で功績と信用を得る",
+      commander: "委任された部隊を率い、辺境を救援する",
+      lord: "自領を治め、忠誠・建議・独立の道を選ぶ",
+      multi_lord: "複数領の利害を束ね、中央政治へ関与する",
+      governor: "委任地方を治め、主君との権限境界を保つ",
+      regent: "代行政権と正統性の反発を両立させる",
+      independent_ruler: "同じ統治画面で新国家全体を統治する",
+      centralized_ruler: "全国への直接命令と反動を統治する",
+    }[player.stage];
+    elements.campaignBar.innerHTML = `
+      <div class="campaign-bar-goal"><small>立身段階 ${stage.order + 1}/9</small><strong>${stage.name} · ${player.title}</strong><span>${stage.description}</span></div>
+      <div class="campaign-bar-next"><small>現在の目標</small><strong>${next}</strong><span>武勲 ${player.metrics.martialMerit} · 政績 ${player.metrics.civilMerit} · 家臣支持 ${player.metrics.householdSupport}</span></div>
+      <div class="campaign-bar-actions"><button class="campaign-primary-action" type="button" data-panel="${stage.governance ? "governance" : "career"}">${stage.governance ? "統治画面を開く" : "人物行動を開く"}</button><button class="campaign-help-action" type="button" data-open-guide>遊び方</button></div>`;
+    return;
+  }
   const status = getCentralizationCampaignStatus(state);
   const decisions = getCentralizationDecisions(state);
   const crisisLabel = status.crisis ? ` · 危機 ${status.crisis.months}/12か月` : "";
@@ -647,6 +727,37 @@ function renderCampaignBar() {
 function renderGuideModal() {
   elements.guideModal.classList.toggle("is-hidden", !view.guideOpen);
   if (!view.guideOpen) return;
+  if (state.player) {
+    const stage = getCareerStage(state);
+    const title = elements.guideModal.querySelector("#guideTitle");
+    title.textContent = "一個人から主君、領地、国家を獲得する";
+    title.nextElementSibling.textContent = "序盤は依頼と仕官、指揮官期は委任軍務、領主就任後は管轄内の統治を行います。画面が見えていても、国家主権のない命令は実行できません。";
+    const mission = elements.guideModal.querySelector(".guide-mission");
+    mission.querySelector("header small").textContent = "立身ルート";
+    mission.querySelector("h2").textContent = "個人から主君・部隊・領地を得る";
+    mission.querySelector(":scope > p").textContent = "固定された一本道ではありません。最小ループで領主まで進んだ後、忠誠、建議、加増、寝返り、独立などの政治選択へ進みます。";
+    const loop = elements.guideModal.querySelector(".guide-turn-loop");
+    loop.querySelector("small").textContent = "地位に応じて追う範囲が変わる";
+    loop.querySelector("h2").textContent = "行動 → 仕官 → 指揮 → 統治 → 選択";
+    elements.guideModal.querySelector(".modal-close[data-close-guide]").textContent = "×";
+    elements.guideModal.querySelector(".guide-footer [data-close-guide]").textContent = "人物の年代記を始める";
+    elements.guideModal.querySelector("#guideObjectiveList").innerHTML = Object.values({
+      start: { label: "個人として開始", complete: true },
+      service: { label: "主君を選んで仕官", complete: stage.order >= 1 },
+      command: { label: "部隊指揮権を得る", complete: stage.order >= 2 },
+      fief: { label: "領主となり統治を始める", complete: stage.order >= 3 },
+      independence: { label: "忠誠・建議・独立を選ぶ", complete: stage.order >= 7 },
+    }).map((objective) => `<div class="campaign-objective ${objective.complete ? "is-complete" : ""}"><i>${objective.complete ? "✓" : "○"}</i><span><strong>${objective.label}</strong></span></div>`).join("");
+    elements.guideModal.querySelector("#guideLoop").innerHTML = [
+      ["行動する", "依頼と事件で武勲、名声、財産、人脈を得る"],
+      ["仕える", "誘いを比較し、具体的な主君と主従関係を結ぶ"],
+      ["命令する", "委任された部隊、予算、兵站だけを扱う"],
+      ["治める", "領主就任後、同じ統治画面で自領を運営する"],
+      ["謀る・奪う", "建議、派閥、寝返り、継承、独立を選ぶ"],
+    ].map(([label, detail], index) => `<li><i>${index + 1}</i><div><strong>${label}</strong><span>${detail}</span></div></li>`).join("");
+    elements.guideModal.querySelector("#guideProgress").textContent = `${Math.min(5, stage.order + 1)} / 5 段階`;
+    return;
+  }
   const campaign = getCampaignStatus(state);
   elements.guideModal.querySelector("#guideObjectiveList").innerHTML = campaignObjectiveItems(campaign);
   elements.guideModal.querySelector("#guideLoop").innerHTML = campaign.loop.map((item, index) => `
@@ -714,21 +825,63 @@ function acknowledgeEnding() {
   view.endingOpen = false;
 }
 
-function resetChronicle(options = {}) {
-  localStorage.removeItem(STORAGE_KEY);
-  LEGACY_STORAGE_KEYS.forEach((key) => localStorage.removeItem(key));
-  state = refreshGeneratedWorldForDate(createInitialState(options));
-  Object.assign(view, {
-    battlePreparation: null, tacticalBattle: null, selectedTacticalUnitId: null, selectedTacticalCommanderId: null, selectedTacticalFortificationId: null, tacticalInspectorDismissed: false,
-    panel: "centralization", spendingCategoryId: "social_security", spendingCityId: "selene", mapMode: "political", scale: "country",
-    selectedType: null, selectedId: null, selectedTileName: null, selectedTerrain: null, selectedTerrainType: null, tileWindowOpen: false,
-    selectedCityId: "selene", cityTab: "overview", selectedTownId: "mugiwano", townTab: "overview", selectedAuthorityDomain: "justice", selectedNationalReformSystem: "population_land_knowledge",
-    selectedFacilityId: "farmland", selectedCountryId: "valka", objectiveId: "transit", warMapView: "atlas", warRegionId: null, selectedWarHexId: null, warCouncilOpen: false, assignmentOpen: false,
-    pendingTownId: null, guideOpen: true, endingOpen: false, resetOpen: false, expertMode: false, atlasMode: "nations", worldNationFilter: "all", focusedTownCommandId: null,
-  });
-  render();
-  audio.play("reset");
-  showToast(options.scenarioMode === "generated" ? "地形から国家形成史を生成し、新しい年代記を始めました。" : "セレナ王国の新しい年代記を始めました。");
+async function resetChronicle(options = {}) {
+  if (view.generation.active) return;
+  const seed = typeof options.seed === "string" && options.seed.trim() ? options.seed : createCharacterWorldSeed();
+  view.launchOpen = true;
+  view.guideOpen = false;
+  view.resetOpen = false;
+  view.generation = { active: true, progress: 1, stage: "seed", label: "新しい世界の生成を開始します", error: null };
+  renderLaunchScreen();
+  try {
+    const generatedState = createGeneratedWorldState({ ...options, seed });
+    const generatedWorldRuntime = await buildGeneratedWorldAsync(generatedState, ({ progress, stage, label }) => {
+      view.generation = {
+        active: true,
+        progress: Math.min(92, Math.max(1, Math.round(progress * 0.92))),
+        stage,
+        label,
+        error: null,
+      };
+      renderLaunchScreen();
+    });
+    view.generation = { active: true, progress: 95, stage: "character", label: "人物と開始地点を準備しています", error: null };
+    renderLaunchScreen();
+    await new Promise((resolve) => requestAnimationFrame(() => resolve()));
+    const nextState = refreshGeneratedWorldForDate(createCareerInitialState({ ...options, seed, generatedWorldRuntime }));
+    localStorage.removeItem(STORAGE_KEY);
+    state = nextState;
+    Object.assign(view, {
+      battlePreparation: null, tacticalBattle: null, selectedTacticalUnitId: null, selectedTacticalCommanderId: null, selectedTacticalFortificationId: null, tacticalInspectorDismissed: false,
+      panel: "career", spendingCategoryId: "social_security", spendingCityId: "selene", mapMode: "political", scale: "country",
+      selectedType: null, selectedId: null, selectedTileName: null, selectedTerrain: null, selectedTerrainType: null, tileWindowOpen: false,
+      selectedCityId: "selene", cityTab: "overview", selectedTownId: "mugiwano", townTab: "overview", selectedAuthorityDomain: "justice", selectedNationalReformSystem: "population_land_knowledge",
+      selectedFacilityId: "farmland", selectedCountryId: "valka", objectiveId: "transit", warMapView: "atlas", warRegionId: null, selectedWarHexId: null, warCouncilOpen: false, assignmentOpen: false,
+      pendingTownId: null, guideOpen: false, endingOpen: false, resetOpen: false, expertMode: false, atlasMode: "generated", generatedMapScale: "region", pendingGeneratedDestinationId: null,
+      selectedGeneratedNationId: nextState.generatedWorld.playerNationId, worldNationFilter: "all", focusedTownCommandId: null,
+    });
+    view.generation = { active: true, progress: 100, stage: "complete", label: "新しい世界の生成が完了しました", error: null };
+    render();
+    await new Promise((resolve) => setTimeout(resolve, 140));
+    view.generation = { active: false, progress: 100, stage: "complete", label: "新しい世界の生成が完了しました", error: null };
+    view.launchOpen = false;
+    view.guideOpen = true;
+    render();
+    audio.play("reset");
+    showToast("地形テンプレートと種族適地から新しい世界を生成しました。");
+  } catch (error) {
+    console.error("New chronicle generation failed", error);
+    view.generation = {
+      active: false,
+      progress: Math.max(1, view.generation.progress),
+      stage: "error",
+      label: "世界を生成できませんでした",
+      error: error instanceof Error ? error.message : String(error),
+    };
+    view.launchOpen = true;
+    renderLaunchScreen();
+    showToast("世界生成に失敗しました。保存済みの年代記は保持されています。");
+  }
 }
 
 function costLabel(command) {
@@ -1618,11 +1771,19 @@ function renderCityHistory(city) {
 }
 
 function renderCityWorkspace() {
-  const active = view.panel === "city" || view.panel === "town";
+  const active = ["city", "town", "career", "governance"].includes(view.panel);
   elements.mapStage.classList.toggle("is-city-mode", active);
   elements.cityWorkspace.classList.toggle("is-hidden", !active);
   elements.cityWorkspace.setAttribute("aria-hidden", String(!active));
   if (!active) return;
+  if (view.panel === "career") {
+    elements.cityWorkspace.innerHTML = renderCareerWorkspace();
+    return;
+  }
+  if (view.panel === "governance") {
+    elements.cityWorkspace.innerHTML = renderGovernanceWorkspace();
+    return;
+  }
   if (view.panel === "town") {
     const town = getTownAdministration(state, view.selectedTownId);
     const governorId = state.cities[town.cityId].governorId;
@@ -1652,91 +1813,62 @@ function worldModeSwitch() {
   return `
     <div class="world-mode-switch" role="group" aria-label="世界台帳の表示">
       <button type="button" data-world-mode="generated" class="${view.atlasMode === "generated" ? "is-active" : ""}">生成世界</button>
+      <button type="button" data-world-mode="geopolitics" class="${view.atlasMode === "geopolitics" ? "is-active" : ""}">世界情勢</button>
       <button type="button" data-world-mode="nations" class="${view.atlasMode === "nations" ? "is-active" : ""}">国家</button>
-      <button type="button" data-world-mode="peoples" class="${view.atlasMode === "peoples" ? "is-active" : ""}">種族</button>
-      <button type="button" data-world-mode="creatures" class="${view.atlasMode === "creatures" ? "is-active" : ""}">巨獣</button>
+      <button type="button" data-world-mode="peoples" class="${view.atlasMode === "peoples" ? "is-active" : ""}">原案種族</button>
+      <button type="button" data-world-mode="creatures" class="${view.atlasMode === "creatures" ? "is-active" : ""}">原案巨獣</button>
       <button type="button" data-world-mode="statistics" class="${view.atlasMode === "statistics" ? "is-active" : ""}">統計</button>
     </div>
   `;
 }
 
-function generatedNeighborTile(runtime, tile, direction) {
-  let x = tile.x + direction.dx;
-  const y = tile.y + direction.dy;
-  if (runtime.terrain.config.wrapX) x = (x + runtime.terrain.width) % runtime.terrain.width;
-  if (x < 0 || x >= runtime.terrain.width || y < 0 || y >= runtime.terrain.height) return null;
-  return runtime.tiles[y * runtime.terrain.width + x];
-}
-
-function generatedTerrainLabel(tile) {
-  const terrain = GENERATED_TERRAIN_LABELS[tile.terrain] ?? tile.terrain;
-  const relief = GENERATED_RELIEF_LABELS[tile.relief] ?? tile.relief;
+function generatedRegionTerrainLabel(region) {
+  const terrain = GENERATED_TERRAIN_LABELS[region.dominantTerrain] ?? region.dominantTerrain;
+  const relief = GENERATED_RELIEF_LABELS[region.dominantRelief] ?? region.dominantRelief;
   return `${terrain}・${relief}`;
 }
 
 function renderGeneratedWorldPanel() {
-  const { runtime, generatedState, playerNation, expeditionTile, selectedTile } = getGeneratedWorldView(state);
-  const owner = runtime.nationById.get(selectedTile.nationId);
-  const flowTarget = selectedTile.flowTo >= 0 ? runtime.tiles[selectedTile.flowTo] : null;
-  const discoveredTileCount = new Set([
-    ...generatedState.discoveredTileIds,
-    expeditionTile.id,
-    ...expeditionTile.orthogonalNeighbors.map((index) => runtime.tiles[index].id),
+  const { runtime, generatedState, playerNation, expeditionRegion } = getGeneratedWorldView(state);
+  const reachableRegions = getGeneratedExpeditionReachableRegions(state);
+  const discoveredRegionCount = new Set([
+    ...generatedState.discoveredRegionIds,
+    expeditionRegion.id,
+    ...expeditionRegion.neighborIds,
   ]).size;
   const nationOptions = runtime.nations.nations.map((nation) => `
     <option value="${nation.id}" ${nation.id === playerNation.id ? "selected" : ""}>${escapeHtml(nation.name)} · ${escapeHtml(nation.government)}</option>
   `).join("");
-  const moveButtons = GENERATED_DIRECTIONS.map((direction) => {
-    const destination = generatedNeighborTile(runtime, expeditionTile, direction);
-    const cost = destination ? Math.max(1, Math.ceil(destination.movementCost)) : 0;
-    const blocked = !destination || !destination.passable || generatedState.expeditionMovement < cost;
-    const reason = !destination ? "極域" : !destination.passable ? "水域" : generatedState.expeditionMovement < cost ? `移動力${cost}必要` : `${generatedTerrainLabel(destination)} · 移動${cost}`;
-    return `<button type="button" data-generated-move="${direction.id}" ${blocked ? "disabled" : ""} title="${escapeHtml(reason)}"><b>${direction.label}</b><small>${reason}</small></button>`;
+  let pendingEntry = reachableRegions.find((entry) => entry.regionId === view.pendingGeneratedDestinationId) ?? null;
+  if (!pendingEntry) view.pendingGeneratedDestinationId = null;
+  const pendingRegion = pendingEntry ? runtime.regionById.get(pendingEntry.regionId) : null;
+  const pendingNation = pendingRegion ? runtime.nationById.get(pendingRegion.nationId) : null;
+  const moveButtons = reachableRegions.map((entry) => {
+    const region = runtime.regionById.get(entry.regionId);
+    const nation = runtime.nationById.get(region.nationId);
+    const selected = entry.regionId === view.pendingGeneratedDestinationId;
+    return `<button type="button" data-generated-region-candidate-id="${region.id}" class="${selected ? "is-selected" : ""}" aria-pressed="${selected}"><b>${escapeHtml(region.name)}</b><small>${escapeHtml(nation.name)} · ${escapeHtml(generatedRegionTerrainLabel(region))} · 隣接地方</small><em>移動${entry.cost}</em></button>`;
   }).join("");
   return `
-    <section class="generated-world-overview">
-      <div><small>正方形タイル</small><strong>${runtime.terrain.width} × ${runtime.terrain.height}</strong></div>
-      <div><small>自動生成国家</small><strong>${runtime.nations.summary.nationCount}か国</strong></div>
-      <div><small>河川</small><strong>${runtime.terrain.summary.riverCount}水系</strong></div>
-      <div><small>陸地率</small><strong>${Math.round(runtime.terrain.summary.landRatio * 100)}%</strong></div>
+    <section class="generated-move-command">
+      <header><div><small>COMMAND</small><h2>地方へ移動</h2></div><strong>${reachableRegions.length}候補</strong></header>
+      <p>現在地に隣接する地方を一つ選び、内容を確認してから移動を実行します。地図をタップしただけでは移動しません。</p>
+      <div class="generated-region-choices">${moveButtons || "<p>今月の移動力で進める隣接地方はありません。</p>"}</div>
+      <div class="generated-move-selection">
+        ${pendingRegion ? `<span><small>選択中</small><strong>${escapeHtml(pendingRegion.name)}</strong></span><span><small>${escapeHtml(pendingNation.name)} · ${escapeHtml(generatedRegionTerrainLabel(pendingRegion))}</small><strong>消費 ${pendingEntry.cost}</strong></span>` : "<small>移動先を選択してください。</small>"}
+      </div>
+      <button type="button" class="generated-move-confirm" data-generated-move-confirm ${pendingRegion ? "" : "disabled"}>この地方へ移動</button>
     </section>
-    <section class="generated-world-controls">
-      <label><span>世界シード</span><input data-generated-seed type="text" maxlength="80" value="${escapeHtml(generatedState.seed)}"></label>
-      <label><span>国家数</span><select data-generated-count>${Array.from({ length: 10 }, (_, index) => index + 3).map((count) => `<option value="${count}" ${count === generatedState.nationCount ? "selected" : ""}>${count}か国</option>`).join("")}</select></label>
-      <button type="button" data-generated-regenerate>この条件で世界を再生成</button>
-      <small>地形・河川・肥沃度・資源・国家領域は同じシードから再現されます。</small>
-    </section>
-    <section class="generated-player-nation" style="--generated-nation-color:${playerNation.color}">
+    <section class="generated-command-status" style="--generated-nation-color:${playerNation.color}">
+      <header><div><small>CURRENT REGION</small><h2>${escapeHtml(expeditionRegion.name)}</h2></div><strong>移動力 ${generatedState.expeditionMovement} / 8</strong></header>
+      <div>
+        <span><small>所属国家</small><strong>${escapeHtml(playerNation.name)}</strong></span>
+        <span><small>地勢</small><strong>${escapeHtml(generatedRegionTerrainLabel(expeditionRegion))}</strong></span>
+        <span><small>発見済み</small><strong>${discoveredRegionCount}地方</strong></span>
+      </div>
       <label><span>プレイヤー国家</span><select data-generated-player-nation>${nationOptions}</select></label>
-      <header><i></i><div><small>${escapeHtml(playerNation.government)} · 主産業 ${escapeHtml(playerNation.economy)}</small><h2>${escapeHtml(playerNation.name)}</h2></div></header>
-      <div class="generated-nation-facts">
-        <span><small>領土</small><strong>${playerNation.tileCount}タイル</strong></span>
-        <span><small>人口力</small><strong>${formatValue(playerNation.populationPotential)}</strong></span>
-        <span><small>平均肥沃度</small><strong>${playerNation.meanFertility}</strong></span>
-        <span><small>食料力</small><strong>${formatValue(playerNation.yields.food, 1)}</strong></span>
-      </div>
     </section>
-    <section class="generated-expedition">
-      <header><div><small>EXPEDITION · ${escapeHtml(expeditionTile.id)}</small><h2>探索隊</h2></div><strong>移動力 ${generatedState.expeditionMovement} / 8</strong></header>
-      <p>東西は地図の継ぎ目を越えて移動できます。移動力は月が変わると回復します。</p>
-      <div class="generated-move-pad">${moveButtons}</div>
-      <small>発見済み ${discoveredTileCount}タイル</small>
-    </section>
-    <section class="generated-tile-dossier" style="--generated-owner-color:${owner?.color ?? "#66777b"}">
-      <header><i></i><div><small>${escapeHtml(selectedTile.id)}${selectedTile.capitalNationId ? " · 首都" : ""}</small><h2>${escapeHtml(generatedTerrainLabel(selectedTile))}</h2></div></header>
-      <p>${owner ? `${escapeHtml(owner.name)}領` : "公海・無主水域"}${selectedTile.riverId ? ` · ${escapeHtml(selectedTile.riverId)}` : ""}</p>
-      <div class="generated-tile-facts">
-        <span><small>肥沃度</small><strong>${selectedTile.fertility}</strong></span>
-        <span><small>淡水</small><strong>${Math.round(selectedTile.freshwater * 100)}%</strong></span>
-        <span><small>移動負荷</small><strong>${selectedTile.movementCost}</strong></span>
-        <span><small>河川流下先</small><strong>${flowTarget ? escapeHtml(flowTarget.id) : "流出なし"}</strong></span>
-        <span><small>食料</small><strong>${selectedTile.yields.food}</strong></span>
-        <span><small>生産</small><strong>${selectedTile.yields.production}</strong></span>
-        <span><small>交易</small><strong>${selectedTile.yields.commerce}</strong></span>
-        <span><small>国境</small><strong>${selectedTile.borderSides.length ? selectedTile.borderSides.map((side) => GENERATED_BORDER_LABELS[side] ?? side).join(" / ") : "国内"}</strong></span>
-      </div>
-    </section>
-    <p class="world-source-note">セーブには世界シードと可変状態だけを記録します。全タイルは同じIDで再構築されるため、今後の都市・軍勢・資源・外交システムへ接続できます。</p>
+    <p class="world-source-note">地形区画は地方内部の高精細地勢を生成するためだけに使い、移動・発見・コマンドは地方単位で処理します。</p>
   `;
 }
 
@@ -1748,49 +1880,102 @@ function nationPeopleChips(nationId) {
 }
 
 function renderWorldNations() {
-  const selected = SETTING_NATIONS[view.selectedNationId] ?? Object.values(SETTING_NATIONS)[0];
-  const relations = getNationRelations(selected.id);
-  const relationLines = [];
-  if (relations.suzerain) relationLines.push(`宗主国：${relations.suzerain.name}`);
-  if (relations.protectorates.length) relationLines.push(`保護領：${relations.protectorates.map((nation) => nation.name).join(" / ")}`);
-  if (!relationLines.length) relationLines.push("Notion上で国家間の従属関係なし");
-  const visibleNations = Object.values(SETTING_NATIONS).filter((nation) => (
-    view.worldNationFilter === "all"
-    || (view.worldNationFilter === "defined" && nation.knowledge === "defined")
-    || (view.worldNationFilter === "uncertain" && nation.knowledge !== "defined")
-    || (view.worldNationFilter === "linked" && (nation.suzerainId || nation.protectorateIds.length))
-  ));
-  const cards = visibleNations.map((nation) => `
-    <button type="button" class="world-nation-card ${nation.id === selected.id ? "is-active" : ""}" data-world-nation="${nation.id}">
-      <span class="world-sigil" style="--nation-color:${nation.color}">${nation.sigil}</span>
-      <span><strong>${nation.name}</strong><small>${nation.polity}<br>${nation.peopleLabel}</small></span>
-      <em class="knowledge-${nation.knowledge}">${knowledgeLabel(nation.knowledge)}</em>
+  const { runtime, playerNation } = getGeneratedWorldView(state);
+  const selected = runtime.nationById.get(view.selectedGeneratedNationId) ?? playerNation;
+  view.selectedGeneratedNationId = selected.id;
+  const selectedRegions = selected.regionIds.map((id) => runtime.regionById.get(id)).filter(Boolean);
+  const borderSegments = runtime.nations.borderSegments.filter((segment) => segment.nations.includes(selected.id));
+  const naturalBorders = borderSegments.filter((segment) => segment.natural).length;
+  const neighborIds = new Set(borderSegments.flatMap((segment) => segment.nations).filter((id) => id !== selected.id));
+  const neighbors = [...neighborIds].map((id) => runtime.nationById.get(id)).filter(Boolean);
+  const cards = runtime.nations.nations.map((nation) => `
+    <button type="button" class="world-nation-card ${nation.id === selected.id ? "is-active" : ""}" data-generated-nation="${nation.id}">
+      <span class="world-sigil" style="--nation-color:${nation.color}">${escapeHtml(nation.shortName.slice(0, 1))}</span>
+      <span><strong>${escapeHtml(nation.name)}</strong><small>${escapeHtml(nation.government)}<br>${escapeHtml(nation.peopleName)} · ${nation.regionCount}地方</small></span>
+      <em>${nation.id === playerNation.id ? "自国" : `${Math.round(nation.areaShare * 100)}%`}</em>
     </button>
   `).join("");
   return `
-    ${view.worldGuideOpen ? `
-    <section class="world-onboarding" aria-label="世界台帳の見方">
-      <header><div><small>START HERE</small><h2>最初は三つだけ見ればよい</h2></div><button type="button" data-world-guide-toggle aria-label="世界台帳の案内を閉じる">閉じる</button></header>
-      <ol>
-        <li><b>1</b><span><strong>問いで絞る</strong><small>確定情報を見るか、未詳国を調べるかを選ぶ。</small></span></li>
-        <li><b>2</b><span><strong>一国を開く</strong><small>説明・構成種族・従属関係だけを先に読む。</small></span></li>
-        <li><b>3</b><span><strong>地図で位置を確認</strong><small>地図収録国なら選択国が世界図でも強調される。</small></span></li>
-      </ol>
-      <div class="world-onboarding-actions"><button type="button" data-world-filter="defined">確定国から見る</button><button type="button" data-world-filter="uncertain">未詳国を洗う</button><button type="button" data-world-filter="linked">従属関係を見る</button></div>
-    </section>` : ""}
     <section class="world-dossier" style="--nation-color:${selected.color}">
-      <header><span class="world-sigil large">${selected.sigil}</span><div><small>${selected.polity}</small><h2>${selected.name}</h2><b class="knowledge-${selected.knowledge}">${knowledgeLabel(selected.knowledge)}</b></div></header>
-      <p>${selected.description}</p>
-      <div class="world-link-row">${nationPeopleChips(selected.id)}</div>
-      <div class="world-relation-note">${relationLines.join("<br>")}</div>
+      <header><span class="world-sigil large">${escapeHtml(selected.shortName.slice(0, 1))}</span><div><small>${escapeHtml(selected.government)} · ${escapeHtml(selected.peopleName)}</small><h2>${escapeHtml(selected.name)}</h2><b>${selected.regionCount}地方から成る国家</b></div></header>
+      <p>${escapeHtml(selected.settlementStyle)}を基盤とし、主産業は${escapeHtml(selected.economy)}。領域は世界全図と地方図の双方で、同じ生成済み国家境界を使用します。</p>
+      <div class="generated-nation-facts">
+        <span><small>構成地方</small><strong>${selected.regionCount}${selected.regionCount === 1 ? " · 地方＝国家" : ""}</strong></span>
+        <span><small>地形区画</small><strong>${selected.tileCount}</strong></span>
+        <span><small>人口力</small><strong>${formatValue(selected.populationPotential)}</strong></span>
+        <span><small>平均肥沃度</small><strong>${selected.meanFertility}</strong></span>
+        <span><small>自然国境</small><strong>${borderSegments.length ? Math.round(naturalBorders / borderSegments.length * 100) : 100}%</strong></span>
+        <span><small>隣接国家</small><strong>${neighbors.length}</strong></span>
+      </div>
+      <div class="world-link-row">${selectedRegions.map((region) => `<button type="button" class="world-link-chip is-confirmed" data-generated-region-id="${region.id}">${escapeHtml(region.name)}</button>`).join("")}</div>
+      <div class="world-relation-note">${neighbors.length ? `国境を接する国家：${neighbors.map((nation) => escapeHtml(nation.name)).join(" / ")}` : "他国と陸上国境を接していません。"}</div>
     </section>
     <section class="panel-section">
-      <div class="section-heading"><h2>国家一覧</h2><small>${visibleNations.length} / ${Object.keys(SETTING_NATIONS).length}国家</small></div>
-      <div class="world-filter-row" aria-label="国家一覧の絞り込み">
-        ${[["all", "すべて"], ["defined", "設定確定"], ["uncertain", "情報不足"], ["linked", "従属関係"]].map(([id, label]) => `<button type="button" data-world-filter="${id}" class="${view.worldNationFilter === id ? "is-active" : ""}">${label}</button>`).join("")}
-      </div>
+      <div class="section-heading"><h2>生成国家一覧</h2><small>${runtime.nations.nations.length}か国</small></div>
       <div class="world-nation-list">${cards}</div>
     </section>
+    <p class="world-source-note">国家は地方の集合です。地方が一つだけの国家も同じデータ構造で扱い、固定の原案国家とは混在させません。</p>
+  `;
+}
+
+function renderWorldGeopolitics() {
+  const { runtime, playerNation } = getGeneratedWorldView(state);
+  const geopolitical = getGeneratedGeopoliticalView(state);
+  const selected = runtime.nationById.get(view.selectedGeneratedNationId) ?? playerNation;
+  view.selectedGeneratedNationId = selected.id;
+  const selectedEntry = geopolitical.nations.find((entry) => entry.nation.id === selected.id);
+  const condition = selectedEntry.condition;
+  const profile = selectedEntry.profile;
+  const selectedRelations = geopolitical.relations.filter((relation) => relation.nationIds.includes(selected.id))
+    .sort((left, right) => Number(right.atWar) - Number(left.atWar) || right.tension - left.tension || right.trade - left.trade);
+  const relationRows = selectedRelations.map((relation) => {
+    const other = relation.nations.find((nation) => nation.id !== selected.id);
+    const relationTone = relation.atWar || relation.tension >= 45
+      ? "danger"
+      : relation.allied || relation.relation >= 35 ? "positive" : "calm";
+    const pendingOffer = relation.ceasefireOffer ?? relation.alignmentOffer;
+    const offerLabel = relation.ceasefireOffer ? "停戦案" : relation.alignmentOffer ? "同盟案" : null;
+    const offerText = pendingOffer
+      ? ` · ${offerLabel}${pendingOffer.to === selected.id ? "を受領" : "を提示中"}（残り${pendingOffer.monthsRemaining}か月）`
+      : "";
+    return `
+      <article class="geopolitical-relation is-${relationTone}">
+        <header><strong>${escapeHtml(other.name)}</strong><b>${escapeHtml(relation.status)}</b></header>
+        <div><span>関係 ${relation.relation >= 0 ? "+" : ""}${relation.relation}</span><span>緊張 ${relation.tension}</span><span>交易 ${relation.trade}</span></div>
+        <small>${relation.structure.sharedBorder ? `接壌 ${relation.structure.sharedBorder}区画 · 国境透過性 ${relation.structure.permeability}` : `非接壌 · 距離係数 ${Math.round((1 - relation.structure.distanceRatio) * 100)}`}${offerText}</small>
+      </article>`;
+  }).join("");
+  const currentPeriodEvents = geopolitical.events.filter((event) => event.period === geopolitical.geopolitics.lastAdvancedPeriod);
+  const eventRows = (currentPeriodEvents.length ? currentPeriodEvents : geopolitical.events.slice(0, runtime.nations.nations.length)).map((event) => {
+    const drivers = event.drivers.map((entry) => `${escapeHtml(entry.label)} ${entry.value}`).join(" · ");
+    return `<article class="geopolitical-event is-${event.tone}"><header><small>${escapeHtml(event.period)}</small><strong>${escapeHtml(event.title)}</strong></header><p>${escapeHtml(event.summary)}</p><span>判断要因：${drivers}</span></article>`;
+  }).join("") || '<p class="world-source-note">世界は生成済みです。次の月から、各国が地理条件と世界状態に基づいて独自に行動します。</p>';
+  const nationRows = geopolitical.nations.map((entry) => `
+    <button type="button" class="world-nation-card ${entry.nation.id === selected.id ? "is-active" : ""}" data-geopolitical-nation="${entry.nation.id}">
+      <span class="world-sigil" style="--nation-color:${entry.nation.color}">${escapeHtml(entry.nation.shortName.slice(0, 1))}</span>
+      <span><strong>${escapeHtml(entry.nation.name)}</strong><small>${escapeHtml(entry.condition.posture)} · 国力 ${entry.profile.capability}<br>${entry.topThreat ? `最大脅威 ${escapeHtml(entry.topThreat.nation.name)} ${entry.topThreat.score}` : "直接脅威なし"}</small></span>
+      <em>${entry.condition.lastPullId ? escapeHtml(GEOPOLITICAL_PULL_SET[entry.condition.lastPullId].name) : "観察"}</em>
+    </button>
+  `).join("");
+  const referenceLinks = GEOPOLITICAL_MODEL_REFERENCES.map((reference) => `<a href="${reference.url}" target="_blank" rel="noreferrer">${escapeHtml(reference.title)}</a>`).join(" / ");
+  return `
+    <section class="world-dossier geopolitical-dossier" style="--nation-color:${selected.color}">
+      <header><span class="world-sigil large">${escapeHtml(selected.shortName.slice(0, 1))}</span><div><small>AUTONOMOUS GEOPOLITICS</small><h2>${escapeHtml(selected.name)}</h2><b>${escapeHtml(condition.posture)} · ${escapeHtml(selected.government)}</b></div></header>
+      <p>地理・資源・国境・国力・他国の行動履歴から、国家自身が今月の優先行動を選びます。</p>
+      <div class="generated-nation-facts geopolitical-metrics">
+        <span><small>総合国力</small><strong>${profile.capability}</strong></span>
+        <span><small>統治能力</small><strong>${profile.stateCapacity}</strong></span>
+        <span><small>自然防御</small><strong>${profile.terrainDefense}</strong></span>
+        <span><small>食料安定</small><strong>${condition.foodSecurity}</strong></span>
+        <span><small>軍事即応</small><strong>${condition.readiness}</strong></span>
+        <span><small>攻勢意図</small><strong>${condition.offensiveIntent}</strong></span>
+      </div>
+      <div class="world-relation-note">最大脅威：${selectedEntry.topThreat ? `${escapeHtml(selectedEntry.topThreat.nation.name)}（${selectedEntry.topThreat.score}）` : "なし"} · 国内結束 ${condition.cohesion} · 国家備蓄 ${condition.reserves}</div>
+    </section>
+    <section class="panel-section geopolitical-section"><div class="section-heading"><h2>二国間関係</h2><small>接壌・距離・交易・緊張</small></div><div class="geopolitical-relations">${relationRows}</div></section>
+    <section class="panel-section geopolitical-section"><div class="section-heading"><h2>世界公報</h2><small>${escapeHtml(geopolitical.geopolitics.lastAdvancedPeriod)}</small></div><div class="geopolitical-events">${eventRows}</div></section>
+    <section class="panel-section"><div class="section-heading"><h2>国家別戦略</h2><small>${runtime.nations.nations.length}か国</small></div><div class="world-nation-list">${nationRows}</div></section>
+    <p class="world-source-note"><b>プレイヤー非関与：</b>人物の能力・所属・所在地・選択は国家判断に使いません。理論根拠：${referenceLinks}</p>
   `;
 }
 
@@ -1799,7 +1984,7 @@ function renderWorldPeoples() {
   const representative = PEOPLE_REPRESENTATIVES[selected.id];
   const nations = getNationsForPeople(selected.id);
   const nationLinks = nations.length
-    ? nations.map((nation) => `<button type="button" class="world-link-chip ${nation.association === "confirmed" ? "is-confirmed" : "is-related"}" data-world-nation="${nation.id}">${nation.association === "confirmed" ? "所属" : "関連"}：${nation.name}</button>`).join("")
+    ? nations.map((nation) => `<span class="world-link-chip ${nation.association === "confirmed" ? "is-confirmed" : "is-related"}">${nation.association === "confirmed" ? "原案所属" : "原案関連"}：${nation.name}</span>`).join("")
     : '<span class="world-unset">Notion上で国家帰属は未設定</span>';
   const listedPeoples = NOTION_OTHER_RACE_IDS.map((id) => PEOPLES[id]);
   const auxiliaryPeoples = Object.values(PEOPLES).filter((people) => people.auxiliary);
@@ -1851,7 +2036,7 @@ function renderWorldCreatures() {
       <article class="extreme-creature-note"><h3>接近兆候</h3><ol>${signRows}</ol></article>
       <article class="extreme-creature-note is-strategic"><h3>国家戦略への影響</h3><ul>${effectRows}</ul></article>
       <aside class="extreme-creature-doctrine"><small>CONTINENTAL PROTOCOL</small><strong>対処原則</strong><p>${creature.doctrine}</p></aside>
-      <button class="show-creature-map" type="button" data-show-creature-on-map="${creature.id}">世界地図で現在推定域を見る</button>
+      <p class="world-relation-note">この推定域は原案資料です。生成世界の地図上には、生成時に配置されるまで表示しません。</p>
     </section>
     <p class="world-source-note">超規格外生物は種族・国家・通常の幻獣分類に含めません。観測済みの事実と推定を分け、討伐可能な戦力値には換算しません。</p>
   `;
@@ -1871,73 +2056,78 @@ function statisticDistribution(title, items) {
 }
 
 function renderWorldStatistics() {
-  const profile = getNationStatistics(view.selectedNationId) ?? getResourceRanking()[0];
-  const nation = SETTING_NATIONS[profile.nationId];
-  const resourcePower = getResourcePower(profile);
-  const resourceRows = profile.resources ? RESOURCE_CATEGORIES.map((category) => `
-    <div class="resource-power-row">
-      <span>${category.mark}</span><b>${category.label}</b>
-      <i><u style="--score:${profile.resources[category.id]}%"></u></i><em>${profile.resources[category.id]}</em>
-    </div>
-  `).join("") : '<p class="statistics-unavailable">資源調査は未着手です。</p>';
-  const ranking = getResourceRanking();
-  const rankCards = ranking.map((item, index) => {
-    const itemNation = SETTING_NATIONS[item.nationId];
-    const score = getResourcePower(item);
-    return `
-      <button type="button" class="statistics-rank-card ${item.nationId === profile.nationId ? "is-active" : ""}" data-statistics-nation="${item.nationId}">
-        <span>${score === null ? "—" : index + 1}</span>
-        <strong>${itemNation.name}</strong>
-        <small>${score === null ? "統計未調査" : `資源力 ${getResourceGrade(score)}`}</small>
-        <b>${score ?? "—"}</b>
-      </button>
-    `;
-  }).join("");
-  const summary = getWorldStatisticsSummary();
-  const leader = SETTING_NATIONS[summary.resourceLeaderId];
-  const metric = (label, value, suffix = "") => `<div><small>${label}</small><strong>${value === null ? "未調査" : `${formatValue(value)}${suffix}`}</strong></div>`;
+  const { runtime, generatedState, playerNation } = getGeneratedWorldView(state);
+  const selected = runtime.nationById.get(view.selectedGeneratedNationId) ?? playerNation;
+  view.selectedGeneratedNationId = selected.id;
+  const summary = runtime.nations.summary;
+  const objectCounts = summary.objectCounts ?? {};
+  const frontierLabels = { mountain: "山稜", ridge: "丘陵・分水界", river: "河川沿い", wetland: "湿地帯", climate: "気候地形境界", artificial: "人為線" };
+  const frontierTotal = Math.max(1, summary.borderSegmentCount);
+  const frontierDistribution = Object.entries(summary.frontierTypeCounts ?? {}).map(([type, count]) => ({
+    label: frontierLabels[type] ?? type,
+    share: Math.round(count / frontierTotal * 100),
+  })).sort((left, right) => right.share - left.share);
+  const rankCards = [...runtime.nations.nations].sort((left, right) => right.populationPotential - left.populationPotential).map((nation, index) => `
+    <button type="button" class="statistics-rank-card ${nation.id === selected.id ? "is-active" : ""}" data-generated-statistics-nation="${nation.id}">
+      <span>${index + 1}</span><strong>${escapeHtml(nation.name)}</strong>
+      <small>${nation.regionCount}地方 · 肥沃度 ${nation.meanFertility}</small><b>${formatValue(nation.populationPotential)}</b>
+    </button>
+  `).join("");
 
   return `
-    <section class="statistics-overview">
-      <div><small>調査済み</small><strong>${summary.surveyedNations} / ${summary.surveyedNations + summary.unavailableNations}か国</strong></div>
-      <div><small>把握人口</small><strong>${formatValue(summary.populationTotal)}人</strong></div>
-      <div><small>資源力首位</small><strong>${leader.name}</strong></div>
+    <section class="generated-world-overview">
+      <div><small>世界生成用地形</small><strong>${runtime.terrain.width} × ${runtime.terrain.height} · ${runtime.tiles.length.toLocaleString("ja-JP")}区画</strong></div>
+      <div><small>地方と国家</small><strong>${summary.regionCount}地方 · ${summary.nationCount}か国</strong></div>
+      <div><small>地図上の拠点</small><strong>城${objectCounts.castle ?? 0} · 村${objectCounts.village ?? 0} · 砦${objectCounts.fort ?? 0}</strong></div>
+      <div><small>河川・陸地率</small><strong>${runtime.terrain.summary.riverCount}水系 · ${Math.round(runtime.terrain.summary.landRatio * 100)}%</strong></div>
     </section>
-    <p class="statistics-basis-note"><b>${STATISTICS_BASIS.label}</b>${STATISTICS_BASIS.note}</p>
-    <section class="statistics-dossier" style="--nation-color:${nation.color}">
+    <section class="generated-world-controls">
+      <div><span>この人物の世界シード</span><strong>${escapeHtml(generatedState.seed)}</strong></div>
+      <small>生成解像度、件数、比率、シードなどの監査情報は統計画面だけに表示します。</small>
+    </section>
+    <section class="statistics-overview">
+      <div><small>自然国境</small><strong>${Math.round(summary.naturalBorderShare * 100)}%</strong></div>
+      <div><small>人為国境</small><strong>${Math.round(summary.artificialBorderShare * 100)}%</strong></div>
+      <div><small>国境線総数</small><strong>${summary.borderSegmentCount}</strong></div>
+    </section>
+    <p class="statistics-basis-note"><b>自然国境線優先</b>河川沿い、山稜・分水界、湿地帯、気候地形境界を領土拡張の障壁として先に採用します。複数の自然障壁重みを比較し、この世界では係数${summary.nationCount ? runtime.nations.config.naturalFrontierWeight : "—"}の国割りを採用して人為線比率を最小化しています。</p>
+    ${statisticDistribution("国境線の根拠", frontierDistribution)}
+    <section class="statistics-dossier" style="--nation-color:${selected.color}">
       <header class="statistics-dossier-heading">
-        <span class="world-sigil large">${nation.sigil}</span>
-        <div><small>${profile.status === "estimated" ? `統計局推計 · 調査確度 ${profile.surveyQuality}%` : "統計未調査"}</small><h2>${nation.name}</h2><b>${resourcePower === null ? "資源力 未評価" : `総合資源力 ${resourcePower} · ${getResourceGrade(resourcePower)}`}</b></div>
+        <span class="world-sigil large">${escapeHtml(selected.shortName.slice(0, 1))}</span>
+        <div><small>生成国家統計 · ${escapeHtml(selected.peopleName)}</small><h2>${escapeHtml(selected.name)}</h2><b>${selected.regionCount}地方 · ${selected.tileCount}区画</b></div>
       </header>
       <div class="statistics-metrics">
-        ${metric("推計人口", profile.population, "人")}
-        ${metric("推計領域", profile.area, " km²")}
-        ${metric("都市化率", profile.urbanization, "%")}
-        ${metric("調査確度", profile.surveyQuality, "%")}
+        <div><small>人口力</small><strong>${formatValue(selected.populationPotential)}</strong></div>
+        <div><small>世界陸地比</small><strong>${Math.round(selected.areaShare * 100)}%</strong></div>
+        <div><small>平均肥沃度</small><strong>${selected.meanFertility}</strong></div>
+        <div><small>沿岸比率</small><strong>${Math.round(selected.coastalShare * 100)}%</strong></div>
       </div>
-      <p class="statistics-profile-note">${profile.note}</p>
-      <div class="statistics-composition-grid">
-        ${statisticDistribution("種族", profile.races)}
-        ${statisticDistribution("言語", profile.languages)}
-        ${statisticDistribution("宗教", profile.religions)}
-      </div>
-      <article class="resource-power-card">
-        <header><div><small>RESOURCE CAPACITY</small><h3>資源力</h3></div><strong>${resourcePower ?? "—"}<small>/ 100</small></strong></header>
-        <div class="resource-power-list">${resourceRows}</div>
-        <p>食料・森林・鉱物・魔力・水運の5分野を同じ重みで集約した相対指数です。</p>
-      </article>
+      <p class="statistics-profile-note">食料力 ${formatValue(selected.yields.food, 1)} · 生産力 ${formatValue(selected.yields.production, 1)} · 交易力 ${formatValue(selected.yields.commerce, 1)}。世界全図と地方図はこの同じ生成国家データを参照します。</p>
     </section>
     <section class="panel-section">
-      <div class="section-heading"><h2>国家別資源力</h2><small>クリックで統計を切替</small></div>
+      <div class="section-heading"><h2>国家別人口力</h2><small>クリックで統計と地図を切替</small></div>
       <div class="statistics-ranking">${rankCards}</div>
     </section>
   `;
 }
 
 function renderWorldPanel() {
-  const summary = getWorldCatalogSummary();
+  const sourceArchiveMode = view.atlasMode === "peoples" || view.atlasMode === "creatures";
+  const summary = sourceArchiveMode ? getWorldCatalogSummary() : null;
+  const headings = {
+    generated: ["PROCEDURAL REGIONAL WORLD", "生成世界・探索", "地方単位で移動し、同じ生成地図上で探索"],
+    geopolitics: ["AUTONOMOUS WORLD DYNAMICS", "世界情勢", "各国が地理と国家間関係から独立して行動"],
+    nations: ["GENERATED NATIONS", "生成国家", "地方の集合として成立した国家を世界全図と照合"],
+    statistics: ["GENERATED WORLD STATISTICS", "世界統計", "生成条件、自然国境、国家指標を監査"],
+    peoples: ["SOURCE ARCHIVE", "原案種族", "生成世界とは分離した設定原案資料"],
+    creatures: ["SOURCE ARCHIVE", "原案巨獣", "生成世界とは分離した観測原案資料"],
+  };
+  const heading = headings[view.atlasMode] ?? headings.generated;
   const content = view.atlasMode === "generated"
     ? renderGeneratedWorldPanel()
+    : view.atlasMode === "geopolitics"
+      ? renderWorldGeopolitics()
     : view.atlasMode === "peoples"
     ? renderWorldPeoples()
     : view.atlasMode === "creatures"
@@ -1945,14 +2135,13 @@ function renderWorldPanel() {
       : view.atlasMode === "statistics" ? renderWorldStatistics() : renderWorldNations();
   elements.leftPanel.innerHTML = `
     <header class="panel-heading world-heading">
-      <span>${view.atlasMode === "generated" ? "PROCEDURAL SQUARE WORLD" : "KNOWN WORLD ARCHIVE"}</span>
-      <h1>${view.atlasMode === "generated" ? "生成世界・探索" : "国家・種族・巨獣・統計"}</h1>
-      <p>${view.atlasMode === "generated" ? "地形・河川・肥沃度・国家を正方形タイルで一体運用" : "確定設定、観測事実、開幕時の推計値を分けて記録"}</p>
-      ${view.atlasMode === "nations" ? `<button class="world-guide-button" type="button" data-world-guide-toggle>${view.worldGuideOpen ? "案内を閉じる" : "見方を表示"}</button>` : ""}
+      <span>${heading[0]}</span>
+      <h1>${heading[1]}</h1>
+      <p>${heading[2]}</p>
       ${worldModeSwitch()}
     </header>
     <div class="panel-body">
-      ${view.atlasMode === "generated" ? "" : `<section class="panel-section world-summary">
+      ${sourceArchiveMode ? `<section class="panel-section world-summary">
         <div class="realm-facts">
           <div><small>異種族</small><strong>${summary.otherRaces}</strong></div>
           <div><small>国家</small><strong>${summary.nations}</strong></div>
@@ -1960,7 +2149,7 @@ function renderWorldPanel() {
           <div><small>詳細不明国</small><strong>${summary.unknownNations}</strong></div>
           <div><small>超規格外生物</small><strong>${summary.extremeCreatures}</strong></div>
         </div>
-      </section>`}
+      </section>` : ""}
       ${content}
     </div>
   `;
@@ -2331,8 +2520,147 @@ function renderCentralizationPanel() {
   `;
 }
 
+function careerMetricCards(player) {
+  const metrics = player.metrics;
+  return [
+    ["武勲", metrics.martialMerit, "戦場と軍務の功績"],
+    ["政績", metrics.civilMerit, "統治と交渉の成果"],
+    ["名声", metrics.renown, "世間からの認知"],
+    ["主君の信頼", metrics.liegeTrust, player.affiliation.liegeName ?? "主君なし"],
+    ["家臣支持", metrics.householdSupport, "直属家臣の支持"],
+    ["領民支持", metrics.popularSupport, "管轄住民の評価"],
+    ["正統性", metrics.legitimacy, "任官・継承・承認"],
+    ["野心", metrics.ambition, "周囲から見た危険度"],
+  ].map(([label, value, detail]) => `<article><small>${label}</small><strong>${value}</strong><span>${detail}</span><i style="--value:${value}%"></i></article>`).join("");
+}
+
+function promotionDelegationFields(roleId) {
+  const candidates = getDelegationCandidates(state, roleId);
+  if (!candidates.length) return `<p class="delegation-warning">後任候補がいません。仲間か配下人物が必要です。</p>`;
+  const mandateOptions = Object.values(DELEGATION_MANDATES).map((mandate) => `<option value="${mandate.id}" ${mandate.id === (roleId === "commander" ? "defensive" : "balanced") ? "selected" : ""}>${mandate.name}</option>`).join("");
+  const authorityOptions = Object.values(DELEGATION_AUTHORITY_LEVELS).map((authority) => `<option value="${authority.id}" ${authority.id === "standard" ? "selected" : ""}>${authority.name}</option>`).join("");
+  return `<fieldset class="promotion-delegation"><legend>昇進後の引き継ぎ</legend><label>後任<select data-promotion-successor>${candidates.map((officer) => `<option value="${officer.id}">${escapeHtml(officer.name)} · ${escapeHtml(officer.role)}</option>`).join("")}</select></label><label>重視方針<select data-promotion-mandate>${mandateOptions}</select></label><label>裁量<select data-promotion-authority>${authorityOptions}</select></label><p>日常判断は後任が処理し、重大事項だけを上申します。</p></fieldset>`;
+}
+
+function careerActionButtons(player) {
+  if (player.stage === "individual" && !player.invitations.length) {
+    return `<button class="career-primary-action" type="button" data-career-action="take_contract"><strong>街道護衛の依頼を受ける</strong><small>本人と少数の協力者で事件へ参加し、武勲・名声・財産を得る</small></button>`;
+  }
+  if (player.stage === "individual") return "";
+  if (player.stage === "retainer") return `<button class="career-primary-action" type="button" data-career-action="fulfill_order"><strong>主君の討伐命令を果たす</strong><small>命令への服従、成果、損耗が信頼と昇進へ影響する</small></button>`;
+  if (player.stage === "commander") return `<article class="career-promotion-action" data-career-action-card>${promotionDelegationFields("commander")}<button class="career-primary-action" type="button" data-career-action="command_campaign"><strong>辺境救援軍を指揮する</strong><small>昇進した場合、国境隊と実務を選んだ後任へ引き継ぐ</small></button></article>`;
+  if (["lord", "multi_lord", "governor"].includes(player.stage)) {
+    return `
+      <button type="button" data-career-action="consolidate_power"><strong>領内基盤を固める</strong><small>家臣・領民・地方豪族の支持と正統性を積む。中央の警戒も強まる</small></button>
+      ${player.stage === "lord" ? `<article class="career-promotion-action" data-career-action-card>${promotionDelegationFields("lord")}<button type="button" data-career-action="request_second_fief"><strong>第二の所領を願い出る</strong><small>加増された場合、東境州の日常統治を選んだ代官へ引き継ぐ</small></button></article>` : ""}
+      <button class="is-danger" type="button" data-career-action="declare_independence"><strong>辺境に新国家を建てる</strong><small>家臣支持55・領民支持50・正統性30が必要。旧主君との関係を失う</small></button>`;
+  }
+  return "";
+}
+
+function roleDelegationSection() {
+  const overview = getRoleDelegation(state);
+  if (!overview?.assignments.length) return "";
+  const assignments = overview.assignments.map((assignment) => {
+    const eligible = assignment.eligibleOfficerIds.map((id) => WORLD.characters[id]).filter(Boolean);
+    const organizationName = assignment.organizationType === "unit"
+      ? assignment.organization?.name ?? assignment.organizationId
+      : WORLD.provinces[assignment.territoryId]?.name ?? assignment.territoryId;
+    const report = assignment.lastReport;
+    return `<article class="delegation-assignment ${report?.requiresDecision ? "needs-decision" : ""}">
+      <header><div><small>${assignment.organizationType === "unit" ? "UNIT COMMAND" : "TERRITORY OFFICE"}</small><h3>${assignment.role.delegatedName}</h3></div><b>${escapeHtml(organizationName)}</b></header>
+      <div class="delegation-holder"><strong>${escapeHtml(assignment.holder?.name ?? "空席")}</strong><span>経験 ${assignment.experience} · 名声 ${assignment.reputation} · 現地影響 ${assignment.localInfluence} · 支持基盤 ${assignment.supportBase}</span></div>
+      <div class="delegation-controls">
+        <label>担当者<select data-reassign-delegation="${assignment.id}">${eligible.map((officer) => `<option value="${officer.id}" ${officer.id === assignment.holderId ? "selected" : ""}>${escapeHtml(officer.name)}</option>`).join("")}</select></label>
+        <label>方針<select data-delegation-mandate="${assignment.id}">${Object.values(DELEGATION_MANDATES).map((mandate) => `<option value="${mandate.id}" ${mandate.id === assignment.mandateId ? "selected" : ""}>${mandate.name}</option>`).join("")}</select></label>
+        <label>裁量<select data-delegation-authority="${assignment.id}">${Object.values(DELEGATION_AUTHORITY_LEVELS).map((authority) => `<option value="${authority.id}" ${authority.id === assignment.authorityId ? "selected" : ""}>${authority.name}</option>`).join("")}</select></label>
+      </div>
+      ${report ? `<p class="delegation-latest-report"><strong>${escapeHtml(report.title)} · ${report.grade}</strong><span>${escapeHtml(report.summary)}</span>${report.requiresDecision ? "<b>上位判断が必要</b>" : ""}</p>` : `<p class="delegation-latest-report"><span>次の月次進行から担当者が自律的に実務を処理します。</span></p>`}
+    </article>`;
+  }).join("");
+  const reports = overview.latestReports.slice(0, 4).map((report) => `<li class="is-${report.severity}"><strong>${escapeHtml(report.title)}</strong><span>${escapeHtml(report.summary)}</span><small>${report.grade}</small></li>`).join("");
+  return `<section class="role-delegation-board"><header><div><small>DELEGATED RESPONSIBILITIES</small><h2>役割委任</h2></div><p>人選・方針・裁量を示し、通常実務は担当者へ任せます。</p></header><div class="delegation-assignment-grid">${assignments}</div>${reports ? `<div class="delegation-report-list"><h3>簡潔な実務報告</h3><ul>${reports}</ul></div>` : ""}</section>`;
+}
+
+function renderCareerPanel() {
+  const player = state.player;
+  const stage = getCareerStage(state);
+  const latest = player.history[0];
+  elements.leftPanel.innerHTML = `
+    <header class="panel-heading career-heading"><span>PERSONAL CHRONICLE</span><h1>${escapeHtml(player.name)}</h1><p>${stage.name} · ${escapeHtml(player.title)}</p></header>
+    <div class="panel-body">
+      <section class="panel-section"><div class="section-heading"><h2>現在の立場</h2><small>段階 ${stage.order + 1}/9</small></div><p class="adviser-note"><strong>${stage.description}</strong><br>${player.affiliation.liegeName ? `主君：${escapeHtml(player.affiliation.liegeName)}` : "特定の主君には仕えていません。"}</p></section>
+      <section class="panel-section"><div class="realm-facts"><div><small>武勲</small><strong>${player.metrics.martialMerit}</strong></div><div><small>政績</small><strong>${player.metrics.civilMerit}</strong></div><div><small>名声</small><strong>${player.metrics.renown}</strong></div><div><small>財産</small><strong>${player.metrics.wealth}</strong></div></div></section>
+      <section class="panel-section"><div class="section-heading"><h2>最新の年代記</h2><small>${latest.year ?? state.year}年</small></div><p class="adviser-note"><strong>${escapeHtml(latest.title)}</strong><br>${escapeHtml(latest.detail)}</p></section>
+      ${stage.governance ? `<section class="panel-section"><button class="town-open-commands" type="button" data-panel="governance">管轄統治を開く</button></section>` : ""}
+    </div>`;
+}
+
+function renderGovernancePanel() {
+  const governance = getGovernanceView(state);
+  const names = governance.jurisdiction.territoryIds.map((id) => WORLD.provinces[id]?.name ?? id);
+  elements.leftPanel.innerHTML = `
+    <header class="panel-heading governance-heading"><span>JURISDICTION GOVERNANCE</span><h1>統治</h1><p>${governance.stage.name} · ${governance.jurisdiction.sovereign ? "国家主権" : "主君の下の領主権"}</p></header>
+    <div class="panel-body">
+      <section class="panel-section"><div class="section-heading"><h2>管轄範囲</h2><small>${names.length}地域</small></div><p class="adviser-note"><strong>${names.join("・") || "統治対象なし"}</strong><br>政策効果は、この管轄と有効な委任範囲だけに限定されます。</p></section>
+      <section class="panel-section"><div class="realm-facts"><div><small>実行命令</small><strong>${governance.executable.length}</strong></div><div><small>建議候補</small><strong>${governance.petitions.length}</strong></div><div><small>期限内委任</small><strong>${governance.jurisdiction.grants.length}</strong></div><div><small>禁止令</small><strong>${governance.jurisdiction.prohibitions.length}</strong></div></div></section>
+      <section class="panel-section"><p class="adviser-note"><strong>画面表示と国家主権は別です。</strong><br>国家規模の命令は、君主権がなければ実行項目にせず、建議としてのみ提示します。</p></section>
+    </div>`;
+}
+
+function renderCareerWorkspace() {
+  const player = state.player;
+  const stage = getCareerStage(state);
+  const invitations = player.invitations.length ? `
+    <section class="career-invitations"><header><div><small>SERVICE OFFERS</small><h2>仕官先を選ぶ</h2></div><p>所属タグではなく、具体的な主君との主従関係を結びます。</p></header><div>${player.invitations.map((invitation) => `
+      <button type="button" data-accept-service="${invitation.nationId}"><strong>${escapeHtml(invitation.name)}</strong><b>${escapeHtml(invitation.offer)}</b><small>初期信頼 ${invitation.trust} · 俸禄と保護を得る代わりに軍役と命令への服従を負う</small></button>`).join("")}</div></section>` : "";
+  const holdings = player.holdings.length ? player.holdings.map((holding) => `<span>${WORLD.provinces[holding.territoryId]?.name ?? holding.territoryId}</span>`).join("") : "<span>所領なし</span>";
+  const history = player.history.slice(0, 8).map((entry) => `<li><span>${entry.year ?? state.year}年 ${entry.month ?? state.month}月</span><strong>${escapeHtml(entry.title)}</strong><small>${escapeHtml(entry.detail)}</small></li>`).join("");
+  return `
+    <header class="career-workspace-header"><div><span>PERSONAL RISE / ${stage.id.toUpperCase()}</span><h1>${escapeHtml(player.name)}の立身記</h1><p>${escapeHtml(player.origin)} · ${escapeHtml(player.specialty)}。国家ではなく本人の選択と関係を追う。</p></div><aside><small>現在の地位</small><strong>${stage.name}</strong><b>${escapeHtml(player.title)}</b></aside></header>
+    <div class="career-workspace-body">
+      <section class="career-status-strip"><div><small>所属</small><strong>${escapeHtml(player.affiliation.liegeName ?? "なし")}</strong></div><div><small>所領</small><strong>${player.holdings.length}領</strong><span>${holdings}</span></div><div><small>直属家臣</small><strong>${player.householdRetainers.length}名</strong></div><div><small>次の立場</small><strong>${stage.order >= 7 ? "国家を治める" : "功績と政治選択で変化"}</strong></div></section>
+      <section class="career-metric-grid">${careerMetricCards(player)}</section>
+      ${invitations}
+      <section class="career-actions"><header><div><small>CURRENT CHOICES</small><h2>今できること</h2></div><p>権限を得ていない国家命令は表示しません。</p></header><div>${careerActionButtons(player) || (stage.governance ? `<button type="button" data-panel="governance"><strong>統治画面を開く</strong><small>現在の管轄と委任権限で実行可能な命令だけを表示</small></button>` : `<p class="career-action-note">上の仕官先を選び、具体的な主君との主従関係を結んでください。</p>`)}</div></section>
+      ${roleDelegationSection()}
+      <section class="career-history"><header><small>PERSONAL CHRONICLE</small><h2>人物の年代記</h2></header><ol>${history}</ol></section>
+    </div>`;
+}
+
+function governanceCommandCard(item) {
+  const territory = item.targetTerritoryId ? WORLD.provinces[item.targetTerritoryId]?.name ?? item.targetTerritoryId : "自国全体";
+  return `<button type="button" data-governance-command="${item.id}" ${item.targetTerritoryId ? `data-territory-id="${item.targetTerritoryId}"` : ""}><header><strong>${item.name}</strong><b>${item.group}</b></header><p>${item.description}</p><small>対象：${territory}</small><span>権限確認済み · 実行 →</span></button>`;
+}
+
+function renderGovernanceWorkspace() {
+  const player = state.player;
+  const viewModel = getGovernanceView(state);
+  const jurisdictionNames = viewModel.jurisdiction.territoryIds.map((id) => WORLD.provinces[id]?.name ?? id);
+  if (!viewModel.jurisdiction.territoryIds.includes(view.selectedCityId)) view.selectedCityId = viewModel.jurisdiction.territoryIds[0] ?? "orta";
+  const territorial = viewModel.executable.filter((item) => item.scope === "territory" && item.targetTerritoryId === view.selectedCityId);
+  const national = viewModel.executable.filter((item) => item.scope === "nation");
+  const groups = [...new Set(territorial.map((item) => item.group))];
+  const petitions = viewModel.petitions.map((item) => `<button type="button" data-submit-petition="${item.id}"><header><strong>${item.petitionTopic}</strong><b>主君への建議</b></header><p>${item.description}</p><small>採否：信頼・官職・功績・派閥・必要性・主君の方針</small><span>政策の実施者は主君・中央政府 →</span></button>`).join("");
+  const delegated = viewModel.jurisdiction.grants.map((grant) => `<li><strong>${escapeHtml(grant.reason)}</strong><span>${(grant.territoryIds ?? []).map((id) => WORLD.provinces[id]?.name ?? id).join("・") || "全国"}</span><small>${grant.expiresTurn == null ? "期限なし" : `${grant.expiresTurn}ターンまで`}</small></li>`).join("");
+  return `
+    <header class="governance-workspace-header"><div><span>ONE GOVERNANCE SCREEN / JURISDICTION</span><h1>${viewModel.jurisdiction.sovereign ? "国家統治" : "領地統治"}</h1><p>領地経営と国家運営は同じ画面です。地位・官職・委任に応じて対象と命令が拡張されます。</p></div><aside><small>現在の管轄</small><strong>${jurisdictionNames.join("・")}</strong><b>${viewModel.jurisdiction.sovereign ? "君主権あり" : `${player.affiliation.liegeName}の臣下`}</b></aside></header>
+    <nav class="jurisdiction-selector" aria-label="統治対象">${viewModel.jurisdiction.territoryIds.map((id) => `<button type="button" data-jurisdiction-territory="${id}" class="${id === view.selectedCityId ? "is-active" : ""}"><strong>${WORLD.provinces[id]?.name ?? id}</strong><small>${id === view.selectedCityId ? "表示中" : "自領を開く"}</small></button>`).join("")}</nav>
+    <div class="governance-workspace-body">
+      <section class="governance-boundary"><article><small>地位</small><strong>${viewModel.stage.name}</strong><span>${player.title}</span></article><article><small>統治領域</small><strong>${viewModel.jurisdiction.territoryIds.length}</strong><span>対象外更新を拒否</span></article><article><small>委任</small><strong>${viewModel.jurisdiction.grants.length}</strong><span>期限と発令者を保存</span></article><article><small>禁止令</small><strong>${viewModel.jurisdiction.prohibitions.length}</strong><span>委任より優先</span></article></section>
+      ${groups.map((group) => `<section class="governance-command-group"><header><div><small>LOCAL EXECUTION</small><h2>${group}</h2></div><p>${WORLD.provinces[view.selectedCityId]?.name}だけへ効果を適用</p></header><div>${territorial.filter((item) => item.group === group).map(governanceCommandCard).join("")}</div></section>`).join("")}
+      ${national.length ? `<section class="governance-command-group is-national"><header><div><small>SOVEREIGN EXECUTION</small><h2>国家主権に基づく命令</h2></div><p>独立後、同じ画面へ追加された国家規模の決定です。</p></header><div>${national.map(governanceCommandCard).join("")}</div></section>` : ""}
+      ${petitions ? `<section class="governance-command-group is-petition"><header><div><small>PETITION TO THE LIEGE</small><h2>国家政策への建議</h2></div><p>直接実行ではありません。採用後も実施者は主君または中央政府です。</p></header><div>${petitions}</div></section>` : ""}
+      <section class="governance-delegations"><header><div><small>OFFICES / DELEGATION / PROHIBITIONS</small><h2>官職と委任</h2></div><p>単純な身分以外の一時権限をここで確認します。</p></header><ul>${delegated || "<li><strong>追加委任なし</strong><span>現在は地位と所領に基づく権限のみ</span></li>"}</ul></section>
+      ${roleDelegationSection()}
+      ${["lord", "multi_lord", "governor"].includes(player.stage) ? `<section class="career-actions governance-politics"><header><div><small>LOYALTY / INTRIGUE / INDEPENDENCE</small><h2>領主としての政治選択</h2></div><p>国家命令の代替ではなく、地位そのものを変える政治行動です。</p></header><div>${careerActionButtons(player)}</div></section>` : ""}
+    </div>`;
+}
+
 function renderLeftPanel() {
-  if (view.panel === "centralization") renderCentralizationPanel();
+  if (view.panel === "career") renderCareerPanel();
+  else if (view.panel === "governance") renderGovernancePanel();
+  else if (view.panel === "centralization") renderCentralizationPanel();
   else if (view.panel === "spending") renderSpendingPanel();
   else if (view.panel === "city") renderCityPanel();
   else if (view.panel === "town") renderTownPanel();
@@ -2344,6 +2672,19 @@ function renderLeftPanel() {
 }
 
 function renderAlerts() {
+  if (state.player) {
+    const player = state.player;
+    const alerts = [];
+    if (player.invitations.length) alerts.push(`<span class="alert-chip info">仕官の誘い ${player.invitations.length}件</span>`);
+    if (getCareerStage(state).governance) alerts.push(`<span class="alert-chip info">管轄 ${player.holdings.length}領 · 国家命令は${player.sovereign ? "実行可能" : "建議のみ"}</span>`);
+    const delegation = getRoleDelegation(state);
+    if (delegation?.decisionsRequired) alerts.push(`<span class="alert-chip danger">委任先から判断要請 ${delegation.decisionsRequired}件</span>`);
+    else if (player.lastDelegationReports?.length) alerts.push(`<span class="alert-chip info">委任実務 ${player.lastDelegationReports.length}件を処理</span>`);
+    const lastPetition = player.petitions[0];
+    if (lastPetition) alerts.push(`<span class="alert-chip ${lastPetition.status === "accepted" ? "info" : "danger"}">直近の建議：${lastPetition.status === "accepted" ? "採用" : "不採用"}</span>`);
+    elements.alertRack.innerHTML = alerts.join("");
+    return;
+  }
   const alerts = [];
   if (state.council.pending && !state.centralizationCampaign?.ending) alerts.push('<span class="alert-chip danger">季節評定 · 方針未決</span>');
   if (state.phase === "event" && state.pendingEvent) alerts.push(`<span class="alert-chip danger">都市事件 · ${EVENT_DEFINITIONS[state.pendingEvent.eventId].name}</span>`);
@@ -2523,57 +2864,103 @@ function renderStrategicMapState() {
   setMapMarkerText("passStatusText", state.war ? `交戦中 ${state.war.score >= 0 ? "+" : ""}${Math.round(state.war.score)}` : borderResolved ? "通行確保" : "国境緊張");
 }
 
-function positionGeneratedMapMarkers(copy, selectedTile, expeditionTile, runtime) {
-  const tileWidth = 100 / runtime.terrain.width;
-  const tileHeight = 100 / runtime.terrain.height;
-  const selected = copy.querySelector(".generated-selected-tile");
+function generatedRegionViewport(region, runtime) {
+  if (view.generatedMapScale === "world") return { x: 0, y: 0, width: runtime.terrain.width, height: runtime.terrain.height };
+  const anchor = runtime.tiles[region.anchorIndex];
+  const points = region.tileIndices.map((index) => {
+    const tile = runtime.tiles[index];
+    let dx = tile.x - anchor.x;
+    if (runtime.terrain.config.wrapX && Math.abs(dx) > runtime.terrain.width / 2) dx -= Math.sign(dx) * runtime.terrain.width;
+    return { x: anchor.x + dx, y: tile.y };
+  });
+  const minX = Math.min(...points.map((point) => point.x));
+  const maxX = Math.max(...points.map((point) => point.x));
+  const minY = Math.min(...points.map((point) => point.y));
+  const maxY = Math.max(...points.map((point) => point.y));
+  let width = Math.min(runtime.terrain.width, Math.max(28, maxX - minX + 9));
+  let height = Math.min(runtime.terrain.height, Math.max(18, maxY - minY + 7));
+  const targetAspect = 1.58;
+  if (width / height < targetAspect) width = Math.min(runtime.terrain.width, height * targetAspect);
+  else height = Math.min(runtime.terrain.height, width / targetAspect);
+  const centerX = (minX + maxX + 1) / 2;
+  const centerY = (minY + maxY + 1) / 2;
+  return {
+    x: centerX - width / 2,
+    y: Math.min(runtime.terrain.height - height, Math.max(0, centerY - height / 2)),
+    width,
+    height,
+  };
+}
+
+function visibleUnwrappedTileX(tileX, viewport, worldWidth) {
+  return [-1, 0, 1].map((copy) => tileX + copy * worldWidth)
+    .sort((left, right) => Math.abs(left + 0.5 - (viewport.x + viewport.width / 2)) - Math.abs(right + 0.5 - (viewport.x + viewport.width / 2)))[0];
+}
+
+function positionGeneratedRegionMarker(copy, expeditionRegion, expeditionTile, runtime, viewport) {
   const expedition = copy.querySelector(".generated-expedition-marker");
-  selected.style.left = `${selectedTile.x * tileWidth}%`;
-  selected.style.top = `${selectedTile.y * tileHeight}%`;
-  selected.style.width = `${tileWidth}%`;
-  selected.style.height = `${tileHeight}%`;
-  selected.dataset.generatedTileId = selectedTile.id;
-  expedition.style.left = `${(expeditionTile.x + 0.5) * tileWidth}%`;
-  expedition.style.top = `${(expeditionTile.y + 0.5) * tileHeight}%`;
-  expedition.dataset.generatedTileId = expeditionTile.id;
-  expedition.title = `探索隊 · ${expeditionTile.id}`;
+  const tile = expeditionTile;
+  const x = visibleUnwrappedTileX(tile.x, viewport, runtime.terrain.width);
+  expedition.style.left = `${(x + 0.5 - viewport.x) / viewport.width * 100}%`;
+  expedition.style.top = `${(tile.y + 0.5 - viewport.y) / viewport.height * 100}%`;
+  expedition.dataset.generatedRegionId = expeditionRegion.id;
+  expedition.dataset.generatedTileId = tile.id;
+  expedition.title = `探索隊 · ${expeditionRegion.name}`;
 }
 
 function renderGeneratedWorldMapLayer() {
-  const { runtime, selectedTile, expeditionTile, playerNation } = getGeneratedWorldView(state);
-  const visualKey = `${runtime.key}|political-natural-v1`;
+  const { runtime, expeditionRegion, expeditionTile, playerNation } = getGeneratedWorldView(state);
+  const viewport = generatedRegionViewport(expeditionRegion, runtime);
+  const focusedNation = ["geopolitics", "nations", "statistics"].includes(view.atlasMode)
+    ? runtime.nationById.get(view.selectedGeneratedNationId) ?? playerNation
+    : null;
+  const visualKey = `${runtime.key}|illustrated-strategy-map-v6-regional-hd`;
   if (generatedMapVisualCache.key !== visualKey) {
     generatedMapVisualCache = {
       key: visualKey,
       url: terrainSvgDataUrl(runtime.terrain, {
-        cellSize: 14,
-        pixelsPerTile: 6,
-        showGrid: true,
+        cellSize: 12,
+        pixelsPerTile: 12,
+        showGrid: false,
         nationMap: runtime.nations,
         textureUrl: new URL("./assets/generated/terrain-natural-texture.png", window.location.href).href,
       }),
     };
   }
   if (elements.generatedWorldStrip.dataset.visualKey !== visualKey) {
-    elements.generatedWorldStrip.innerHTML = [-1, 0, 1].map((copy) => `
-      <div class="generated-world-copy" data-generated-map-copy="${copy}" role="img" aria-label="東西に循環する生成世界地図 ${copy + 2}/3">
-        <img alt="自然地形、河川、国家領域を重ねた正方形タイル世界地図" draggable="false">
-        <button type="button" class="generated-selected-tile" aria-label="選択中の正方形タイル"></button>
+    elements.generatedWorldStrip.innerHTML = `
+      <div class="generated-world-copy" data-generated-map-copy="0" role="img" aria-label="地方単位で移動する生成世界地図">
+        <div class="generated-world-canvas">
+          <img alt="生成世界の西側複製" draggable="false"><img alt="高精細な海岸、山脈、森林、河川、地方、国家、拠点を描いた生成世界" draggable="false"><img alt="生成世界の東側複製" draggable="false">
+        </div>
         <button type="button" class="generated-expedition-marker" aria-label="探索隊">◆</button>
       </div>
-    `).join("");
+    `;
     elements.generatedWorldStrip.querySelectorAll("img").forEach((image) => { image.src = generatedMapVisualCache.url; });
     elements.generatedWorldStrip.dataset.visualKey = visualKey;
-    requestAnimationFrame(() => { elements.generatedWorldScroll.scrollLeft = elements.generatedWorldScroll.clientWidth; });
   }
-  elements.generatedWorldStrip.querySelectorAll(".generated-world-copy").forEach((copy) => positionGeneratedMapMarkers(copy, selectedTile, expeditionTile, runtime));
-  elements.mapModeEyebrow.textContent = "PROCEDURAL SQUARE WORLD";
-  elements.mapCaptionTitle.textContent = `${playerNation.name} · 東西循環世界`;
+  elements.generatedWorldStrip.querySelectorAll(".generated-world-copy").forEach((copy) => {
+    copy.dataset.viewportX = String(viewport.x);
+    copy.dataset.viewportY = String(viewport.y);
+    copy.dataset.viewportWidth = String(viewport.width);
+    copy.dataset.viewportHeight = String(viewport.height);
+    const canvas = copy.querySelector(".generated-world-canvas");
+    canvas.style.left = `${-(runtime.terrain.width + viewport.x) / viewport.width * 100}%`;
+    canvas.style.top = `${-viewport.y / viewport.height * 100}%`;
+    canvas.style.width = `${runtime.terrain.width * 3 / viewport.width * 100}%`;
+    canvas.style.height = `${runtime.terrain.height / viewport.height * 100}%`;
+    positionGeneratedRegionMarker(copy, expeditionRegion, expeditionTile, runtime, viewport);
+  });
+  elements.generatedWorldMap.querySelectorAll("[data-generated-map-scale]").forEach((button) => button.classList.toggle("is-active", button.dataset.generatedMapScale === view.generatedMapScale));
+  elements.mapModeEyebrow.textContent = focusedNation ? "GENERATED NATION MAP" : view.generatedMapScale === "region" ? "REGIONAL PLAY MAP" : "GENERATED WORLD OVERVIEW";
+  elements.mapCaptionTitle.textContent = focusedNation
+    ? `${focusedNation.name} · 世界全図`
+    : view.generatedMapScale === "region" ? `${expeditionRegion.name} · ${playerNation.name}` : `${playerNation.name} · 世界全図`;
 }
 
 function renderMap() {
-  const showGeneratedWorld = view.panel === "world" && view.atlasMode === "generated";
-  const showWarBoard = Boolean(state.war && view.warMapView === "theater" && !showGeneratedWorld);
+  const showWarBoard = Boolean(state.war && view.warMapView === "theater");
+  const showGeneratedWorld = !showWarBoard;
   elements.warMapSwitch.classList.toggle("is-hidden", !state.war || showGeneratedWorld);
   elements.warMapSwitch.querySelectorAll("[data-war-map-view]").forEach((button) => button.classList.toggle("is-active", button.dataset.warMapView === view.warMapView));
   elements.mapStage.classList.toggle("is-war-board", showWarBoard);
@@ -2710,7 +3097,7 @@ function closeTileDetail() {
 }
 
 function renderSelection() {
-  if (view.panel === "world" && view.atlasMode === "generated") {
+  if (view.panel === "world") {
     elements.selectionCard.innerHTML = "";
     return;
   }
@@ -2822,6 +3209,22 @@ function renderCityPlan(ledger) {
 }
 
 function renderOutliner() {
+  const outlinerHeading = document.querySelector(".outliner > header strong");
+  if (state.player) {
+    const player = state.player;
+    const stage = getCareerStage(state);
+    if (outlinerHeading) outlinerHeading.textContent = "人物年代記摘要";
+    const holdings = player.holdings.map((holding) => `<div class="outliner-item"><strong>${WORLD.provinces[holding.territoryId]?.name ?? holding.territoryId}</strong><small>所領 · 統治効果はこの地域内に限定</small></div>`).join("") || '<div class="outliner-item"><small>所領はまだありません。</small></div>';
+    const history = player.history.slice(0, 5).map((entry) => `<div class="outliner-item"><strong>${escapeHtml(entry.title)}</strong><small>${escapeHtml(entry.detail)}</small></div>`).join("");
+    elements.outlinerContent.innerHTML = `
+      <section class="outliner-section campaign-outliner"><h3>${stage.name}</h3><div class="outliner-item"><strong>${escapeHtml(player.title)}</strong><small>${stage.description}</small></div></section>
+      <section class="outliner-section"><h3>主従関係</h3><div class="outliner-item"><strong>${escapeHtml(player.affiliation.liegeName ?? "主君なし")}</strong><small>信頼 ${player.metrics.liegeTrust} · 野心 ${player.metrics.ambition}</small></div></section>
+      <section class="outliner-section"><h3>管轄</h3>${holdings}</section>
+      <section class="outliner-section"><h3>人物年代記</h3>${history}</section>
+      <button type="button" class="plan-end-month" data-end-month>月を進める<span>関係と政治状況を更新</span></button>`;
+    return;
+  }
+  if (outlinerHeading) outlinerHeading.textContent = "王国政務摘要";
   const ledger = deriveRealmLedger(state);
   if (view.panel === "city" || view.panel === "town" || view.panel === "spending") {
     elements.outlinerContent.innerHTML = renderCityPlan(ledger);
@@ -2845,6 +3248,11 @@ function renderOutliner() {
 }
 
 function renderTicker() {
+  if (state.player) {
+    const latest = state.player.history[0];
+    elements.chronicleTicker.innerHTML = `<strong>${latest.year ?? state.year}年 ${latest.month ?? state.month}月 · ${escapeHtml(latest.title)}</strong><span>${escapeHtml(latest.detail)}</span>`;
+    return;
+  }
   const latest = state.log[0];
   elements.chronicleTicker.innerHTML = `<strong>${latest.date} · ${latest.title}</strong><span>${latest.text}</span>`;
 }
@@ -2942,6 +3350,23 @@ function renderEventModal() {
 
 function renderLaunchScreen() {
   elements.launchScreen.classList.toggle("is-hidden", !view.launchOpen);
+  const generation = view.generation ?? { active: false, progress: 0, stage: "idle", label: "", error: null };
+  const generationVisible = generation.active || Boolean(generation.error) || generation.stage === "complete" && view.launchOpen;
+  elements.launchScreen.classList.toggle("is-generating", generation.active);
+  elements.launchScreen.setAttribute("aria-busy", String(generation.active));
+  elements.launchGeneration.hidden = !generationVisible;
+  elements.launchGeneration.classList.toggle("is-error", Boolean(generation.error));
+  elements.launchGenerationStatus.textContent = generation.error ? "GENERATION FAILED" : generation.stage === "complete" ? "WORLD READY" : "GENERATING NEW WORLD";
+  elements.launchGenerationLabel.textContent = generation.label || "生成準備中";
+  elements.launchGenerationPercent.textContent = `${generation.progress}%`;
+  elements.launchGenerationProgress.setAttribute("aria-valuenow", String(generation.progress));
+  elements.launchGenerationBar.style.width = `${generation.progress}%`;
+  elements.launchGenerationDetail.textContent = generation.error
+    ? `エラー: ${generation.error}（保存済みの年代記は保持されています）`
+    : generation.stage === "complete" ? "開始地点を開きます。" : "地形、河川、種族適地、国境を順番に生成しています。";
+  elements.launchScreen.querySelectorAll("button").forEach((button) => { button.disabled = generation.active; });
+  const developerLauncher = elements.launchScreen.querySelector(".developer-launcher");
+  if (developerLauncher) developerLauncher.inert = generation.active;
   document.body.classList.toggle("is-launch-open", view.launchOpen);
   document.body.classList.toggle("is-battle-preparation-open", Boolean(view.battlePreparation));
   const realmLocked = view.launchOpen || Boolean(view.battlePreparation) || Boolean(view.tacticalBattle);
@@ -3071,6 +3496,7 @@ function renderBattlePreparation() {
 }
 
 function openTacticalBattle() {
+  stopTacticalBattleEffects();
   view.launchOpen = false;
   view.guideOpen = false;
   const roster = tacticalParticipantRoster();
@@ -3115,6 +3541,7 @@ function prepareTacticalResult({ open = true } = {}) {
 }
 
 function exitTacticalBattle() {
+  stopTacticalBattleEffects();
   view.battlePreparation = null;
   view.tacticalBattle = null;
   view.tacticalResult = null;
@@ -3146,6 +3573,121 @@ function tacticalFacingArrow(facing) {
 
 function tacticalPositionLabel(position) {
   return position ? `${position.x + 1}-${position.y + 1}` : "なし";
+}
+
+function tacticalEffectPoint(position, tileSize) {
+  return {
+    x: (position.x + 0.5) * tileSize,
+    y: (position.y + 0.5) * tileSize,
+  };
+}
+
+function stopTacticalBattleEffects() {
+  if (tacticalEffectTimer !== null) {
+    clearTimeout(tacticalEffectTimer);
+    tacticalEffectTimer = null;
+  }
+  tacticalEffectsPlaying = false;
+  elements.tacticalBattleMap?.querySelector(".tactical-vfx-layer")?.remove();
+  elements.tacticalBattleMap?.classList.remove("is-vfx-active");
+  elements.tacticalBattleScreen?.classList.remove("is-resolving");
+  const executeButton = elements.tacticalBattleScreen?.querySelector('[data-battle-action="execute"]');
+  if (executeButton) executeButton.disabled = !view.tacticalBattle || Boolean(view.tacticalBattle.winner);
+  if (elements.tacticalResultButton) elements.tacticalResultButton.disabled = false;
+}
+
+function appendTacticalMovementEffect(layer, effect, tileSize, reducedMotion) {
+  const from = tacticalEffectPoint(effect.from, tileSize);
+  const to = tacticalEffectPoint(effect.to, tileSize);
+  const marker = document.createElement("span");
+  marker.className = `tactical-vfx-move is-${effect.side} ${effect.actorType === "commander" ? "is-commander" : ""}`;
+  marker.style.left = `${to.x}px`;
+  marker.style.top = `${to.y}px`;
+  marker.style.setProperty("--vfx-move-x", `${from.x - to.x}px`);
+  marker.style.setProperty("--vfx-move-y", `${from.y - to.y}px`);
+  marker.style.setProperty("--vfx-delay", reducedMotion ? "0ms" : "90ms");
+  layer.append(marker);
+}
+
+function appendTacticalImpactEffect(layer, effect, tileSize, index, reducedMotion) {
+  const from = tacticalEffectPoint(effect.from, tileSize);
+  const to = tacticalEffectPoint(effect.to, tileSize);
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const distance = Math.max(tileSize * 0.35, Math.hypot(dx, dy));
+  const delay = reducedMotion ? 0 : 520 + Math.min(index, 7) * 135;
+
+  if (effect.kind !== "impact" && effect.kind !== "fire") {
+    const attack = document.createElement("span");
+    attack.className = `tactical-vfx-attack is-${effect.kind}`;
+    attack.style.left = `${from.x}px`;
+    attack.style.top = `${from.y}px`;
+    attack.style.setProperty("--vfx-length", `${distance}px`);
+    attack.style.setProperty("--vfx-angle", `${Math.atan2(dy, dx) * 180 / Math.PI}deg`);
+    attack.style.setProperty("--vfx-delay", `${delay}ms`);
+    layer.append(attack);
+  }
+
+  const impact = document.createElement("span");
+  impact.className = `tactical-vfx-impact is-${effect.kind} ${effect.severity >= 0.18 ? "is-heavy" : ""}`;
+  impact.style.left = `${to.x}px`;
+  impact.style.top = `${to.y}px`;
+  impact.style.setProperty("--vfx-delay", `${delay + (reducedMotion ? 0 : 230)}ms`);
+  const casualty = document.createElement("b");
+  casualty.textContent = `−${effect.casualties}`;
+  casualty.setAttribute("aria-hidden", "true");
+  impact.append(casualty);
+  layer.append(impact);
+}
+
+function appendTacticalStatusEffect(layer, effect, tileSize, index, reducedMotion) {
+  const point = tacticalEffectPoint(effect.position, tileSize);
+  const marker = document.createElement("strong");
+  marker.className = `tactical-vfx-status is-${effect.tone}`;
+  marker.textContent = effect.label;
+  marker.style.left = `${point.x}px`;
+  marker.style.top = `${point.y}px`;
+  marker.style.setProperty("--vfx-delay", `${reducedMotion ? 0 : 980 + Math.min(index, 6) * 110}ms`);
+  layer.append(marker);
+}
+
+function playTacticalBattleEffects(effects, battle, onComplete) {
+  stopTacticalBattleEffects();
+  const map = elements.tacticalBattleMap;
+  if (!map || !battle || view.tacticalBattle !== battle) return;
+  const reducedMotion = Boolean(window.matchMedia?.("(prefers-reduced-motion: reduce)").matches);
+  const tileSize = Number.parseFloat(getComputedStyle(map).getPropertyValue("--battle-tile-size")) || 44;
+  const layer = document.createElement("div");
+  layer.className = "tactical-vfx-layer";
+  layer.setAttribute("aria-hidden", "true");
+
+  const turn = document.createElement("span");
+  turn.className = "tactical-vfx-turn";
+  turn.innerHTML = `<small>TURN</small><b>${effects.turn}</b><em>交戦</em>`;
+  layer.append(turn);
+  effects.movements.forEach((effect) => appendTacticalMovementEffect(layer, effect, tileSize, reducedMotion));
+  effects.impacts.forEach((effect, index) => appendTacticalImpactEffect(layer, effect, tileSize, index, reducedMotion));
+  effects.statuses.forEach((effect, index) => appendTacticalStatusEffect(layer, effect, tileSize, index, reducedMotion));
+  map.append(layer);
+  map.classList.add("is-vfx-active");
+  elements.tacticalBattleScreen.classList.add("is-resolving");
+  tacticalEffectsPlaying = true;
+  const executeButton = elements.tacticalBattleScreen.querySelector('[data-battle-action="execute"]');
+  if (executeButton) executeButton.disabled = true;
+  elements.tacticalResultButton.disabled = true;
+
+  const duration = reducedMotion ? 700 : Math.min(2800, 1650 + effects.impacts.length * 135 + effects.statuses.length * 80);
+  tacticalEffectTimer = setTimeout(() => {
+    tacticalEffectTimer = null;
+    tacticalEffectsPlaying = false;
+    layer.remove();
+    map.classList.remove("is-vfx-active");
+    elements.tacticalBattleScreen.classList.remove("is-resolving");
+    if (view.tacticalBattle !== battle) return;
+    if (executeButton) executeButton.disabled = Boolean(battle.winner);
+    elements.tacticalResultButton.disabled = false;
+    onComplete?.();
+  }, duration);
 }
 
 function renderTacticalSummary(battle) {
@@ -3218,6 +3760,8 @@ function renderTacticalMap(battle) {
     ...(selectedUnit ? getReachableBattleTiles(battle, selectedUnit.id) : []),
     ...(selectedCommander ? getReachableCommanderTiles(battle, selectedCommander.id) : []),
   ].map((entry) => [`${entry.position.x},${entry.position.y}`, entry]));
+  const attackableTiles = new Map((selectedUnit ? getAttackableBattleTiles(battle, selectedUnit.id) : [])
+    .map((entry) => [`${entry.position.x},${entry.position.y}`, entry]));
   elements.tacticalBattleMap.innerHTML = battle.map.tiles.map((tile) => {
     const key = `${tile.position.x},${tile.position.y}`;
     const unit = unitsByPosition.get(key);
@@ -3233,6 +3777,7 @@ function renderTacticalMap(battle) {
     const isPlanned = plannedPosition && key === `${plannedPosition.x},${plannedPosition.y}`;
     const isTarget = target && key === `${target.position.x},${target.position.y}`;
     const reachable = reachableTiles.get(key);
+    const attackable = attackableTiles.get(key);
     const supplyRouteStep = supplyRouteByPosition.get(key);
     const isSupplyRoute = Number.isInteger(supplyRouteStep);
     const isSupplySource = key === supplySourceKey;
@@ -3261,8 +3806,8 @@ function renderTacticalMap(battle) {
     const fortificationIntegrity = fortification ? Math.round(fortification.durability / fortificationDefinition.maxBaseDurability * 100) : 0;
     const fortificationArt = fortification ? `./assets/generated/tactical-structures/${fortification.typeId}-v2.png` : "";
     const fortificationMarkup = fortification ? `<span class="tactical-fortification-marker is-${fortification.typeId} is-${fortification.side} ${fortification.encircled ? "is-encircled" : ""}" aria-hidden="true"><img src="${fortificationArt}" alt="" draggable="false"><b>${fortificationDefinition.symbol}</b><em><span style="width:${fortificationIntegrity}%"></span></em></span>` : "";
-    const title = `${terrain.name}${feature ? `・${feature.name ?? ({ ford: "浅瀬", bridge: "橋梁", supply_depot: "補給所" }[feature.id])}` : ""} ${tile.position.x + 1}-${tile.position.y + 1}${isPassable ? "" : " / 通行不可"}${reachable ? ` / 移動可能 消費${reachable.cost}` : ""}${supplyNode ? ` / ${supplyNode.name} 備蓄${Math.round(supplyNode.stockpile)}/${supplyNode.maxStockpile}` : ""}${isSupplyRoute ? ` / 補給路 ${supplyRouteStep}/${selectedSupplyRoute.route.length - 1}` : ""}${fortification ? ` / ${fortification.name} 耐久${fortification.durability}/${fortification.baseDurability}${fortification.typeId === "castle" ? ` 備蓄${Math.round(fortification.supplyStockpile)}/${fortification.maxSupplyStockpile}` : ""}${fortification.encircled ? " 完全包囲" : ""}` : ""}${unit ? ` / ${unit.name} 兵${unit.soldierCount} 士気${Math.round(unit.morale)} 行動${unitVisual.label}` : ""}${commander ? ` / ${commander.name}` : ""}`;
-    return `<button type="button" role="gridcell" class="tactical-tile terrain-${tile.terrainType} ${isPassable ? "" : "is-impassable"} ${reachable ? "is-reachable" : ""} ${isSelected ? "is-selected" : ""} ${isPlanned ? "is-planned" : ""} ${isTarget ? "is-target" : ""} ${inCommand ? "is-in-command" : ""} ${inFortificationAura ? "is-fortification-aura" : ""} ${isSupplyRoute ? "is-supply-route" : ""} ${isSupplySource ? "is-supply-source" : ""} ${isSupplyCut ? "is-supply-cut" : ""} ${burning ? "has-burning" : ""}" style="--tile-texture-x:${-tile.position.x * 44};--tile-texture-y:${-tile.position.y * 44}" data-battle-tile="${key}" data-terrain-symbol="${terrain.symbol ?? ""}" ${unit ? `data-battle-unit="${unit.id}"` : ""} ${commander ? `data-battle-commander="${commander.id}"` : ""} ${fortification ? `data-battle-fortification="${fortification.id}"` : ""} aria-label="${escapeHtml(title)}" title="${escapeHtml(title)}">${terrainMarkup}${supplyRouteMarkup}${featureMarkup}${supplyMarkup}${fortificationMarkup}${unitMarkup}${commanderMarkup}</button>`;
+    const title = `${terrain.name}${feature ? `・${feature.name ?? ({ ford: "浅瀬", bridge: "橋梁", supply_depot: "補給所" }[feature.id])}` : ""} ${tile.position.x + 1}-${tile.position.y + 1}${isPassable ? "" : " / 通行不可"}${reachable ? ` / 移動可能 消費${reachable.cost}` : ""}${attackable ? ` / 攻撃可能 射程${attackable.distance}/${attackable.range}` : ""}${supplyNode ? ` / ${supplyNode.name} 備蓄${Math.round(supplyNode.stockpile)}/${supplyNode.maxStockpile}` : ""}${isSupplyRoute ? ` / 補給路 ${supplyRouteStep}/${selectedSupplyRoute.route.length - 1}` : ""}${fortification ? ` / ${fortification.name} 耐久${fortification.durability}/${fortification.baseDurability}${fortification.typeId === "castle" ? ` 備蓄${Math.round(fortification.supplyStockpile)}/${fortification.maxSupplyStockpile}` : ""}${fortification.encircled ? " 完全包囲" : ""}` : ""}${unit ? ` / ${unit.name} 兵${unit.soldierCount} 士気${Math.round(unit.morale)} 行動${unitVisual.label}` : ""}${commander ? ` / ${commander.name}` : ""}`;
+    return `<button type="button" role="gridcell" class="tactical-tile terrain-${tile.terrainType} ${isPassable ? "" : "is-impassable"} ${reachable ? "is-reachable" : ""} ${attackable ? "is-attackable" : ""} ${isSelected ? "is-selected" : ""} ${isPlanned ? "is-planned" : ""} ${isTarget ? "is-target" : ""} ${inCommand ? "is-in-command" : ""} ${inFortificationAura ? "is-fortification-aura" : ""} ${isSupplyRoute ? "is-supply-route" : ""} ${isSupplySource ? "is-supply-source" : ""} ${isSupplyCut ? "is-supply-cut" : ""} ${burning ? "has-burning" : ""}" style="--tile-texture-x:${-tile.position.x * 44};--tile-texture-y:${-tile.position.y * 44}" data-battle-tile="${key}" data-terrain-symbol="${terrain.symbol ?? ""}" ${unit ? `data-battle-unit="${unit.id}"` : ""} ${commander ? `data-battle-commander="${commander.id}"` : ""} ${fortification ? `data-battle-fortification="${fortification.id}"` : ""} aria-label="${escapeHtml(title)}" title="${escapeHtml(title)}">${terrainMarkup}${supplyRouteMarkup}${featureMarkup}${supplyMarkup}${fortificationMarkup}${unitMarkup}${commanderMarkup}</button>`;
   }).join("");
 }
 
@@ -3525,18 +4070,22 @@ function renderTacticalBattle() {
   if (inspectorOpen) positionTacticalInspector();
   elements.tacticalBattleLog.innerHTML = battle.log.slice(-6).reverse().map((entry) => `<p title="${escapeHtml(entry.message)}"><b>T${entry.turn} ${escapeHtml(PHASE_LABELS[entry.phase] ?? entry.phase)}</b>${escapeHtml(entry.message)}</p>`).join("");
   const executeButton = elements.tacticalBattleScreen.querySelector('[data-battle-action="execute"]');
-  executeButton.disabled = Boolean(battle.winner);
+  executeButton.disabled = tacticalEffectsPlaying || Boolean(battle.winner);
   elements.tacticalResultButton.hidden = !battle.winner;
+  elements.tacticalResultButton.disabled = tacticalEffectsPlaying;
   renderTacticalPostBattle();
 }
 
 function advanceTacticalBattle() {
-  if (!view.tacticalBattle || view.tacticalBattle.winner) return;
-  view.tacticalBattle = executeBattleTurn(view.tacticalBattle);
-  if (view.tacticalBattle.winner && !view.tacticalResult) prepareTacticalResult();
-  const selectedUnit = getBattleUnit(view.tacticalBattle, view.selectedTacticalUnitId);
-  const selectedCommander = getBattleCommander(view.tacticalBattle, view.selectedTacticalCommanderId);
-  const selectedFortification = getBattleFortification(view.tacticalBattle, view.selectedTacticalFortificationId);
+  if (!view.tacticalBattle || view.tacticalBattle.winner || tacticalEffectsPlaying) return;
+  const previousBattle = view.tacticalBattle;
+  const nextBattle = executeBattleTurn(previousBattle);
+  const effects = buildTacticalEffects(previousBattle, nextBattle);
+  view.tacticalBattle = nextBattle;
+  if (nextBattle.winner && !view.tacticalResult) prepareTacticalResult({ open: false });
+  const selectedUnit = getBattleUnit(nextBattle, view.selectedTacticalUnitId);
+  const selectedCommander = getBattleCommander(nextBattle, view.selectedTacticalCommanderId);
+  const selectedFortification = getBattleFortification(nextBattle, view.selectedTacticalFortificationId);
   if (!selectedUnit && !selectedCommander && !selectedFortification) {
     view.selectedTacticalUnitId = null;
     view.selectedTacticalCommanderId = null;
@@ -3544,6 +4093,11 @@ function advanceTacticalBattle() {
     view.tacticalInspectorDismissed = false;
   }
   renderTacticalBattle();
+  playTacticalBattleEffects(effects, nextBattle, () => {
+    if (!nextBattle.winner || view.tacticalBattle !== nextBattle) return;
+    view.tacticalResultOpen = true;
+    renderTacticalPostBattle();
+  });
 }
 
 function handleTacticalTile(button) {
@@ -3794,11 +4348,14 @@ function playNavigationCue(event) {
     "[data-spending-category]",
     "[data-spending-city]",
     "[data-world-mode]",
-    "[data-generated-regenerate]",
-    "[data-generated-move]",
-    "[data-generated-tile-id]",
+    "[data-generated-region-candidate-id]",
+    "[data-generated-move-confirm]",
+    "[data-generated-region-id]",
+    "[data-generated-map-scale]",
     "[data-world-guide-toggle]",
     "[data-world-filter]",
+    "[data-generated-nation]",
+    "[data-generated-statistics-nation]",
     "[data-statistics-nation]",
     "[data-world-nation]",
     "[data-world-people]",
@@ -3835,10 +4392,10 @@ document.addEventListener("click", (event) => {
   playNavigationCue(event);
   const launchAction = event.target.closest("[data-launch-action]");
   if (launchAction) {
-    if (["new", "new-generated"].includes(launchAction.dataset.launchAction)) {
+    if (launchAction.dataset.launchAction === "new") {
       if ((state.turn > 0 || state.council.history.length > 0) && !window.confirm("保存済みの年代記を破棄して、新しい統治を始めますか？")) return;
-      resetChronicle({ scenarioMode: launchAction.dataset.launchAction === "new-generated" ? "generated" : "fixed" });
-      view.guideOpen = true;
+      void resetChronicle();
+      return;
     }
     view.launchOpen = false;
     render();
@@ -3853,6 +4410,7 @@ document.addEventListener("click", (event) => {
     }
     view.launchOpen = false;
     view.guideOpen = false;
+    if (["realm", "war-council"].includes(action) && state.player) state = refreshGeneratedWorldForDate(createInitialState({ scenarioMode: state.scenarioMode }));
     if (action === "world") {
       view.panel = "world";
       view.atlasMode = "generated";
@@ -3865,6 +4423,57 @@ document.addEventListener("click", (event) => {
       view.panel = "council";
       view.scale = "country";
     }
+    renderPanelFromTop();
+    return;
+  }
+  const careerAction = event.target.closest("[data-career-action]");
+  if (careerAction) {
+    try {
+      const actionCard = careerAction.closest("[data-career-action-card]");
+      const delegation = actionCard ? {
+        successorId: actionCard.querySelector("[data-promotion-successor]")?.value,
+        mandateId: actionCard.querySelector("[data-promotion-mandate]")?.value,
+        authorityId: actionCard.querySelector("[data-promotion-authority]")?.value,
+      } : {};
+      const next = performCareerAction(state, careerAction.dataset.careerAction, delegation);
+      const becameLord = getCareerStage(next)?.governance && !getCareerStage(state)?.governance;
+      if (becameLord) view.panel = "governance";
+      commit(next, becameLord ? "領主に任じられました。同じ統治画面が自領限定で解放されます。" : "人物の年代記を更新しました。", careerAction.dataset.careerAction === "declare_independence" ? "event" : "confirm");
+    } catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
+  const serviceInvitation = event.target.closest("[data-accept-service]");
+  if (serviceInvitation) {
+    try { commit(acceptServiceInvitation(state, serviceInvitation.dataset.acceptService), "主君を選び、具体的な主従関係を結びました。", "confirm"); }
+    catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
+  const governanceCommand = event.target.closest("[data-governance-command]");
+  if (governanceCommand) {
+    try {
+      const territoryId = governanceCommand.dataset.territoryId ?? null;
+      const next = executeGovernanceCommand(
+        state,
+        governanceCommand.dataset.governanceCommand,
+        territoryId,
+        territoryId ? WORLD.provinces[territoryId]?.name ?? null : null,
+      );
+      commit(next, "管轄と必要権限を検証し、命令を実行しました。", "confirm");
+    } catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
+  const petitionButton = event.target.closest("[data-submit-petition]");
+  if (petitionButton) {
+    try {
+      const next = submitPetition(state, petitionButton.dataset.submitPetition);
+      const result = next.player.petitions[0];
+      commit(next, result.status === "accepted" ? "建議が採用されました。実施主体は主君と中央政府です。" : "建議は採用されませんでした。", result.status === "accepted" ? "confirm" : "cancel");
+    } catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
+  const jurisdictionTerritory = event.target.closest("[data-jurisdiction-territory]");
+  if (jurisdictionTerritory) {
+    view.selectedCityId = jurisdictionTerritory.dataset.jurisdictionTerritory;
     renderPanelFromTop();
     return;
   }
@@ -3939,6 +4548,7 @@ document.addEventListener("click", (event) => {
   const battleAction = event.target.closest("[data-battle-action]");
   if (battleAction) {
     const action = battleAction.dataset.battleAction;
+    if (tacticalEffectsPlaying && !["exit", "reset"].includes(action)) return;
     if (action === "exit") {
       exitTacticalBattle();
     } else if (action === "reset") {
@@ -4076,41 +4686,37 @@ document.addEventListener("click", (event) => {
     renderPanelFromTop();
     return;
   }
-  const generatedRegenerateButton = event.target.closest("[data-generated-regenerate]");
-  if (generatedRegenerateButton) {
-    const seed = elements.leftPanel.querySelector("[data-generated-seed]")?.value.trim();
-    const nationCount = Number(elements.leftPanel.querySelector("[data-generated-count]")?.value);
+  const generatedMapScaleButton = event.target.closest("[data-generated-map-scale]");
+  if (generatedMapScaleButton) {
+    view.generatedMapScale = generatedMapScaleButton.dataset.generatedMapScale;
+    renderMap();
+    return;
+  }
+  const generatedRegionCandidate = event.target.closest("[data-generated-region-candidate-id]");
+  if (generatedRegionCandidate) {
+    view.pendingGeneratedDestinationId = generatedRegionCandidate.dataset.generatedRegionCandidateId;
+    const scrollTop = elements.leftPanel.scrollTop;
+    renderWorldPanel();
+    elements.leftPanel.scrollTop = scrollTop;
+    return;
+  }
+  const generatedMoveConfirm = event.target.closest("[data-generated-move-confirm]");
+  if (generatedMoveConfirm) {
+    if (!view.pendingGeneratedDestinationId) return;
     try {
-      commit(regenerateGeneratedWorld(state, { seed, nationCount }), "同じ正方形タイル規約で新しい世界を生成しました。", "confirm");
+      const next = moveGeneratedExpeditionToRegion(state, view.pendingGeneratedDestinationId);
+      const destination = getGeneratedWorldView(next).expeditionRegion;
+      view.pendingGeneratedDestinationId = null;
+      view.generatedMapScale = "region";
+      commit(next, `${destination.name}へ移動しました。`, "ui");
     } catch (error) {
       showToast(error.message, "danger");
     }
     return;
   }
-  const generatedMoveButton = event.target.closest("[data-generated-move]");
-  if (generatedMoveButton) {
-    try {
-      const next = moveGeneratedExpedition(state, generatedMoveButton.dataset.generatedMove);
-      const tile = getGeneratedWorldView(next).expeditionTile;
-      commit(next, `探索隊が${tile.id}へ移動しました。`, "ui");
-    } catch (error) {
-      showToast(error.message, "danger");
-    }
-    return;
-  }
-  const generatedTileButton = event.target.closest("[data-generated-tile-id]");
-  if (generatedTileButton) {
-    try { commit(selectGeneratedWorldTile(state, generatedTileButton.dataset.generatedTileId), "", "ui"); }
-    catch (error) { showToast(error.message, "danger"); }
-    return;
-  }
-  const generatedMapCopy = event.target.closest("[data-generated-map-copy]");
-  if (generatedMapCopy && view.panel === "world" && view.atlasMode === "generated") {
-    const rect = generatedMapCopy.getBoundingClientRect();
-    const runtime = buildGeneratedWorld(state);
-    const x = Math.min(runtime.terrain.width - 1, Math.max(0, Math.floor((event.clientX - rect.left) / rect.width * runtime.terrain.width)));
-    const y = Math.min(runtime.terrain.height - 1, Math.max(0, Math.floor((event.clientY - rect.top) / rect.height * runtime.terrain.height)));
-    try { commit(selectGeneratedWorldTile(state, `tile-${x}-${y}`), "", "ui"); }
+  const generatedRegionButton = event.target.closest("[data-generated-region-id]");
+  if (generatedRegionButton) {
+    try { commit(selectGeneratedWorldRegion(state, generatedRegionButton.dataset.generatedRegionId), "", "ui"); }
     catch (error) { showToast(error.message, "danger"); }
     return;
   }
@@ -4135,7 +4741,7 @@ document.addEventListener("click", (event) => {
     return;
   }
   if (event.target.closest("[data-confirm-reset]")) {
-    resetChronicle();
+    void resetChronicle();
     return;
   }
   if (event.target.closest("[data-close-tile]")) {
@@ -4257,6 +4863,8 @@ document.addEventListener("click", (event) => {
   const worldModeButton = event.target.closest("[data-world-mode]");
   if (worldModeButton) {
     view.atlasMode = worldModeButton.dataset.worldMode;
+    if (view.atlasMode === "generated") view.generatedMapScale = "region";
+    else if (["geopolitics", "nations", "statistics"].includes(view.atlasMode)) view.generatedMapScale = "world";
     renderPanelFromTop();
     return;
   }
@@ -4273,6 +4881,33 @@ document.addEventListener("click", (event) => {
   if (statisticsNationButton) {
     view.selectedNationId = statisticsNationButton.dataset.statisticsNation;
     view.atlasMode = "statistics";
+    view.panel = "world";
+    renderPanelFromTop();
+    return;
+  }
+  const generatedStatisticsNationButton = event.target.closest("[data-generated-statistics-nation]");
+  if (generatedStatisticsNationButton) {
+    view.selectedGeneratedNationId = generatedStatisticsNationButton.dataset.generatedStatisticsNation;
+    view.atlasMode = "statistics";
+    view.generatedMapScale = "world";
+    view.panel = "world";
+    renderPanelFromTop();
+    return;
+  }
+  const generatedNationButton = event.target.closest("[data-generated-nation]");
+  if (generatedNationButton) {
+    view.selectedGeneratedNationId = generatedNationButton.dataset.generatedNation;
+    view.atlasMode = "nations";
+    view.generatedMapScale = "world";
+    view.panel = "world";
+    renderPanelFromTop();
+    return;
+  }
+  const geopoliticalNationButton = event.target.closest("[data-geopolitical-nation]");
+  if (geopoliticalNationButton) {
+    view.selectedGeneratedNationId = geopoliticalNationButton.dataset.geopoliticalNation;
+    view.atlasMode = "geopolitics";
+    view.generatedMapScale = "world";
     view.panel = "world";
     renderPanelFromTop();
     return;
@@ -4619,6 +5254,28 @@ document.addEventListener("click", (event) => {
   }
 });
 
+function handleRoleDelegationChange(event) {
+  const delegationMandate = event.target.closest("[data-delegation-mandate]");
+  if (delegationMandate) {
+    try { commit(setDelegationMandate(state, delegationMandate.dataset.delegationMandate, delegationMandate.value), "委任先へ重視方針を伝えました。", "confirm"); }
+    catch (error) { showToast(error.message, "danger"); }
+    return true;
+  }
+  const delegationAuthority = event.target.closest("[data-delegation-authority]");
+  if (delegationAuthority) {
+    try { commit(setDelegationAuthority(state, delegationAuthority.dataset.delegationAuthority, delegationAuthority.value), "担当者の通常判断に使える裁量を更新しました。", "confirm"); }
+    catch (error) { showToast(error.message, "danger"); }
+    return true;
+  }
+  const delegationHolder = event.target.closest("[data-reassign-delegation]");
+  if (delegationHolder) {
+    try { commit(reassignDelegatedRole(state, delegationHolder.dataset.reassignDelegation, delegationHolder.value), "担当組織を残したまま後任を交代しました。", "confirm"); }
+    catch (error) { showToast(error.message, "danger"); }
+    return true;
+  }
+  return false;
+}
+
 elements.endMonthButton.addEventListener("click", endMonth);
 elements.authorityOverlaySelect?.addEventListener("change", (event) => {
   if (!event.target.value) return;
@@ -4626,16 +5283,20 @@ elements.authorityOverlaySelect?.addEventListener("change", (event) => {
   render();
 });
 elements.leftPanel.addEventListener("change", (event) => {
+  if (handleRoleDelegationChange(event)) return;
   const nationSelect = event.target.closest("[data-generated-player-nation]");
   if (!nationSelect) return;
   try {
     const next = setGeneratedPlayerNation(state, nationSelect.value);
     const nation = getGeneratedWorldView(next).playerNation;
+    view.pendingGeneratedDestinationId = null;
+    view.selectedGeneratedNationId = nation.id;
     commit(next, `${nation.name}をプレイヤー国家に設定しました。`, "confirm");
   } catch (error) {
     showToast(error.message, "danger");
   }
 });
+elements.cityWorkspace.addEventListener("change", (event) => { handleRoleDelegationChange(event); });
 elements.analysisToggle?.addEventListener("click", () => {
   view.expertMode = !view.expertMode;
   render();
@@ -4644,7 +5305,7 @@ elements.audioToggle.addEventListener("click", async () => {
   const enabled = await audio.toggle();
   if (enabled) audio.play("confirm");
 });
-document.querySelector("#realmHome").addEventListener("click", () => { clearTileDetailSelection(); view.panel = "council"; view.scale = "country"; renderPanelFromTop(); });
+document.querySelector("#realmHome").addEventListener("click", () => { clearTileDetailSelection(); view.panel = state.player ? "career" : "council"; view.scale = "country"; renderPanelFromTop(); });
 document.querySelector("#saveButton").addEventListener("click", () => persist(true));
 document.querySelector("#resetButton").addEventListener("click", (event) => {
   view.resetOpen = true;
@@ -4711,15 +5372,6 @@ elements.warBoard.addEventListener("keydown", (event) => {
   if ((event.key === "Enter" || event.key === " ") && event.target.matches("[data-war-tile]")) {
     event.preventDefault();
     event.target.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-  }
-});
-elements.generatedWorldScroll.addEventListener("scroll", () => {
-  const pageWidth = elements.generatedWorldScroll.clientWidth;
-  if (!pageWidth) return;
-  if (elements.generatedWorldScroll.scrollLeft < pageWidth * 0.35) {
-    elements.generatedWorldScroll.scrollLeft += pageWidth;
-  } else if (elements.generatedWorldScroll.scrollLeft > pageWidth * 1.65) {
-    elements.generatedWorldScroll.scrollLeft -= pageWidth;
   }
 });
 elements.tacticalMapScroll?.addEventListener("scroll", positionTacticalInspector, { passive: true });

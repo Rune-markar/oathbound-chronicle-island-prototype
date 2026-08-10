@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#172224" />
-    <title>誓界記 — セレナ王国</title>
+    <title>誓界記 — 個人から始まる立身出世・国盗り</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='8' fill='%23172224'/%3E%3Ctext x='32' y='45' text-anchor='middle' font-size='38' fill='%23ead28d'%3E誓%3C/text%3E%3C/svg%3E" />
     <link rel="stylesheet" href="./styles.css" />
   </head>
@@ -15,26 +15,28 @@
       <div class="launch-atmosphere" aria-hidden="true"><i></i><i></i><i></i></div>
       <header class="launch-brand">
         <span>OATHBOUND CHRONICLE / DEVELOPMENT BUILD</span>
-        <h1 id="launchTitle"><small>誓界記</small>王冠と灰冠の年代記</h1>
-        <p>歴史的背景を緻密に読み、盟約王国を完全な中央集権国家へ作り替える。</p>
+        <h1 id="launchTitle"><small>誓界記</small>一人から国を奪る年代記</h1>
+        <p>何者でもない一個人として始まり、誰に仕え、何を治め、どの国を作るかを選ぶ。</p>
       </header>
       <div class="launch-actions">
         <button class="launch-primary" type="button" data-launch-action="continue">
-          <small>CONTINUE CHRONICLE</small><strong>年代記を開く</strong><span>保存済みの統治から再開</span>
+          <small>CONTINUE CHRONICLE</small><strong>年代記を開く</strong><span>保存済みの人物から再開</span>
         </button>
         <button type="button" data-launch-action="new">
-          <small>FIXED CHRONICLE</small><strong>セレナ王国で開始</strong><span>固定された歴史・三州・灰冠峠から開始</span>
-        </button>
-        <button type="button" data-launch-action="new-generated">
-          <small>GENERATED CHRONICLE</small><strong>生成国家で開始</strong><span>地形から集落・勢力・妥協・特権を生成</span>
+          <small>NEW GENERATED WORLD</small><strong>新しい人物を作成</strong><span>人物ごとに地形と国家を生成し、その世界の一個人として始める</span>
         </button>
       </div>
+      <section class="launch-generation" id="launchGeneration" aria-live="polite" hidden>
+        <header><small id="launchGenerationStatus">WORLD GENERATION</small><strong id="launchGenerationLabel">生成準備中</strong><span id="launchGenerationPercent">0%</span></header>
+        <div class="launch-generation-track" id="launchGenerationProgress" role="progressbar" aria-label="新しい世界の生成進捗" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="launchGenerationBar"></i></div>
+        <p id="launchGenerationDetail">処理中はこの画面を閉じずにお待ちください。</p>
+      </section>
       <section class="developer-launcher" aria-label="開発者メニュー">
         <header><div><small>DEVELOPER ACCESS</small><h2>システム検証メニュー</h2></div><span>BUILD 0.5 · LOCAL</span></header>
         <div class="developer-launch-grid">
           <button class="is-featured" type="button" data-developer-action="battle"><i>⚔</i><span><strong>戦術戦闘テスト</strong><small>20×14部隊戦 · 命令／士気／潰走／追撃</small></span><b>起動</b></button>
           <button type="button" data-developer-action="realm"><i>♜</i><span><strong>国家運営UI</strong><small>評定・都市・外交・軍制の統合画面</small></span><b>開く</b></button>
-          <button type="button" data-developer-action="world"><i>界</i><span><strong>世界生成</strong><small>正方形タイル世界と国家生成を確認</small></span><b>開く</b></button>
+          <button type="button" data-developer-action="world"><i>界</i><span><strong>世界生成</strong><small>地形区画・地方・国家の生成を確認</small></span><b>開く</b></button>
           <button type="button" data-developer-action="war-council"><i>軍</i><span><strong>戦争評議会</strong><small>政治目的・兵站・講和判断を確認</small></span><b>開く</b></button>
           <a href="./terrain-preview.html"><i>地</i><span><strong>地形生成ラボ</strong><small>地形モデルと描画結果を単独検証</small></span><b>別画面</b></a>
           <a href="./manual.html"><i>書</i><span><strong>仕様書・遊び方</strong><small>国家運営システムの詳細マニュアル</small></span><b>別画面</b></a>
@@ -96,8 +98,8 @@
         <main class="tactical-map-panel">
           <section class="tactical-deployment-bar" id="tacticalDeploymentBar" aria-label="初期陣形配置"></section>
           <div class="tactical-map-toolbar">
-            <p><b>操作</b> 味方を選ぶと移動可能範囲を表示。必要な指示を出して「進行」</p>
-            <span><i class="is-player"></i>王国軍</span><span><i class="is-enemy"></i>公国軍</span><span><i class="is-command"></i>指揮官</span><span><i class="is-reachable"></i>移動可能</span>
+            <p><b>操作</b> 味方を選ぶと移動・攻撃可能範囲を表示。必要な指示を出して「進行」</p>
+            <span><i class="is-player"></i>王国軍</span><span><i class="is-enemy"></i>公国軍</span><span><i class="is-command"></i>指揮官</span><span><i class="is-reachable"></i>移動可能</span><span><i class="is-attackable"></i>攻撃可能</span>
           </div>
           <div class="tactical-map-scroll">
             <div class="tactical-battle-map" id="tacticalBattleMap" role="grid" aria-label="20列14行の戦闘マップ"></div>
@@ -121,46 +123,49 @@
       <div id="commanderDispositionContent"></div>
     </section>
 
-    <header class="grand-topbar">
-      <button class="realm-identity" id="realmHome" type="button" aria-label="国家画面を開く">
-        <span class="shield"><i>誓</i></span>
-        <span><strong>セレナ王国</strong><small>王国評議会</small></span>
-      </button>
-
-      <div class="resource-ledger" id="resourceLedger" aria-label="国家資源"></div>
-
-      <div class="date-controls" aria-label="月次ターン">
-        <button class="analysis-toggle" id="analysisToggle" type="button" aria-pressed="false">
-          <span aria-hidden="true">⌘</span>
-          <span><strong>専門台帳</strong><small>表示</small></span>
-        </button>
-        <button class="audio-toggle" id="audioToggle" type="button" aria-label="BGMと効果音をミュートする" aria-pressed="false">
-          <span id="audioIcon" aria-hidden="true">♫</span>
-          <span><strong>音響</strong><small id="audioStatus">開始</small></span>
-        </button>
-        <button class="date-button month-end-button" id="endMonthButton" type="button">
-          <strong id="dateLabel">誓暦317年 青月</strong>
-          <small id="dateHint">月を終える</small>
-        </button>
-      </div>
-    </header>
-
-    <section class="campaign-bar" id="campaignBar" aria-live="polite">
-      <div class="campaign-bar-goal"><small>国家段階 · 盟約王国</small><strong>完全な中央集権国家を建設する</strong></div>
-      <div class="campaign-bar-next"><small>最大障壁</small><strong>第一章・灰冠峠を収束させる</strong></div>
-    </section>
-
     <div class="strategy-shell">
-      <aside class="left-dock" aria-label="国家メニュー">
+      <aside class="left-dock" aria-label="人物と管轄のメニュー">
+        <div class="left-hud">
+          <header class="grand-topbar">
+            <button class="realm-identity" id="realmHome" type="button" aria-label="人物・経歴画面を開く">
+              <span class="shield"><i>誓</i></span>
+              <span><strong>旅人</strong><small>無位の個人</small></span>
+            </button>
+
+            <div class="resource-ledger" id="resourceLedger" aria-label="国家資源"></div>
+
+            <div class="date-controls" aria-label="月次ターン">
+              <button class="analysis-toggle" id="analysisToggle" type="button" aria-pressed="false">
+                <span aria-hidden="true">⌘</span>
+                <span><strong>専門台帳</strong><small>表示</small></span>
+              </button>
+              <button class="audio-toggle" id="audioToggle" type="button" aria-label="BGMと効果音をミュートする" aria-pressed="false">
+                <span id="audioIcon" aria-hidden="true">♫</span>
+                <span><strong>音響</strong><small id="audioStatus">開始</small></span>
+              </button>
+              <button class="date-button month-end-button" id="endMonthButton" type="button">
+                <strong id="dateLabel">誓暦317年 青月</strong>
+                <small id="dateHint">月を終える</small>
+              </button>
+            </div>
+          </header>
+
+          <section class="campaign-bar" id="campaignBar" aria-live="polite">
+            <div class="campaign-bar-goal"><small>立身段階</small><strong>一個人として身を立てる</strong></div>
+            <div class="campaign-bar-next"><small>現在の目標</small><strong>依頼を果たし、仕官の誘いを得る</strong></div>
+          </section>
+        </div>
         <nav class="primary-tabs" id="primaryTabs">
-          <button type="button" data-panel="centralization"><span>冠</span>国制</button>
-          <button class="is-active" type="button" data-panel="council"><span>♜</span>評定</button>
-          <button type="button" data-panel="spending"><span>¤</span>支出</button>
-          <button type="button" data-panel="city"><span>城</span>都市</button>
-          <button type="button" data-panel="town"><span>町</span>町政</button>
-          <button type="button" data-panel="diplomacy"><span>⚖</span>外交</button>
-          <button type="button" data-panel="military"><span>⚔</span>軍事</button>
-          <button type="button" data-panel="people"><span>♟</span>人材</button>
+          <button class="is-active" type="button" data-panel="career"><span>人</span>人物</button>
+          <button type="button" data-panel="governance" hidden><span>領</span>統治</button>
+          <button type="button" data-panel="centralization" hidden><span>冠</span>国制</button>
+          <button type="button" data-panel="council" hidden><span>♜</span>評定</button>
+          <button type="button" data-panel="spending" hidden><span>¤</span>支出</button>
+          <button type="button" data-panel="city" hidden><span>城</span>都市</button>
+          <button type="button" data-panel="town" hidden><span>町</span>町政</button>
+          <button type="button" data-panel="diplomacy" hidden><span>⚖</span>外交</button>
+          <button type="button" data-panel="military" hidden><span>⚔</span>軍事</button>
+          <button type="button" data-panel="people" hidden><span>♟</span>人材</button>
           <button type="button" data-panel="world"><span>界</span>世界</button>
         </nav>
         <section class="ledger-panel" id="leftPanel" aria-live="polite"></section>
@@ -172,16 +177,20 @@
 
         <div class="war-map-switch is-hidden" id="warMapSwitch" aria-label="戦争地図の表示切替">
           <button type="button" data-war-map-view="theater">戦域盤</button>
-          <button type="button" data-war-map-view="atlas">大陸図</button>
+          <button type="button" data-war-map-view="atlas">生成世界図</button>
         </div>
 
         <section class="war-board is-hidden" id="warBoard" aria-live="polite" aria-label="地域別戦域ボード"></section>
 
-        <section class="generated-world-map is-hidden" id="generatedWorldMap" aria-live="polite" aria-label="自動生成された正方形タイル世界地図">
-          <div class="generated-world-scroll" id="generatedWorldScroll" tabindex="0" aria-label="東西に循環する生成世界。横へ動かして世界を一周できます">
+        <section class="generated-world-map is-hidden" id="generatedWorldMap" aria-live="polite" aria-label="自動生成された地方単位のプレイ地図">
+          <div class="generated-world-scroll" id="generatedWorldScroll" tabindex="0" aria-label="生成済み世界を現在地の地方レベルへ拡大した地図">
             <div class="generated-world-strip" id="generatedWorldStrip"></div>
           </div>
-          <p class="generated-world-map-help">正方形タイルを選択 · 横方向は世界を一周 · 探索隊は東西南北へ移動</p>
+          <div class="generated-world-map-help">
+            <div class="generated-map-scale" role="group" aria-label="生成地図の縮尺"><button type="button" class="is-active" data-generated-map-scale="region">地方でプレイ</button><button type="button" data-generated-map-scale="world">世界全図</button></div>
+            <span><i class="is-castle">城</i>城</span><span><i class="is-village">村</i>村</span><span><i class="is-fort">砦</i>砦</span>
+            <p>隣接地方は左のコマンドで選択・確定 · 世界全図と地方図は同じ生成画像 · 国家は一つ以上の地方で構成</p>
+          </div>
         </section>
 
         <div class="map-caption">
@@ -530,7 +539,7 @@
       </main>
 
       <aside class="outliner">
-        <header><span>OUTLINER</span><strong>王国政務摘要</strong></header>
+        <header><span>OUTLINER</span><strong>人物年代記摘要</strong></header>
         <div id="outlinerContent"></div>
         <footer>
           <button id="saveButton" type="button">記録</button>

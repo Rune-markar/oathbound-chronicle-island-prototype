@@ -28,8 +28,40 @@ test("nation generation is deterministic and claims every land tile", () => {
   assert.equal(first.tiles.length, world.tiles.length);
   assert.ok(first.tiles.every((tile, index) => tile.index === index && tile.id === `tile-${tile.x}-${tile.y}`));
   assert.ok(first.tiles.filter((tile) => tile.nationId).every((tile) => tile.nationName));
+  assert.ok(first.tiles.filter((tile) => tile.passable).every((tile) => tile.regionId && tile.regionName));
   assert.equal(new Set(first.nations.map((nation) => nation.name)).size, first.nations.length);
   assert.equal(validateNationWorld(world, first).valid, true);
+});
+
+test("regions are connected terrain-pixel groups and nations are sets of one or more regions", () => {
+  const world = generateTerrain(TERRAIN_OPTIONS);
+  const politics = generateNations(world, { count: 7 });
+  assert.equal(politics.summary.regionCount, politics.regions.length);
+  assert.ok(politics.regions.length >= politics.nations.length);
+  for (const nation of politics.nations) {
+    assert.ok(nation.regionIds.length >= 1);
+    assert.equal(nation.regionCount, nation.regionIds.length);
+    assert.ok(nation.regionIds.includes(nation.capitalRegionId));
+    assert.ok(nation.regionIds.every((regionId) => politics.regions.find((region) => region.id === regionId)?.nationId === nation.id));
+  }
+  for (const region of politics.regions) {
+    const marker = politics.tiles[region.markerIndex];
+    assert.ok(region.tileIndices.includes(region.markerIndex), `${region.name} marker must stay inside the region`);
+    assert.equal(marker.regionId, region.id);
+    assert.equal(marker.passable, true);
+    assert.ok(region.markerLandDepth >= region.anchorLandDepth, `${region.name} marker must be at least as far inland as its generation anchor`);
+    const target = new Set(region.tileIndices);
+    const visited = new Set([region.tileIndices[0]]);
+    const queue = [region.tileIndices[0]];
+    while (queue.length) {
+      for (const neighbor of cardinalNeighbors(queue.shift(), world)) {
+        if (visited.has(neighbor) || !target.has(neighbor)) continue;
+        visited.add(neighbor);
+        queue.push(neighbor);
+      }
+    }
+    assert.equal(visited.size, region.tileIndices.length, `${region.name} must be a connected tile group`);
+  }
 });
 
 test("each capital anchors a connected homeland grown through land movement costs", () => {
@@ -49,9 +81,25 @@ test("each capital anchors a connected homeland grown through land movement cost
       }
     }
     assert.equal(visited.size, homeland.length, `${nation.name} homeland was fragmented`);
-    assert.notEqual(world.tiles[nation.capitalIndex].relief, "mountains");
-    assert.notEqual(world.tiles[nation.capitalIndex].feature, "marsh");
+    assert.ok(nation.capital.habitatMatch >= 0.9, `${nation.peopleName} capital did not match its background habitat`);
   }
+});
+
+test("human, beastfolk, and dwarf capitals follow their background habitats", () => {
+  const world = generateTerrain(TERRAIN_OPTIONS);
+  const politics = generateNations(world, { count: 7 });
+  const byPeople = Object.fromEntries(politics.nations.map((nation) => [nation.peopleId, nation]));
+  const humanCapital = world.tiles[byPeople.human.capitalIndex];
+  const beastfolkCapital = world.tiles[byPeople.beastfolk.capitalIndex];
+  const dwarfCapital = world.tiles[byPeople.dwarf.capitalIndex];
+  assert.equal(humanCapital.relief, "flat");
+  assert.ok(["plains", "grassland"].includes(humanCapital.terrain));
+  assert.ok(!["forest", "rainforest", "marsh"].includes(humanCapital.feature));
+  assert.ok(["forest", "rainforest"].includes(beastfolkCapital.feature));
+  assert.equal(dwarfCapital.relief, "mountains");
+  assert.equal(byPeople.human.settlementStyle, "平地都市");
+  assert.equal(byPeople.beastfolk.settlementStyle, "森林氏族集落");
+  assert.equal(byPeople.dwarf.settlementStyle, "山岳洞窟都市");
 });
 
 test("generated states expose geographic government, economy, population, and shared borders", () => {
@@ -59,6 +107,8 @@ test("generated states expose geographic government, economy, population, and sh
   const politics = generateNations(world, { count: 7 });
   assert.ok(politics.borderSegments.length > 0);
   assert.ok(Object.keys(politics.sharedBorderLengths).length > 0);
+  assert.equal(politics.summary.naturalBorderSegmentCount + politics.summary.artificialBorderSegmentCount, politics.summary.borderSegmentCount);
+  assert.ok(politics.borderSegments.every((segment) => segment.frontierType && typeof segment.natural === "boolean"));
   for (const nation of politics.nations) {
     assert.ok(nation.government.length > 0);
     assert.ok(nation.economy.length > 0);
@@ -68,14 +118,50 @@ test("generated states expose geographic government, economy, population, and sh
   }
 });
 
-test("terrain renderer draws colored nations, natural borders, and capital markers without letter tiles", () => {
+test("natural-frontier policy reduces artificial straight-line borders", () => {
+  const world = generateTerrain(TERRAIN_OPTIONS);
+  const unconstrained = generateNations(world, { count: 7, naturalFrontierWeight: 0 });
+  const preferred = generateNations(world, { count: 7 });
+  assert.equal(preferred.config.naturalFrontierPolicy, "adaptive-preferred");
+  assert.ok([6, 30, 50].includes(preferred.config.naturalFrontierWeight));
+  assert.deepEqual(preferred.config.naturalFrontierCandidateWeights, [6, 30, 50]);
+  assert.ok(preferred.summary.naturalBorderShare > preferred.summary.artificialBorderShare);
+  assert.ok(preferred.summary.artificialBorderShare < unconstrained.summary.artificialBorderShare);
+});
+
+test("every nation receives a capital castle, interior villages, and frontier forts", () => {
+  const world = generateTerrain(TERRAIN_OPTIONS);
+  const politics = generateNations(world, { count: 7 });
+  assert.deepEqual(Object.keys(politics.summary.objectCounts).sort(), ["castle", "fort", "village"]);
+  assert.equal(politics.summary.objectCount, politics.objects.length);
+  assert.equal(new Set(politics.objects.map((object) => object.id)).size, politics.objects.length);
+  for (const nation of politics.nations) {
+    const objects = politics.objects.filter((object) => object.nationId === nation.id);
+    const castle = objects.find((object) => object.type === "castle");
+    const villages = objects.filter((object) => object.type === "village");
+    const forts = objects.filter((object) => object.type === "fort");
+    assert.equal(castle.tileIndex, nation.capitalIndex);
+    assert.ok(villages.length >= 1, `${nation.name} must have a village`);
+    assert.ok(forts.length >= 1, `${nation.name} must have a fort`);
+    assert.ok(forts.every((fort) => politics.tiles[fort.tileIndex].borderSides.length > 0), `${nation.name} forts must guard a frontier`);
+    assert.ok(objects.every((object) => politics.tileNationIds[object.tileIndex] === nation.id));
+  }
+});
+
+test("terrain renderer draws colored nations, natural borders, and castle, village, and fort markers without letter tiles", () => {
   const world = generateTerrain(TERRAIN_OPTIONS);
   const politics = generateNations(world, { count: 7 });
   const svg = renderTerrainSvg(world, { cellSize: 12, nationMap: politics, textureUrl: "./terrain-natural-texture.png" });
   assert.match(svg, /id="nationOverlay"/);
   assert.match(svg, /id="nationBorders"/);
+  assert.match(svg, /id="regionBorders"/);
   assert.match(svg, /id="nationCapitals"/);
+  assert.match(svg, /id="nationVillages"/);
+  assert.match(svg, /id="nationForts"/);
+  for (const type of ["castle", "village", "fort"]) assert.match(svg, new RegExp(`data-object-type="${type}"`));
   assert.match(svg, /class="nation-border/);
+  assert.match(svg, /is-natural-border/);
+  assert.match(svg, /is-artificial-border/);
   assert.match(svg, /data-wrap="longitude"/);
   assert.doesNotMatch(svg, /<text\b/);
 });

@@ -16,6 +16,7 @@ import {
   getBattleTile,
   getBattleUnit,
   getBattleFortification,
+  getAttackableBattleTiles,
   getChargePreview,
   getEffectiveStats,
   getLogisticsState,
@@ -275,6 +276,31 @@ test("manual movement exposes only destinations reachable this turn", () => {
   assert.ok(!keys.has("12,4"));
   assert.ok(reachable.every(({ cost }) => cost > 0 && cost <= getEffectiveStats(battle, "p-infantry-1").movement));
   assert.throws(() => planUnitMove(battle, "p-infantry-1", { x: 12, y: 4 }), /移動可能範囲外/);
+});
+
+test("manual attack range follows melee, ranged, and line-of-sight rules", () => {
+  const meleeBattle = duel();
+  const meleeTiles = getAttackableBattleTiles(meleeBattle, "cavalry");
+  assert.equal(meleeTiles.length, 4);
+  assert.ok(meleeTiles.every(({ distance: separation, range }) => separation === 1 && range === 1));
+
+  const map = createBattleMap({ width: 10, height: 8 });
+  const rangedBattle = createBattleState({
+    map,
+    commanders: [
+      createCommander({ id: "p-ranged-cmd", name: "王国射撃指揮官", side: "player", position: { x: 1, y: 3 }, commandRange: 12 }),
+      createCommander({ id: "e-ranged-cmd", name: "公国守備指揮官", side: "enemy", position: { x: 8, y: 3 }, commandRange: 12 }),
+    ],
+    units: [
+      createCombatUnit({ id: "archer", name: "試験弓兵", side: "player", unitClassId: "archer", commanderId: "p-ranged-cmd", position: { x: 2, y: 3 } }),
+      createCombatUnit({ id: "ranged-target", name: "試験目標", side: "enemy", unitClassId: "infantry", commanderId: "e-ranged-cmd", position: { x: 5, y: 3 } }),
+    ],
+  });
+  const clearRange = new Set(getAttackableBattleTiles(rangedBattle, "archer").map(({ position }) => `${position.x},${position.y}`));
+  assert.ok(clearRange.has("5,3"));
+  setBattleTerrain(rangedBattle, { x: 3, y: 3 }, "mountain");
+  const blockedRange = new Set(getAttackableBattleTiles(rangedBattle, "archer").map(({ position }) => `${position.x},${position.y}`));
+  assert.ok(!blockedRange.has("5,3"));
 });
 
 test("commander movement range matches the same destinations accepted by manual planning", () => {
