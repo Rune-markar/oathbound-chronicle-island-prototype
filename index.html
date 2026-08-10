@@ -66,12 +66,19 @@
 
         <section class="war-board is-hidden" id="warBoard" aria-live="polite" aria-label="地域別戦域ボード"></section>
 
+        <section class="generated-world-map is-hidden" id="generatedWorldMap" aria-live="polite" aria-label="自動生成された正方形タイル世界地図">
+          <div class="generated-world-scroll" id="generatedWorldScroll" tabindex="0" aria-label="東西に循環する生成世界。横へ動かして世界を一周できます">
+            <div class="generated-world-strip" id="generatedWorldStrip"></div>
+          </div>
+          <p class="generated-world-map-help">正方形タイルを選択 · 横方向は世界を一周 · 探索隊は東西南北へ移動</p>
+        </section>
+
         <div class="map-caption">
           <span id="mapModeEyebrow">POLITICAL MAP</span>
           <strong id="mapCaptionTitle">エルドリア大陸</strong>
         </div>
 
-        <aside class="terrain-legend" aria-label="地図凡例">
+        <aside class="terrain-legend" id="terrainLegend" aria-label="地図凡例">
           <strong>STRATEGIC MAP KEY</strong>
           <span><i class="legend-border"></i>太線：国境</span>
           <span><i class="legend-tile"></i>細線：小領域タイル</span>

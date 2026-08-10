@@ -7,9 +7,10 @@
   <style>
     :root { color-scheme: dark; font-family: "Yu Gothic UI", "Hiragino Sans", sans-serif; background: #10191a; color: #e6e0ca; }
     * { box-sizing: border-box; }
-    body { margin: 0; min-height: 100vh; background: radial-gradient(circle at 50% 0, #293637, #10191a 58%); }
-    main { width: min(1500px, 96vw); margin: 0 auto; padding: 28px 0 48px; }
-    header { display: flex; align-items: end; justify-content: space-between; gap: 24px; margin-bottom: 18px; }
+    body { margin: 0; width: 100vw; height: 100vh; overflow: hidden; background: #0b2731; }
+    main { position: relative; width: 100vw; height: 100vh; overflow: hidden; }
+    header { position: absolute; z-index: 3; inset: 20px 20px auto; display: flex; align-items: end; justify-content: space-between; gap: 24px; pointer-events: none; }
+    header > * { pointer-events: auto; }
     h1 { margin: 0; font: 600 clamp(22px, 3vw, 38px)/1.1 Georgia, "Yu Mincho", serif; letter-spacing: .05em; }
     header p { margin: 8px 0 0; color: #aebbb5; }
     .controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; padding: 13px; border: 1px solid #61706b66; background: #182324d9; box-shadow: 0 14px 38px #0007; }
@@ -17,12 +18,30 @@
     input { width: 148px; padding: 9px 10px; border: 1px solid #67746e; background: #0e1718; color: #f1ead2; }
     input[type="range"] { padding: 0; }
     button { padding: 10px 18px; border: 1px solid #d0bb7b; background: #8e7336; color: #fff8e3; font-weight: 700; cursor: pointer; }
-    .map-frame { position: relative; overflow: hidden; border: 1px solid #82795f; background: #0b2731; box-shadow: 0 24px 80px #000b; }
-    #terrainImage { display: block; width: 100%; aspect-ratio: 3 / 2; }
-    #terrainImage svg { display: block; width: 100%; height: 100%; }
-    .facts { display: flex; flex-wrap: wrap; gap: 8px; padding: 11px 13px; border-top: 1px solid #726b56; background: #111a1bdd; }
+    .map-frame { position: absolute; inset: 0; overflow: hidden; background: #0b2731; }
+    #terrainImage { position: absolute; inset: 0; overflow: hidden; cursor: grab; touch-action: none; user-select: none; }
+    #terrainImage:active { cursor: grabbing; }
+    .world-track { display: flex; width: max-content; height: 100%; will-change: transform; }
+    .world-copy { position: relative; flex: 0 0 150vh; width: 150vh; height: 100vh; }
+    .world-copy img { display: block; width: 100%; height: 100%; }
+    .tile-marker { position: absolute; z-index: 2; display: none; border: 2px solid #fff2b5; background: #e8c65c33; box-shadow: 0 0 0 1px #102326, 0 0 12px #fff0a777; pointer-events: none; }
+    .edge-note { position: absolute; z-index: 3; top: 112px; right: 20px; padding: 7px 10px; background: #10191ac7; color: #d7d5c5; font-size: 12px; letter-spacing: .08em; pointer-events: none; }
+    .nation-panel { position: absolute; z-index: 3; top: 154px; right: 20px; width: min(300px, calc(100vw - 40px)); max-height: calc(100vh - 250px); overflow: auto; padding: 12px; background: #10191ad9; box-shadow: 0 14px 38px #0008; }
+    .nation-panel h2 { margin: 0 0 9px; font-size: 13px; letter-spacing: .12em; font-weight: 700; color: #f0e6ca; }
+    .nation-list { display: grid; gap: 6px; }
+    .nation-card { display: grid; grid-template-columns: 10px 1fr auto; gap: 8px; align-items: center; padding: 7px 8px; background: #253031e8; }
+    .nation-swatch { width: 10px; height: 100%; min-height: 34px; }
+    .nation-card strong, .nation-card small { display: block; }
+    .nation-card strong { color: #f4ebd0; font-size: 12px; }
+    .nation-card small { margin-top: 2px; color: #aebbb5; font-size: 10px; }
+    .nation-card output { color: #ddd4b9; font-size: 11px; text-align: right; }
+    .tile-panel { position: absolute; z-index: 3; left: 20px; bottom: 72px; width: min(390px, calc(100vw - 40px)); padding: 11px 13px; background: #10191ae8; box-shadow: 0 12px 32px #0009; pointer-events: none; }
+    .tile-panel h2 { margin: 0 0 6px; color: #f0e6ca; font-size: 12px; letter-spacing: .12em; }
+    .tile-panel p { margin: 3px 0; color: #c9d0c8; font-size: 11px; line-height: 1.5; }
+    .tile-panel strong { color: #fff1c4; }
+    .facts { position: absolute; z-index: 3; left: 20px; bottom: 20px; display: flex; flex-wrap: wrap; gap: 8px; padding: 11px 13px; background: #111a1bdd; box-shadow: 0 10px 28px #0008; pointer-events: none; }
     .facts span { padding: 5px 9px; background: #283434; color: #d8d3bf; font-size: 12px; }
-    @media (max-width: 760px) { header { align-items: stretch; flex-direction: column; } .controls { width: 100%; } #terrainImage { aspect-ratio: auto; min-height: 440px; } }
+    @media (max-width: 760px) { header { inset: 12px; align-items: stretch; flex-direction: column; } .controls { width: 100%; } .edge-note { top: 220px; right: 12px; } .nation-panel { top: 258px; right: 12px; max-height: 27vh; } .tile-panel { left: 12px; bottom: 104px; } .facts { left: 12px; right: 12px; bottom: 12px; } }
   </style>
 </head>
 <body>
@@ -33,36 +52,143 @@
         <label>世界シード<input id="seed" value="eldoria-317"></label>
         <label>降水量<input id="rainfall" type="range" min="0.5" max="1.5" step="0.05" value="1"></label>
         <label>地形年代<input id="worldAge" type="range" min="0" max="1" step="0.05" value="0.58"></label>
+        <label>国家数 <output id="nationCountValue">7</output><input id="nationCount" type="range" min="3" max="12" step="1" value="7"></label>
         <button id="generate" type="button">再生成</button>
       </div>
     </header>
     <section class="map-frame" aria-live="polite">
-      <div id="terrainImage"></div>
+      <div id="terrainImage" role="img" tabindex="0" aria-label="四角タイルを選択でき、左右へドラッグして一周できる世界地図"><div class="world-track" id="worldTrack" aria-hidden="true"></div></div>
+      <div class="edge-note">左右ドラッグで世界を一周</div>
+      <aside class="nation-panel" aria-label="自動生成された国家"><h2>自動生成国家</h2><div class="nation-list" id="nationList"></div></aside>
+      <section class="tile-panel" id="tileDetails" aria-live="polite"><h2>四角タイル運用</h2><p>地図上のタイルを選択すると、同じタイルIDに結び付いた地形・国家・河川・移動・資源を表示します。</p></section>
       <div class="facts" id="facts"></div>
     </section>
   </main>
   <script type="module">
-    import { generateTerrain } from "./src/terrain-generation.js";
-    import { renderTerrainSvg } from "./src/terrain-renderer.js";
+    import { generateTerrain } from "./src/terrain-generation.js?v=square-grid-3";
+    import { generateNations } from "./src/nation-generation.js?v=square-tile-world-2";
+    import { renderTerrainSvg } from "./src/terrain-renderer.js?v=square-tile-world-2";
 
     const seed = document.querySelector("#seed");
     const rainfall = document.querySelector("#rainfall");
     const worldAge = document.querySelector("#worldAge");
+    const nationCount = document.querySelector("#nationCount");
+    const nationCountValue = document.querySelector("#nationCountValue");
     const image = document.querySelector("#terrainImage");
+    const worldTrack = document.querySelector("#worldTrack");
     const facts = document.querySelector("#facts");
+    const nationList = document.querySelector("#nationList");
+    const tileDetails = document.querySelector("#tileDetails");
+    const populationFormat = new Intl.NumberFormat("ja-JP", { notation: "compact", maximumFractionDigits: 1 });
+    let longitudeOffset = 0;
+    let dragging = false;
+    let pointerX = 0;
+    let mapObjectUrl = null;
+    let currentWorld = null;
+    let currentPolitics = null;
+    let selectedTileIndex = null;
+    let pointerTravel = 0;
+
+    function positionWorld() {
+      const worldWidth = image.clientHeight * 1.5;
+      const wrappedOffset = ((longitudeOffset % worldWidth) + worldWidth) % worldWidth;
+      worldTrack.style.transform = `translate3d(${-worldWidth * 2 + wrappedOffset}px, 0, 0)`;
+    }
+
+    const terrainLabels = { ocean: "外洋", coast: "沿岸", lake: "湖", grassland: "草地", plains: "平原", desert: "砂漠", tundra: "ツンドラ", snow: "雪原" };
+    const reliefLabels = { flat: "平地", hills: "丘陵", mountains: "山岳" };
+    const featureLabels = { forest: "森林", rainforest: "熱帯雨林", marsh: "湿地", floodplain: "氾濫原", none: "なし" };
+    const sideLabels = { north: "北", east: "東", south: "南", west: "西" };
+
+    function showTile(index) {
+      const tile = currentPolitics?.tiles[index];
+      if (!tile) return;
+      selectedTileIndex = index;
+      for (const marker of document.querySelectorAll(".tile-marker")) {
+        marker.style.display = "block";
+        marker.style.left = `${tile.x / currentWorld.width * 100}%`;
+        marker.style.top = `${tile.y / currentWorld.height * 100}%`;
+        marker.style.width = `${100 / currentWorld.width}%`;
+        marker.style.height = `${100 / currentWorld.height}%`;
+      }
+      const border = tile.borderSides.length ? tile.borderSides.map((side) => sideLabels[side]).join("・") : "なし";
+      const hydrology = tile.riverId ? `河川 ${tile.riverId}` : tile.flowTo >= 0 ? `流下先 tile-${currentWorld.tiles[tile.flowTo].x}-${currentWorld.tiles[tile.flowTo].y}` : "流出なし";
+      tileDetails.innerHTML = `<h2>四角タイル ${tile.id}</h2><p><strong>${tile.nationName ?? "非領土"}${tile.capitalNationId ? "・首都" : ""}</strong> · 国境 ${border}</p><p>${terrainLabels[tile.terrain] ?? tile.terrain} · ${reliefLabels[tile.relief] ?? tile.relief} · ${featureLabels[tile.feature ?? "none"]} · ${hydrology}</p><p>肥沃度 ${tile.fertility} · 淡水 ${Math.round(tile.freshwater * 100)}% · 移動費 ${tile.movementCost} · 食料 ${tile.yields.food} · 生産 ${tile.yields.production} · 交易 ${tile.yields.commerce}</p>`;
+    }
+
+    function tileAtScreenPoint(clientX, clientY) {
+      if (!currentWorld) return null;
+      const rect = image.getBoundingClientRect();
+      const worldWidth = rect.height * 1.5;
+      const wrappedOffset = ((longitudeOffset % worldWidth) + worldWidth) % worldWidth;
+      const trackX = -worldWidth * 2 + wrappedOffset;
+      const worldX = ((clientX - rect.left - trackX) % worldWidth + worldWidth) % worldWidth;
+      const x = Math.min(currentWorld.width - 1, Math.floor(worldX / worldWidth * currentWorld.width));
+      const y = Math.min(currentWorld.height - 1, Math.max(0, Math.floor((clientY - rect.top) / rect.height * currentWorld.height)));
+      return y * currentWorld.width + x;
+    }
 
     function render() {
-      const world = generateTerrain({ seed: seed.value || "eldoria-317", rainfall: Number(rainfall.value), worldAge: Number(worldAge.value) });
-      image.innerHTML = renderTerrainSvg(world, { cellSize: 18, showGrid: true });
+      const world = generateTerrain({ seed: seed.value || "eldoria-317", rainfall: Number(rainfall.value), worldAge: Number(worldAge.value), wrapX: true });
+      const nationWorld = generateNations(world, { count: Number(nationCount.value), seed: `${world.seed}:states` });
+      currentWorld = world;
+      currentPolitics = nationWorld;
+      selectedTileIndex = null;
+      const svg = renderTerrainSvg(world, { cellSize: 18, showGrid: true, nationMap: nationWorld });
+      const nextMapUrl = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
+      worldTrack.innerHTML = Array.from({ length: 5 }, () => `<div class="world-copy"><img src="${nextMapUrl}" alt=""><i class="tile-marker"></i></div>`).join("");
+      if (mapObjectUrl) URL.revokeObjectURL(mapObjectUrl);
+      mapObjectUrl = nextMapUrl;
+      requestAnimationFrame(positionWorld);
+      image.dataset.grid = world.gridType;
+      image.dataset.wrap = "longitude";
+      image.dataset.nations = nationWorld.nations.length;
       facts.innerHTML = [
         `格子 ${world.gridType === "square" ? "四角" : world.gridType}`,
+        "世界 東西循環",
+        `国家 ${nationWorld.summary.nationCount}`,
         `陸地 ${Math.round(world.summary.landRatio * 100)}%`,
         `陸塊 ${world.summary.landmassCount}`,
         `水系 ${world.summary.riverCount}`,
         `平均降水 ${world.summary.meanPrecipitationMm} mm`,
         `平均肥沃度 ${world.summary.meanFertility}`,
       ].map((value) => `<span>${value}</span>`).join("");
+      nationList.innerHTML = [...nationWorld.nations]
+        .sort((left, right) => right.tileCount - left.tileCount)
+        .map((nation) => `<article class="nation-card"><i class="nation-swatch" style="background:${nation.color}"></i><span><strong>${nation.name}</strong><small>${nation.government} · ${nation.economy} · 肥沃度 ${nation.meanFertility}</small></span><output>${nation.tileCount}区画<br>${populationFormat.format(nation.populationPotential)}人</output></article>`)
+        .join("");
+      tileDetails.innerHTML = "<h2>四角タイル運用</h2><p>地図上のタイルを選択すると、同じタイルIDに結び付いた地形・国家・河川・移動・資源を表示します。</p>";
     }
+
+    image.addEventListener("pointerdown", (event) => {
+      dragging = true;
+      pointerTravel = 0;
+      pointerX = event.clientX;
+      image.setPointerCapture(event.pointerId);
+    });
+    image.addEventListener("pointermove", (event) => {
+      if (!dragging) return;
+      const movement = event.clientX - pointerX;
+      longitudeOffset += movement;
+      pointerTravel += Math.abs(movement);
+      pointerX = event.clientX;
+      positionWorld();
+    });
+    image.addEventListener("pointerup", (event) => {
+      dragging = false;
+      image.releasePointerCapture(event.pointerId);
+      if (pointerTravel < 6) showTile(tileAtScreenPoint(event.clientX, event.clientY));
+    });
+    image.addEventListener("pointercancel", () => { dragging = false; });
+    image.addEventListener("keydown", (event) => {
+      if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+      event.preventDefault();
+      longitudeOffset += event.key === 'ArrowLeft' ? 72 : -72;
+      positionWorld();
+    });
+
+    nationCount.addEventListener("input", () => { nationCountValue.value = nationCount.value; });
+    window.addEventListener("resize", positionWorld);
 
     document.querySelector("#generate").addEventListener("click", render);
     render();

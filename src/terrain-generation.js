@@ -1,15 +1,13 @@
-const clamp = (value, min = 0, max = 1) => Math.min(max, Math.max(min, value));
+import {
+  squareGridDistance as gridDistance,
+  squareNeighborDistance as neighborDistance,
+  squareNeighborIndices as neighborIndices,
+  squareTileCoordinates as tileCoordinates,
+  squareTileIndex as tileIndex,
+  squareWrappedDeltaX as wrappedDeltaX,
+} from "./square-grid.js";
 
-const SQUARE_DIRECTIONS = Object.freeze([
-  [1, 0],
-  [1, -1],
-  [0, -1],
-  [-1, 0],
-  [-1, 1],
-  [0, 1],
-  [1, 1],
-  [-1, -1],
-]);
+const clamp = (value, min = 0, max = 1) => Math.min(max, Math.max(min, value));
 
 export const TERRAIN_GENERATION_DEFAULTS = Object.freeze({
   width: 72,
@@ -93,49 +91,6 @@ function validateOptions(options) {
   if (!(config.worldAge >= 0 && config.worldAge <= 1)) throw new RangeError("worldAge must be between 0 and 1.");
   if (!(config.rainfall >= 0.35 && config.rainfall <= 1.8)) throw new RangeError("rainfall must be between 0.35 and 1.8.");
   return config;
-}
-
-function tileIndex(x, y, width) {
-  return y * width + x;
-}
-
-function tileCoordinates(index, width) {
-  return { x: index % width, y: Math.floor(index / width) };
-}
-
-function neighborIndices(index, config) {
-  const { x, y } = tileCoordinates(index, config.width);
-  const result = [];
-  for (const [dx, dy] of SQUARE_DIRECTIONS) {
-    let nextX = x + dx;
-    const nextY = y + dy;
-    if (config.wrapX) nextX = (nextX + config.width) % config.width;
-    if (nextX < 0 || nextX >= config.width || nextY < 0 || nextY >= config.height) continue;
-    result.push(tileIndex(nextX, nextY, config.width));
-  }
-  return result;
-}
-
-function neighborDistance(left, right, config) {
-  const a = tileCoordinates(left, config.width);
-  const b = tileCoordinates(right, config.width);
-  const dx = Math.abs(wrappedDeltaX(a.x, b.x, config.width));
-  const dy = Math.abs(b.y - a.y);
-  return dx > 0 && dy > 0 ? Math.SQRT2 : 1;
-}
-
-function wrappedDeltaX(left, right, width) {
-  let delta = right - left;
-  if (Math.abs(delta) > width / 2) delta -= Math.sign(delta) * width;
-  return delta;
-}
-
-function gridDistance(left, right, config) {
-  const a = tileCoordinates(left, config.width);
-  const b = tileCoordinates(right, config.width);
-  const dx = wrappedDeltaX(a.x, b.x, config.width);
-  const dy = b.y - a.y;
-  return Math.max(Math.abs(dx), Math.abs(dy));
 }
 
 function quantile(values, fraction) {

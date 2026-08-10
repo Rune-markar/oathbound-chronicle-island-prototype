@@ -110,6 +110,16 @@ import {
   getResourceRanking,
   getWorldStatisticsSummary,
 } from "./world-statistics.js";
+import {
+  buildGeneratedWorld,
+  getGeneratedWorldView,
+  moveGeneratedExpedition,
+  refreshGeneratedWorldForDate,
+  regenerateGeneratedWorld,
+  selectGeneratedWorldTile,
+  setGeneratedPlayerNation,
+} from "./generated-world-system.js";
+import { terrainSvgDataUrl } from "./terrain-renderer.js";
 
 const STORAGE_KEY = "oathbound-continental-grand-strategy-v9";
 const LEGACY_STORAGE_KEYS = ["oathbound-continental-grand-strategy-v8", "oathbound-continental-grand-strategy-v7", "oathbound-continental-grand-strategy-v6"];
@@ -175,14 +185,30 @@ const AUTHORITY_MAP_LABELS = Object.freeze({
   uniformity: ["INSTITUTIONAL UNIFORMITY MAP", "制度統一度"],
 });
 
+const GENERATED_TERRAIN_LABELS = Object.freeze({
+  ocean: "外洋", coast: "沿岸水域", lake: "湖沼", desert: "砂漠", plains: "平原", grassland: "草原", forest: "森林",
+  rainforest: "熱帯林", tundra: "ツンドラ", snow: "雪原", wetland: "湿地", badlands: "荒地",
+});
+
+const GENERATED_RELIEF_LABELS = Object.freeze({ flat: "平地", hills: "丘陵", mountains: "山岳", water: "水面" });
+const GENERATED_BORDER_LABELS = Object.freeze({ north: "北", east: "東", south: "南", west: "西" });
+
+const GENERATED_DIRECTIONS = Object.freeze([
+  Object.freeze({ id: "north", label: "北", dx: 0, dy: -1 }),
+  Object.freeze({ id: "west", label: "西", dx: -1, dy: 0 }),
+  Object.freeze({ id: "east", label: "東", dx: 1, dy: 0 }),
+  Object.freeze({ id: "south", label: "南", dx: 0, dy: 1 }),
+]);
+
 function cityArt(cityId) {
   return CITY_ART[cityId] ?? CITY_ART.selene;
 }
 
-let state = loadState() ?? createInitialState();
+let state = refreshGeneratedWorldForDate(loadState() ?? createInitialState());
 if (state.campaign?.ending) state.council.pending = false;
 let toastTimer = null;
 let previewCache = { state: null, value: null };
+let generatedMapVisualCache = { key: null, url: null };
 const view = {
   panel: "council",
   spendingCategoryId: "social_security",
@@ -246,6 +272,10 @@ const elements = {
   warBoard: document.querySelector("#warBoard"),
   warMapSwitch: document.querySelector("#warMapSwitch"),
   strategyMap: document.querySelector("#strategyMap"),
+  generatedWorldMap: document.querySelector("#generatedWorldMap"),
+  generatedWorldScroll: document.querySelector("#generatedWorldScroll"),
+  generatedWorldStrip: document.querySelector("#generatedWorldStrip"),
+  terrainLegend: document.querySelector("#terrainLegend"),
   mapModeEyebrow: document.querySelector("#mapModeEyebrow"),
   mapCaptionTitle: document.querySelector("#mapCaptionTitle"),
   mapModeBar: document.querySelector("#mapModeBar"),
@@ -308,7 +338,7 @@ function persist(showMessage = false) {
 
 function commit(nextState, message = "", cue = "confirm") {
   const wasAtWar = Boolean(state.war);
-  state = nextState;
+  state = refreshGeneratedWorldForDate(nextState);
   if (!wasAtWar && state.war) {
     view.warMapView = "theater";
     view.warRegionId = state.war.theater?.activeRegionId ?? null;
@@ -376,6 +406,15 @@ function endMonth() {
 
 function formatValue(value, digits = 0) {
   return Number(value).toLocaleString("ja-JP", { maximumFractionDigits: digits, minimumFractionDigits: digits });
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
 }
 
 function signed(value, digits = 0) {
@@ -567,13 +606,13 @@ function acknowledgeEnding() {
 function resetChronicle() {
   localStorage.removeItem(STORAGE_KEY);
   LEGACY_STORAGE_KEYS.forEach((key) => localStorage.removeItem(key));
-  state = createInitialState();
+  state = refreshGeneratedWorldForDate(createInitialState());
   Object.assign(view, {
     panel: "council", spendingCategoryId: "social_security", spendingCityId: "selene", mapMode: "political", scale: "country",
     selectedType: null, selectedId: null, selectedTileName: null, selectedTerrain: null, selectedTerrainType: null, tileWindowOpen: false,
     selectedCityId: "selene", cityTab: "overview", selectedTownId: "mugiwano", townTab: "overview", selectedAuthorityDomain: "justice",
     selectedFacilityId: "farmland", selectedCountryId: "valka", objectiveId: "transit", warMapView: "atlas", warRegionId: null, selectedWarHexId: null, warCouncilOpen: false, assignmentOpen: false,
-    pendingTownId: null, guideOpen: true, endingOpen: false, resetOpen: false, expertMode: false, worldNationFilter: "all", focusedTownCommandId: null,
+    pendingTownId: null, guideOpen: true, endingOpen: false, resetOpen: false, expertMode: false, atlasMode: "nations", worldNationFilter: "all", focusedTownCommandId: null,
   });
   render();
   audio.play("reset");
@@ -1481,11 +1520,92 @@ function knowledgeLabel(value) {
 function worldModeSwitch() {
   return `
     <div class="world-mode-switch" role="group" aria-label="世界台帳の表示">
+      <button type="button" data-world-mode="generated" class="${view.atlasMode === "generated" ? "is-active" : ""}">生成世界</button>
       <button type="button" data-world-mode="nations" class="${view.atlasMode === "nations" ? "is-active" : ""}">国家</button>
       <button type="button" data-world-mode="peoples" class="${view.atlasMode === "peoples" ? "is-active" : ""}">種族</button>
       <button type="button" data-world-mode="creatures" class="${view.atlasMode === "creatures" ? "is-active" : ""}">巨獣</button>
       <button type="button" data-world-mode="statistics" class="${view.atlasMode === "statistics" ? "is-active" : ""}">統計</button>
     </div>
+  `;
+}
+
+function generatedNeighborTile(runtime, tile, direction) {
+  let x = tile.x + direction.dx;
+  const y = tile.y + direction.dy;
+  if (runtime.terrain.config.wrapX) x = (x + runtime.terrain.width) % runtime.terrain.width;
+  if (x < 0 || x >= runtime.terrain.width || y < 0 || y >= runtime.terrain.height) return null;
+  return runtime.tiles[y * runtime.terrain.width + x];
+}
+
+function generatedTerrainLabel(tile) {
+  const terrain = GENERATED_TERRAIN_LABELS[tile.terrain] ?? tile.terrain;
+  const relief = GENERATED_RELIEF_LABELS[tile.relief] ?? tile.relief;
+  return `${terrain}・${relief}`;
+}
+
+function renderGeneratedWorldPanel() {
+  const { runtime, generatedState, playerNation, expeditionTile, selectedTile } = getGeneratedWorldView(state);
+  const owner = runtime.nationById.get(selectedTile.nationId);
+  const flowTarget = selectedTile.flowTo >= 0 ? runtime.tiles[selectedTile.flowTo] : null;
+  const discoveredTileCount = new Set([
+    ...generatedState.discoveredTileIds,
+    expeditionTile.id,
+    ...expeditionTile.orthogonalNeighbors.map((index) => runtime.tiles[index].id),
+  ]).size;
+  const nationOptions = runtime.nations.nations.map((nation) => `
+    <option value="${nation.id}" ${nation.id === playerNation.id ? "selected" : ""}>${escapeHtml(nation.name)} · ${escapeHtml(nation.government)}</option>
+  `).join("");
+  const moveButtons = GENERATED_DIRECTIONS.map((direction) => {
+    const destination = generatedNeighborTile(runtime, expeditionTile, direction);
+    const cost = destination ? Math.max(1, Math.ceil(destination.movementCost)) : 0;
+    const blocked = !destination || !destination.passable || generatedState.expeditionMovement < cost;
+    const reason = !destination ? "極域" : !destination.passable ? "水域" : generatedState.expeditionMovement < cost ? `移動力${cost}必要` : `${generatedTerrainLabel(destination)} · 移動${cost}`;
+    return `<button type="button" data-generated-move="${direction.id}" ${blocked ? "disabled" : ""} title="${escapeHtml(reason)}"><b>${direction.label}</b><small>${reason}</small></button>`;
+  }).join("");
+  return `
+    <section class="generated-world-overview">
+      <div><small>正方形タイル</small><strong>${runtime.terrain.width} × ${runtime.terrain.height}</strong></div>
+      <div><small>自動生成国家</small><strong>${runtime.nations.summary.nationCount}か国</strong></div>
+      <div><small>河川</small><strong>${runtime.terrain.summary.riverCount}水系</strong></div>
+      <div><small>陸地率</small><strong>${Math.round(runtime.terrain.summary.landRatio * 100)}%</strong></div>
+    </section>
+    <section class="generated-world-controls">
+      <label><span>世界シード</span><input data-generated-seed type="text" maxlength="80" value="${escapeHtml(generatedState.seed)}"></label>
+      <label><span>国家数</span><select data-generated-count>${Array.from({ length: 10 }, (_, index) => index + 3).map((count) => `<option value="${count}" ${count === generatedState.nationCount ? "selected" : ""}>${count}か国</option>`).join("")}</select></label>
+      <button type="button" data-generated-regenerate>この条件で世界を再生成</button>
+      <small>地形・河川・肥沃度・資源・国家領域は同じシードから再現されます。</small>
+    </section>
+    <section class="generated-player-nation" style="--generated-nation-color:${playerNation.color}">
+      <label><span>プレイヤー国家</span><select data-generated-player-nation>${nationOptions}</select></label>
+      <header><i></i><div><small>${escapeHtml(playerNation.government)} · 主産業 ${escapeHtml(playerNation.economy)}</small><h2>${escapeHtml(playerNation.name)}</h2></div></header>
+      <div class="generated-nation-facts">
+        <span><small>領土</small><strong>${playerNation.tileCount}タイル</strong></span>
+        <span><small>人口力</small><strong>${formatValue(playerNation.populationPotential)}</strong></span>
+        <span><small>平均肥沃度</small><strong>${playerNation.meanFertility}</strong></span>
+        <span><small>食料力</small><strong>${formatValue(playerNation.yields.food, 1)}</strong></span>
+      </div>
+    </section>
+    <section class="generated-expedition">
+      <header><div><small>EXPEDITION · ${escapeHtml(expeditionTile.id)}</small><h2>探索隊</h2></div><strong>移動力 ${generatedState.expeditionMovement} / 8</strong></header>
+      <p>東西は地図の継ぎ目を越えて移動できます。移動力は月が変わると回復します。</p>
+      <div class="generated-move-pad">${moveButtons}</div>
+      <small>発見済み ${discoveredTileCount}タイル</small>
+    </section>
+    <section class="generated-tile-dossier" style="--generated-owner-color:${owner?.color ?? "#66777b"}">
+      <header><i></i><div><small>${escapeHtml(selectedTile.id)}${selectedTile.capitalNationId ? " · 首都" : ""}</small><h2>${escapeHtml(generatedTerrainLabel(selectedTile))}</h2></div></header>
+      <p>${owner ? `${escapeHtml(owner.name)}領` : "公海・無主水域"}${selectedTile.riverId ? ` · ${escapeHtml(selectedTile.riverId)}` : ""}</p>
+      <div class="generated-tile-facts">
+        <span><small>肥沃度</small><strong>${selectedTile.fertility}</strong></span>
+        <span><small>淡水</small><strong>${Math.round(selectedTile.freshwater * 100)}%</strong></span>
+        <span><small>移動負荷</small><strong>${selectedTile.movementCost}</strong></span>
+        <span><small>河川流下先</small><strong>${flowTarget ? escapeHtml(flowTarget.id) : "流出なし"}</strong></span>
+        <span><small>食料</small><strong>${selectedTile.yields.food}</strong></span>
+        <span><small>生産</small><strong>${selectedTile.yields.production}</strong></span>
+        <span><small>交易</small><strong>${selectedTile.yields.commerce}</strong></span>
+        <span><small>国境</small><strong>${selectedTile.borderSides.length ? selectedTile.borderSides.map((side) => GENERATED_BORDER_LABELS[side] ?? side).join(" / ") : "国内"}</strong></span>
+      </div>
+    </section>
+    <p class="world-source-note">セーブには世界シードと可変状態だけを記録します。全タイルは同じIDで再構築されるため、今後の都市・軍勢・資源・外交システムへ接続できます。</p>
   `;
 }
 
@@ -1685,21 +1805,23 @@ function renderWorldStatistics() {
 
 function renderWorldPanel() {
   const summary = getWorldCatalogSummary();
-  const content = view.atlasMode === "peoples"
+  const content = view.atlasMode === "generated"
+    ? renderGeneratedWorldPanel()
+    : view.atlasMode === "peoples"
     ? renderWorldPeoples()
     : view.atlasMode === "creatures"
       ? renderWorldCreatures()
       : view.atlasMode === "statistics" ? renderWorldStatistics() : renderWorldNations();
   elements.leftPanel.innerHTML = `
     <header class="panel-heading world-heading">
-      <span>KNOWN WORLD ARCHIVE</span>
-      <h1>国家・種族・巨獣・統計</h1>
-      <p>確定設定、観測事実、開幕時の推計値を分けて記録</p>
+      <span>${view.atlasMode === "generated" ? "PROCEDURAL SQUARE WORLD" : "KNOWN WORLD ARCHIVE"}</span>
+      <h1>${view.atlasMode === "generated" ? "生成世界・探索" : "国家・種族・巨獣・統計"}</h1>
+      <p>${view.atlasMode === "generated" ? "地形・河川・肥沃度・国家を正方形タイルで一体運用" : "確定設定、観測事実、開幕時の推計値を分けて記録"}</p>
       ${view.atlasMode === "nations" ? `<button class="world-guide-button" type="button" data-world-guide-toggle>${view.worldGuideOpen ? "案内を閉じる" : "見方を表示"}</button>` : ""}
       ${worldModeSwitch()}
     </header>
     <div class="panel-body">
-      <section class="panel-section world-summary">
+      ${view.atlasMode === "generated" ? "" : `<section class="panel-section world-summary">
         <div class="realm-facts">
           <div><small>異種族</small><strong>${summary.otherRaces}</strong></div>
           <div><small>国家</small><strong>${summary.nations}</strong></div>
@@ -1707,7 +1829,7 @@ function renderWorldPanel() {
           <div><small>詳細不明国</small><strong>${summary.unknownNations}</strong></div>
           <div><small>超規格外生物</small><strong>${summary.extremeCreatures}</strong></div>
         </div>
-      </section>
+      </section>`}
       ${content}
     </div>
   `;
@@ -2163,13 +2285,69 @@ function renderStrategicMapState() {
   setMapMarkerText("passStatusText", state.war ? `交戦中 ${state.war.score >= 0 ? "+" : ""}${Math.round(state.war.score)}` : borderResolved ? "通行確保" : "国境緊張");
 }
 
+function positionGeneratedMapMarkers(copy, selectedTile, expeditionTile, runtime) {
+  const tileWidth = 100 / runtime.terrain.width;
+  const tileHeight = 100 / runtime.terrain.height;
+  const selected = copy.querySelector(".generated-selected-tile");
+  const expedition = copy.querySelector(".generated-expedition-marker");
+  selected.style.left = `${selectedTile.x * tileWidth}%`;
+  selected.style.top = `${selectedTile.y * tileHeight}%`;
+  selected.style.width = `${tileWidth}%`;
+  selected.style.height = `${tileHeight}%`;
+  selected.dataset.generatedTileId = selectedTile.id;
+  expedition.style.left = `${(expeditionTile.x + 0.5) * tileWidth}%`;
+  expedition.style.top = `${(expeditionTile.y + 0.5) * tileHeight}%`;
+  expedition.dataset.generatedTileId = expeditionTile.id;
+  expedition.title = `探索隊 · ${expeditionTile.id}`;
+}
+
+function renderGeneratedWorldMapLayer() {
+  const { runtime, selectedTile, expeditionTile, playerNation } = getGeneratedWorldView(state);
+  const visualKey = `${runtime.key}|political-natural-v1`;
+  if (generatedMapVisualCache.key !== visualKey) {
+    generatedMapVisualCache = {
+      key: visualKey,
+      url: terrainSvgDataUrl(runtime.terrain, {
+        cellSize: 14,
+        pixelsPerTile: 6,
+        showGrid: true,
+        nationMap: runtime.nations,
+        textureUrl: new URL("./assets/generated/terrain-natural-texture.png", window.location.href).href,
+      }),
+    };
+  }
+  if (elements.generatedWorldStrip.dataset.visualKey !== visualKey) {
+    elements.generatedWorldStrip.innerHTML = [-1, 0, 1].map((copy) => `
+      <div class="generated-world-copy" data-generated-map-copy="${copy}" role="img" aria-label="東西に循環する生成世界地図 ${copy + 2}/3">
+        <img alt="自然地形、河川、国家領域を重ねた正方形タイル世界地図" draggable="false">
+        <button type="button" class="generated-selected-tile" aria-label="選択中の正方形タイル"></button>
+        <button type="button" class="generated-expedition-marker" aria-label="探索隊">◆</button>
+      </div>
+    `).join("");
+    elements.generatedWorldStrip.querySelectorAll("img").forEach((image) => { image.src = generatedMapVisualCache.url; });
+    elements.generatedWorldStrip.dataset.visualKey = visualKey;
+    requestAnimationFrame(() => { elements.generatedWorldScroll.scrollLeft = elements.generatedWorldScroll.clientWidth; });
+  }
+  elements.generatedWorldStrip.querySelectorAll(".generated-world-copy").forEach((copy) => positionGeneratedMapMarkers(copy, selectedTile, expeditionTile, runtime));
+  elements.mapModeEyebrow.textContent = "PROCEDURAL SQUARE WORLD";
+  elements.mapCaptionTitle.textContent = `${playerNation.name} · 東西循環世界`;
+}
+
 function renderMap() {
-  const showWarBoard = Boolean(state.war && view.warMapView === "theater");
-  elements.warMapSwitch.classList.toggle("is-hidden", !state.war);
+  const showGeneratedWorld = view.panel === "world" && view.atlasMode === "generated";
+  const showWarBoard = Boolean(state.war && view.warMapView === "theater" && !showGeneratedWorld);
+  elements.warMapSwitch.classList.toggle("is-hidden", !state.war || showGeneratedWorld);
   elements.warMapSwitch.querySelectorAll("[data-war-map-view]").forEach((button) => button.classList.toggle("is-active", button.dataset.warMapView === view.warMapView));
   elements.mapStage.classList.toggle("is-war-board", showWarBoard);
+  elements.mapStage.classList.toggle("is-generated-world", showGeneratedWorld);
   elements.warBoard.classList.toggle("is-hidden", !showWarBoard);
-  elements.strategyMap.classList.toggle("is-hidden", showWarBoard);
+  elements.generatedWorldMap.classList.toggle("is-hidden", !showGeneratedWorld);
+  elements.terrainLegend.classList.toggle("is-hidden", showGeneratedWorld);
+  elements.strategyMap.classList.toggle("is-hidden", showWarBoard || showGeneratedWorld);
+  if (showGeneratedWorld) {
+    renderGeneratedWorldMapLayer();
+    return;
+  }
   if (showWarBoard) {
     renderWarBoard();
     return;
@@ -2249,7 +2427,7 @@ function selectedTileCountry() {
 }
 
 function renderTileDetail() {
-  const open = view.tileWindowOpen && view.selectedTileName && view.selectedTerrainType;
+  const open = view.panel !== "world" && view.tileWindowOpen && view.selectedTileName && view.selectedTerrainType;
   elements.tileDetailWindow.classList.toggle("is-hidden", !open);
   if (!open) return;
 
@@ -2294,6 +2472,10 @@ function closeTileDetail() {
 }
 
 function renderSelection() {
+  if (view.panel === "world" && view.atlasMode === "generated") {
+    elements.selectionCard.innerHTML = "";
+    return;
+  }
   if (view.tileWindowOpen) {
     elements.selectionCard.innerHTML = "";
     return;
@@ -2705,6 +2887,9 @@ function playNavigationCue(event) {
     "[data-spending-category]",
     "[data-spending-city]",
     "[data-world-mode]",
+    "[data-generated-regenerate]",
+    "[data-generated-move]",
+    "[data-generated-tile-id]",
     "[data-world-guide-toggle]",
     "[data-world-filter]",
     "[data-statistics-nation]",
@@ -2772,6 +2957,44 @@ document.addEventListener("click", (event) => {
   if (event.target.closest("[data-world-guide-toggle]")) {
     view.worldGuideOpen = !view.worldGuideOpen;
     renderPanelFromTop();
+    return;
+  }
+  const generatedRegenerateButton = event.target.closest("[data-generated-regenerate]");
+  if (generatedRegenerateButton) {
+    const seed = elements.leftPanel.querySelector("[data-generated-seed]")?.value.trim();
+    const nationCount = Number(elements.leftPanel.querySelector("[data-generated-count]")?.value);
+    try {
+      commit(regenerateGeneratedWorld(state, { seed, nationCount }), "同じ正方形タイル規約で新しい世界を生成しました。", "confirm");
+    } catch (error) {
+      showToast(error.message, "danger");
+    }
+    return;
+  }
+  const generatedMoveButton = event.target.closest("[data-generated-move]");
+  if (generatedMoveButton) {
+    try {
+      const next = moveGeneratedExpedition(state, generatedMoveButton.dataset.generatedMove);
+      const tile = getGeneratedWorldView(next).expeditionTile;
+      commit(next, `探索隊が${tile.id}へ移動しました。`, "ui");
+    } catch (error) {
+      showToast(error.message, "danger");
+    }
+    return;
+  }
+  const generatedTileButton = event.target.closest("[data-generated-tile-id]");
+  if (generatedTileButton) {
+    try { commit(selectGeneratedWorldTile(state, generatedTileButton.dataset.generatedTileId), "", "ui"); }
+    catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
+  const generatedMapCopy = event.target.closest("[data-generated-map-copy]");
+  if (generatedMapCopy && view.panel === "world" && view.atlasMode === "generated") {
+    const rect = generatedMapCopy.getBoundingClientRect();
+    const runtime = buildGeneratedWorld(state);
+    const x = Math.min(runtime.terrain.width - 1, Math.max(0, Math.floor((event.clientX - rect.left) / rect.width * runtime.terrain.width)));
+    const y = Math.min(runtime.terrain.height - 1, Math.max(0, Math.floor((event.clientY - rect.top) / rect.height * runtime.terrain.height)));
+    try { commit(selectGeneratedWorldTile(state, `tile-${x}-${y}`), "", "ui"); }
+    catch (error) { showToast(error.message, "danger"); }
     return;
   }
   if (event.target.closest("[data-ending-continue]")) {
@@ -3218,6 +3441,17 @@ elements.authorityOverlaySelect?.addEventListener("change", (event) => {
   view.mapMode = event.target.value;
   render();
 });
+elements.leftPanel.addEventListener("change", (event) => {
+  const nationSelect = event.target.closest("[data-generated-player-nation]");
+  if (!nationSelect) return;
+  try {
+    const next = setGeneratedPlayerNation(state, nationSelect.value);
+    const nation = getGeneratedWorldView(next).playerNation;
+    commit(next, `${nation.name}をプレイヤー国家に設定しました。`, "confirm");
+  } catch (error) {
+    showToast(error.message, "danger");
+  }
+});
 elements.analysisToggle?.addEventListener("click", () => {
   view.expertMode = !view.expertMode;
   render();
@@ -3282,6 +3516,15 @@ elements.warBoard.addEventListener("keydown", (event) => {
   if ((event.key === "Enter" || event.key === " ") && event.target.matches("[data-war-tile]")) {
     event.preventDefault();
     event.target.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  }
+});
+elements.generatedWorldScroll.addEventListener("scroll", () => {
+  const pageWidth = elements.generatedWorldScroll.clientWidth;
+  if (!pageWidth) return;
+  if (elements.generatedWorldScroll.scrollLeft < pageWidth * 0.35) {
+    elements.generatedWorldScroll.scrollLeft += pageWidth;
+  } else if (elements.generatedWorldScroll.scrollLeft > pageWidth * 1.65) {
+    elements.generatedWorldScroll.scrollLeft -= pageWidth;
   }
 });
 window.addEventListener("beforeunload", () => persist());

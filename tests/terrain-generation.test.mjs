@@ -14,7 +14,7 @@ function average(items, property) {
   return items.reduce((sum, item) => sum + item[property], 0) / Math.max(1, items.length);
 }
 
-function wrappedHexDistance(left, right, world) {
+function wrappedSquareDistance(left, right, world) {
   const a = world.tiles[left];
   const b = world.tiles[right];
   let dx = b.x - a.x;
@@ -93,7 +93,7 @@ test("Civilization-style start selection evaluates workable surroundings and spa
   assert.ok(starts.every((start) => start.score >= 70));
   for (let left = 0; left < starts.length; left += 1) {
     for (let right = left + 1; right < starts.length; right += 1) {
-      assert.ok(wrappedHexDistance(starts[left].index, starts[right].index, world) >= minDistance);
+      assert.ok(wrappedSquareDistance(starts[left].index, starts[right].index, world) >= minDistance);
     }
   }
 });
@@ -102,8 +102,10 @@ test("terrain renders as a natural image over a square play grid without letter 
   const world = generateTerrain({ ...TEST_SIZE, seed: "rendered-square-world" });
   const svg = renderTerrainSvg(world, { cellSize: 12, textureUrl: "./terrain-natural-texture.png" });
   assert.match(svg, /data-grid="square"/);
+  assert.match(svg, /data-wrap="longitude"/);
   assert.match(svg, /<image href="\.\/terrain-natural-texture\.png"/);
   assert.match(svg, /filter id="organicTerrain"/);
+  assert.match(svg, /stitchTiles="stitch"/);
   assert.doesNotMatch(svg, /<text\b/);
   assert.match(svg, /<path d="M/);
 });

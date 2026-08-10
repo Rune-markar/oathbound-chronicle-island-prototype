@@ -56,6 +56,7 @@ import {
   occupationPolicyOutcome,
 } from "./war-system.js";
 import { advanceWarTheater, createWarTheater, normalizeWarTheater } from "./war-map.js";
+import { createGeneratedWorldState, normalizeGeneratedWorldState } from "./generated-world-system.js";
 import {
   TOWN_COMMAND_IDS,
   advanceTownAdministration,
@@ -377,6 +378,7 @@ function foreignState(relation, army, mobility, training, organization, cohesion
 
 export function normalizeWarState(state) {
   state.version = 9;
+  normalizeGeneratedWorldState(state);
   state.occupations ??= [];
   state.warHistory ??= [];
   Object.values(state.foreignStates ?? {}).forEach((country) => {
@@ -439,6 +441,7 @@ export function normalizeWarState(state) {
 export function createInitialState() {
   const state = {
     version: 9, year: 317, month: 4, turn: 0, phase: "planning", nextOrderId: 1,
+    generatedWorld: createGeneratedWorldState({}, { year: 317, month: 4 }),
     rngSeed: 3170401, eventCooldowns: {}, eventPity: 0, pendingOrders: [], pendingEvent: null, pendingMonthReport: null,
     monthlyReports: [], annualReports: [], lastViewedReportId: null, governancePenalty: 0,
     legitimacy: 68, justification: 58, warExhaustion: 0, intelNetwork: 33,
