@@ -6,6 +6,7 @@ import {
   AUTHORITY_DOMAINS,
   AUTHORITY_REFORM_STAGES,
   AUTHORITY_TRANSFER_METHODS,
+  CENTRALIZATION_STAGES,
   COMMANDS,
   DOCTRINES,
   EVENT_DEFINITIONS,
@@ -14,10 +15,15 @@ import {
   FACTION_DEFINITIONS,
   FORCED_ORDER_RULES,
   FORMATIONS,
+  HISTORY_POLICIES,
+  LEVIATHAN_POLICIES,
+  NATIONAL_REFORM_BUDGETS,
+  NATIONAL_REFORM_SYSTEMS,
   PRESSURE_DEFINITIONS,
   POLICY_DEFINITIONS,
   OCCUPATION_POLICIES,
   REVENUE_CATEGORIES,
+  REFORM_CONCESSIONS,
   SPENDING_CATEGORIES,
   WAR_OBJECTIVES,
   WAR_PLANS,
@@ -28,6 +34,8 @@ import {
   appointForceOfficer,
   cancelOrder,
   chooseAftermathPolicy,
+  chooseHistoryPolicy,
+  chooseLeviathanPolicy,
   commitMonth,
   createInitialState,
   declareWar,
@@ -40,6 +48,8 @@ import {
   getCityBreakdown,
   getCityAdministration,
   getCentralizationResult,
+  getCentralizationCampaignStatus,
+  getCentralizationDecisions,
   getAuthorityReform,
   getRegionAuthority,
   getCampaignStatus,
@@ -53,10 +63,12 @@ import {
   getGovernance,
   getGreatPowerFoundation,
   getHistoricalOverview,
+  getHistoricalRuleEffects,
   getFoodSecurityStatus,
   getAftermathDecisionStatus,
   getForeignDispatches,
   getMilitarySummary,
+  getLeviathanStatus,
   getPeaceOptions,
   getOfficerReport,
   getOfficerPoliticalReport,
@@ -81,6 +93,7 @@ import {
   setAdministrationMandate,
   setAdministrationMode,
   startAuthorityReform,
+  startNationalReformPackage,
   setOccupationGarrison,
   setOccupationPolicy,
   setWarPlan,
@@ -120,6 +133,62 @@ import {
   setGeneratedPlayerNation,
 } from "./generated-world-system.js";
 import { terrainSvgDataUrl } from "./terrain-renderer.js";
+import {
+  BATTLE_FORTIFICATION_TYPES,
+  FACING,
+  ORDER_LABELS,
+  PHASE_LABELS,
+  RACES,
+  TACTICAL_FORMATIONS,
+  TERRAIN_TYPES,
+  UNIT_CLASSES,
+  UNIT_ORDERS,
+} from "./tactical-data.js";
+import {
+  applyBattleFormation,
+  createEncirclementCaptureDemo,
+  createFortificationSiegeDemo,
+  createSampleBattle,
+  executeBattleTurn,
+  getBattleCommander,
+  getBattleFortification,
+  getBattleSummary,
+  getBattleUnit,
+  getEffectiveStats,
+  getFortificationAura,
+  getLogisticsState,
+  getReachableBattleTiles,
+  getReachableCommanderTiles,
+  getSupplyRoute,
+  isInCommandRange,
+  isBattleTilePassable,
+  issueUnitOrder,
+  planCommanderMove,
+  planUnitMove,
+  planUnitTarget,
+  setUnitFacing,
+} from "./tactical-battle.js";
+import {
+  BATTLE_LOGISTICS_PLANS,
+  createBattlePreparation,
+  finalizeBattlePreparation,
+  getBattlePreparationSummary,
+  placeBattlePreparationUnit,
+  selectBattlePreparationUnit,
+  setBattleLogisticsPlan,
+  setBattlePlacementMode,
+  setBattlePreparationFormation,
+  toggleBattleParticipant,
+} from "./battle-preparation.js";
+import { createBattleResult } from "./battle-results.js";
+import {
+  advanceCommanderPersuasion,
+  createCommanderDispositionCase,
+  DISPOSITION_STATUSES,
+  finalizeCommanderDisposition,
+  getDispositionLabel,
+  PERSUASION_APPROACHES,
+} from "./commander-disposition.js";
 
 const STORAGE_KEY = "oathbound-continental-grand-strategy-v9";
 const LEGACY_STORAGE_KEYS = ["oathbound-continental-grand-strategy-v8", "oathbound-continental-grand-strategy-v7", "oathbound-continental-grand-strategy-v6"];
@@ -192,6 +261,14 @@ const GENERATED_TERRAIN_LABELS = Object.freeze({
 
 const GENERATED_RELIEF_LABELS = Object.freeze({ flat: "平地", hills: "丘陵", mountains: "山岳", water: "水面" });
 const GENERATED_BORDER_LABELS = Object.freeze({ north: "北", east: "東", south: "南", west: "西" });
+const TACTICAL_ORDER_VISUALS = Object.freeze({
+  hold: Object.freeze({ label: "待機", className: "is-order-hold" }),
+  advance: Object.freeze({ label: "進撃", className: "is-order-advance" }),
+  attack: Object.freeze({ label: "攻撃", className: "is-order-attack" }),
+  defend: Object.freeze({ label: "防御", className: "is-order-defend" }),
+  retreat: Object.freeze({ label: "後退", className: "is-order-retreat" }),
+  pursue: Object.freeze({ label: "追撃", className: "is-order-pursue" }),
+});
 
 const GENERATED_DIRECTIONS = Object.freeze([
   Object.freeze({ id: "north", label: "北", dx: 0, dy: -1 }),
@@ -205,11 +282,22 @@ function cityArt(cityId) {
 }
 
 let state = refreshGeneratedWorldForDate(loadState() ?? createInitialState());
-if (state.campaign?.ending) state.council.pending = false;
+if (state.centralizationCampaign?.ending) state.council.pending = false;
 let toastTimer = null;
 let previewCache = { state: null, value: null };
 let generatedMapVisualCache = { key: null, url: null };
 const view = {
+  launchOpen: true,
+  battlePreparation: null,
+  tacticalBattle: null,
+  tacticalResult: null,
+  tacticalResultOpen: false,
+  commanderDisposition: null,
+  commanderDispositionOpen: false,
+  selectedTacticalUnitId: null,
+  selectedTacticalCommanderId: null,
+  selectedTacticalFortificationId: null,
+  tacticalInspectorDismissed: false,
   panel: "council",
   spendingCategoryId: "social_security",
   spendingCityId: "selene",
@@ -228,6 +316,7 @@ const view = {
   selectedTownId: "mugiwano",
   townTab: "overview",
   selectedAuthorityDomain: "justice",
+  selectedNationalReformSystem: "population_land_knowledge",
   selectedFacilityId: "farmland",
   warMapView: state.war ? "theater" : "atlas",
   warRegionId: state.war?.theater?.activeRegionId ?? null,
@@ -249,12 +338,40 @@ const view = {
   worldGuideOpen: true,
   focusedTownCommandId: null,
   guideOpen: state.turn === 0 && state.council.history.length === 0,
-  endingOpen: Boolean(state.campaign?.ending && state.lastViewedEndingId !== state.campaign.ending.id),
+  endingOpen: Boolean(
+    (state.centralizationCampaign?.ending && state.lastViewedCentralizationEndingId !== state.centralizationCampaign.ending.id)
+    || (state.campaign?.ending && state.lastViewedEndingId !== state.campaign.ending.id)
+  ),
   resetOpen: false,
   expertMode: false,
 };
 
 const elements = {
+  launchScreen: document.querySelector("#launchScreen"),
+  battlePreparationScreen: document.querySelector("#battlePreparationScreen"),
+  battlePreparationTitle: document.querySelector("#battlePreparationTitle"),
+  battleParticipantCount: document.querySelector("#battleParticipantCount"),
+  battleParticipantList: document.querySelector("#battleParticipantList"),
+  battlePlacementMode: document.querySelector("#battlePlacementMode"),
+  battlePreparationFormations: document.querySelector("#battlePreparationFormations"),
+  battlePreparationMap: document.querySelector("#battlePreparationMap"),
+  battleDeploymentHelp: document.querySelector("#battleDeploymentHelp"),
+  battleSustainmentCard: document.querySelector("#battleSustainmentCard"),
+  battleLogisticsOptions: document.querySelector("#battleLogisticsOptions"),
+  battlePreparationReadiness: document.querySelector("#battlePreparationReadiness"),
+  tacticalBattleScreen: document.querySelector("#tacticalBattleScreen"),
+  tacticalBattleTitle: document.querySelector("#tacticalBattleTitle"),
+  tacticalBattleSummary: document.querySelector("#tacticalBattleSummary"),
+  tacticalDeploymentBar: document.querySelector("#tacticalDeploymentBar"),
+  tacticalBattleMap: document.querySelector("#tacticalBattleMap"),
+  tacticalMapScroll: document.querySelector(".tactical-map-scroll"),
+  tacticalBattleInspector: document.querySelector("#tacticalBattleInspector"),
+  tacticalBattleLog: document.querySelector("#tacticalBattleLog"),
+  tacticalResultButton: document.querySelector("#tacticalResultButton"),
+  tacticalResultScreen: document.querySelector("#tacticalResultScreen"),
+  tacticalResultContent: document.querySelector("#tacticalResultContent"),
+  commanderDispositionScreen: document.querySelector("#commanderDispositionScreen"),
+  commanderDispositionContent: document.querySelector("#commanderDispositionContent"),
   campaignBar: document.querySelector("#campaignBar"),
   resourceLedger: document.querySelector("#resourceLedger"),
   dateLabel: document.querySelector("#dateLabel"),
@@ -348,7 +465,8 @@ function commit(nextState, message = "", cue = "confirm") {
     view.warRegionId = null;
     view.selectedWarHexId = null;
   }
-  if (state.campaign?.ending && state.phase !== "event" && state.lastViewedEndingId !== state.campaign.ending.id) view.endingOpen = true;
+  if (state.centralizationCampaign?.ending && state.phase !== "event" && state.lastViewedCentralizationEndingId !== state.centralizationCampaign.ending.id) view.endingOpen = true;
+  else if (state.campaign?.ending && state.phase !== "event" && state.lastViewedEndingId !== state.campaign.ending.id) view.endingOpen = true;
   persist();
   render();
   if (cue) audio.play(cue);
@@ -475,7 +593,7 @@ function renderResources() {
 function renderTimeControls() {
   elements.dateLabel.textContent = formatDate(state);
   const season = deriveCityMetrics(state, view.selectedCityId).season.name;
-  elements.dateHint.textContent = state.phase === "event" ? "事件対応が必要" : state.campaign?.ending ? "完結 · 継続統治可能" : state.council.pending ? `${season}季評定を決定` : "月を終える";
+  elements.dateHint.textContent = state.phase === "event" ? "事件対応が必要" : state.centralizationCampaign?.ending ? "完全集権化 · 継続統治" : state.council.pending ? `${season}季評定を決定` : "月を終える";
   elements.endMonthButton.classList.toggle("is-blocked", state.phase === "event" || state.council.pending);
 }
 
@@ -502,38 +620,26 @@ function campaignObjectiveItems(campaign, compact = false) {
 }
 
 function renderCampaignBar() {
-  const campaign = getCampaignStatus(state);
-  const guidance = getTurnGuidance(state);
-  const foodSecurity = getFoodSecurityStatus(state, getPlanningPreview());
-  const foodTarget = foodSecurity.primaryCity && foodSecurity.severity !== "stable"
-    ? townTargetForCommand(foodSecurity.primaryCity.cityId, "city.cultivate")
-    : null;
-  const foodRisk = foodTarget
-    ? `<button class="campaign-food-alert is-${foodSecurity.severity}" type="button" data-food-emergency-town="${foodTarget.townId}" data-food-emergency-city="${foodSecurity.primaryCity.cityId}"><b>${foodSecurity.severity === "danger" ? "食料危機" : "食料注意"} · ${foodSecurity.primaryCity.name}</b><span>次月末 ${formatValue(Math.max(0, foodSecurity.primaryCity.after))} / 約${foodSecurity.primaryCity.afterRunway.toFixed(1)}か月分</span><em>${foodTarget.name}の対策へ →</em></button>`
-    : "";
-  const flow = campaign.loop.map((item, index) => {
-    const step = index + 1;
-    const active = guidance.step === step;
-    const complete = campaign.complete || guidance.step > step;
-    return `<span class="${active ? "is-active" : ""} ${complete ? "is-complete" : ""}"><i>${complete ? "✓" : step}</i>${item.label}</span>`;
-  }).join("");
-  const commandData = guidance.commandId ? ` data-command-id="${guidance.commandId}" data-city-id="${guidance.cityId}"${guidance.townId ? ` data-town-id="${guidance.townId}"` : ""}` : "";
+  const status = getCentralizationCampaignStatus(state);
+  const decisions = getCentralizationDecisions(state);
+  const crisisLabel = status.crisis ? ` · 危機 ${status.crisis.months}/12か月` : "";
   elements.campaignBar.innerHTML = `
     <div class="campaign-bar-goal">
-      <small>${campaign.act.name} · ${campaign.role}</small>
-      <strong>${campaign.title}</strong>
-      <span>${campaign.completedCount} / ${campaign.totalCount} 課題達成 · ${campaign.act.description}</span>
+      <small>国家段階 ${status.currentStage.number}/7 · ${state.scenarioMode === "generated" ? "生成国家" : "セレナ王国"}</small>
+      <strong>${status.currentStage.name}${crisisLabel}</strong>
+      <span>最終目標：完全な中央集権国家 · 結果値 ${Math.round(status.result.resultIndex)}%</span>
     </div>
-    <div class="campaign-bar-next ${foodRisk ? "has-food-risk" : ""}">
-      <small>次にすること · STEP ${guidance.step}/4 ${guidance.stepLabel}</small>
-      <strong>${guidance.title}</strong>
-      <span>${guidance.description}</span>
-      ${foodRisk}
-      <div class="campaign-flow" aria-label="月次の進め方">${flow}</div>
+    <div class="campaign-bar-next">
+      <small>次に除去すべき最大障壁</small>
+      <strong>${status.largestBarrier.label}</strong>
+      <span>${status.nextStage ? `次段階：${status.nextStage.name}` : status.ending?.description ?? "12か月の集権後危機を統治する"}</span>
+      <div class="central-decision-strip" aria-label="今月の主要判断">
+        ${decisions.map((decision, index) => `<button type="button" data-central-decision-action="${decision.action}" title="${escapeHtml(decision.detail)}"><i>${index + 1}</i><span><strong>${decision.title}</strong><small>${decision.detail}</small></span></button>`).join("")}
+      </div>
     </div>
     <div class="campaign-bar-actions">
-      <button class="campaign-primary-action" type="button" data-guide-action="${guidance.action}"${commandData}>${guidance.actionLabel}</button>
-      <button class="campaign-help-action" type="button" data-open-guide>目的と遊び方</button>
+      <button class="campaign-primary-action" type="button" data-panel="centralization">中央集権化を開く</button>
+      <button class="campaign-help-action" type="button" data-open-guide>第一章と遊び方</button>
     </div>
   `;
 }
@@ -569,7 +675,9 @@ function campaignRecordLabel(value) {
 
 function renderEndingModal() {
   const campaign = getCampaignStatus(state);
-  const open = Boolean(view.endingOpen && campaign.ending && state.phase !== "event");
+  const finalEnding = state.centralizationCampaign?.ending ?? null;
+  const displayedEnding = finalEnding ?? campaign.ending;
+  const open = Boolean(view.endingOpen && displayedEnding && state.phase !== "event");
   elements.endingModal.classList.toggle("is-hidden", !open);
   if (!open) return;
   const settlement = BORDER_SETTLEMENTS[campaign.resolution]?.name ?? (campaign.resolution ? "戦争講和" : "国境決着");
@@ -582,12 +690,12 @@ function renderEndingModal() {
     return `<article><small>${item.label}</small><strong>${formatValue(item.start, item.digits)} → ${formatValue(item.end, item.digits)}</strong><span class="${delta < 0 ? "is-negative" : "is-positive"}">${signed(delta, item.digits)}</span></article>`;
   }).join("");
   elements.endingContent.innerHTML = `
-    <header class="ending-header"><span>CAMPAIGN COMPLETE · セレナ王</span><h1 id="endingTitle">${campaign.ending.name}</h1><p>${campaign.ending.description}</p></header>
-    <div class="ending-route"><span><small>国境決着</small><strong>${settlement}</strong></span><i>→</i><span><small>定着方針</small><strong>${aftermath}</strong></span></div>
-    <section class="ending-objectives"><header><h2>三つの課題</h2><b>${campaign.completedCount} / ${campaign.totalCount}</b></header><div class="campaign-objective-list">${campaignObjectiveItems(campaign)}</div></section>
-    <section class="ending-ledger"><header><h2>王国の変化</h2><small>${state.campaign.completedTurn ?? state.turn}ターンで完結</small></header><div>${resources}</div></section>
+    <header class="ending-header"><span>${finalEnding ? "CENTRALIZATION CAMPAIGN COMPLETE" : "CHAPTER I COMPLETE"} · セレナ王</span><h1 id="endingTitle">${displayedEnding.name}</h1><p>${displayedEnding.description}</p></header>
+    <div class="ending-route"><span><small>第一章・国境決着</small><strong>${settlement}</strong></span><i>→</i><span><small>${finalEnding ? "最終国家像" : "章の定着方針"}</small><strong>${finalEnding?.powerStructure ?? aftermath}</strong></span></div>
+    <section class="ending-objectives"><header><h2>${finalEnding ? "中央集権化と集権後危機" : "第一章の三課題"}</h2><b>${finalEnding ? "7 / 7 段階" : `${campaign.completedCount} / ${campaign.totalCount}`}</b></header>${finalEnding ? `<p>完全集権化達成後、12か月の官僚・軍部・財政・情報・地方知識・継承危機を統治しました。</p>` : `<div class="campaign-objective-list">${campaignObjectiveItems(campaign)}</div>`}</section>
+    <section class="ending-ledger"><header><h2>王国の変化</h2><small>${finalEnding ? state.centralizationCampaign.completedTurn : state.campaign.completedTurn ?? state.turn}ターン時点</small></header><div>${resources}</div></section>
     <section class="ending-decisions"><header><h2>この歴史を作った判断</h2><small>年代記から抜粋</small></header><ol>${decisions || "<li><strong>国境危機を収束させた。</strong></li>"}</ol></section>
-    <footer class="ending-actions"><button type="button" data-ending-reports>国家報告を詳しく見る</button><button class="is-primary" type="button" data-ending-continue>この世界で統治を続ける</button></footer>
+    <footer class="ending-actions"><button type="button" data-ending-reports>国家報告を詳しく見る</button><button class="is-primary" type="button" data-ending-continue>${finalEnding ? "完全集権国家の統治を続ける" : "第二章・国家改革へ進む"}</button></footer>
   `;
 }
 
@@ -596,27 +704,31 @@ function renderResetModal() {
 }
 
 function acknowledgeEnding() {
-  if (state.campaign?.ending) {
+  if (state.centralizationCampaign?.ending) {
+    state = { ...state, lastViewedCentralizationEndingId: state.centralizationCampaign.ending.id };
+    persist();
+  } else if (state.campaign?.ending) {
     state = { ...state, lastViewedEndingId: state.campaign.ending.id };
     persist();
   }
   view.endingOpen = false;
 }
 
-function resetChronicle() {
+function resetChronicle(options = {}) {
   localStorage.removeItem(STORAGE_KEY);
   LEGACY_STORAGE_KEYS.forEach((key) => localStorage.removeItem(key));
-  state = refreshGeneratedWorldForDate(createInitialState());
+  state = refreshGeneratedWorldForDate(createInitialState(options));
   Object.assign(view, {
-    panel: "council", spendingCategoryId: "social_security", spendingCityId: "selene", mapMode: "political", scale: "country",
+    battlePreparation: null, tacticalBattle: null, selectedTacticalUnitId: null, selectedTacticalCommanderId: null, selectedTacticalFortificationId: null, tacticalInspectorDismissed: false,
+    panel: "centralization", spendingCategoryId: "social_security", spendingCityId: "selene", mapMode: "political", scale: "country",
     selectedType: null, selectedId: null, selectedTileName: null, selectedTerrain: null, selectedTerrainType: null, tileWindowOpen: false,
-    selectedCityId: "selene", cityTab: "overview", selectedTownId: "mugiwano", townTab: "overview", selectedAuthorityDomain: "justice",
+    selectedCityId: "selene", cityTab: "overview", selectedTownId: "mugiwano", townTab: "overview", selectedAuthorityDomain: "justice", selectedNationalReformSystem: "population_land_knowledge",
     selectedFacilityId: "farmland", selectedCountryId: "valka", objectiveId: "transit", warMapView: "atlas", warRegionId: null, selectedWarHexId: null, warCouncilOpen: false, assignmentOpen: false,
     pendingTownId: null, guideOpen: true, endingOpen: false, resetOpen: false, expertMode: false, atlasMode: "nations", worldNationFilter: "all", focusedTownCommandId: null,
   });
   render();
   audio.play("reset");
-  showToast("新しい年代記を始めました。");
+  showToast(options.scenarioMode === "generated" ? "地形から国家形成史を生成し、新しい年代記を始めました。" : "セレナ王国の新しい年代記を始めました。");
 }
 
 function costLabel(command) {
@@ -1086,6 +1198,25 @@ function renderCityAdministration(city) {
   const network = deriveAdministrationNetwork(state);
   const region = getRegionAuthority(state, city.cityId);
   const centralization = getCentralizationResult(state);
+  if (!view.expertMode) {
+    const campaign = getCentralizationCampaignStatus(state);
+    const packageRows = campaign.portfolio.systems.map((system) => {
+      const cells = system.cells.filter((cell) => cell.regionId === city.cityId);
+      const control = Math.round(cells.reduce((sum, cell) => sum + Math.min(cell.legal, cell.practical, cell.effective), 0) / Math.max(1, cells.length));
+      const readiness = Math.round(cells.reduce((sum, cell) => sum + cell.readiness, 0) / Math.max(1, cells.length));
+      return `<article><header><strong>${system.name}</strong><b>${control}%</b></header><p>${system.benefit}</p><span>準備 ${readiness} · 予想反動 ${system.backlash} · 反対 ${system.opposition}</span></article>`;
+    }).join("");
+    return `
+      <section class="authority-hero">
+        <article><small>総合実効支配</small><strong>${Math.round(region.overallControl)}%</strong><span>法的 ${Math.round(region.legalCentralization)}% / 実務 ${Math.round(region.practicalCentralization)}%</span></article>
+        <article><small>地域準備</small><strong>${region.informationPrecision}%</strong><span>戸籍 ${region.populationKnowledge}% / 通信 ${region.communicationDays}日</span></article>
+        <article><small>中央行政</small><strong>${network.load} / ${network.capacity}</strong><span>負荷率 ${network.utilization}%${network.overload > 0 ? ` · 超過 ${network.overload}` : " · 処理余力あり"}</span></article>
+        <article><small>国家段階</small><strong>${campaign.currentStage.name}</strong><span>${campaign.largestBarrier.label}</span></article>
+      </section>
+      <section class="ordinary-reform-summary"><header><div><small>5 NATIONAL REFORM SYSTEMS</small><h2>${WORLD.provinces[city.cityId].name}の改革見通し</h2></div><p>個々の17権限は専門台帳に保持されています。</p></header><div>${packageRows}</div><button type="button" data-panel="centralization">国家級改革を開く</button></section>
+      <section class="ordinary-administration-note"><strong>${administration.stage.name} · ${administration.modeName}</strong><span>統合 ${administration.integration}% / 戸籍 ${administration.registerCoverage}% / 中央集権化結果 ${centralization.resultIndex}%</span><p>17分野の法的・実務権限、歴史的特権、個別改革工程は、上部の「専門台帳」を表示すると確認できます。</p></section>
+    `;
+  }
   const selectedDomain = region.domains.find((domain) => domain.id === view.selectedAuthorityDomain) ?? region.domains[0];
   view.selectedAuthorityDomain = selectedDomain.id;
   const reform = getAuthorityReform(state, city.cityId, selectedDomain.id);
@@ -2094,8 +2225,115 @@ function renderPeoplePanel() {
   `;
 }
 
+function renderCentralizationPanel() {
+  const status = getCentralizationCampaignStatus(state);
+  const selected = status.portfolio.systems.find((system) => system.id === view.selectedNationalReformSystem) ?? status.portfolio.systems[0];
+  view.selectedNationalReformSystem = selected.id;
+  const activeReform = selected.active[0] ?? null;
+  const stageRail = status.stages.map((stage) => `
+    <article class="central-stage is-${stage.status}">
+      <i>${stage.status === "completed" ? "✓" : stage.number}</i>
+      <span><strong>${stage.name}</strong><small>${stage.requiredReforms.join(" · ")}</small></span>
+    </article>
+  `).join("");
+  const requirements = status.requirements.length
+    ? status.requirements.map((requirement) => `<li class="${requirement.met ? "is-met" : ""}"><i>${requirement.met ? "✓" : "○"}</i><span>${requirement.label}</span></li>`).join("")
+    : '<li class="is-met"><i>✓</i><span>建国盟約により成立済み</span></li>';
+  const packageCards = status.portfolio.systems.map((system) => `
+    <button type="button" class="national-reform-system ${system.id === selected.id ? "is-active" : ""}" data-national-reform-system="${system.id}">
+      <header><span>${system.shortName}</span><strong>${system.name}</strong><b>${Math.round(system.control)}%</b></header>
+      <p>${system.benefit}</p>
+      <footer><span>${system.insufficientPreparation}</span><em class="${system.backlash >= 55 ? "is-danger" : ""}">反動 ${system.backlash}</em></footer>
+    </button>
+  `).join("");
+  const regionOptions = Object.keys(state.cities).map((regionId) => {
+    const cells = selected.cells.filter((cell) => cell.regionId === regionId);
+    const readiness = Math.round(cells.reduce((sum, cell) => sum + cell.readiness, 0) / Math.max(1, cells.length));
+    const control = Math.round(cells.reduce((sum, cell) => sum + Math.min(cell.legal, cell.practical, cell.effective), 0) / Math.max(1, cells.length));
+    return `<label><input type="checkbox" data-national-reform-region value="${regionId}" checked><span><strong>${WORLD.provinces[regionId].name}</strong><small>準備 ${readiness} · 支配 ${control}</small></span></label>`;
+  }).join("");
+  const methodOptions = Object.values(AUTHORITY_TRANSFER_METHODS).map((method) => `<option value="${method.id}">${method.name} · 反動基礎 ${method.backlash}</option>`).join("");
+  const budgetOptions = Object.values(NATIONAL_REFORM_BUDGETS).map((budget) => `<option value="${budget.id}" ${budget.id === "standard" ? "selected" : ""}>${budget.name} · 金 ${budget.cost}</option>`).join("");
+  const officerOptions = Object.entries(state.officers).filter(([, officer]) => officer.allegiance === "serving").map(([officerId]) => `<option value="${officerId}">${WORLD.characters[officerId].name} · ${state.officers[officerId].faction}</option>`).join("");
+  const concessionOptions = Object.values(REFORM_CONCESSIONS).map((concession) => `<option value="${concession.id}" ${concession.id === "local_offices" ? "selected" : ""}>${concession.name}</option>`).join("");
+  const activeRows = state.centralizationCampaign.reforms.filter((reform) => reform.status === "active").map((reform) => {
+    const system = NATIONAL_REFORM_SYSTEMS[reform.systemId];
+    const completed = reform.cells.filter((cell) => cell.status === "completed").length;
+    const current = reform.cells.filter((cell) => cell.status === "active").sort((left, right) => right.stageIndex - left.stageIndex || right.progress - left.progress)[0];
+    const stage = current ? AUTHORITY_REFORM_STAGES[current.stageIndex] : AUTHORITY_REFORM_STAGES.at(-1);
+    return `<article><header><strong>${system.name}</strong><b>${completed}/${reform.cells.length} 定着</b></header><p>${AUTHORITY_TRANSFER_METHODS[reform.methodId].name} · ${NATIONAL_REFORM_BUDGETS[reform.budgetId].name} · 担当 ${WORLD.characters[reform.officerId].name}</p><span>先行工程：${stage.name} ${Math.round(current?.progress ?? 100)}%</span></article>`;
+  }).join("");
+  const reactions = state.centralizationCampaign.localResponses.slice(0, 4).map((response) => {
+    const entity = state.administration.powerEntities[response.entityId];
+    return `<article class="local-power-response"><header><strong>${response.entityName}</strong><b>${response.name} · 圧力 ${response.pressure}</b></header><p>${response.manifestation}</p><dl><div><dt>目標</dt><dd>${entity?.goal ?? "地方権限の維持"}</dd></div><div><dt>最低妥協</dt><dd>${response.minimumCompromise}</dd></div><div><dt>王廷協力者</dt><dd>${response.courtAlly}</dd></div><div><dt>改革後の地位</dt><dd>${response.desiredPostReformStatus}</dd></div></dl></article>`;
+  }).join("") || '<p class="empty-candidates">国家級改革を開始すると、地方勢力が世界状態から反応を選びます。</p>';
+  const formation = status.nationFormation;
+  const geographyFlow = [
+    `地形・自然国境：${formation.naturalBorders.join(" / ")}`,
+    `集落・交易路：${formation.settlements.slice(0, 3).map((settlement) => settlement.kind).join(" / ")}`,
+    `地方勢力：${formation.localPowers.slice(0, 4).join(" / ")}`,
+    `過去の危機：${formation.pastCrises.join(" / ")}`,
+    `歴史的妥協：${formation.compromises.join(" / ")}`,
+    `特権：${formation.privileges.map((privilege) => AUTHORITY_DOMAINS[privilege.domain].name).join(" / ")}`,
+    `現在の障壁：${formation.obstacles.join(" / ")}`,
+  ].map((label, index) => `<li><i>${index + 1}</i><span>${label}</span></li>`).join("");
+  const historyRules = getHistoricalRuleEffects(state);
+  const currentHistoryPolicy = state.centralizationCampaign.historyPolicies.at(-1)?.policyId ?? null;
+  const historyPolicies = Object.values(HISTORY_POLICIES).map((policy) => `
+    <article class="history-policy-card ${currentHistoryPolicy === policy.id ? "is-active" : ""}">
+      <header><strong>${policy.name}</strong>${currentHistoryPolicy === policy.id ? "<b>現行</b>" : ""}</header>
+      <p>${policy.description}</p><span>短期：${policy.shortBenefit}</span><small>長期：${policy.longRisk}</small>
+      <button type="button" data-history-policy="${policy.id}" ${currentHistoryPolicy === policy.id || status.decisionsRemaining <= 0 ? "disabled" : ""}>この歴史政策を採用</button>
+    </article>
+  `).join("");
+  const leviathan = getLeviathanStatus(state);
+  const leviathanPolicies = Object.values(LEVIATHAN_POLICIES).map((policy) => `<button type="button" data-leviathan-policy="${policy.id}" class="${leviathan.policy.id === policy.id ? "is-active" : ""}" ${leviathan.policy.id === policy.id || status.decisionsRemaining <= 0 ? "disabled" : ""}><strong>${policy.name}</strong><small>${policy.description}</small></button>`).join("");
+  const crisisRows = status.crisis?.issues?.length ? status.crisis.issues.map((issue) => `<div><span>${issue.name}</span><strong>${issue.severity}</strong><i style="--value:${issue.severity}%"></i><small>${issue.basis}</small></div>`).join("") : "";
+  elements.leftPanel.innerHTML = `
+    <header class="panel-heading centralization-heading">
+      <span>CENTRALIZATION CAMPAIGN · ${state.scenarioMode === "generated" ? "GENERATED HISTORY" : "SELENA CANON"}</span>
+      <h1>${status.currentStage.name}</h1>
+      <p>完全な中央集権国家が唯一の最終目標。達成方法と集権後の権力構造が結末を分ける。</p>
+    </header>
+    <div class="panel-body centralization-panel-body">
+      <section class="centralization-command-hero">
+        <article><small>次に除去すべき最大障壁</small><strong>${status.largestBarrier.label}</strong><span>${status.nextStage ? `次段階 ${status.nextStage.name}` : status.ending?.powerStructure ?? "集権後危機を統治中"}</span></article>
+        <article><small>中央集権化結果</small><strong>${Math.round(status.result.resultIndex)}%</strong><span>法 ${Math.round(status.result.legalCentralization)} / 実務 ${Math.round(status.result.practicalCentralization)} / 行政負荷 ${status.result.capacity.utilization}%</span></article>
+        <article><small>今月の主要判断</small><strong>残り ${status.decisionsRemaining} / 3</strong><span>改革・歴史・災害対応を合計3件まで</span></article>
+      </section>
+      <section class="central-stage-rail">${stageRail}</section>
+      <section class="central-next-stage"><header><div><small>NEXT STATE</small><h2>${status.nextStage?.name ?? status.currentStage.name}</h2></div><b>${status.currentStage.upkeep}</b></header><p>${status.currentStage.politicalBarrier}</p><ul>${requirements}</ul><aside><strong>失敗時の立て直し</strong><span>${status.currentStage.recovery}</span></aside></section>
+      <section class="ash-crown-chapter ${status.chapter.complete ? "is-complete" : ""}"><header><div><small>CHAPTER I</small><h2>灰冠峠三幕キャンペーン</h2></div><b>${status.chapter.complete ? "第一章完了" : "中央集権化の第一章"}</b></header><p>道路規格、敵情、通行権、戦争・占領・定着を通じ、王国制度が共同利益を作れるかを証明する章です。${status.chapter.ending ? ` 結果：${status.chapter.ending.name}。` : ""}</p><button type="button" data-panel="diplomacy">灰冠峠の外交・三幕へ</button></section>
+      <section class="national-reform-section">
+        <header><div><small>5 NATIONAL REFORM SYSTEMS / INTERNAL 17 DOMAINS</small><h2>国家級改革パッケージ</h2></div><p>通常画面では利益・代償・反対勢力・準備不足・反動だけを判断する。</p></header>
+        <div class="national-reform-system-grid">${packageCards}</div>
+        <article class="national-reform-planner" data-national-reform-planner="${selected.id}">
+          <header><div><small>選択中 · ${selected.domains.length}権限分野</small><h2>${selected.name}</h2></div><b>全国支配 ${Math.round(selected.control)}%</b></header>
+          <div class="reform-consequence-grid"><p><strong>利益</strong>${selected.benefit}</p><p><strong>代償</strong>${selected.cost}</p><p><strong>反対勢力</strong>${selected.opposition}</p><p><strong>準備／反動</strong>${selected.insufficientPreparation} · ${selected.backlash}</p></div>
+          <div class="national-reform-form">
+            <fieldset><legend>対象地域</legend>${regionOptions}</fieldset>
+            <label><span>改革方式</span><select data-national-reform-method>${methodOptions}</select></label>
+            <label><span>予算</span><select data-national-reform-budget>${budgetOptions}</select></label>
+            <label><span>担当人物</span><select data-national-reform-officer>${officerOptions}</select></label>
+            <label><span>譲歩条件</span><select data-national-reform-concession>${concessionOptions}</select></label>
+          </div>
+          <button class="national-reform-start" type="button" data-start-national-reform="${selected.id}" ${activeReform || status.decisionsRemaining <= 0 ? "disabled" : ""}>${activeReform ? "この系統は進行中" : status.decisionsRemaining <= 0 ? "今月の主要判断を使い切りました" : "この国家級改革を開始"}</button>
+        </article>
+        ${activeRows ? `<div class="active-national-reforms"><h3>進行中の国家級改革</h3>${activeRows}</div>` : ""}
+      </section>
+      <section class="local-power-agency"><header><div><small>WORLD STATE → PRESSURE → MANIFESTATION</small><h2>地方勢力の能動的反応</h2></div><p>乱数ではなく、特権・支持・不満・外国接触・譲歩から決定。</p></header>${reactions}</section>
+      <section class="state-formation-history"><header><div><small>TERRAIN → PRESENT BARRIERS</small><h2>地形・歴史・特権・改革制約</h2></div><b>国家統合コスト ${formation.integrationCost}</b></header><ol>${geographyFlow}</ol></section>
+      <section class="historical-rule-policy"><header><div><small>WORLD TRUTH / HISTORICAL RECORD / PUBLIC BELIEF</small><h2>歴史認識政策</h2></div><div><span>法的正当性 ${historyRules.legalLegitimacy}</span><span>王廷支持 ${historyRules.courtSupport}</span><span>地域服従 ${historyRules.publicBelief}</span><span>外交請求 ${historyRules.diplomaticClaim}</span></div></header><div class="history-policy-grid">${historyPolicies}</div></section>
+      <section class="leviathan-centralization"><header><div><small>DECADAL MIGRATION / NON-COMBAT HAZARD</small><h2>リヴァイアサン：${leviathan.name}</h2></div><b>情報精度 ${leviathan.informationAccuracy}%</b></header><p>${leviathan.estimatedPosition} · ${leviathan.signs.join(" / ")}。航路 ${leviathan.routesClosed ? "閉鎖" : "監視"}、港湾避難 ${leviathan.evacuationRequired ? "必要" : "待機"}。討伐・捕獲・誘導は行わない。</p><div class="leviathan-policy-grid">${leviathanPolicies}</div></section>
+      ${status.crisis ? `<section class="post-centralization-crisis"><header><div><small>MANDATORY 12 MONTHS</small><h2>集権後危機 ${status.crisis.months} / 12か月</h2></div><b>${status.ending?.name ?? "統治継続"}</b></header><div>${crisisRows}</div></section>` : ""}
+      <details class="specialist-ledger-link"><summary>専門台帳：17分野×各地域の法的・実務権限</summary><p>都市 → 統治委任を開き、上部の「専門台帳」を表示すると、従来の17分野台帳と個別改革を確認できます。</p><button type="button" data-open-specialist-ledger>専門台帳を開く</button></details>
+    </div>
+  `;
+}
+
 function renderLeftPanel() {
-  if (view.panel === "spending") renderSpendingPanel();
+  if (view.panel === "centralization") renderCentralizationPanel();
+  else if (view.panel === "spending") renderSpendingPanel();
   else if (view.panel === "city") renderCityPanel();
   else if (view.panel === "town") renderTownPanel();
   else if (view.panel === "world") renderWorldPanel();
@@ -2107,7 +2345,7 @@ function renderLeftPanel() {
 
 function renderAlerts() {
   const alerts = [];
-  if (state.council.pending && !state.campaign?.ending) alerts.push('<span class="alert-chip danger">季節評定 · 方針未決</span>');
+  if (state.council.pending && !state.centralizationCampaign?.ending) alerts.push('<span class="alert-chip danger">季節評定 · 方針未決</span>');
   if (state.phase === "event" && state.pendingEvent) alerts.push(`<span class="alert-chip danger">都市事件 · ${EVENT_DEFINITIONS[state.pendingEvent.eventId].name}</span>`);
   if (state.war) alerts.push(`<span class="alert-chip danger">戦争中 · 戦勝点 ${state.war.score.toFixed(1)}</span>`);
   else if (!state.council.pending && state.issues.border.status === "active") alerts.push('<span class="alert-chip danger">国境問題 · 対応継続中</span>');
@@ -2702,7 +2940,670 @@ function renderEventModal() {
   `).join("");
 }
 
+function renderLaunchScreen() {
+  elements.launchScreen.classList.toggle("is-hidden", !view.launchOpen);
+  document.body.classList.toggle("is-launch-open", view.launchOpen);
+  document.body.classList.toggle("is-battle-preparation-open", Boolean(view.battlePreparation));
+  const realmLocked = view.launchOpen || Boolean(view.battlePreparation) || Boolean(view.tacticalBattle);
+  [
+    ".grand-topbar", "#campaignBar", ".strategy-shell", "#guideModal", "#warCouncilModal",
+    "#assignmentModal", "#eventModal", "#endingModal", "#resetModal",
+  ].forEach((selector) => {
+    const element = document.querySelector(selector);
+    if (!element) return;
+    element.inert = realmLocked;
+    element.hidden = realmLocked;
+    element.style.display = realmLocked ? "none" : "";
+    element.setAttribute("aria-hidden", String(realmLocked));
+  });
+}
+
+function tacticalParticipantRoster() {
+  return Object.keys(state.officers ?? {})
+    .map((id) => getOfficerReport(state, id))
+    .filter((officer) => officer.allegiance === "serving")
+    .map((officer) => ({
+      id: officer.id,
+      name: officer.name,
+      portrait: officer.portrait,
+      portraitImage: officer.portraitImage,
+      role: officer.role,
+      rank: officer.rank,
+      policy: officer.policy,
+      traits: officer.traits,
+      stats: officer.stats,
+      stamina: officer.stamina,
+      assignment: officer.assignment,
+      available: !officer.assignment && officer.stamina >= 20,
+    }));
+}
+
+function battlePreparationDefaults(roster) {
+  const force = state.forces?.frontier_guard;
+  const preferred = [force?.commanderId, force?.deputyId, "sera"].filter(Boolean);
+  const availableIds = new Set(roster.filter((entry) => entry.available).map((entry) => entry.id));
+  return [...new Set(preferred)].filter((id) => availableIds.has(id)).slice(0, 3);
+}
+
+function renderBattlePreparationMap(preparation) {
+  const battle = preparation.battle;
+  const selectedUnit = getBattleUnit(battle, preparation.selectedUnitId);
+  const unitsByPosition = new Map(battle.units.map((unit) => [`${unit.position.x},${unit.position.y}`, unit]));
+  const fortificationsByPosition = new Map((battle.fortifications ?? []).map((fortification) => [`${fortification.position.x},${fortification.position.y}`, fortification]));
+  elements.battlePreparationMap.style.setProperty("--preparation-columns", battle.map.width);
+  elements.battlePreparationMap.style.setProperty("--preparation-rows", battle.map.height);
+  elements.battlePreparationMap.setAttribute("aria-label", `${battle.map.width}列${battle.map.height}行の戦闘前配置図`);
+  elements.battlePreparationMap.innerHTML = battle.map.tiles.map((tile) => {
+    const key = `${tile.position.x},${tile.position.y}`;
+    const unit = unitsByPosition.get(key);
+    const fortification = fortificationsByPosition.get(key);
+    const unitClass = unit ? UNIT_CLASSES[unit.unitClassId] : null;
+    const terrain = TERRAIN_TYPES[tile.terrainType];
+    const deployment = tile.position.x >= 2 && tile.position.x <= 8;
+    const selected = unit?.id === selectedUnit?.id;
+    const classNames = [
+      `is-${tile.terrainType}`,
+      deployment ? "is-deployment-zone" : "",
+      unit ? `has-${unit.side}-unit` : "",
+      selected ? "is-selected" : "",
+      fortification ? "has-fortification" : "",
+    ].filter(Boolean).join(" ");
+    const icon = unit
+      ? unit.iconUrl
+        ? `<img src="${escapeHtml(unit.iconUrl)}" alt="">`
+        : `<b>${escapeHtml(unitClass?.symbol ?? "兵")}</b>`
+      : fortification ? `<b>${escapeHtml(BATTLE_FORTIFICATION_TYPES[fortification.typeId]?.symbol ?? "城")}</b>` : "";
+    const label = unit
+      ? `${unit.name}・${unitClass?.name ?? unit.unitClassId} ${unit.soldierCount}名`
+      : fortification ? fortification.name : `${terrain.name} ${tile.position.x + 1}-${tile.position.y + 1}`;
+    return `<button type="button" class="${classNames}" data-preparation-tile="${key}" ${unit ? `data-preparation-unit="${unit.id}"` : ""} title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}">${icon}</button>`;
+  }).join("");
+}
+
+function renderBattlePreparation() {
+  const preparation = view.battlePreparation;
+  elements.battlePreparationScreen.classList.toggle("is-hidden", !preparation);
+  if (!preparation) return;
+  const summary = getBattlePreparationSummary(preparation);
+  const selectedIds = new Set(preparation.selectedCharacterIds);
+  elements.battlePreparationTitle.textContent = `${preparation.battle.name}・戦闘前編成`;
+  elements.battleParticipantCount.textContent = `${selectedIds.size} / 3`;
+  elements.battleParticipantList.innerHTML = preparation.roster.map((participant) => {
+    const selected = selectedIds.has(participant.id);
+    const portrait = participant.portraitImage
+      ? `<img src="${escapeHtml(participant.portraitImage)}" alt="">`
+      : `<b>${escapeHtml(participant.portrait)}</b>`;
+    const unavailableReason = participant.assignment ? "任務中" : participant.stamina < 20 ? "意欲不足" : "参加不可";
+    return `<button type="button" class="battle-participant-card ${selected ? "is-selected" : ""}" data-battle-participant="${participant.id}" aria-pressed="${selected}" ${participant.available ? "" : "disabled"}>
+      <span class="battle-participant-portrait">${portrait}</span>
+      <span><small>${escapeHtml(participant.rank)} · ${escapeHtml(participant.role)}</small><strong>${escapeHtml(participant.name)}</strong><em>${escapeHtml(participant.policy || "軍務参加")}</em></span>
+      <span class="battle-participant-stats"><b>統 ${participant.stats.leadership}</b><b>武 ${participant.stats.war}</b><b>知 ${participant.stats.intelligence}</b></span>
+      <i>${participant.available ? selected ? "参陣" : "待機" : unavailableReason}</i>
+    </button>`;
+  }).join("");
+  elements.battlePlacementMode.innerHTML = [
+    { id: "auto", name: "自動配置", note: "推奨" },
+    { id: "manual", name: "手動配置", note: "マス指定" },
+  ].map((mode) => `<button type="button" data-battle-placement-mode="${mode.id}" class="${preparation.placementMode === mode.id ? "is-active" : ""}" aria-pressed="${preparation.placementMode === mode.id}"><strong>${mode.name}</strong><small>${mode.note}</small></button>`).join("");
+  elements.battlePreparationFormations.innerHTML = Object.values(TACTICAL_FORMATIONS).map((formation) => `
+    <button type="button" data-preparation-formation="${formation.id}" class="${preparation.formationId === formation.id ? "is-active" : ""}" aria-pressed="${preparation.formationId === formation.id}"><span>${formation.name}</span><small>攻 ${Math.round((formation.modifiers.attack ?? 1) * 100)} · 守 ${Math.round((formation.modifiers.defense ?? 1) * 100)} · 動 ${Math.round((formation.modifiers.movement ?? 1) * 100)}</small><em>${escapeHtml(formation.description)}</em></button>`).join("");
+  renderBattlePreparationMap(preparation);
+  const selectedUnit = getBattleUnit(preparation.battle, preparation.selectedUnitId);
+  elements.battleDeploymentHelp.innerHTML = preparation.placementMode === "auto"
+    ? `<b>自動配置中</b> 陣形を選ぶと、兵種を含む全部隊を推奨位置へ再配置します。`
+    : selectedUnit
+      ? `<b>${escapeHtml(selectedUnit.name)}を選択中</b> 青枠の自軍展開区域から空きマスを指定してください。`
+      : `<b>手動配置中</b> 自軍部隊を選択し、続けて青枠の空きマスを指定してください。`;
+  const sustainTone = summary.sustainableDays >= 20 ? "is-long" : summary.sustainableDays >= 10 ? "is-standard" : "is-short";
+  elements.battleSustainmentCard.className = `battle-sustainment-card ${sustainTone}`;
+  elements.battleSustainmentCard.innerHTML = `<small>ESTIMATED ENDURANCE</small><span><strong>約${summary.sustainableDays}日</strong><em>継戦可能</em></span><dl><div><dt>軍団規模</dt><dd>${formatValue(summary.soldiers)}名 · ${summary.units}部隊</dd></div><div><dt>一日需要</dt><dd>${formatValue(summary.dailyDemand)}口</dd></div><div><dt>携行糧秣</dt><dd>${formatValue(summary.rationUnits)}口</dd></div><div><dt>輜重隊</dt><dd>${summary.wagonColumns}隊</dd></div></dl>`;
+  elements.battleLogisticsOptions.innerHTML = Object.values(BATTLE_LOGISTICS_PLANS).map((plan) => {
+    const planDraft = setBattleLogisticsPlan(preparation, plan.id);
+    const days = getBattlePreparationSummary(planDraft).sustainableDays;
+    const selected = preparation.logisticsPlanId === plan.id;
+    return `<button type="button" role="radio" aria-checked="${selected}" data-battle-logistics="${plan.id}" class="${selected ? "is-active" : ""}"><span><strong>${plan.name}</strong><b>約${days}日</b></span><small>糧秣 ${formatValue(plan.rationUnits)}口 · 輜重${plan.wagonColumns}隊<br>戦場備蓄 ${plan.nodeStockpile} · 輸送上限 ${plan.throughput}/turn</small><p>${escapeHtml(plan.description)}</p></button>`;
+  }).join("");
+  const ready = selectedIds.size > 0;
+  elements.battlePreparationReadiness.innerHTML = ready
+    ? `<span>READY</span><strong>${selectedIds.size}名参陣 · ${TACTICAL_FORMATIONS[preparation.formationId].name} · ${summary.plan.name} · 約${summary.sustainableDays}日</strong>`
+    : `<span>NOT READY</span><strong>戦闘に参加する人物を1名以上選択してください</strong>`;
+  elements.battlePreparationScreen.querySelector('[data-preparation-action="start"]').disabled = !ready;
+}
+
+function openTacticalBattle() {
+  view.launchOpen = false;
+  view.guideOpen = false;
+  const roster = tacticalParticipantRoster();
+  view.battlePreparation = createBattlePreparation({
+    battle: createSampleBattle(),
+    roster,
+    defaultParticipantIds: battlePreparationDefaults(roster),
+  });
+  view.tacticalBattle = null;
+  view.tacticalResult = null;
+  view.tacticalResultOpen = false;
+  view.commanderDisposition = null;
+  view.commanderDispositionOpen = false;
+  view.selectedTacticalUnitId = null;
+  view.selectedTacticalCommanderId = null;
+  view.selectedTacticalFortificationId = null;
+  view.tacticalInspectorDismissed = false;
+  render();
+}
+
+function startTacticalBattle() {
+  if (!view.battlePreparation) return;
+  view.tacticalBattle = finalizeBattlePreparation(view.battlePreparation);
+  view.battlePreparation = null;
+  view.selectedTacticalUnitId = null;
+  view.selectedTacticalCommanderId = null;
+  view.selectedTacticalFortificationId = null;
+  view.tacticalInspectorDismissed = false;
+  render();
+}
+
+function prepareTacticalResult({ open = true } = {}) {
+  const battle = view.tacticalBattle;
+  if (!battle?.winner) return;
+  view.tacticalResult = createBattleResult(battle);
+  view.tacticalResultOpen = open;
+  view.commanderDispositionOpen = false;
+  const commander = getBattleCommander(battle, view.tacticalResult.capture.commanderId);
+  view.commanderDisposition = commander
+    ? createCommanderDispositionCase({ commander, battleResult: view.tacticalResult })
+    : null;
+}
+
+function exitTacticalBattle() {
+  view.battlePreparation = null;
+  view.tacticalBattle = null;
+  view.tacticalResult = null;
+  view.tacticalResultOpen = false;
+  view.commanderDisposition = null;
+  view.commanderDispositionOpen = false;
+  view.selectedTacticalUnitId = null;
+  view.selectedTacticalCommanderId = null;
+  view.selectedTacticalFortificationId = null;
+  view.tacticalInspectorDismissed = false;
+  view.launchOpen = true;
+  render();
+}
+
+function tacticalStateLabel(unit) {
+  return {
+    STABLE: "安定", SHAKEN: "動揺", WAVERING: "不安定", BROKEN: "崩壊寸前",
+    ROUTED: "潰走", DESTROYED: "壊滅", ESCAPED: "戦場離脱",
+  }[unit.state] ?? unit.state;
+}
+
+function tacticalVisualOrder(unit) {
+  return unit.state === "ROUTED" ? "retreat" : unit.order;
+}
+
+function tacticalFacingArrow(facing) {
+  return { north: "▲", east: "▶", south: "▼", west: "◀" }[facing] ?? "•";
+}
+
+function tacticalPositionLabel(position) {
+  return position ? `${position.x + 1}-${position.y + 1}` : "なし";
+}
+
+function renderTacticalSummary(battle) {
+  const summary = getBattleSummary(battle);
+  const side = (data, id, label) => `
+    <section class="tactical-side-summary is-${id}">
+      <strong>${label}</strong>
+      <span><small>兵力</small><b>${formatValue(data.soldiers)}</b></span>
+      <span><small>士気</small><b>${data.morale}</b></span>
+      ${data.cutOff ? `<em title="補給線接続 ${data.supplied}/${data.units}部隊">${data.cutOff}隊 補給断</em>` : ""}
+    </section>`;
+  elements.tacticalBattleSummary.innerHTML = `
+    ${side(summary.player, "player", "セレナ王国軍")}
+    <div class="tactical-turn-counter"><small>${summary.winner ? "決着" : "指示フェーズ"}</small><strong>${summary.winner ? summary.winner === "player" ? "王国軍勝利" : summary.winner === "enemy" ? "公国軍勝利" : "引き分け" : `第${summary.turn + 1}ターン`}</strong></div>
+    ${side(summary.enemy, "enemy", "ヴァルカ公国軍")}
+  `;
+}
+
+function renderTacticalDeployment(battle) {
+  const formation = TACTICAL_FORMATIONS[battle.formations?.player] ?? TACTICAL_FORMATIONS.line;
+  const preparation = battle.preparation;
+  const locked = battle.turn > 0 || Boolean(preparation?.finalized);
+  const logistics = preparation?.finalized
+    ? `${BATTLE_LOGISTICS_PLANS[preparation.logisticsPlanId]?.name ?? "兵站計画"} · 約${preparation.sustainableDays}日`
+    : "補給路は敵支配圏で遮断";
+  if (locked) {
+    elements.tacticalDeploymentBar.innerHTML = `
+      <div class="tactical-battle-brief">
+        <span><small>陣形</small><strong>${formation.name}</strong></span>
+        <span><small>兵站</small><strong>${logistics}</strong></span>
+        <p>駒を選択すると、命令と詳しい状態を確認できます。</p>
+      </div>`;
+    return;
+  }
+  elements.tacticalDeploymentBar.innerHTML = `
+    <div class="tactical-deployment-copy"><span>DEPLOYMENT</span><strong>${formation.name} · ${preparation?.placementMode === "manual" ? "手動配置" : "自動配置"}</strong><small>${preparation?.finalized ? `${preparation.participantNames.join("・")}が参陣` : locked ? "戦闘開始後は変更できません" : formation.description}</small></div>
+    <div class="tactical-formation-options" role="group" aria-label="王国軍の陣形">
+      ${Object.values(TACTICAL_FORMATIONS).map((option) => `<button type="button" data-battle-formation="${option.id}" class="${formation.id === option.id ? "is-active" : ""}" ${locked ? "disabled" : ""} title="${escapeHtml(option.description)}"><b>${option.name}</b><small>攻 ${Math.round((option.modifiers.attack ?? 1) * 100)} / 守 ${Math.round((option.modifiers.defense ?? 1) * 100)} / 動 ${Math.round((option.modifiers.movement ?? 1) * 100)}</small></button>`).join("")}
+    </div>
+    <p class="tactical-logistics-brief"><b>兵站</b> ${logistics}</p>
+  `;
+}
+
+function renderTacticalMap(battle) {
+  elements.tacticalBattleMap.style.setProperty("--battle-columns", battle.map.width);
+  elements.tacticalBattleMap.style.setProperty("--battle-rows", battle.map.height);
+  elements.tacticalBattleMap.setAttribute("aria-label", `${battle.map.width}列${battle.map.height}行の戦闘マップ`);
+  const unitsByPosition = new Map(battle.units.filter((unit) => !["DESTROYED", "ESCAPED"].includes(unit.state)).map((unit) => [`${unit.position.x},${unit.position.y}`, unit]));
+  const commandersByPosition = new Map(battle.commanders.filter((commander) => commander.status === "ACTIVE").map((commander) => [`${commander.position.x},${commander.position.y}`, commander]));
+  const supplyNodesByPosition = new Map((battle.supplyNodes ?? []).map((node) => [`${node.position.x},${node.position.y}`, node]));
+  const fortificationsByPosition = new Map((battle.fortifications ?? []).map((fortification) => [`${fortification.position.x},${fortification.position.y}`, fortification]));
+  const selectedUnit = getBattleUnit(battle, view.selectedTacticalUnitId);
+  const selectedCommander = getBattleCommander(battle, view.selectedTacticalCommanderId);
+  const selectedFortification = getBattleFortification(battle, view.selectedTacticalFortificationId);
+  const commandOrigin = selectedUnit ? getBattleCommander(battle, selectedUnit.commanderId) : selectedCommander;
+  const commandCastle = commandOrigin ? getFortificationAura(battle, commandOrigin, "castle") : null;
+  const commandRange = commandOrigin ? commandOrigin.commandRange + (commandCastle ? BATTLE_FORTIFICATION_TYPES.castle.buffs.commandRange : 0) : -1;
+  const commandCenter = selectedCommander?.plannedPosition ?? commandOrigin?.position;
+  const plannedPosition = selectedUnit?.plannedPosition ?? selectedCommander?.plannedPosition;
+  const target = getBattleUnit(battle, selectedUnit?.targetId);
+  const selectedSupplyRoute = selectedUnit ? getSupplyRoute(battle, selectedUnit) : null;
+  const supplyRouteByPosition = new Map((selectedSupplyRoute?.route ?? []).map((position, index) => [
+    `${position.x},${position.y}`,
+    index,
+  ]));
+  const supplySourceKey = selectedSupplyRoute?.source
+    ? `${selectedSupplyRoute.source.position.x},${selectedSupplyRoute.source.position.y}`
+    : null;
+  const reachableTiles = new Map([
+    ...(selectedUnit ? getReachableBattleTiles(battle, selectedUnit.id) : []),
+    ...(selectedCommander ? getReachableCommanderTiles(battle, selectedCommander.id) : []),
+  ].map((entry) => [`${entry.position.x},${entry.position.y}`, entry]));
+  elements.tacticalBattleMap.innerHTML = battle.map.tiles.map((tile) => {
+    const key = `${tile.position.x},${tile.position.y}`;
+    const unit = unitsByPosition.get(key);
+    const commander = commandersByPosition.get(key);
+    const supplyNode = supplyNodesByPosition.get(key);
+    const fortification = fortificationsByPosition.get(key);
+    const fortificationDefinition = fortification ? BATTLE_FORTIFICATION_TYPES[fortification.typeId] : null;
+    const isSelected = Boolean(
+      (unit && selectedUnit && unit.id === selectedUnit.id)
+      || (commander && selectedCommander && commander.id === selectedCommander.id)
+      || (fortification && selectedFortification && fortification.id === selectedFortification.id),
+    );
+    const isPlanned = plannedPosition && key === `${plannedPosition.x},${plannedPosition.y}`;
+    const isTarget = target && key === `${target.position.x},${target.position.y}`;
+    const reachable = reachableTiles.get(key);
+    const supplyRouteStep = supplyRouteByPosition.get(key);
+    const isSupplyRoute = Number.isInteger(supplyRouteStep);
+    const isSupplySource = key === supplySourceKey;
+    const isSupplyCut = Boolean(selectedUnit && !selectedSupplyRoute?.connected
+      && key === `${selectedUnit.position.x},${selectedUnit.position.y}`);
+    const inCommand = commandCenter && Math.abs(tile.position.x - commandCenter.x) + Math.abs(tile.position.y - commandCenter.y) <= commandRange;
+    const inFortificationAura = selectedFortification
+      && Math.abs(tile.position.x - selectedFortification.position.x) + Math.abs(tile.position.y - selectedFortification.position.y)
+        <= BATTLE_FORTIFICATION_TYPES[selectedFortification.typeId].auraRadius;
+    const terrain = TERRAIN_TYPES[tile.terrainType];
+    const isPassable = isBattleTilePassable(battle, tile.position, selectedUnit);
+    const burning = tile.status.some((status) => status.id === "burning");
+    const feature = tile.status.find((status) => ["ford", "bridge", "supply_depot"].includes(status.id));
+    const unitPortrait = unit?.iconUrl ? `<img src="${escapeHtml(unit.iconUrl)}" alt="" draggable="false">` : "";
+    const commanderPortrait = commander?.iconUrl ? `<img src="${escapeHtml(commander.iconUrl)}" alt="" draggable="false">` : "";
+    const unitStrength = unit ? Math.round(unit.soldierCount / Math.max(1, unit.maxSoldierCount) * 100) : 0;
+    const unitVisual = unit ? TACTICAL_ORDER_VISUALS[tacticalVisualOrder(unit)] ?? TACTICAL_ORDER_VISUALS.hold : null;
+    const unitMarkup = unit ? `<span class="tactical-unit-counter is-${unit.side} ${unitVisual.className} ${unit.state === "ROUTED" ? "is-routed" : ""}" title="行動状態：${unitVisual.label}">${unitPortrait}<b>${UNIT_CLASSES[unit.unitClassId].symbol}</b><span class="tactical-unit-strength" aria-hidden="true"><i style="width:${unitStrength}%"></i></span></span><span class="tactical-facing is-${unit.facing}">${tacticalFacingArrow(unit.facing)}</span>` : "";
+    const commanderMarkup = commander ? `<span class="tactical-commander-counter is-${commander.side}" title="${escapeHtml(commander.name)}">${commanderPortrait}<i>将</i></span>` : "";
+    const terrainMarkup = `<span class="tactical-terrain-art" aria-hidden="true"><i></i><i></i><i></i></span>`;
+    const featureMarkup = feature ? `<span class="tactical-feature-marker is-${feature.id}" aria-hidden="true">${feature.id === "bridge" ? "═" : feature.id === "ford" ? "⋮" : "▣"}</span>` : "";
+    const supplyMarkup = supplyNode ? `<span class="tactical-supply-node is-${supplyNode.side}" aria-hidden="true"><i>補</i></span>` : "";
+    const supplyRouteMarkup = isSupplyRoute
+      ? `<span class="tactical-supply-route-marker ${supplyRouteStep === 0 ? "is-source" : ""} ${supplyRouteStep === selectedSupplyRoute.route.length - 1 ? "is-destination" : ""}" aria-hidden="true"><i></i></span>`
+      : isSupplyCut ? `<span class="tactical-supply-route-marker is-cut" aria-hidden="true"><i></i></span>` : "";
+    const fortificationIntegrity = fortification ? Math.round(fortification.durability / fortificationDefinition.maxBaseDurability * 100) : 0;
+    const fortificationArt = fortification ? `./assets/generated/tactical-structures/${fortification.typeId}-v2.png` : "";
+    const fortificationMarkup = fortification ? `<span class="tactical-fortification-marker is-${fortification.typeId} is-${fortification.side} ${fortification.encircled ? "is-encircled" : ""}" aria-hidden="true"><img src="${fortificationArt}" alt="" draggable="false"><b>${fortificationDefinition.symbol}</b><em><span style="width:${fortificationIntegrity}%"></span></em></span>` : "";
+    const title = `${terrain.name}${feature ? `・${feature.name ?? ({ ford: "浅瀬", bridge: "橋梁", supply_depot: "補給所" }[feature.id])}` : ""} ${tile.position.x + 1}-${tile.position.y + 1}${isPassable ? "" : " / 通行不可"}${reachable ? ` / 移動可能 消費${reachable.cost}` : ""}${supplyNode ? ` / ${supplyNode.name} 備蓄${Math.round(supplyNode.stockpile)}/${supplyNode.maxStockpile}` : ""}${isSupplyRoute ? ` / 補給路 ${supplyRouteStep}/${selectedSupplyRoute.route.length - 1}` : ""}${fortification ? ` / ${fortification.name} 耐久${fortification.durability}/${fortification.baseDurability}${fortification.typeId === "castle" ? ` 備蓄${Math.round(fortification.supplyStockpile)}/${fortification.maxSupplyStockpile}` : ""}${fortification.encircled ? " 完全包囲" : ""}` : ""}${unit ? ` / ${unit.name} 兵${unit.soldierCount} 士気${Math.round(unit.morale)} 行動${unitVisual.label}` : ""}${commander ? ` / ${commander.name}` : ""}`;
+    return `<button type="button" role="gridcell" class="tactical-tile terrain-${tile.terrainType} ${isPassable ? "" : "is-impassable"} ${reachable ? "is-reachable" : ""} ${isSelected ? "is-selected" : ""} ${isPlanned ? "is-planned" : ""} ${isTarget ? "is-target" : ""} ${inCommand ? "is-in-command" : ""} ${inFortificationAura ? "is-fortification-aura" : ""} ${isSupplyRoute ? "is-supply-route" : ""} ${isSupplySource ? "is-supply-source" : ""} ${isSupplyCut ? "is-supply-cut" : ""} ${burning ? "has-burning" : ""}" style="--tile-texture-x:${-tile.position.x * 44};--tile-texture-y:${-tile.position.y * 44}" data-battle-tile="${key}" data-terrain-symbol="${terrain.symbol ?? ""}" ${unit ? `data-battle-unit="${unit.id}"` : ""} ${commander ? `data-battle-commander="${commander.id}"` : ""} ${fortification ? `data-battle-fortification="${fortification.id}"` : ""} aria-label="${escapeHtml(title)}" title="${escapeHtml(title)}">${terrainMarkup}${supplyRouteMarkup}${featureMarkup}${supplyMarkup}${fortificationMarkup}${unitMarkup}${commanderMarkup}</button>`;
+  }).join("");
+}
+
+function renderTacticalCommanderInspector(battle, commander) {
+  const units = battle.units.filter((unit) => unit.commanderId === commander.id && !["DESTROYED", "ESCAPED"].includes(unit.state));
+  const suppliedUnits = units.filter((unit) => getLogisticsState(battle, unit).connected).length;
+  const commandCastle = getFortificationAura(battle, commander, "castle");
+  const effectiveCommandRange = commander.commandRange + (commandCastle ? BATTLE_FORTIFICATION_TYPES.castle.buffs.commandRange : 0);
+  elements.tacticalBattleInspector.innerHTML = `
+    <article class="tactical-unit-sheet">
+      <button class="tactical-inspector-close" type="button" data-battle-inspector-close aria-label="情報カードをたたむ（選択は維持）" title="選択を維持したまま情報カードをたたむ">×</button>
+      <header class="${commander.side === "enemy" ? "is-enemy" : ""}"><i class="tactical-sheet-icon">${commander.iconUrl ? `<img src="${escapeHtml(commander.iconUrl)}" alt="${escapeHtml(commander.name)}">` : "将"}</i><div><small>${commander.side === "player" ? "PLAYER COMMANDER" : "ENEMY COMMANDER"}</small><h2>${escapeHtml(commander.name)}</h2><b>${commander.status}</b></div></header>
+      <div class="tactical-vitals">
+        <span><small>統率</small><strong>${commander.leadership}</strong></span><span><small>戦術</small><strong>${commander.tactics}</strong></span>
+        <span><small>勇敢</small><strong>${commander.bravery}</strong></span><span><small>魔術</small><strong>${commander.magic}</strong></span>
+      </div>
+      <section class="tactical-stats"><header><h3>指揮能力</h3></header><div class="tactical-stat-grid">
+        <span><small>Command Range</small><strong>${effectiveCommandRange}マス${commandCastle ? "（城支援）" : ""}</strong></span><span><small>Command Speed</small><strong>${commander.commandSpeed}マス</strong></span>
+        <span><small>現在位置</small><strong>${tacticalPositionLabel(commander.position)}</strong></span><span><small>隷下部隊</small><strong>${units.length}個</strong></span>
+        <span><small>補給線中継</small><strong>${suppliedUnits} / ${units.length}部隊</strong></span><span><small>陣形</small><strong>${TACTICAL_FORMATIONS[battle.formations?.[commander.side]]?.name ?? "横陣"}</strong></span>
+      </div>${commander.side === "player" ? `<p class="tactical-plan-note">${commander.plannedPosition ? `<b>移動予約 ${tacticalPositionLabel(commander.plannedPosition)}</b><br>` : ""}空きマスを選ぶと、${commander.commandSpeed}マス以内で司令部の移動を予約します。移動後の指揮範囲が金色で表示されます。</p>` : ""}</section>
+    </article>`;
+}
+
+function renderTacticalFortificationInspector(battle, fortification) {
+  const definition = BATTLE_FORTIFICATION_TYPES[fortification.typeId];
+  const artUrl = `./assets/generated/tactical-structures/${fortification.typeId}-v2.png`;
+  const integrity = Math.round(fortification.durability / Math.max(1, fortification.baseDurability) * 100);
+  const baseIntegrity = Math.round(fortification.baseDurability / definition.maxBaseDurability * 100);
+  const buffLabels = {
+    defense: ["防御", `+${Math.round((definition.buffs.defense - 1) * 100)}%`],
+    moraleRecovery: ["士気回復", `毎ターン +${definition.buffs.moraleRecovery}`],
+    commandRange: ["指揮範囲", `+${definition.buffs.commandRange}マス`],
+    supplyReplenish: ["城内補給", `毎ターン +${definition.buffs.supplyReplenish}`],
+    rangedAccuracy: ["射撃精度", `+${Math.round((definition.buffs.rangedAccuracy - 1) * 100)}%`],
+    brace: ["迎撃能力", `+${Math.round((definition.buffs.brace - 1) * 100)}%`],
+  };
+  const buffs = Object.keys(definition.buffs).map((id) => `<span><small>${buffLabels[id][0]}</small><strong>${buffLabels[id][1]}</strong></span>`).join("");
+  const status = fortification.encircled ? "完全包囲" : fortification.status === "BREACHED" ? "基礎耐久低下" : fortification.status === "RUINED" ? "陥落" : "健在";
+  elements.tacticalBattleInspector.innerHTML = `
+    <article class="tactical-unit-sheet tactical-fortification-sheet">
+      <button class="tactical-inspector-close" type="button" data-battle-inspector-close aria-label="情報カードをたたむ（選択は維持）" title="選択を維持したまま情報カードをたたむ">×</button>
+      <header class="${fortification.side === "enemy" ? "is-enemy" : ""}"><i class="tactical-sheet-icon is-fortification"><img src="${artUrl}" alt="${escapeHtml(fortification.name)}"></i><div><small>${fortification.side === "player" ? "PLAYER STRONGHOLD" : "ENEMY STRONGHOLD"}</small><h2>${escapeHtml(fortification.name)}</h2><b>${definition.name} · ${status}</b></div></header>
+      <div class="tactical-vitals">
+        <span><small>Current Durability</small><strong>${fortification.durability} / ${fortification.baseDurability}</strong><meter min="0" max="${definition.maxBaseDurability}" value="${fortification.durability}"></meter></span>
+        <span class="${fortification.encircled ? "is-danger" : ""}"><small>Base Durability</small><strong>${fortification.baseDurability} / ${definition.maxBaseDurability}</strong><meter min="${definition.minimumBaseDurability}" max="${definition.maxBaseDurability}" value="${fortification.baseDurability}"></meter></span>
+        ${fortification.typeId === "castle" ? `<span class="is-supply"><small>Castle Supply Reserve</small><strong>${Math.round(fortification.supplyStockpile)} / ${fortification.maxSupplyStockpile} · 輸送上限 ${definition.supplyThroughput}/turn</strong><meter min="0" max="${fortification.maxSupplyStockpile}" value="${fortification.supplyStockpile}"></meter></span>` : ""}
+      </div>
+      <section class="tactical-stats"><header><h3>城塞効果</h3><small>範囲 ${definition.auraRadius}マス</small></header><div class="tactical-stat-grid">${buffs}</div><p class="tactical-plan-note">${escapeHtml(definition.description)}</p></section>
+      <section class="tactical-fortification-status ${fortification.encircled ? "is-encircled" : ""}">
+        <header><small>SIEGE STATUS</small><strong>${status}</strong></header>
+        <p>${fortification.typeId === "castle" ? fortification.encircled ? `退路と補給路が完全遮断されています。ターン終了ごとに基礎耐久力が${definition.encirclementBaseLoss}低下します。` : "戦場外へ通じる安全な経路があります。基礎耐久力は低下しません。" : "砦は局地戦用の拠点です。完全包囲による基礎耐久低下の対象外です。"}</p>
+        <div><span>現耐久 ${integrity}%</span><span>基礎耐久 ${baseIntegrity}%</span><span>包囲継続 ${fortification.encircledTurns}ターン</span></div>
+      </section>
+    </article>`;
+}
+
+function renderTacticalUnitInspector(battle, unit) {
+  const unitClass = UNIT_CLASSES[unit.unitClassId];
+  const race = RACES[unit.raceId];
+  const commander = getBattleCommander(battle, unit.commanderId);
+  const stats = getEffectiveStats(battle, unit);
+  const logistics = getLogisticsState(battle, unit);
+  const commanded = isInCommandRange(battle, unit);
+  const target = getBattleUnit(battle, unit.targetId);
+  const logisticsConnection = logistics.fortification
+    ? `${logistics.fortification.name}支援`
+    : logistics.connected ? logistics.relayConnected ? "指揮官中継" : "補給所直結" : "補給線断絶";
+  const logisticsSourceName = logistics.source?.name ?? "接続拠点なし";
+  const logisticsRouteLabel = logistics.connected
+    ? `${logistics.routeLength}マス${logistics.relayConnected ? " · 指揮官中継" : " · 安全経路"}`
+    : "経路遮断";
+  const canCommand = unit.side === "player" && commanded && !["ROUTED", "DESTROYED", "ESCAPED"].includes(unit.state);
+  const visualOrder = TACTICAL_ORDER_VISUALS[tacticalVisualOrder(unit)] ?? TACTICAL_ORDER_VISUALS.hold;
+  const orderButtons = Object.values(UNIT_ORDERS).map((order) => `<button type="button" data-battle-order="${order}" class="${unit.order === order ? "is-active" : ""}" ${canCommand ? "" : "disabled"}>${ORDER_LABELS[order]}</button>`).join("");
+  const facingButtons = Object.values(FACING).map((facing) => `<button type="button" data-battle-facing="${facing}" class="${unit.facing === facing ? "is-active" : ""}" ${canCommand ? "" : "disabled"}>${tacticalFacingArrow(facing)}</button>`).join("");
+  const plan = [unit.plannedPosition ? `移動 ${tacticalPositionLabel(unit.plannedPosition)}` : null, target ? `目標 ${target.name}` : null, unit.plannedAction ? `${unit.plannedAction.actionId} ${tacticalPositionLabel(unit.plannedAction.position)}` : null].filter(Boolean).join(" · ") || "未指定（進行時に兵種・特性・現在命令から行動）";
+  const orders = unit.side === "player" ? `
+    <section class="tactical-orders"><header><h3>命令</h3><small>${commanded ? `指揮官 ${commander.name}` : "指揮範囲外・自律行動"}</small></header><div class="tactical-order-grid">${orderButtons}</div><div class="tactical-facing-grid" aria-label="部隊の向き">${facingButtons}</div><p class="tactical-plan-note">${escapeHtml(plan)}</p></section>` : "";
+  elements.tacticalBattleInspector.innerHTML = `
+    <article class="tactical-unit-sheet">
+      <button class="tactical-inspector-close" type="button" data-battle-inspector-close aria-label="情報カードをたたむ（選択は維持）" title="選択を維持したまま情報カードをたたむ">×</button>
+      <header class="${unit.side === "enemy" ? "is-enemy" : ""}"><i class="tactical-sheet-icon ${visualOrder.className}" title="行動状態：${visualOrder.label}">${unit.iconUrl ? `<img src="${escapeHtml(unit.iconUrl)}" alt="${escapeHtml(unit.name)}">` : unitClass.symbol}</i><div><small>${escapeHtml(race.name)} / ${escapeHtml(unitClass.name)}</small><h2>${escapeHtml(unit.name)}</h2><b>${visualOrder.label} · ${tacticalStateLabel(unit)} · ${logistics.name}</b></div></header>
+      <div class="tactical-vitals is-compact">
+        <span><small>兵力</small><strong>${unit.soldierCount} / ${unit.maxSoldierCount}</strong><meter min="0" max="${unit.maxSoldierCount}" value="${unit.soldierCount}"></meter></span>
+        <span><small>士気</small><strong>${Math.round(unit.morale)} · ${tacticalStateLabel(unit)}</strong><meter min="0" max="100" value="${unit.morale}"></meter></span>
+        <span class="is-supply"><small>補給</small><strong>${logistics.ratio}% · ${escapeHtml(logisticsConnection)}</strong><meter min="0" max="100" value="${logistics.ratio}"></meter></span>
+      </div>
+      ${orders}
+      <details class="tactical-unit-details">
+        <summary><strong>部隊詳細</strong><small>HP・疲労・兵站・実効戦力</small></summary>
+        <div class="tactical-detail-vitals">
+          <span><small>HP</small><strong>${Math.round(unit.hp)} / ${unit.maxHp}</strong></span>
+          <span><small>結束</small><strong>${Math.round(unit.cohesion)}</strong></span>
+          <span><small>疲労</small><strong>${Math.round(unit.fatigue)}</strong></span>
+          <span><small>位置</small><strong>${tacticalPositionLabel(unit.position)}</strong></span>
+        </div>
+        <section class="tactical-logistics-sheet ${logistics.connected ? "is-connected" : "is-cut"}">
+          <header><div><small>補給経路</small><h3>${escapeHtml(logisticsSourceName)}</h3></div><b>${escapeHtml(logisticsRouteLabel)}</b></header>
+          <div>
+            <span><small>拠点備蓄</small><strong>${logistics.connected ? `${Math.round(logistics.sourceStockpile)} / ${logistics.sourceMaxStockpile}` : "—"}</strong></span>
+            <span><small>毎ターン補充</small><strong>${logistics.connected ? `+${logistics.replenishment}` : "+0"}</strong></span>
+            <span><small>予測消費</small><strong>-${logistics.projectedConsumption}</strong></span>
+            <span><small>前回実績</small><strong>-${unit.lastSupplyConsumption ?? 0} / +${unit.lastSupplyDelivery ?? 0}</strong></span>
+          </div>
+          <p>${escapeHtml(logistics.connected ? "選択中の部隊までの補給路を盤面に表示しています。" : logistics.reason)}</p>
+        </section>
+        <section class="tactical-stats"><header><h3>実効戦力</h3></header><div class="tactical-stat-grid">
+          <span><small>攻撃</small><strong>${stats.attack.toFixed(1)}</strong></span><span><small>防御</small><strong>${stats.defense.toFixed(1)}</strong></span>
+          <span><small>移動</small><strong>${stats.movement.toFixed(1)}</strong></span><span><small>遠隔</small><strong>${stats.rangedAttack.toFixed(1)}</strong></span>
+        </div></section>
+      </details>
+    </article>`;
+}
+
+function renderTacticalResult() {
+  const result = view.tacticalResult;
+  const open = Boolean(result && view.tacticalResultOpen);
+  elements.tacticalResultScreen.classList.toggle("is-hidden", !open);
+  elements.tacticalResultScreen.setAttribute("aria-hidden", String(!open));
+  if (!result) {
+    elements.tacticalResultContent.innerHTML = "";
+    return;
+  }
+  const sideCard = (side, label, tone) => `
+    <article class="tactical-result-army is-${tone}">
+      <header><span>${tone === "player" ? "王" : "公"}</span><div><small>${tone === "player" ? "SELENE KINGDOM" : "VALKA DUCHY"}</small><h3>${label}</h3></div><b>${side.standing} / ${side.units}部隊</b></header>
+      <div><span><small>初期兵力</small><strong>${formatValue(side.initialSoldiers)}</strong></span><span><small>残存兵</small><strong>${formatValue(side.remainingSoldiers)}</strong></span><span><small>損耗</small><strong>${formatValue(side.casualties)}</strong></span><span><small>平均補給</small><strong>${side.supply}%</strong></span></div>
+      <footer><span>壊滅 ${side.destroyed}</span><span>潰走 ${side.routed}</span><span>離脱 ${side.escaped}</span></footer>
+    </article>`;
+  const captureStatus = view.commanderDisposition ? getDispositionLabel(view.commanderDisposition) : null;
+  elements.tacticalResultContent.innerHTML = `
+    <article class="tactical-result-card is-${result.winner}">
+      <header class="tactical-result-hero">
+        <div><span>AFTER ACTION REPORT / 戦闘結果</span><h1 id="tacticalResultHeading">${escapeHtml(result.title)}</h1><p>${escapeHtml(result.battleName)} · 第${result.turn}ターン決着</p></div>
+        <b>${result.resultType === "encirclement_annihilation" ? "ENCIRCLEMENT" : result.winner === "draw" ? "DRAW" : "VICTORY"}</b>
+      </header>
+      <section class="tactical-result-overview">
+        ${sideCard(result.player, "セレナ王国軍", "player")}
+        <div class="tactical-result-versus"><small>RESULT</small><strong>${result.winner === "player" ? "勝" : result.winner === "enemy" ? "敗" : "分"}</strong><span>渡河 ${result.crossings}回</span></div>
+        ${sideCard(result.enemy, "ヴァルカ公国軍", "enemy")}
+      </section>
+      <section class="tactical-encirclement-report ${result.encirclement.complete ? "is-complete" : ""}">
+        <header><div><small>ENCIRCLEMENT ASSESSMENT</small><h2>${result.encirclement.complete ? "完全包囲を確認" : "通常戦果"}</h2></div><b>${result.encirclement.complete ? "全退路遮断" : "捕縛条件未達"}</b></header>
+        <div>${result.encirclement.reasons.map((reason) => `<span>${escapeHtml(reason)}</span>`).join("")}</div>
+      </section>
+      <section class="tactical-capture-result ${result.capture.eligible ? "is-captured" : ""}">
+        ${result.capture.commanderIconUrl ? `<img src="${escapeHtml(result.capture.commanderIconUrl)}" alt="${escapeHtml(result.capture.commanderName)}">` : `<i>${result.capture.eligible ? "縛" : "退"}</i>`}
+        <div><small>ENEMY COMMANDER</small><h2>${result.capture.eligible ? `${escapeHtml(result.capture.commanderName)}を捕縛` : "敵将捕縛なし"}</h2><p>${escapeHtml(result.capture.reason)}</p>${captureStatus ? `<b>現在の処遇：${escapeHtml(captureStatus)}</b>` : ""}</div>
+        ${result.capture.eligible ? '<button type="button" data-result-action="disposition">戦後処遇局へ</button>' : ""}
+      </section>
+      <footer class="tactical-result-actions">
+        <button type="button" data-result-action="battlefield">戦場を確認</button>
+        <button type="button" data-result-action="exit">開発メニューへ</button>
+      </footer>
+    </article>`;
+}
+
+function renderCommanderDisposition() {
+  const disposition = view.commanderDisposition;
+  const open = Boolean(disposition && view.commanderDispositionOpen);
+  elements.commanderDispositionScreen.classList.toggle("is-hidden", !open);
+  elements.commanderDispositionScreen.setAttribute("aria-hidden", String(!open));
+  if (!disposition) {
+    elements.commanderDispositionContent.innerHTML = "";
+    return;
+  }
+  const active = disposition.status === DISPOSITION_STATUSES.PERSUADING;
+  const progress = Math.round(disposition.persuasionProgress / disposition.persuasionTarget * 100);
+  const approachButtons = Object.values(PERSUASION_APPROACHES).map((approach) => `
+    <button type="button" data-persuasion-approach="${approach.id}"><b>${approach.name}</b><small>1か月 · ${escapeHtml(approach.description)}</small>${disposition.profile.preferredApproach === approach.id ? "<em>特性適合</em>" : ""}</button>`).join("");
+  elements.commanderDispositionContent.innerHTML = `
+    <article class="commander-disposition-card is-${disposition.status.toLowerCase()}">
+      <header>
+        <div><span>PRISONER AFFAIRS / 戦後処遇局</span><h1 id="commanderDispositionHeading">捕虜将官の処遇</h1><p>戦闘指揮とは分離された戦後行政案件です。</p></div>
+        <button type="button" data-disposition-action="back">戦果報告へ戻る</button>
+      </header>
+      <div class="commander-disposition-layout">
+        <section class="commander-prisoner-profile">
+          <div class="commander-prisoner-portrait">${disposition.commanderIconUrl ? `<img src="${escapeHtml(disposition.commanderIconUrl)}" alt="${escapeHtml(disposition.commanderName)}">` : "将"}</div>
+          <div><small>CAPTURED COMMANDER</small><h2>${escapeHtml(disposition.commanderName)}</h2><strong>${escapeHtml(getDispositionLabel(disposition))}</strong><p>${escapeHtml(disposition.profile.reason)}</p></div>
+          <div class="commander-trait-list">${disposition.traits.map((trait) => `<span>${escapeHtml(trait)}</span>`).join("") || "<span>特性不詳</span>"}</div>
+          <dl><div><dt>意志</dt><dd>${disposition.profile.resolve}</dd></div><div><dt>忠誠</dt><dd>${disposition.profile.loyalty}</dd></div><div><dt>経過</dt><dd>${disposition.elapsedMonths}か月</dd></div><div><dt>帰順後</dt><dd>${escapeHtml(disposition.profile.recruitmentRole)}</dd></div></dl>
+        </section>
+        <main class="commander-disposition-workspace">
+          <section class="commander-disposition-status">
+            <header><div><small>CASE STATUS</small><h2>${escapeHtml(getDispositionLabel(disposition))}</h2></div><b>${active ? `${disposition.persuasionProgress} / ${disposition.persuasionTarget}` : "処遇確定"}</b></header>
+            ${active ? `<div class="commander-persuasion-meter"><i style="width:${progress}%"></i></div><p>説得方針を選ぶたびに1か月が経過します。将官の特性に合う方針ほど交渉が進展します。</p>` : `<p class="commander-disposition-conclusion">${escapeHtml(disposition.log.at(-1)?.message ?? "処遇が確定しました。")}</p>`}
+          </section>
+          ${active ? `<section class="commander-persuasion-actions"><header><small>MONTHLY APPROACH</small><h2>今月の説得方針</h2></header><div>${approachButtons}</div></section>` : ""}
+          <section class="commander-disposition-log"><header><small>CASE RECORD</small><h2>処遇記録</h2></header><div>${disposition.log.slice().reverse().map((entry) => `<p><b>${entry.month === 0 ? "捕縛時" : `${entry.month}か月目`}</b><span>${escapeHtml(entry.message)}</span></p>`).join("")}</div></section>
+        </main>
+      </div>
+      ${active ? '<footer><button type="button" data-disposition-action="intern">長期収監を確定</button><button type="button" data-disposition-action="release">宣誓・身代金付きで釈放</button></footer>' : ""}
+    </article>`;
+}
+
+function renderTacticalPostBattle() {
+  renderTacticalResult();
+  renderCommanderDisposition();
+  const overlayOpen = Boolean(view.tacticalResultOpen || view.commanderDispositionOpen);
+  elements.tacticalBattleScreen.inert = overlayOpen;
+}
+
+function positionTacticalInspector() {
+  if (!view.tacticalBattle || elements.tacticalBattleInspector.classList.contains("is-hidden")) return;
+  const selectedUnit = getBattleUnit(view.tacticalBattle, view.selectedTacticalUnitId);
+  const selectedCommander = getBattleCommander(view.tacticalBattle, view.selectedTacticalCommanderId);
+  const selectedFortification = getBattleFortification(view.tacticalBattle, view.selectedTacticalFortificationId);
+  const tile = [...elements.tacticalBattleMap.querySelectorAll("[data-battle-tile]")].find((candidate) => (
+    selectedUnit
+      ? candidate.dataset.battleUnit === selectedUnit.id
+      : selectedCommander
+        ? candidate.dataset.battleCommander === selectedCommander.id
+        : candidate.dataset.battleFortification === selectedFortification?.id
+  ));
+  if (!tile) return;
+  const layout = elements.tacticalBattleInspector.parentElement;
+  const layoutRect = layout.getBoundingClientRect();
+  const tileRect = tile.getBoundingClientRect();
+  const cardRect = elements.tacticalBattleInspector.getBoundingClientRect();
+  const margin = 12;
+  const limit = (value, minimum, maximum) => Math.min(maximum, Math.max(minimum, value));
+  let side = "right";
+  let left = tileRect.right - layoutRect.left + margin;
+  if (left + cardRect.width > layoutRect.width - margin) {
+    side = "left";
+    left = tileRect.left - layoutRect.left - cardRect.width - margin;
+  }
+  left = limit(left, margin, Math.max(margin, layoutRect.width - cardRect.width - margin));
+  const top = limit(tileRect.top - layoutRect.top - 28, margin, Math.max(margin, layoutRect.height - cardRect.height - margin));
+  const arrowY = limit(tileRect.top + tileRect.height / 2 - layoutRect.top - top, 20, Math.max(20, cardRect.height - 20));
+  elements.tacticalBattleInspector.style.left = `${Math.round(left)}px`;
+  elements.tacticalBattleInspector.style.top = `${Math.round(top)}px`;
+  elements.tacticalBattleInspector.style.setProperty("--tactical-tooltip-arrow-y", `${Math.round(arrowY)}px`);
+  elements.tacticalBattleInspector.classList.toggle("is-left", side === "left");
+}
+
+function renderTacticalBattle() {
+  const battle = view.tacticalBattle;
+  elements.tacticalBattleScreen.classList.toggle("is-hidden", !battle);
+  if (!battle) {
+    renderTacticalPostBattle();
+    return;
+  }
+  elements.tacticalBattleTitle.textContent = battle.name;
+  renderTacticalSummary(battle);
+  renderTacticalDeployment(battle);
+  renderTacticalMap(battle);
+  const selectedUnit = getBattleUnit(battle, view.selectedTacticalUnitId);
+  const selectedCommander = getBattleCommander(battle, view.selectedTacticalCommanderId);
+  const selectedFortification = getBattleFortification(battle, view.selectedTacticalFortificationId);
+  const inspectorOpen = Boolean(selectedUnit || selectedCommander || selectedFortification) && !view.tacticalInspectorDismissed;
+  elements.tacticalBattleInspector.classList.toggle("is-hidden", !inspectorOpen);
+  elements.tacticalBattleInspector.setAttribute("aria-hidden", String(!inspectorOpen));
+  if (selectedUnit) renderTacticalUnitInspector(battle, selectedUnit);
+  else if (selectedCommander) renderTacticalCommanderInspector(battle, selectedCommander);
+  else if (selectedFortification) renderTacticalFortificationInspector(battle, selectedFortification);
+  else elements.tacticalBattleInspector.innerHTML = "";
+  if (inspectorOpen) positionTacticalInspector();
+  elements.tacticalBattleLog.innerHTML = battle.log.slice(-6).reverse().map((entry) => `<p title="${escapeHtml(entry.message)}"><b>T${entry.turn} ${escapeHtml(PHASE_LABELS[entry.phase] ?? entry.phase)}</b>${escapeHtml(entry.message)}</p>`).join("");
+  const executeButton = elements.tacticalBattleScreen.querySelector('[data-battle-action="execute"]');
+  executeButton.disabled = Boolean(battle.winner);
+  elements.tacticalResultButton.hidden = !battle.winner;
+  renderTacticalPostBattle();
+}
+
+function advanceTacticalBattle() {
+  if (!view.tacticalBattle || view.tacticalBattle.winner) return;
+  view.tacticalBattle = executeBattleTurn(view.tacticalBattle);
+  if (view.tacticalBattle.winner && !view.tacticalResult) prepareTacticalResult();
+  const selectedUnit = getBattleUnit(view.tacticalBattle, view.selectedTacticalUnitId);
+  const selectedCommander = getBattleCommander(view.tacticalBattle, view.selectedTacticalCommanderId);
+  const selectedFortification = getBattleFortification(view.tacticalBattle, view.selectedTacticalFortificationId);
+  if (!selectedUnit && !selectedCommander && !selectedFortification) {
+    view.selectedTacticalUnitId = null;
+    view.selectedTacticalCommanderId = null;
+    view.selectedTacticalFortificationId = null;
+    view.tacticalInspectorDismissed = false;
+  }
+  renderTacticalBattle();
+}
+
+function handleTacticalTile(button) {
+  const battle = view.tacticalBattle;
+  if (!battle) return;
+  const [x, y] = button.dataset.battleTile.split(",").map(Number);
+  const clickedUnit = getBattleUnit(battle, button.dataset.battleUnit);
+  const clickedCommander = getBattleCommander(battle, button.dataset.battleCommander);
+  const clickedFortification = getBattleFortification(battle, button.dataset.battleFortification);
+  const selectedUnit = getBattleUnit(battle, view.selectedTacticalUnitId);
+  try {
+    if (clickedUnit) {
+      if (selectedUnit?.id === clickedUnit.id) {
+        if (view.tacticalInspectorDismissed) view.tacticalInspectorDismissed = false;
+        else {
+          view.selectedTacticalUnitId = null;
+          view.selectedTacticalCommanderId = null;
+          view.selectedTacticalFortificationId = null;
+        }
+      } else if (selectedUnit?.side === "player" && clickedUnit.side !== selectedUnit.side) {
+        view.tacticalBattle = planUnitTarget(battle, selectedUnit.id, clickedUnit.id);
+      } else {
+        view.selectedTacticalUnitId = clickedUnit.id;
+        view.selectedTacticalCommanderId = null;
+        view.selectedTacticalFortificationId = null;
+        view.tacticalInspectorDismissed = false;
+      }
+    } else if (clickedCommander) {
+      const sameCommander = view.selectedTacticalCommanderId === clickedCommander.id;
+      if (sameCommander && view.tacticalInspectorDismissed) view.tacticalInspectorDismissed = false;
+      else {
+        view.selectedTacticalCommanderId = sameCommander ? null : clickedCommander.id;
+        view.selectedTacticalUnitId = null;
+        view.selectedTacticalFortificationId = null;
+        view.tacticalInspectorDismissed = false;
+      }
+    } else if (clickedFortification) {
+      const sameFortification = view.selectedTacticalFortificationId === clickedFortification.id;
+      if (sameFortification && view.tacticalInspectorDismissed) view.tacticalInspectorDismissed = false;
+      else {
+        view.selectedTacticalFortificationId = sameFortification ? null : clickedFortification.id;
+        view.selectedTacticalUnitId = null;
+        view.selectedTacticalCommanderId = null;
+        view.tacticalInspectorDismissed = false;
+      }
+    } else if (view.selectedTacticalCommanderId) {
+      view.tacticalBattle = planCommanderMove(battle, view.selectedTacticalCommanderId, { x, y });
+    } else if (selectedUnit?.side === "player") {
+      view.tacticalBattle = planUnitMove(battle, selectedUnit.id, { x, y });
+    }
+  } catch (error) {
+    showToast(error.message, "danger");
+  }
+  renderTacticalBattle();
+}
+
 function render() {
+  renderLaunchScreen();
+  renderBattlePreparation();
+  renderTacticalBattle();
   renderAnalysisMode();
   renderCampaignBar();
   renderResources();
@@ -2884,6 +3785,12 @@ function playNavigationCue(event) {
     "[data-open-guide]",
     "[data-guide-action]",
     "[data-panel]",
+    "[data-central-decision-action]",
+    "[data-national-reform-system]",
+    "[data-start-national-reform]",
+    "[data-history-policy]",
+    "[data-leviathan-policy]",
+    "[data-open-specialist-ledger]",
     "[data-spending-category]",
     "[data-spending-city]",
     "[data-world-mode]",
@@ -2926,6 +3833,216 @@ document.addEventListener("pointerdown", (event) => {
 
 document.addEventListener("click", (event) => {
   playNavigationCue(event);
+  const launchAction = event.target.closest("[data-launch-action]");
+  if (launchAction) {
+    if (["new", "new-generated"].includes(launchAction.dataset.launchAction)) {
+      if ((state.turn > 0 || state.council.history.length > 0) && !window.confirm("保存済みの年代記を破棄して、新しい統治を始めますか？")) return;
+      resetChronicle({ scenarioMode: launchAction.dataset.launchAction === "new-generated" ? "generated" : "fixed" });
+      view.guideOpen = true;
+    }
+    view.launchOpen = false;
+    render();
+    return;
+  }
+  const developerAction = event.target.closest("[data-developer-action]");
+  if (developerAction) {
+    const action = developerAction.dataset.developerAction;
+    if (action === "battle") {
+      openTacticalBattle();
+      return;
+    }
+    view.launchOpen = false;
+    view.guideOpen = false;
+    if (action === "world") {
+      view.panel = "world";
+      view.atlasMode = "generated";
+      view.scale = "world";
+    } else if (action === "war-council") {
+      view.panel = "diplomacy";
+      view.selectedCountryId = "valka";
+      view.warCouncilOpen = !state.war;
+    } else {
+      view.panel = "council";
+      view.scale = "country";
+    }
+    renderPanelFromTop();
+    return;
+  }
+  const preparationAction = event.target.closest("[data-preparation-action]");
+  if (preparationAction) {
+    if (preparationAction.dataset.preparationAction === "exit") {
+      exitTacticalBattle();
+    } else if (preparationAction.dataset.preparationAction === "start") {
+      try { startTacticalBattle(); }
+      catch (error) { showToast(error.message, "danger"); }
+    }
+    return;
+  }
+  const battleParticipant = event.target.closest("[data-battle-participant]");
+  if (battleParticipant && view.battlePreparation) {
+    try { view.battlePreparation = toggleBattleParticipant(view.battlePreparation, battleParticipant.dataset.battleParticipant); }
+    catch (error) { showToast(error.message, "danger"); }
+    renderBattlePreparation();
+    return;
+  }
+  const placementMode = event.target.closest("[data-battle-placement-mode]");
+  if (placementMode && view.battlePreparation) {
+    try {
+      view.battlePreparation = setBattlePlacementMode(view.battlePreparation, placementMode.dataset.battlePlacementMode);
+      showToast(placementMode.dataset.battlePlacementMode === "auto" ? "選択中の陣形で自動配置しました。" : "手動配置へ切り替えました。部隊を選択してください。", "confirm");
+    } catch (error) { showToast(error.message, "danger"); }
+    renderBattlePreparation();
+    return;
+  }
+  const preparationFormation = event.target.closest("[data-preparation-formation]");
+  if (preparationFormation && view.battlePreparation) {
+    try {
+      view.battlePreparation = setBattlePreparationFormation(view.battlePreparation, preparationFormation.dataset.preparationFormation);
+      const formation = TACTICAL_FORMATIONS[preparationFormation.dataset.preparationFormation];
+      showToast(`${formation.name}を採用しました。${view.battlePreparation.placementMode === "auto" ? "推奨位置へ再配置します。" : "現在の手動配置は維持されます。"}`, "confirm");
+    } catch (error) { showToast(error.message, "danger"); }
+    renderBattlePreparation();
+    return;
+  }
+  const battleLogistics = event.target.closest("[data-battle-logistics]");
+  if (battleLogistics && view.battlePreparation) {
+    try { view.battlePreparation = setBattleLogisticsPlan(view.battlePreparation, battleLogistics.dataset.battleLogistics); }
+    catch (error) { showToast(error.message, "danger"); }
+    renderBattlePreparation();
+    return;
+  }
+  const preparationTile = event.target.closest("[data-preparation-tile]");
+  if (preparationTile && view.battlePreparation) {
+    const preparation = view.battlePreparation;
+    if (preparation.placementMode !== "manual") {
+      showToast("手動配置へ切り替えると、部隊ごとに配置マスを指定できます。");
+      return;
+    }
+    const clickedUnit = getBattleUnit(preparation.battle, preparationTile.dataset.preparationUnit);
+    try {
+      if (clickedUnit?.side === "player") {
+        view.battlePreparation = selectBattlePreparationUnit(preparation, clickedUnit.id);
+      } else if (clickedUnit?.side === "enemy") {
+        showToast("敵軍の初期配置は変更できません。", "danger");
+        return;
+      } else if (preparation.selectedUnitId) {
+        const [x, y] = preparationTile.dataset.preparationTile.split(",").map(Number);
+        view.battlePreparation = placeBattlePreparationUnit(preparation, preparation.selectedUnitId, { x, y });
+      } else {
+        showToast("先に配置する自軍部隊を選択してください。");
+        return;
+      }
+    } catch (error) { showToast(error.message, "danger"); }
+    renderBattlePreparation();
+    return;
+  }
+  const battleAction = event.target.closest("[data-battle-action]");
+  if (battleAction) {
+    const action = battleAction.dataset.battleAction;
+    if (action === "exit") {
+      exitTacticalBattle();
+    } else if (action === "reset") {
+      openTacticalBattle();
+    } else if (action === "encirclement-demo") {
+      view.tacticalBattle = createEncirclementCaptureDemo();
+      view.selectedTacticalUnitId = null;
+      view.selectedTacticalCommanderId = null;
+      view.selectedTacticalFortificationId = null;
+      view.tacticalInspectorDismissed = false;
+      prepareTacticalResult();
+      renderTacticalBattle();
+    } else if (action === "fortification-demo") {
+      view.tacticalBattle = createFortificationSiegeDemo();
+      view.tacticalResult = null;
+      view.tacticalResultOpen = false;
+      view.commanderDisposition = null;
+      view.commanderDispositionOpen = false;
+      view.selectedTacticalUnitId = null;
+      view.selectedTacticalCommanderId = null;
+      view.selectedTacticalFortificationId = "castle-valka";
+      view.tacticalInspectorDismissed = false;
+      renderTacticalBattle();
+    } else if (action === "result") {
+      if (!view.tacticalResult) prepareTacticalResult({ open: false });
+      view.tacticalResultOpen = Boolean(view.tacticalResult);
+      view.commanderDispositionOpen = false;
+      renderTacticalPostBattle();
+    } else if (action === "execute") {
+      advanceTacticalBattle();
+    }
+    return;
+  }
+  const resultAction = event.target.closest("[data-result-action]");
+  if (resultAction) {
+    const action = resultAction.dataset.resultAction;
+    if (action === "exit") {
+      exitTacticalBattle();
+      return;
+    }
+    if (action === "battlefield") {
+      view.tacticalResultOpen = false;
+    } else if (action === "disposition" && view.commanderDisposition) {
+      view.tacticalResultOpen = false;
+      view.commanderDispositionOpen = true;
+    }
+    renderTacticalPostBattle();
+    return;
+  }
+  const persuasionApproach = event.target.closest("[data-persuasion-approach]");
+  if (persuasionApproach && view.commanderDisposition) {
+    try {
+      view.commanderDisposition = advanceCommanderPersuasion(view.commanderDisposition, persuasionApproach.dataset.persuasionApproach);
+    } catch (error) { showToast(error.message, "danger"); }
+    renderTacticalPostBattle();
+    return;
+  }
+  const dispositionAction = event.target.closest("[data-disposition-action]");
+  if (dispositionAction && view.commanderDisposition) {
+    const action = dispositionAction.dataset.dispositionAction;
+    if (action === "back") {
+      view.commanderDispositionOpen = false;
+      view.tacticalResultOpen = true;
+    } else if (action === "intern" || action === "release") {
+      try { view.commanderDisposition = finalizeCommanderDisposition(view.commanderDisposition, action); }
+      catch (error) { showToast(error.message, "danger"); }
+    }
+    renderTacticalPostBattle();
+    return;
+  }
+  const battleInspectorClose = event.target.closest("[data-battle-inspector-close]");
+  if (battleInspectorClose) {
+    view.tacticalInspectorDismissed = true;
+    renderTacticalBattle();
+    return;
+  }
+  const battleFormation = event.target.closest("[data-battle-formation]");
+  if (battleFormation && view.tacticalBattle) {
+    try {
+      view.tacticalBattle = applyBattleFormation(view.tacticalBattle, "player", battleFormation.dataset.battleFormation);
+      showToast(`${TACTICAL_FORMATIONS[battleFormation.dataset.battleFormation].name}へ再配置しました。`, "confirm");
+    } catch (error) { showToast(error.message, "danger"); }
+    renderTacticalBattle();
+    return;
+  }
+  const battleOrder = event.target.closest("[data-battle-order]");
+  if (battleOrder && view.tacticalBattle && view.selectedTacticalUnitId) {
+    try { view.tacticalBattle = issueUnitOrder(view.tacticalBattle, view.selectedTacticalUnitId, battleOrder.dataset.battleOrder); }
+    catch (error) { showToast(error.message, "danger"); }
+    renderTacticalBattle();
+    return;
+  }
+  const battleFacing = event.target.closest("[data-battle-facing]");
+  if (battleFacing && view.tacticalBattle && view.selectedTacticalUnitId) {
+    try { view.tacticalBattle = setUnitFacing(view.tacticalBattle, view.selectedTacticalUnitId, battleFacing.dataset.battleFacing); }
+    catch (error) { showToast(error.message, "danger"); }
+    renderTacticalBattle();
+    return;
+  }
+  const battleTile = event.target.closest("[data-battle-tile]");
+  if (battleTile) {
+    handleTacticalTile(battleTile);
+    return;
+  }
   const resourceAction = event.target.closest("[data-resource-action]");
   if (resourceAction) {
     const ledger = deriveRealmLedger(state);
@@ -3040,6 +4157,20 @@ document.addEventListener("click", (event) => {
     followGuidance(guideAction);
     return;
   }
+  const centralDecision = event.target.closest("[data-central-decision-action]");
+  if (centralDecision) {
+    if (centralDecision.dataset.centralDecisionAction === "open_diplomacy") {
+      view.panel = "diplomacy";
+      view.selectedCountryId = "valka";
+      view.selectedType = "country";
+      view.selectedId = "valka";
+    } else {
+      view.panel = "centralization";
+    }
+    view.scale = "country";
+    renderPanelFromTop();
+    return;
+  }
   const panelButton = event.target.closest("[data-panel]");
   if (panelButton) {
     clearTileDetailSelection();
@@ -3052,6 +4183,59 @@ document.addEventListener("click", (event) => {
       view.selectedCityId = WORLD.villages[view.selectedTownId].province;
       view.scale = "village";
     }
+    renderPanelFromTop();
+    return;
+  }
+  const reformSystemButton = event.target.closest("[data-national-reform-system]");
+  if (reformSystemButton) {
+    view.selectedNationalReformSystem = reformSystemButton.dataset.nationalReformSystem;
+    view.panel = "centralization";
+    renderPanelFromTop();
+    return;
+  }
+  const nationalReformButton = event.target.closest("[data-start-national-reform]");
+  if (nationalReformButton) {
+    const planner = nationalReformButton.closest("[data-national-reform-planner]");
+    const regionIds = [...planner.querySelectorAll("[data-national-reform-region]:checked")].map((input) => input.value);
+    const input = {
+      systemId: nationalReformButton.dataset.startNationalReform,
+      regionIds,
+      methodId: planner.querySelector("[data-national-reform-method]").value,
+      budgetId: planner.querySelector("[data-national-reform-budget]").value,
+      officerId: planner.querySelector("[data-national-reform-officer]").value,
+      concessionId: planner.querySelector("[data-national-reform-concession]").value,
+    };
+    const system = NATIONAL_REFORM_SYSTEMS[input.systemId];
+    const method = AUTHORITY_TRANSFER_METHODS[input.methodId];
+    const budget = NATIONAL_REFORM_BUDGETS[input.budgetId];
+    const concession = REFORM_CONCESSIONS[input.concessionId];
+    if (!window.confirm(`${system.name}を国家級改革として開始します。\n\n対象 ${regionIds.map((regionId) => WORLD.provinces[regionId].name).join("・")}\n方式 ${method.name} / ${budget.name} / ${concession.name}\n担当 ${WORLD.characters[input.officerId].name}\n\n地方勢力は特権・支持・不満・外国接触から反応を選びます。続けますか？`)) return;
+    try { commit(startNationalReformPackage(state, input), `${system.name}を国家級改革として開始しました。`, "confirm"); }
+    catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
+  const historyPolicyButton = event.target.closest("[data-history-policy]");
+  if (historyPolicyButton) {
+    const policy = HISTORY_POLICIES[historyPolicyButton.dataset.historyPolicy];
+    if (!window.confirm(`歴史政策を「${policy.name}」へ変更します。\n\n${policy.description}\n短期：${policy.shortBenefit}\n長期：${policy.longRisk}\n\n現在の特権・正統性・地域服従へ反映されます。続けますか？`)) return;
+    try { commit(chooseHistoryPolicy(state, policy.id), `歴史政策を「${policy.name}」へ変更しました。`, policy.id === "suppress_records" ? "event" : "confirm"); }
+    catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
+  const leviathanPolicyButton = event.target.closest("[data-leviathan-policy]");
+  if (leviathanPolicyButton) {
+    const policy = LEVIATHAN_POLICIES[leviathanPolicyButton.dataset.leviathanPolicy];
+    if (!window.confirm(`リヴァイアサン対応を「${policy.name}」へ変更します。\n\n${policy.description}\n\n沿岸行政・中央権限・外交へ波及します。続けますか？`)) return;
+    try { commit(chooseLeviathanPolicy(state, policy.id), `沿岸災害対応を「${policy.name}」へ変更しました。`, "confirm"); }
+    catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
+  if (event.target.closest("[data-open-specialist-ledger]")) {
+    view.expertMode = true;
+    view.panel = "city";
+    view.cityTab = "administration";
+    view.selectedCityId = WORLD.nation.capital;
+    view.scale = "city";
     renderPanelFromTop();
     return;
   }
@@ -3475,6 +4659,17 @@ elements.guideModal.addEventListener("click", (event) => {
   }
 });
 document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && view.tacticalBattle && (view.selectedTacticalUnitId || view.selectedTacticalCommanderId || view.selectedTacticalFortificationId)) {
+    if (!view.tacticalInspectorDismissed) view.tacticalInspectorDismissed = true;
+    else {
+      view.selectedTacticalUnitId = null;
+      view.selectedTacticalCommanderId = null;
+      view.selectedTacticalFortificationId = null;
+      view.tacticalInspectorDismissed = false;
+    }
+    renderTacticalBattle();
+    return;
+  }
   if (event.key === "Escape" && view.tileWindowOpen) {
     closeTileDetail();
     return;
@@ -3527,6 +4722,8 @@ elements.generatedWorldScroll.addEventListener("scroll", () => {
     elements.generatedWorldScroll.scrollLeft -= pageWidth;
   }
 });
+elements.tacticalMapScroll?.addEventListener("scroll", positionTacticalInspector, { passive: true });
+window.addEventListener("resize", positionTacticalInspector);
 window.addEventListener("beforeunload", () => persist());
 
 subdivideTerritoryTiles(elements.strategyMap);

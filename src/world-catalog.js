@@ -1,3 +1,5 @@
+import { getRaceTraitReference } from "./race-list.js";
+
 export const WORLD_SETTING_SOURCES = Object.freeze({
   races: {
     title: "異種族一覧",
@@ -69,7 +71,7 @@ export const NOTION_OTHER_RACE_IDS = Object.freeze([
   "ogre",
 ]);
 
-export const PEOPLES = Object.freeze({
+const PEOPLE_CATALOG = Object.freeze({
   acrane: {
     id: "acrane", name: "アクラネ", sigil: "蛛", family: "分類未詳", sourceKind: "異種族一覧",
     note: "名称のみ記載。生態・文化・国家帰属は未設定。",
@@ -141,6 +143,40 @@ export const PEOPLES = Object.freeze({
     auxiliary: true,
   },
 });
+
+// 旧来の世界設定名には、実種族だけでなく「アンデッド」「獣人」のような
+// 集合名も含まれる。実種族は race、大分類は category と明示して、いずれも
+// 必ず正本の特性レコードまで取得した状態で公開する。
+const PEOPLE_TRAIT_REFERENCES = Object.freeze({
+  acrane: { raceId: "arachne" },
+  elf: { raceId: "elf" },
+  goblin: { raceId: "goblin" },
+  orc: { raceId: "orc" },
+  undead: { categoryId: "undead" },
+  giant: { raceId: "giant" },
+  fairy: { raceId: "fairy" },
+  lamia: { raceId: "lamia" },
+  homunculus: { raceId: "homunculus" },
+  machine_life: { raceId: "machine_life" },
+  beastfolk: { categoryId: "beastfolk" },
+  phantom_beast: { raceId: "phantom_beast" },
+  angel: { raceId: "angel" },
+  demon: { raceId: "demon" },
+  ogre: { raceId: "ogre" },
+  human: { raceId: "human" },
+  dragon: { raceId: "dragon" },
+});
+
+export const PEOPLES = Object.freeze(Object.fromEntries(
+  Object.entries(PEOPLE_CATALOG).map(([peopleId, people]) => {
+    const reference = getRaceTraitReference(PEOPLE_TRAIT_REFERENCES[peopleId]);
+    return [peopleId, Object.freeze({
+      ...people,
+      traitReference: Object.freeze({ kind: reference.kind, id: reference.id }),
+      traits: reference.profile,
+    })];
+  }),
+));
 
 // Notion由来の種族設定と、ゲーム内で用いる代表像の演出設定を分離する。
 // 年齢・役職・表情は種族そのものの固定属性ではなく、今回登場する一代表のもの。

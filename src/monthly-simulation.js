@@ -58,6 +58,25 @@ import {
 import { advanceWarTheater, createWarTheater, normalizeWarTheater } from "./war-map.js";
 import { createGeneratedWorldState, normalizeGeneratedWorldState } from "./generated-world-system.js";
 import {
+  CENTRALIZATION_STAGES,
+  HISTORY_POLICIES,
+  LEVIATHAN_POLICIES,
+  NATIONAL_REFORM_BUDGETS,
+  NATIONAL_REFORM_SYSTEMS,
+  REFORM_CONCESSIONS,
+  adoptHistoryPolicy,
+  advanceCentralizationCampaign,
+  advanceLeviathanCycle,
+  deriveCentralizationCampaignStatus,
+  deriveHistoricalRuleEffects,
+  deriveLeviathanStatus,
+  getCentralizationPrimaryDecisions,
+  normalizeCentralizationCampaign,
+  resolveNationalReforms,
+  setLeviathanPolicy,
+  startNationalReform,
+} from "./centralization-campaign.js";
+import {
   TOWN_COMMAND_IDS,
   advanceTownAdministration,
   applyTownCommand,
@@ -112,6 +131,14 @@ export {
 export { HISTORY_SCHEMA_VERSION, PRESSURE_DEFINITIONS };
 export { TOWN_COMMAND_IDS, isTownCommand };
 export { AFTERMATH_DECISIONS, AFTERMATH_POLICIES, BORDER_SETTLEMENTS, CAMPAIGN_ACTS, FOREIGN_AGENDAS, OFFICER_DEMAND_RESPONSES, OFFICER_POLITICS };
+export {
+  CENTRALIZATION_STAGES,
+  HISTORY_POLICIES,
+  LEVIATHAN_POLICIES,
+  NATIONAL_REFORM_BUDGETS,
+  NATIONAL_REFORM_SYSTEMS,
+  REFORM_CONCESSIONS,
+};
 
 export const FORCED_ORDER_RULES = {
   maximumOverage: 2,
@@ -435,13 +462,22 @@ export function normalizeWarState(state) {
     }
   });
   normalizeStrategicState(WORLD, state);
-  return normalizeHistoryState(WORLD, state);
+  normalizeHistoryState(WORLD, state);
+  return normalizeCentralizationCampaign(WORLD, state);
 }
 
-export function createInitialState() {
+export function createInitialState(options = {}) {
   const state = {
     version: 9, year: 317, month: 4, turn: 0, phase: "planning", nextOrderId: 1,
-    generatedWorld: createGeneratedWorldState({}, { year: 317, month: 4 }),
+    scenarioMode: options.scenarioMode === "generated" ? "generated" : "fixed",
+    generatedWorld: createGeneratedWorldState({
+      seed: options.seed,
+      width: options.width,
+      height: options.height,
+      plateCount: options.plateCount,
+      nationCount: options.nationCount,
+      playerNationId: options.playerNationId,
+    }, { year: 317, month: 4 }),
     rngSeed: 3170401, eventCooldowns: {}, eventPity: 0, pendingOrders: [], pendingEvent: null, pendingMonthReport: null,
     monthlyReports: [], annualReports: [], lastViewedReportId: null, governancePenalty: 0,
     legitimacy: 68, justification: 58, warExhaustion: 0, intelNetwork: 33,
@@ -679,6 +715,13 @@ export function deriveAdministrationNetwork(state) { return modelAdministrationN
 export function getCityAdministration(state, cityId) { return modelCityAdministration(WORLD, state, cityId, deriveCityMetrics(state, cityId)); }
 export function getRegionAuthority(state, cityId) { return modelRegionAuthority(WORLD, state, cityId); }
 export function getCentralizationResult(state) { return modelCentralizationResult(WORLD, state); }
+export function getCentralizationCampaignStatus(state) { return deriveCentralizationCampaignStatus(WORLD, state); }
+export function getCentralizationDecisions(state) { return getCentralizationPrimaryDecisions(WORLD, state); }
+export function getHistoricalRuleEffects(state, regionId = null) { return deriveHistoricalRuleEffects(WORLD, state, regionId); }
+export function getLeviathanStatus(state) { return deriveLeviathanStatus(WORLD, state); }
+export function startNationalReformPackage(state, input) { return startNationalReform(WORLD, state, input); }
+export function chooseHistoryPolicy(state, policyId) { return adoptHistoryPolicy(WORLD, state, policyId); }
+export function chooseLeviathanPolicy(state, policyId) { return setLeviathanPolicy(WORLD, state, policyId); }
 export function getAuthorityReform(state, cityId, domainId) { return modelAuthorityReformOptions(WORLD, state, cityId, domainId); }
 export function startAuthorityReform(state, cityId, domainId, methodId, options = {}) {
   if (state.phase !== "planning") throw new Error("事件対応中は権限改革を開始できません");
@@ -1531,12 +1574,17 @@ function annualReport(state, year) {
 }
 
 function finalizeMonth(state, report) {
+  const chapterWasComplete = state.monthlyReports.some((entry) => entry.campaign?.ending);
   state.monthlyReports.unshift(report); state.monthlyReports = state.monthlyReports.slice(0, 120);
   if (state.month === 12) state.annualReports.unshift(annualReport(state, state.year));
   state.turn += 1; state.month += 1;
   if (state.month > 12) { state.month = 1; state.year += 1; }
   state.phase = "planning"; state.pendingEvent = null; state.pendingMonthReport = null;
-  if (state.campaign?.ending) {
+  if (state.centralizationCampaign?.ending) {
+    state.council.pending = false;
+  } else if (state.campaign?.ending && !chapterWasComplete) {
+    // 灰冠峠の三幕完了は国家キャンペーンの第一章完了。完了月だけ
+    // 報告を優先し、以後の季節評定は通常どおり続ける。
     state.council.pending = false;
   } else if ([3, 6, 9, 12].includes(state.month)) {
     state.council.pending = true;
@@ -1576,6 +1624,7 @@ export function commitMonth(state) {
   progressWork(next, actions);
   advanceOfficerPromises(WORLD, next);
   actions.push(...resolveAuthorityReforms(WORLD, next));
+  actions.push(...resolveNationalReforms(WORLD, next));
   actions.push(...resolveDelegatedAdministration(WORLD, next));
   actions.push(...applyAdministrativeOverload(WORLD, next));
   const cities = Object.keys(next.cities).map((cityId) => applyCityMonth(next, cityId, opening[cityId]));
@@ -1585,12 +1634,20 @@ export function commitMonth(state) {
   const war = resolveWarMonth(next);
   const occupations = resolveOccupations(next);
   advanceCampaignState(WORLD, next);
+  actions.push(...advanceCentralizationCampaign(WORLD, next));
+  actions.push(...advanceLeviathanCycle(WORLD, next));
   const monthName = formatDate(next).split(" ")[1];
   const report = {
     id: `month-${next.year}-${next.month}`, year: next.year, month: next.month, monthName,
     season: seasonForMonth(next.month).name, cities, towns, aggression, war, occupations, events: [], actions,
     foreignDispatches, officerReactions: clone(next.monthlyPoliticalReactions),
     campaign: { act: next.campaign.act, resolution: next.campaign.resolution, aftermathPolicy: next.campaign.aftermathPolicy, ending: clone(next.campaign.ending) },
+    centralization: {
+      stageId: next.centralizationCampaign.stageId,
+      crisisMonths: next.centralizationCampaign.crisis?.months ?? 0,
+      ending: clone(next.centralizationCampaign.ending),
+    },
+    leviathan: deriveLeviathanStatus(WORLD, next),
     realm: {},
   };
   next.monthlyPoliticalReactions = [];

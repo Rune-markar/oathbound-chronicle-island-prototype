@@ -371,6 +371,7 @@ export function recordHistoricalEvent(world, state, input) {
     created,
     destroyed,
     inheritedFrom,
+    bindings: [...(input.bindings ?? [])],
     accounts: input.accounts ?? null,
   };
   history.events.push(event);
@@ -467,6 +468,7 @@ function recordActionHistory(world, state, actions) {
         locations: Object.keys(state.cities),
         causedBy: ["condition-administrative-overload"],
         effects: [`condition-bureaucratic-delay-${dateId(state)}`],
+        bindings: [{ type: "state", path: "administration" }, { type: "city_collection", path: "internal.administrativeEfficiency" }],
       })];
     }
     return [];
@@ -556,6 +558,7 @@ export function recordResolvedWorldEvent(world, state, input) {
     locations: [input.regionId],
     causedBy: [pressureNodeId, ...legacyCauses],
     effects: effectLabels(input.effect).map((label) => `${label}-${dateId(state)}-${input.regionId}`),
+    bindings: [{ type: "pressure", regionId: input.regionId, pressureId: pressure?.pressureId ?? EVENT_PRESSURE_MAP[input.eventId] ?? "administration" }, { type: "city", cityId: input.regionId, path: "resources" }],
     accounts: {
       worldTruth: `${input.title}は蓄積圧力 ${Math.round(pressure?.value ?? 0)} が顕在化した事件である。`,
       historicalRecord: `王国記録は「${input.choiceName}」を公式対応として記す。`,
@@ -635,4 +638,48 @@ export function getHistoricalOverview(world, state, regionId = null) {
     accounts: events.filter((event) => event.accounts).slice(0, 6),
     latestTrace: events[0] ? traceHistoricalCauses(state, events[0].id) : [],
   };
+}
+
+function bindingExists(state, binding) {
+  if (!binding || typeof binding !== "object") return false;
+  if (binding.type === "state") return Boolean(binding.path) && binding.path.split(".").reduce((value, key) => value?.[key], state) !== undefined;
+  if (binding.type === "city_collection") return Object.values(state.cities ?? {}).some((city) => binding.path.split(".").reduce((value, key) => value?.[key], city) !== undefined);
+  if (binding.type === "city") return Boolean(state.cities?.[binding.cityId]);
+  if (binding.type === "pressure") return Boolean(state.history?.pressures?.[binding.regionId]?.[binding.pressureId]);
+  if (binding.type === "history_policy") return state.centralizationCampaign?.historyPolicies?.some((policy) => policy.id === binding.id) === true;
+  if (binding.type === "local_response") return state.centralizationCampaign?.localResponses?.some((response) => response.id === binding.id) === true;
+  if (binding.type === "national_reform") return state.centralizationCampaign?.reforms?.some((reform) => reform.id === binding.id) === true;
+  if (binding.type === "centralization_stage") return state.centralizationCampaign?.stageHistory?.some((entry) => entry.stageId === binding.id) === true;
+  if (binding.type === "centralization_ending") return state.centralizationCampaign?.ending?.id === binding.id;
+  if (binding.type === "leviathan") return Boolean(state.leviathan);
+  return false;
+}
+
+function inferredEffectBinding(state, event, effectId) {
+  if (event.type === "state_formation") return ["institution-selena-crown", "institution-provincial-council"].includes(effectId);
+  if (event.type === "privilege_grant") return state.administration?.privileges?.some((privilege) => privilege.id === effectId) === true;
+  if (event.type === "pressure_manifestation") return Boolean(state.history?.pressures?.[event.locations?.[0]]);
+  if (event.type === "institutional_reform") {
+    const regionId = event.locations?.[0];
+    return state.administration?.authorities?.some((authority) => authority.regionId === regionId) === true;
+  }
+  return false;
+}
+
+/**
+ * Finds result identifiers which exist in the chronicle but have no live rules
+ * object behind them. A binding points to actual state changed by the event;
+ * seeded prehistory and legacy reform events use narrow structural inference.
+ */
+export function auditHistoricalEffectBindings(state) {
+  const orphanEffects = [];
+  (state.history?.events ?? []).forEach((event) => {
+    const hasLiveBinding = (event.bindings ?? []).some((binding) => bindingExists(state, binding));
+    [...(event.effects ?? []), ...(event.created ?? []), ...(event.destroyed ?? [])].forEach((effectId) => {
+      if (!hasLiveBinding && !inferredEffectBinding(state, event, effectId)) {
+        orphanEffects.push({ eventId: event.id, eventType: event.type, effectId });
+      }
+    });
+  });
+  return { valid: orphanEffects.length === 0, orphanEffects };
 }

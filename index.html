@@ -11,6 +11,116 @@
   <body>
     <div class="grain" aria-hidden="true"></div>
 
+    <section class="launch-screen" id="launchScreen" aria-labelledby="launchTitle">
+      <div class="launch-atmosphere" aria-hidden="true"><i></i><i></i><i></i></div>
+      <header class="launch-brand">
+        <span>OATHBOUND CHRONICLE / DEVELOPMENT BUILD</span>
+        <h1 id="launchTitle"><small>誓界記</small>王冠と灰冠の年代記</h1>
+        <p>歴史的背景を緻密に読み、盟約王国を完全な中央集権国家へ作り替える。</p>
+      </header>
+      <div class="launch-actions">
+        <button class="launch-primary" type="button" data-launch-action="continue">
+          <small>CONTINUE CHRONICLE</small><strong>年代記を開く</strong><span>保存済みの統治から再開</span>
+        </button>
+        <button type="button" data-launch-action="new">
+          <small>FIXED CHRONICLE</small><strong>セレナ王国で開始</strong><span>固定された歴史・三州・灰冠峠から開始</span>
+        </button>
+        <button type="button" data-launch-action="new-generated">
+          <small>GENERATED CHRONICLE</small><strong>生成国家で開始</strong><span>地形から集落・勢力・妥協・特権を生成</span>
+        </button>
+      </div>
+      <section class="developer-launcher" aria-label="開発者メニュー">
+        <header><div><small>DEVELOPER ACCESS</small><h2>システム検証メニュー</h2></div><span>BUILD 0.5 · LOCAL</span></header>
+        <div class="developer-launch-grid">
+          <button class="is-featured" type="button" data-developer-action="battle"><i>⚔</i><span><strong>戦術戦闘テスト</strong><small>20×14部隊戦 · 命令／士気／潰走／追撃</small></span><b>起動</b></button>
+          <button type="button" data-developer-action="realm"><i>♜</i><span><strong>国家運営UI</strong><small>評定・都市・外交・軍制の統合画面</small></span><b>開く</b></button>
+          <button type="button" data-developer-action="world"><i>界</i><span><strong>世界生成</strong><small>正方形タイル世界と国家生成を確認</small></span><b>開く</b></button>
+          <button type="button" data-developer-action="war-council"><i>軍</i><span><strong>戦争評議会</strong><small>政治目的・兵站・講和判断を確認</small></span><b>開く</b></button>
+          <a href="./terrain-preview.html"><i>地</i><span><strong>地形生成ラボ</strong><small>地形モデルと描画結果を単独検証</small></span><b>別画面</b></a>
+          <a href="./manual.html"><i>書</i><span><strong>仕様書・遊び方</strong><small>国家運営システムの詳細マニュアル</small></span><b>別画面</b></a>
+        </div>
+      </section>
+      <footer><span>LOCAL PROTOTYPE</span><span>データはこの端末のブラウザに保存されます</span></footer>
+    </section>
+
+    <section class="battle-preparation-screen is-hidden" id="battlePreparationScreen" aria-labelledby="battlePreparationTitle">
+      <header class="battle-preparation-header">
+        <div><span>ORDER OF BATTLE / MUSTERING PHASE</span><h1 id="battlePreparationTitle">灰冠平原・戦闘前編成</h1><p>参陣人物、陣形、初期配置、兵站計画を確定してください。</p></div>
+        <button type="button" data-preparation-action="exit">開発メニューへ戻る</button>
+      </header>
+      <div class="battle-preparation-layout">
+        <aside class="battle-participant-panel" aria-labelledby="battleParticipantHeading">
+          <header><div><small>PARTICIPANTS</small><h2 id="battleParticipantHeading">参陣人物</h2></div><b id="battleParticipantCount">0 / 3</b></header>
+          <p>軍団長・副将・軍師として最大3名を選択。参加者は戦場上の指揮官となり、配下部隊を分担します。</p>
+          <div class="battle-participant-list" id="battleParticipantList"></div>
+        </aside>
+        <main class="battle-deployment-panel">
+          <header><div><small>FORMATION &amp; DEPLOYMENT</small><h2>陣形・初期配置</h2></div><div class="battle-placement-mode" id="battlePlacementMode" role="group" aria-label="配置方式"></div></header>
+          <div class="battle-preparation-formations" id="battlePreparationFormations" role="group" aria-label="陣形選択"></div>
+          <div class="battle-preparation-map-shell">
+            <div class="battle-preparation-map" id="battlePreparationMap" role="grid" aria-label="戦闘前配置図"></div>
+          </div>
+          <div class="battle-deployment-legend"><span><i class="is-deployment"></i>自軍展開区域</span><span><i class="is-player"></i>自軍</span><span><i class="is-enemy"></i>敵軍</span><p id="battleDeploymentHelp"></p></div>
+        </main>
+        <aside class="battle-logistics-panel" aria-labelledby="battleLogisticsHeading">
+          <header><small>LOGISTICS PLAN</small><h2 id="battleLogisticsHeading">兵站・継戦能力</h2></header>
+          <div class="battle-sustainment-card" id="battleSustainmentCard" aria-live="polite"></div>
+          <div class="battle-logistics-options" id="battleLogisticsOptions" role="radiogroup" aria-label="兵站計画"></div>
+          <p class="battle-logistics-note">継戦日数は補給線が途絶し、携行糧秣だけで行動する場合の概算です。兵数と兵種構成、参陣本部要員から再計算します。</p>
+        </aside>
+      </div>
+      <footer class="battle-preparation-footer">
+        <div id="battlePreparationReadiness" aria-live="polite"></div>
+        <button class="is-primary" type="button" data-preparation-action="start">この編成で戦闘を開始</button>
+      </footer>
+    </section>
+
+    <section class="tactical-battle-screen is-hidden" id="tacticalBattleScreen" aria-labelledby="tacticalBattleTitle">
+      <header class="tactical-battle-header">
+        <div><span>FIELD COMMAND / TACTICAL ENGINE</span><h1 id="tacticalBattleTitle">灰冠平原・部隊戦闘試験</h1></div>
+        <div class="tactical-battle-header-actions">
+          <button type="button" data-battle-action="result" id="tacticalResultButton" hidden>戦果確認</button>
+          <button type="button" data-battle-action="reset">再編成</button>
+          <details class="tactical-more-actions">
+            <summary>試験メニュー</summary>
+            <div>
+              <button type="button" data-battle-action="fortification-demo" title="開発用：城の完全包囲と基礎耐久力低下を確認">城塞包囲試験</button>
+              <button type="button" data-battle-action="encirclement-demo" title="開発用：完全包囲撃滅後の捕縛・処遇画面を確認">包囲殲滅結果</button>
+            </div>
+          </details>
+          <button type="button" data-battle-action="exit">開発メニュー</button>
+        </div>
+      </header>
+      <section class="tactical-battle-summary" id="tacticalBattleSummary" aria-live="polite"></section>
+      <div class="tactical-battle-layout">
+        <main class="tactical-map-panel">
+          <section class="tactical-deployment-bar" id="tacticalDeploymentBar" aria-label="初期陣形配置"></section>
+          <div class="tactical-map-toolbar">
+            <p><b>操作</b> 味方を選ぶと移動可能範囲を表示。必要な指示を出して「進行」</p>
+            <span><i class="is-player"></i>王国軍</span><span><i class="is-enemy"></i>公国軍</span><span><i class="is-command"></i>指揮官</span><span><i class="is-reachable"></i>移動可能</span>
+          </div>
+          <div class="tactical-map-scroll">
+            <div class="tactical-battle-map" id="tacticalBattleMap" role="grid" aria-label="20列14行の戦闘マップ"></div>
+          </div>
+        </main>
+        <aside class="tactical-battle-inspector is-hidden" id="tacticalBattleInspector" role="dialog" aria-live="polite" aria-hidden="true" aria-label="選択中のユニット情報"></aside>
+      </div>
+      <footer class="tactical-battle-footer">
+        <details class="tactical-battle-log"><summary><strong>戦闘記録</strong><small>必要なときに表示</small></summary><div id="tacticalBattleLog"></div></details>
+        <div class="tactical-turn-actions">
+          <button class="is-primary" type="button" data-battle-action="execute">進行</button>
+        </div>
+      </footer>
+    </section>
+
+    <section class="tactical-result-screen is-hidden" id="tacticalResultScreen" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="tacticalResultHeading">
+      <div id="tacticalResultContent"></div>
+    </section>
+
+    <section class="commander-disposition-screen is-hidden" id="commanderDispositionScreen" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="commanderDispositionHeading">
+      <div id="commanderDispositionContent"></div>
+    </section>
+
     <header class="grand-topbar">
       <button class="realm-identity" id="realmHome" type="button" aria-label="国家画面を開く">
         <span class="shield"><i>誓</i></span>
@@ -36,13 +146,14 @@
     </header>
 
     <section class="campaign-bar" id="campaignBar" aria-live="polite">
-      <div class="campaign-bar-goal"><small>主目標 · セレナ王</small><strong>灰冠峠の国境危機を収束させる</strong></div>
-      <div class="campaign-bar-next"><small>次にすること</small><strong>今季の方針を一つ選ぶ</strong></div>
+      <div class="campaign-bar-goal"><small>国家段階 · 盟約王国</small><strong>完全な中央集権国家を建設する</strong></div>
+      <div class="campaign-bar-next"><small>最大障壁</small><strong>第一章・灰冠峠を収束させる</strong></div>
     </section>
 
     <div class="strategy-shell">
       <aside class="left-dock" aria-label="国家メニュー">
         <nav class="primary-tabs" id="primaryTabs">
+          <button type="button" data-panel="centralization"><span>冠</span>国制</button>
           <button class="is-active" type="button" data-panel="council"><span>♜</span>評定</button>
           <button type="button" data-panel="spending"><span>¤</span>支出</button>
           <button type="button" data-panel="city"><span>城</span>都市</button>
@@ -435,13 +546,13 @@
         <button class="modal-close" type="button" data-close-guide aria-label="閉じる">×</button>
         <header class="guide-header">
           <span>CAMPAIGN BRIEF / あなたの役割</span>
-          <h1 id="guideTitle">三州を治め、灰冠峠の危機を解決する</h1>
-          <p>あなたはセレナ王です。数字を増やすこと自体ではなく、国境問題の原因を見抜き、限られた統治力と人材で解決することが目的です。</p>
+          <h1 id="guideTitle">歴史を読み、完全な中央集権国家を建設する</h1>
+          <p>あなたはセレナ王です。51個の権限セルを順番に処理するのではなく、国家級改革、人物、予算、譲歩を選び、地方勢力の反応と行政能力を統治します。</p>
         </header>
         <div class="guide-content">
           <section class="guide-mission">
-            <header><div><small>今回の主目標</small><h2>灰冠峠の国境危機を収束させる</h2></div><b id="guideProgress">0 / 3 達成</b></header>
-            <p>三州の金・食料・治安・民心を守りながら、次の三課題を解決します。</p>
+            <header><div><small>第一章</small><h2>灰冠峠の国境危機を収束させる</h2></div><b id="guideProgress">0 / 3 達成</b></header>
+            <p>灰冠峠の三幕は中央集権化キャンペーンの第一章です。完了後も、可視化・規格・官僚・軍事司法統一と集権後危機が続きます。</p>
             <div class="campaign-objective-list" id="guideObjectiveList"></div>
           </section>
           <section class="guide-turn-loop">
