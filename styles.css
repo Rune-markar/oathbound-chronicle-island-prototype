@@ -11679,7 +11679,7 @@ body.is-battle-preparation-open { overflow: hidden; }
 .adventure-facility-board > header p { max-width: 420px; margin: 0; color: #79715f; font-size: 9px; line-height: 1.5; text-align: right; }
 .guild-receptionist-desk { position: relative; min-width: 0; display: grid; grid-template-columns: 132px minmax(0, 1fr); gap: 15px; padding: 13px; overflow: hidden; border: 1px solid rgba(164, 124, 48, .42); background: linear-gradient(135deg, rgba(247, 240, 223, .96), rgba(225, 233, 235, .9)); box-shadow: inset 4px 0 #315f73, 0 8px 20px rgba(45, 53, 52, .12); }
 .guild-receptionist-desk::after { position: absolute; right: -35px; top: -45px; width: 130px; height: 130px; content: ""; border: 1px solid rgba(166, 128, 50, .13); border-radius: 50%; box-shadow: 0 0 0 15px rgba(166, 128, 50, .055), 0 0 0 31px rgba(49, 95, 115, .045); pointer-events: none; }
-.guild-receptionist-desk > figure { position: relative; z-index: 1; height: 182px; margin: 0; overflow: hidden; border: 1px solid rgba(166, 128, 50, .46); background: linear-gradient(180deg, #fcf6e9, #dce7e8); box-shadow: 0 6px 15px rgba(39, 55, 57, .18); }
+.guild-receptionist-desk > figure { position: relative; z-index: 1; height: 182px; margin: 0; overflow: clip; border: 1px solid rgba(166, 128, 50, .46); background: linear-gradient(180deg, #fcf6e9, #dce7e8); box-shadow: 0 6px 15px rgba(39, 55, 57, .18); }
 .guild-receptionist-desk > figure img { width: 100%; height: 100%; display: block; object-fit: contain; object-position: center top; transform: scale(1.68); transform-origin: 50% 18%; }
 .guild-receptionist-desk > figure figcaption { position: absolute; right: 5px; bottom: 5px; padding: 4px 5px; color: #fff2c4; background: rgba(31, 67, 82, .92); font: 900 6px/1 system-ui, sans-serif; letter-spacing: .09em; }
 .guild-receptionist-desk > div { position: relative; z-index: 1; min-width: 0; display: grid; align-content: center; gap: 7px; }
@@ -11688,13 +11688,13 @@ body.is-battle-preparation-open { overflow: hidden; }
 .guild-receptionist-desk > div > p { margin: 0; color: #6f6a5c; font-size: 9px; line-height: 1.55; }
 .guild-receptionist-desk ul { display: flex; flex-wrap: wrap; gap: 5px; margin: 1px 0 0; padding: 0; list-style: none; }
 .guild-receptionist-desk li { padding: 4px 6px; color: #315d69; border: 1px solid rgba(49, 95, 115, .25); background: rgba(255, 255, 255, .55); font-size: 7px; font-weight: 800; }
-.guild-receptionist-desk > div > section { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 2px; padding: 8px 9px; border-left: 3px solid #a58037; background: rgba(255, 255, 255, .54); }
-.guild-receptionist-desk > div > section span { min-width: 0; }
+.guild-receptionist-desk > div > section { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); align-items: stretch; gap: 7px; margin-top: 2px; padding: 8px 9px; border-left: 3px solid #a58037; background: rgba(255, 255, 255, .54); }
+.guild-receptionist-desk > div > section span { min-width: 0; width: 100%; }
 .guild-receptionist-desk > div > section span > * { display: block; }
 .guild-receptionist-desk > div > section small { color: #9a7636; font-size: 6px; font-weight: 900; letter-spacing: .1em; }
 .guild-receptionist-desk > div > section strong { margin-top: 2px; color: #315b66; font-size: 9px; }
 .guild-receptionist-desk > div > section p { margin: 2px 0 0; overflow: hidden; color: #787062; font-size: 7px; text-overflow: ellipsis; white-space: nowrap; }
-.guild-receptionist-desk > div > section button { flex: 0 0 auto; padding: 7px 9px; color: #fff1be; border: 1px solid rgba(224, 186, 89, .45); background: #315f73; font-size: 7px; font-weight: 900; }
+.guild-receptionist-desk > div > section button { width: 100%; padding: 7px 9px; color: #fff1be; border: 1px solid rgba(224, 186, 89, .45); background: #315f73; font-size: 7px; font-weight: 900; }
 .guild-contract-board > div { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .guild-contract-board article { min-width: 0; display: grid; gap: 12px; padding: 12px; border: 1px solid rgba(80, 102, 84, .23); background: rgba(255, 253, 246, .86); }
 .guild-contract-board article.is-active { border-color: #ae8032; background: #fff5d9; }
@@ -11835,8 +11835,6 @@ body.is-battle-preparation-open { overflow: hidden; }
 
 @media (max-width: 900px) {
   .guild-receptionist-desk { grid-template-columns: 112px minmax(0, 1fr); }
-  .guild-receptionist-desk > div > section { align-items: stretch; flex-direction: column; }
-  .guild-receptionist-desk > div > section button { width: 100%; }
   .guild-contract-board > div { grid-template-columns: 1fr; }
   .tavern-party-columns { grid-template-columns: 1fr; }
   .adventure-layout { grid-template-columns: 1fr; }
