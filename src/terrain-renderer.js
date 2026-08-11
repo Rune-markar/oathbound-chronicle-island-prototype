@@ -564,6 +564,7 @@ function worldObjectShape(type) {
 
 function worldObjectMarkers(world, nationMap, cellSize, visibleObjectIds = null) {
   const nationById = new Map(nationMap.nations.map((nation) => [nation.id, nation]));
+  const worldPixelWidth = world.width * cellSize;
   const objects = (Array.isArray(nationMap.objects) ? nationMap.objects : fallbackCapitalObjects(world, nationMap))
     .filter((object) => !visibleObjectIds || visibleObjectIds.has(object.id));
   const groupIds = { village: "nationVillages", town: "nationTowns", city: "nationCities", fishing_port: "nationFishingPorts", port: "nationPorts", bay_city: "nationBayCities", fort: "nationForts", castle: "nationCapitals" };
@@ -579,7 +580,18 @@ function worldObjectMarkers(world, nationMap, cellSize, visibleObjectIds = null)
       // becoming an unreadable icon pile on the regional camera.
       const baseSize = type === "castle" ? 1.38 : ["city", "bay_city"].includes(type) ? 1.22 : type === "fort" ? 1.08 : ["town", "port"].includes(type) ? 0.94 : 0.78;
       const scale = Math.max(0.54, cellSize * baseSize / 12);
-      return `<g class="world-object object-${type}${type === "castle" ? " nation-capital" : ""}" data-object-id="${escapeAttribute(object.id)}" data-object-type="${type}" transform="translate(${x.toFixed(2)} ${y.toFixed(2)}) scale(${scale.toFixed(3)})" filter="url(#markerShadow)"><title>${escapeAttribute(`${object.name} · ${nation?.name ?? "無主地"}`)}</title><rect x="-7" y="-7" width="14" height="14" rx="1.8" fill="${escapeAttribute(nation?.color ?? "#66777b")}" stroke="#fff0bd" stroke-width="1.05"/><rect x="-5.8" y="-5.8" width="11.6" height="11.6" rx="1" fill="#172629" fill-opacity=".3" stroke="#172326" stroke-width=".55"/>${worldObjectShape(type)}</g>`;
+      const className = `world-object object-${type}${type === "castle" ? " nation-capital" : ""}`;
+      const shape = `<rect x="-7" y="-7" width="14" height="14" rx="1.8" fill="${escapeAttribute(nation?.color ?? "#66777b")}" stroke="#fff0bd" stroke-width="1.05"/><rect x="-5.8" y="-5.8" width="11.6" height="11.6" rx="1" fill="#172629" fill-opacity=".3" stroke="#172326" stroke-width=".55"/>${worldObjectShape(type)}`;
+      const marker = (markerX, wrapCopy = false) => `<g class="${className}${wrapCopy ? " is-wrap-copy" : ""}" ${wrapCopy ? `data-wrap-copy="${escapeAttribute(object.id)}" aria-hidden="true"` : `data-object-id="${escapeAttribute(object.id)}" data-object-type="${type}"`} transform="translate(${markerX.toFixed(2)} ${y.toFixed(2)}) scale(${scale.toFixed(3)})" filter="url(#markerShadow)">${wrapCopy ? "" : `<title>${escapeAttribute(`${object.name} · ${nation?.name ?? "無主地"}`)}</title>`}${shape}</g>`;
+      const wrappedMarkers = [marker(x)];
+      if (world.config.wrapX) {
+        // The SVG itself clips filters and shapes at its viewport. Mirror only
+        // edge-crossing icons so the three repeated map images join cleanly.
+        const visualRadius = 10 * scale;
+        if (x - visualRadius < 0) wrappedMarkers.push(marker(x + worldPixelWidth, true));
+        if (x + visualRadius > worldPixelWidth) wrappedMarkers.push(marker(x - worldPixelWidth, true));
+      }
+      return wrappedMarkers.join("");
     }).join("");
     return `<g id="${groupIds[type]}" class="world-object-group is-${type}">${markers}</g>`;
   }).join("");

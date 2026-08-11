@@ -11,6 +11,7 @@ import {
   CENTRALIZATION_STAGES,
   CAREER_STAGE_ROUTE,
   CAREER_STAGES,
+  PERSONAL_CHRONICLE_TICKER_LIMIT,
   COMMANDS,
   DOCTRINES,
   EVENT_DEFINITIONS,
@@ -112,6 +113,7 @@ import {
   advanceCareerMonth,
   executeGovernanceCommand,
   getCareerStage,
+  getPersonalChronicleView,
   performCareerAction,
   performVillageAction,
   reassignDelegatedRole,
@@ -148,6 +150,7 @@ import {
 } from "./world-catalog.js";
 import { createGameAudio } from "./audio.js";
 import { subdivideTerritoryTiles } from "./map-tiles.js";
+import { squareWrappedDeltaX } from "./square-grid.js";
 import { WAR_MAP_TERRAINS, getWarRegion } from "./war-map.js";
 import {
   RESOURCE_CATEGORIES,
@@ -167,8 +170,9 @@ import {
   getGeneratedBarbarianView,
   getGeneratedColonizationView,
   getGeneratedExpeditionReachableRegions,
+  getGeneratedExpeditionTravelOptions,
   getGeneratedShippingDestinations,
-  getGeneratedGeopoliticalView,
+  getGeneratedWorldIntelligenceView,
   getGeneratedRecognitionView,
   getGeneratedWorldSiteView,
   getGeneratedWorldTimeView,
@@ -204,9 +208,9 @@ import {
   returnToVillageForRecovery,
   resolveDungeonTacticalBattle,
   startDungeonRun,
+  startGeneratedTravelEncounter,
   withdrawDungeonBattle,
 } from "./adventure-system.js";
-import { GEOPOLITICAL_MODEL_REFERENCES, GEOPOLITICAL_PULL_SET } from "./geopolitical-world.js";
 import { terrainSvgDataUrl } from "./terrain-renderer.js";
 import {
   BATTLE_FORTIFICATION_TYPES,
@@ -437,7 +441,9 @@ const view = {
   pendingForceRole: null,
   atlasMode: "generated",
   generatedMapScale: "region",
+  generatedMapLegendOpen: true,
   pendingGeneratedDestinationId: null,
+  pendingGeneratedTravelMode: "route",
   selectedGeneratedSite: null,
   generatedSiteInfoOpen: false,
   generatedTravel: null,
@@ -531,7 +537,8 @@ const elements = {
   generatedTravelClock: document.querySelector("#generatedTravelClock"),
   generatedTravelDuration: document.querySelector("#generatedTravelDuration"),
   generatedTravelProgress: document.querySelector("#generatedTravelProgress"),
-  personalMapOverlay: document.querySelector("#personalMapOverlay"),
+  generatedWorldMapHelp: document.querySelector("#generatedWorldMapHelp"),
+  generatedMapLegendToggle: document.querySelector("[data-generated-map-legend-toggle]"),
   terrainLegend: document.querySelector("#terrainLegend"),
   mapModeEyebrow: document.querySelector("#mapModeEyebrow"),
   mapCaptionTitle: document.querySelector("#mapCaptionTitle"),
@@ -1049,7 +1056,7 @@ async function resetChronicle(options = {}) {
       selectedType: null, selectedId: null, selectedTileName: null, selectedTerrain: null, selectedTerrainType: null, tileWindowOpen: false,
       selectedCityId: "selene", cityTab: "overview", selectedTownId: "mugiwano", townTab: "overview", selectedVillageId: null, selectedVillageFacilityId: "inn", villageFacilityOpen: false, tavernSection: "requests", villageConversation: null, locationScene: null, selectedLocationZoneId: null, locationSceneResult: null, adventureOpen: false, selectedAuthorityDomain: "justice", selectedNationalReformSystem: "population_land_knowledge",
       selectedFacilityId: "farmland", selectedCountryId: "valka", objectiveId: "transit", warMapView: "atlas", warRegionId: null, selectedWarHexId: null, warCouncilOpen: false, assignmentOpen: false,
-      pendingTownId: null, guideOpen: false, endingOpen: false, resetOpen: false, expertMode: false, atlasMode: "generated", generatedMapScale: "region", pendingGeneratedDestinationId: null,
+      pendingTownId: null, guideOpen: false, endingOpen: false, resetOpen: false, expertMode: false, atlasMode: "generated", generatedMapScale: "region", generatedMapLegendOpen: true, pendingGeneratedDestinationId: null, pendingGeneratedTravelMode: "route",
       selectedGeneratedNationId: nextState.generatedWorld.playerNationId, worldNationFilter: "all", focusedTownCommandId: null,
       characterCreationOpen: false, characterDraft: null,
     });
@@ -2060,8 +2067,6 @@ function worldModeSwitch() {
       <button type="button" data-world-mode="generated" class="${view.atlasMode === "generated" ? "is-active" : ""}">生成世界</button>
       <button type="button" data-world-mode="geopolitics" class="${view.atlasMode === "geopolitics" ? "is-active" : ""}">世界情勢</button>
       <button type="button" data-world-mode="nations" class="${view.atlasMode === "nations" ? "is-active" : ""}">国家</button>
-      <button type="button" data-world-mode="peoples" class="${view.atlasMode === "peoples" ? "is-active" : ""}">原案種族</button>
-      <button type="button" data-world-mode="creatures" class="${view.atlasMode === "creatures" ? "is-active" : ""}">原案巨獣</button>
     </div>
   `;
 }
@@ -2231,7 +2236,7 @@ function renderPersonalMapEntryActions(personalMap) {
   return `<div class="personal-map-entry-actions">${buttons || "<p>この地方で入れる集落はまだ見つかっていません。</p>"}</div>`;
 }
 
-function renderPersonalMapOverlay(personalMap = getPersonalMapView(state, currentAdventureContext())) {
+function renderPersonalMapCommand(personalMap = getPersonalMapView(state, currentAdventureContext())) {
   const result = personalMap.lastResult;
   const resultIcon = result?.itemIcon ?? result?.enemySymbol ?? result?.symbol ?? ({ move: "歩", nothing: "―" }[result?.type] ?? "探");
   const resultMarkup = result ? `
@@ -2244,7 +2249,7 @@ function renderPersonalMapOverlay(personalMap = getPersonalMapView(state, curren
       <i aria-hidden="true">${escapeHtml(location.symbol)}</i><span><small>近くの発見済み地点 · 約${formatGeneratedTravelDuration(personalMapTravelMinutes(personalMap.currentLocation, location))}</small><strong>${escapeHtml(location.name)}</strong></span><b>移動</b>
     </button>`).join("");
   const life = state.player.villageLife;
-  return `<section class="personal-map-overlay-card" aria-label="${escapeHtml(personalMap.regionName)}の地方内行動">
+  return `<section class="personal-map-command" aria-label="${escapeHtml(personalMap.regionName)}の地方内行動">
     <header><div><small>LOCAL ACTIONS · ${escapeHtml(personalMap.regionName)}</small><h2><i aria-hidden="true">${escapeHtml(personalMap.currentLocation.symbol)}</i>${escapeHtml(personalMap.currentLocation.name)}</h2></div><strong>${personalMap.locations.filter((location) => location.discovered).length} / ${personalMap.locations.length}地点</strong></header>
     <div class="personal-map-vitals ${life.hp < 35 ? "is-danger" : ""}"><strong>HP ${life.hp} / ${life.maxHp}</strong><span>${life.hp < 35 ? "重傷：探索・ダンジョン進入は危険" : escapeHtml(villageConditionSummary(life))}</span></div>
     <p class="personal-map-current-copy">${escapeHtml(personalMap.currentLocation.description)}</p>
@@ -2286,32 +2291,13 @@ function paintGeneratedWorldTime(timeView) {
 function renderGeneratedWorldPanel() {
   const { runtime, generatedState, playerNation, expeditionRegion, expeditionTile } = getGeneratedWorldView(state);
   const currentNation = runtime.nationById.get(expeditionRegion.nationId) ?? playerNation;
+  const personalMap = getPersonalMapView(state, { runtime, region: expeditionRegion, nation: currentNation });
   const worldTime = getGeneratedWorldTimeView(state);
-  const reachableRegions = getGeneratedExpeditionReachableRegions(state);
   const shippingDestinations = getGeneratedShippingDestinations(state);
   const currentPort = runtime.nations.objects.find((object) => object.maritime && object.tileIndex === expeditionTile.index) ?? null;
-  const discoveredRegionCount = new Set([
-    ...generatedState.discoveredRegionIds,
-    expeditionRegion.id,
-    ...expeditionRegion.neighborIds,
-  ]).size;
   const nationOptions = runtime.nations.nations.filter((nation) => !nation.dissolved).map((nation) => `
     <option value="${nation.id}" ${nation.id === playerNation.id ? "selected" : ""}>${escapeHtml(nation.name)} · ${escapeHtml(nation.government)}</option>
   `).join("");
-  let pendingEntry = reachableRegions.find((entry) => entry.regionId === view.pendingGeneratedDestinationId) ?? null;
-  if (!pendingEntry) view.pendingGeneratedDestinationId = null;
-  const pendingRegion = pendingEntry ? runtime.regionById.get(pendingEntry.regionId) : null;
-  const pendingNation = pendingRegion ? runtime.nationById.get(pendingRegion.nationId) : null;
-  const moveButtons = reachableRegions.map((entry) => {
-    const region = runtime.regionById.get(entry.regionId);
-    const nation = runtime.nationById.get(region.nationId);
-    const selected = entry.regionId === view.pendingGeneratedDestinationId;
-    return `<button type="button" data-generated-region-candidate-id="${region.id}" data-terrain="${region.dominantTerrain}" data-relief="${region.dominantRelief}" class="${selected ? "is-selected" : ""}" aria-pressed="${selected}">
-      <span class="generated-region-visual" aria-hidden="true"><i></i><u></u></span>
-      <span class="generated-region-copy"><b>${escapeHtml(region.name)}</b><small>${escapeHtml(nation.name)} · ${escapeHtml(generatedRegionTerrainLabel(region))}</small></span>
-      <em><b>${entry.cost}</b><small>移動力 · 約${formatGeneratedTravelDuration(entry.travelMinutes)}</small></em>
-    </button>`;
-  }).join("");
   const shippingButtons = shippingDestinations.map((entry) => `
     <button type="button" data-generated-shipping-site-id="${entry.siteId}" ${entry.canMove ? "" : "disabled"}>
       <i aria-hidden="true">${escapeHtml({ fishing_port: "漁", port: "港", bay_city: "湾" }[entry.type] ?? "船")}</i>
@@ -2319,15 +2305,7 @@ function renderGeneratedWorldPanel() {
       <em>移動力 ${entry.cost}<small>約${formatGeneratedTravelDuration(entry.travelMinutes)}</small></em>
     </button>`).join("");
   return `
-    <section class="generated-move-command">
-      <header><div><small>COMMAND</small><h2>地方へ移動</h2></div><strong>${reachableRegions.length}候補</strong></header>
-      <p>地図上の「進む」をマウスでクリック／タップすると、その地方へ直接移動します。左の候補一覧では内容を確認してから移動できます。</p>
-      <div class="generated-region-choices">${moveButtons || "<p>今月の移動力で進める隣接地方はありません。</p>"}</div>
-      <div class="generated-move-selection">
-        ${pendingRegion ? `<span><small>選択中</small><strong>${escapeHtml(pendingRegion.name)}</strong></span><span><small>${escapeHtml(pendingNation.name)} · ${escapeHtml(generatedRegionTerrainLabel(pendingRegion))}</small><strong>消費 ${pendingEntry.cost} · 約${formatGeneratedTravelDuration(pendingEntry.travelMinutes)}</strong></span>` : "<small>移動先を選択してください。</small>"}
-      </div>
-      <button type="button" class="generated-move-confirm" data-generated-move-confirm ${pendingRegion ? "" : "disabled"}>この地方へ移動</button>
-    </section>
+    ${renderPersonalMapCommand(personalMap)}
     <section class="generated-shipping-command">
       <header><div><small>SEA TRANSPORT</small><h2>海運・海路</h2></div><strong>${currentPort ? `${shippingDestinations.length}航路` : "未入港"}</strong></header>
       <p>${currentPort ? `${escapeHtml(currentPort.name)}から、海路で遠方の沿岸都市へ移動できます。` : "海運を利用するには、世界地図上の漁港・港・湾口都市へ移動してください。"}</p>
@@ -2343,7 +2321,7 @@ function renderGeneratedWorldPanel() {
       </div>
       <label><span>プレイヤー国家</span><select data-generated-player-nation>${nationOptions}</select></label>
     </section>
-    <p class="world-source-note">地方間は生成世界の移動力で移動します。沿岸都市に停泊中は海運で航路接続先へ渡れます。地方内の「探索」「移動」「入場」は、世界地図上の半透明HUDから行います。</p>
+    <p class="world-source-note">地方内の「探索」「移動」「入場」は左の地方内行動欄から行います。地方間は地図上の「進む」で行き先と所要時間を確認してから移動し、沿岸都市に停泊中は海運で航路接続先へ渡れます。</p>
   `;
 }
 
@@ -2397,82 +2375,29 @@ function renderWorldNations() {
 }
 
 function renderWorldGeopolitics() {
-  const { runtime, playerNation } = getGeneratedWorldView(state);
-  const geopolitical = getGeneratedGeopoliticalView(state);
-  const barbarianFrontier = getGeneratedBarbarianView(state);
-  const selected = runtime.nationById.get(view.selectedGeneratedNationId) ?? playerNation;
-  view.selectedGeneratedNationId = selected.id;
-  const selectedEntry = geopolitical.nations.find((entry) => entry.nation.id === selected.id);
-  const condition = selectedEntry.condition;
-  const profile = selectedEntry.profile;
-  const selectedRelations = geopolitical.relations.filter((relation) => relation.nationIds.includes(selected.id))
-    .sort((left, right) => Number(right.atWar) - Number(left.atWar) || right.tension - left.tension || right.trade - left.trade);
-  const relationRows = selectedRelations.map((relation) => {
-    const other = relation.nations.find((nation) => nation.id !== selected.id);
-    const relationTone = relation.atWar || relation.tension >= 45
-      ? "danger"
-      : relation.allied || relation.relation >= 35 ? "positive" : "calm";
-    const pendingOffer = relation.ceasefireOffer ?? relation.alignmentOffer;
-    const offerLabel = relation.ceasefireOffer ? "停戦案" : relation.alignmentOffer ? "同盟案" : null;
-    const offerText = pendingOffer
-      ? ` · ${offerLabel}${pendingOffer.to === selected.id ? "を受領" : "を提示中"}（残り${pendingOffer.monthsRemaining}か月）`
-      : "";
-    return `
-      <article class="geopolitical-relation is-${relationTone}">
-        <header><strong>${escapeHtml(other.name)}</strong><b>${escapeHtml(relation.status)}</b></header>
-        <div><span>関係 ${relation.relation >= 0 ? "+" : ""}${relation.relation}</span><span>緊張 ${relation.tension}</span><span>交易 ${relation.trade}</span></div>
-        <small>${relation.structure.sharedBorder ? `接壌 ${relation.structure.sharedBorder}区画 · 国境透過性 ${relation.structure.permeability}` : `非接壌 · 距離係数 ${Math.round((1 - relation.structure.distanceRatio) * 100)}`}${offerText}</small>
-      </article>`;
-  }).join("");
-  const currentPeriodEvents = geopolitical.events.filter((event) => event.period === geopolitical.geopolitics.lastAdvancedPeriod);
-  const eventRows = (currentPeriodEvents.length ? currentPeriodEvents : geopolitical.events.slice(0, runtime.nations.nations.length)).map((event) => {
-    const drivers = event.drivers.map((entry) => `${escapeHtml(entry.label)} ${entry.value}`).join(" · ");
-    return `<article class="geopolitical-event is-${event.tone}"><header><small>${escapeHtml(event.period)}</small><strong>${escapeHtml(event.title)}</strong></header><p>${escapeHtml(event.summary)}</p><span>判断要因：${drivers}</span></article>`;
-  }).join("") || '<p class="world-source-note">世界は生成済みです。次の月から、各国が地理条件と世界状態に基づいて独自に行動します。</p>';
-  const knownBarbarianSites = barbarianFrontier.sites.filter((site) => site.detected);
-  const barbarianRows = knownBarbarianSites.map((site) => {
-    const tone = site.agreementActive ? "positive" : site.kind === "monster_nest" ? "danger" : "watch";
-    const scale = site.kind === "monster_nest"
-      ? `脅威 ${site.strength} · 累計人口被害 ${site.cumulativeDamage}`
-      : `人口 ${formatValue(site.population)} · 戦力 ${site.strength} · 交易価値 ${site.tradeValue}`;
-    return `<article class="geopolitical-event barbarian-frontier-card is-${tone}">
-      <header><small>${escapeHtml(site.stageLabel)}</small><strong>${escapeHtml(site.name)}</strong></header>
-      <p>${escapeHtml(site.region?.name ?? "未所属地域")} · ${escapeHtml(site.nation?.name ?? "無主地")}<br>${scale}</p>
-      <span>${site.agreementActive ? `取引による例外：${escapeHtml(site.agreementLabel)}` : `討伐段階：${escapeHtml(site.responseLabel)}`}</span>
-    </article>`;
-  }).join("") || '<p class="world-source-note">現在、発見済みの魔物の巣・蛮族拠点はありません。</p>';
-  const barbarianPeriod = barbarianFrontier.barbarians.lastAdvancedPeriod;
-  const barbarianEventRows = barbarianFrontier.events
-    .filter((event) => event.period === barbarianPeriod)
-    .map((event) => `<article class="geopolitical-event is-${event.tone}"><header><small>${escapeHtml(event.period)}</small><strong>${escapeHtml(event.title)}</strong></header><p>${escapeHtml(event.summary)}</p></article>`)
-    .join("");
-  const nationRows = geopolitical.nations.map((entry) => `
-    <button type="button" class="world-nation-card ${entry.nation.id === selected.id ? "is-active" : ""}" data-geopolitical-nation="${entry.nation.id}">
-      <span class="world-sigil" style="--nation-color:${entry.nation.color}">${escapeHtml(entry.nation.shortName.slice(0, 1))}</span>
-      <span><strong>${escapeHtml(entry.nation.name)}</strong><small>${escapeHtml(entry.condition.posture)} · 国力 ${entry.profile.capability}<br>${entry.topThreat ? `最大脅威 ${escapeHtml(entry.topThreat.nation.name)} ${entry.topThreat.score}` : "直接脅威なし"}</small></span>
-      <em>${entry.condition.lastPullId ? escapeHtml(GEOPOLITICAL_PULL_SET[entry.condition.lastPullId].name) : "観察"}</em>
-    </button>
-  `).join("");
-  const referenceLinks = GEOPOLITICAL_MODEL_REFERENCES.map((reference) => `<a href="${reference.url}" target="_blank" rel="noreferrer">${escapeHtml(reference.title)}</a>`).join(" / ");
+  const timeline = getGeneratedWorldIntelligenceView(state);
+  const rumorCount = timeline.filter((entry) => entry.source.type === "rumor").length;
+  const witnessedCount = timeline.filter((entry) => entry.source.type === "witnessed").length;
+  const eventRows = timeline.map((entry) => `
+    <article class="geopolitical-event world-intelligence-entry is-${entry.tone}">
+      <header><small>${escapeHtml(entry.eventPeriod)}</small><strong>${escapeHtml(entry.title)}</strong></header>
+      <p>${escapeHtml(entry.summary)}</p>
+      <span>${entry.source.type === "witnessed" ? "現場・近傍" : "住人の噂"} · ${escapeHtml(entry.source.label)}</span>
+      <small>${escapeHtml(entry.regionName)} · ${escapeHtml(entry.nationName)}${entry.targetNationName ? ` → ${escapeHtml(entry.targetNationName)}` : ""} · ${escapeHtml(entry.learnedPeriod)}に把握</small>
+    </article>
+  `).join("") || `
+    <div class="world-intelligence-empty">
+      <strong>まだ知り得た世界の動きはありません</strong>
+      <p>村の酒場で「噂を聞く」、町や村で「情報収集」を行うと、住人が知る出来事が追加されます。出来事の近くに居合わせた場合は自動で記録されます。</p>
+    </div>`;
   return `
-    <section class="world-dossier geopolitical-dossier" style="--nation-color:${selected.color}">
-      <header><span class="world-sigil large">${escapeHtml(selected.shortName.slice(0, 1))}</span><div><small>AUTONOMOUS GEOPOLITICS</small><h2>${escapeHtml(selected.name)}</h2><b>${escapeHtml(condition.posture)} · ${escapeHtml(selected.government)}</b></div></header>
-      <p>地理・資源・国境・国力・他国の行動履歴から、国家自身が今月の優先行動を選びます。</p>
-      <div class="generated-nation-facts geopolitical-metrics">
-        <span><small>総合国力</small><strong>${profile.capability}</strong></span>
-        <span><small>統治能力</small><strong>${profile.stateCapacity}</strong></span>
-        <span><small>自然防御</small><strong>${profile.terrainDefense}</strong></span>
-        <span><small>食料安定</small><strong>${condition.foodSecurity}</strong></span>
-        <span><small>軍事即応</small><strong>${condition.readiness}</strong></span>
-        <span><small>攻勢意図</small><strong>${condition.offensiveIntent}</strong></span>
-      </div>
-      <div class="world-relation-note">最大脅威：${selectedEntry.topThreat ? `${escapeHtml(selectedEntry.topThreat.nation.name)}（${selectedEntry.topThreat.score}）` : "なし"} · 国内結束 ${condition.cohesion} · 国家備蓄 ${condition.reserves}</div>
+    <section class="world-dossier geopolitical-dossier world-intelligence-summary">
+      <header><span class="world-sigil large">聞</span><div><small>KNOWN WORLD TIMELINE</small><h2>見聞した世界の動き</h2><b>知った出来事だけを記録</b></div></header>
+      <p>国家の内部判断を無条件には表示しません。住人から得た噂と、プレイヤーが近くで居合わせた出来事が時系列に蓄積されます。</p>
+      <div class="generated-nation-facts geopolitical-metrics"><span><small>既知の出来事</small><strong>${timeline.length}</strong></span><span><small>住人の噂</small><strong>${rumorCount}</strong></span><span><small>現場・近傍</small><strong>${witnessedCount}</strong></span></div>
     </section>
-    <section class="panel-section geopolitical-section"><div class="section-heading"><h2>二国間関係</h2><small>接壌・距離・交易・緊張</small></div><div class="geopolitical-relations">${relationRows}</div></section>
-    <section class="panel-section geopolitical-section"><div class="section-heading"><h2>世界公報</h2><small>${escapeHtml(geopolitical.geopolitics.lastAdvancedPeriod)}</small></div><div class="geopolitical-events">${eventRows}</div></section>
-    <section class="panel-section geopolitical-section barbarian-frontier-section"><div class="section-heading"><h2>蛮族・都市国家</h2><small>発見済み ${knownBarbarianSites.length} · 協定 ${knownBarbarianSites.filter((site) => site.agreementActive).length} · 累計被害 ${barbarianFrontier.summary.cumulativePopulationLoss}</small></div><p class="world-source-note">魔物の巣は毎月周辺へ実害を与えます。知性ある魔族は村から町、都市国家へ発展し、未管理なら村落→町・都市→国家命令の順で排除対象になります。</p><div class="geopolitical-events barbarian-frontier-grid">${barbarianRows}</div>${barbarianEventRows ? `<div class="barbarian-frontier-events"><h3>今月の辺境公報</h3>${barbarianEventRows}</div>` : ""}</section>
-    <section class="panel-section"><div class="section-heading"><h2>国家別戦略</h2><small>${runtime.nations.nations.length}か国</small></div><div class="world-nation-list">${nationRows}</div></section>
-    <p class="world-source-note"><b>プレイヤー非関与：</b>人物の能力・所属・所在地・選択は国家判断に使いません。理論根拠：${referenceLinks}</p>
+    <section class="panel-section geopolitical-section"><div class="section-heading"><h2>世界の動き</h2><small>新しく知った順</small></div><div class="geopolitical-events world-intelligence-timeline">${eventRows}</div></section>
+    <p class="world-source-note"><b>情報の入手：</b>集落で噂を聞く／情報収集を行う、または出来事が起きた地方か隣接地方に居合わせることで追加されます。</p>
   `;
 }
 
@@ -2620,7 +2545,7 @@ function renderWorldPanel() {
   const summary = sourceArchiveMode ? getWorldCatalogSummary() : null;
   const headings = {
     generated: ["PROCEDURAL REGIONAL WORLD", "生成世界・探索", "地方単位で移動し、同じ生成地図上で探索"],
-    geopolitics: ["AUTONOMOUS WORLD DYNAMICS", "世界情勢", "各国が地理と国家間関係から独立して行動"],
+    geopolitics: ["KNOWN WORLD TIMELINE", "世界情勢", "噂と現場で知り得た世界の動きを時系列に記録"],
     nations: ["GENERATED NATIONS", "生成国家", "地方の集合として成立した国家を世界全図と照合"],
     statistics: ["GENERATED WORLD STATISTICS", "世界統計", "生成条件、自然国境、国家指標を監査"],
     peoples: ["SOURCE ARCHIVE", "原案種族", "生成世界とは分離した設定原案資料"],
@@ -4064,6 +3989,26 @@ function renderGovernancePanel() {
     </div>`;
 }
 
+function personalChronicleEntryHtml(entry) {
+  return `<li><span>${entry.displayYear}年 ${entry.displayMonth}月</span><strong>${escapeHtml(entry.title)}</strong><small>${escapeHtml(entry.detail)}</small></li>`;
+}
+
+function renderPersonalChronicle(history) {
+  const chronicle = getPersonalChronicleView(history, { year: state.year, month: state.month });
+  const recent = chronicle.recent.map(personalChronicleEntryHtml).join("") || "<li><strong>年代記はまだありません</strong><small>人物の行動がここに記録されます。</small></li>";
+  const archives = chronicle.archives.map((archive) => `
+    <details class="career-history-year">
+      <summary><span>${archive.year}年</span><strong>${archive.entries.length}件</strong><small>年別記録を表示</small></summary>
+      <ol>${archive.entries.map(personalChronicleEntryHtml).join("")}</ol>
+    </details>`).join("");
+  return `
+    <section class="career-history">
+      <header><div><small>PERSONAL CHRONICLE</small><h2>人物の年代記</h2></div><p>最新${chronicle.recent.length}件 / 全${chronicle.total}件</p></header>
+      <ol class="career-history-recent">${recent}</ol>
+      ${archives ? `<div class="career-history-archives"><header><strong>過去年代記</strong><small>10件を超えた記録は年ごとに収納</small></header>${archives}</div>` : ""}
+    </section>`;
+}
+
 function renderCareerWorkspace() {
   const player = state.player;
   const stage = getCareerStage(state);
@@ -4075,7 +4020,6 @@ function renderCareerWorkspace() {
     <section class="career-invitations"><header><div><small>SERVICE OFFERS</small><h2>仕官先を選ぶ</h2></div><p>村で積み上げた行動を契機に、具体的な主君との主従関係を結びます。</p></header><div>${player.invitations.map((invitation) => `
       <button type="button" data-accept-service="${invitation.id ?? invitation.nationId}"><strong>${escapeHtml(invitation.name)}</strong><b>${escapeHtml(invitation.offer)}</b><small>${invitation.routeName ? `経路：${escapeHtml(invitation.routeName)} · ` : ""}初期信頼 ${invitation.trust} · 俸禄と保護を得る代わりに軍役と命令への服従を負う</small></button>`).join("")}</div></section>` : "";
   const holdings = player.holdings.length ? player.holdings.map((holding) => `<span>${WORLD.provinces[holding.territoryId]?.name ?? holding.territoryId}</span>`).join("") : "<span>所領なし</span>";
-  const history = player.history.slice(0, 8).map((entry) => `<li><span>${entry.year ?? state.year}年 ${entry.month ?? state.month}月</span><strong>${escapeHtml(entry.title)}</strong><small>${escapeHtml(entry.detail)}</small></li>`).join("");
   return `
     <header class="career-workspace-header">
       <div class="career-hero-visual">${careerIdentityCrest(player, stage)}<span class="career-hero-caption">CHRONICLE ${String(stage.order + 1).padStart(2, "0")}</span></div>
@@ -4092,7 +4036,7 @@ function renderCareerWorkspace() {
       ${renderVillageEntrySection(true)}
       <section class="career-actions"><header><div><small>CURRENT CHOICES</small><h2>今できること</h2></div><p>権限を得ていない国家命令は表示しません。</p></header><div>${careerActionButtons(player) || (stage.governance ? `<button type="button" data-panel="governance"><strong>統治画面を開く</strong><small>現在の管轄と委任権限で実行可能な命令だけを表示</small></button>` : `<p class="career-action-note">上の仕官先を選び、具体的な主君との主従関係を結んでください。</p>`)}</div></section>
       ${roleDelegationSection()}
-      <section class="career-history"><header><small>PERSONAL CHRONICLE</small><h2>人物の年代記</h2></header><ol>${history}</ol></section>
+      ${renderPersonalChronicle(player.history)}
     </div>`;
 }
 
@@ -4426,7 +4370,7 @@ function generatedMapVisibleObjectIds(runtime, expeditionRegion, expeditionTile,
   return new Set(accepted.map((entry) => entry.object.id));
 }
 
-function positionGeneratedRegionMarker(copy, expeditionRegion, expeditionTile, runtime, viewport, currentLocationName) {
+function positionGeneratedRegionMarker(copy, expeditionRegion, expeditionTile, runtime, viewport) {
   const expedition = copy.querySelector(".generated-expedition-marker");
   const tile = expeditionTile;
   const x = visibleUnwrappedTileX(tile.x, viewport, runtime.terrain.width);
@@ -4434,9 +4378,8 @@ function positionGeneratedRegionMarker(copy, expeditionRegion, expeditionTile, r
   expedition.style.top = `${(tile.y + 0.5 - viewport.y) / viewport.height * 100}%`;
   expedition.dataset.generatedRegionId = expeditionRegion.id;
   expedition.dataset.generatedTileId = tile.id;
-  expedition.querySelector("small").textContent = currentLocationName;
-  expedition.setAttribute("aria-label", `現在地 · ${expeditionRegion.name} · ${currentLocationName}`);
-  expedition.title = `現在地 · ${expeditionRegion.name} · ${currentLocationName}`;
+  expedition.setAttribute("aria-label", `現在地 · ${expeditionRegion.name}`);
+  expedition.title = `現在地 · ${expeditionRegion.name}`;
 }
 
 function positionGeneratedRegionMoveTargets(copy, runtime, expeditionRegion, expeditionTile, viewport) {
@@ -4472,6 +4415,59 @@ function positionGeneratedRegionMoveTargets(copy, runtime, expeditionRegion, exp
     const label = disabled ? `${region.name}（移動力 ${cost} 必要）` : `${region.name}へ移動（移動力 ${reachable.cost}）`;
     return `<button type="button" class="generated-region-move-target${disabled ? " is-disabled" : ""}" style="left:${target.left}%;top:${target.top}%" data-generated-map-move-region="${region.id}" ${disabled ? "disabled" : ""} aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}"><span>${escapeHtml(region.name)}</span><small>${disabled ? `移動力 ${cost} 必要` : `進む · ${reachable.cost}`}</small></button>`;
   }).join("");
+}
+
+function generatedTravelPathData(pathTiles, runtime, viewport = null) {
+  if (!pathTiles?.length) return "";
+  let previousX = pathTiles[0].x;
+  return pathTiles.map((tile, index) => {
+    const x = index === 0
+      ? tile.x
+      : previousX + squareWrappedDeltaX(previousX, tile.x, runtime.terrain.width, runtime.terrain.config.wrapX);
+    previousX = x;
+    const left = viewport ? (x + 0.5 - viewport.x) / viewport.width * 100 : (x + 0.5) / runtime.terrain.width * 100;
+    const top = viewport ? (tile.y + 0.5 - viewport.y) / viewport.height * 100 : (tile.y + 0.5) / runtime.terrain.height * 100;
+    return `${index ? "L" : "M"} ${left.toFixed(2)} ${top.toFixed(2)}`;
+  }).join(" ");
+}
+
+function renderGeneratedRegionMoveConfirmation(copy, runtime, viewport) {
+  const layer = copy.querySelector(".generated-region-confirm-layer");
+  const route = copy.querySelector(".generated-travel-route");
+  const routePath = route?.querySelector("path");
+  if (!layer) return;
+  if (view.generatedMapScale !== "region" || !view.pendingGeneratedDestinationId) {
+    layer.innerHTML = "";
+    route?.classList.remove("is-preview", "is-route", "is-direct");
+    if (!view.generatedTravel) routePath?.setAttribute("d", "");
+    return;
+  }
+  const travelOptions = getGeneratedExpeditionTravelOptions(state, view.pendingGeneratedDestinationId);
+  const selectedMode = travelOptions.find((option) => option.id === view.pendingGeneratedTravelMode) ?? travelOptions[0];
+  const region = runtime.regionById.get(view.pendingGeneratedDestinationId);
+  const nation = region ? runtime.nationById.get(region.nationId) : null;
+  if (!selectedMode || !region) {
+    view.pendingGeneratedDestinationId = null;
+    layer.innerHTML = "";
+    return;
+  }
+  routePath?.setAttribute("d", generatedTravelPathData(selectedMode.pathTiles, runtime, viewport));
+  route?.classList.add("is-preview", `is-${selectedMode.id}`);
+  route?.classList.remove(selectedMode.id === "route" ? "is-direct" : "is-route");
+  const optionRows = travelOptions.map((option) => `<button type="button" class="generated-travel-mode-option ${option.id === selectedMode.id ? "is-active" : ""}" data-generated-travel-mode="${option.id}">
+    <span><strong>${escapeHtml(option.name)}</strong><small>${option.id === "route" ? "デフォルト" : "高負荷"}</small></span>
+    <p>${escapeHtml(option.description)}</p>
+    <em>約${formatGeneratedTravelDuration(option.travelMinutes)} · 移動力${option.cost} · 保存食${option.supplyCost}${option.unavailableReason ? ` · ${escapeHtml(option.unavailableReason)}` : ""}</em>
+  </button>`).join("");
+  layer.innerHTML = `<section class="generated-region-move-confirmation" role="dialog" aria-label="${escapeHtml(region.name)}への移動確認">
+    <header><div><small>TRAVEL CONFIRMATION</small><strong>地方移動の確認</strong></div><button type="button" data-generated-map-move-cancel aria-label="移動確認を閉じる">×</button></header>
+    <h2>${escapeHtml(region.name)}</h2>
+    <p>${escapeHtml(nation?.name ?? "所属不明")} · ${escapeHtml(generatedRegionTerrainLabel(region))}</p>
+    <nav class="generated-travel-mode-options" aria-label="移動手段">${optionRows}</nav>
+    <div><span><small>所要時間</small><strong>約${formatGeneratedTravelDuration(selectedMode.travelMinutes)}</strong></span><span><small>消費</small><strong>移動力${selectedMode.cost} · 保存食${selectedMode.supplyCost}</strong></span></div>
+    <em>${selectedMode.name} · 遭遇率 ${Math.round(selectedMode.encounterChance * 100)}%。移動を実行すると世界時刻が進みます。</em>
+    <footer><button type="button" data-generated-map-move-cancel>戻る</button><button type="button" class="is-confirm" data-generated-map-move-confirm="${region.id}" ${selectedMode.available ? "" : "disabled"}>${selectedMode.available ? "この手段で移動" : "物資不足"}</button></footer>
+  </section>`;
 }
 
 function generatedSiteSelectionContext() {
@@ -4720,9 +4716,6 @@ function renderGeneratedWorldMapLayer() {
   const colonization = getGeneratedColonizationView(state);
   const barbarianFrontier = getGeneratedBarbarianView(state);
   const recognition = getGeneratedRecognitionView(state);
-  const showPersonalMapOverlay = view.panel === "world" && view.atlasMode === "generated" && !view.generatedTravel;
-  elements.personalMapOverlay.classList.toggle("is-hidden", !showPersonalMapOverlay);
-  elements.personalMapOverlay.innerHTML = showPersonalMapOverlay ? renderPersonalMapOverlay(personalMap) : "";
   const selectedSite = generatedSiteSelectionContext();
   const colonyCandidate = selectedSite?.kind === "colony"
     ? colonization.candidates.find((candidate) => candidate.tileId === selectedSite.id) ?? colonization.bestCandidate
@@ -4755,8 +4748,9 @@ function renderGeneratedWorldMapLayer() {
         </div>
         <div class="generated-world-fog" aria-hidden="true"></div>
         <svg class="generated-travel-route" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><path></path></svg>
-        <button type="button" class="generated-expedition-marker" aria-label="現在地"><span><b>現在地</b><small></small></span><i aria-hidden="true">◆</i></button>
+        <button type="button" class="generated-expedition-marker" aria-label="現在地"><span><b>現在地</b></span><i aria-hidden="true">◆</i></button>
         <div class="generated-region-move-layer" aria-label="隣接地方への地図移動"></div>
+        <div class="generated-region-confirm-layer" aria-live="polite"></div>
         <div class="generated-site-marker-layer"></div>
         <div class="generated-site-action-layer"></div>
       </div>
@@ -4784,23 +4778,34 @@ function renderGeneratedWorldMapLayer() {
     fog.style.setProperty("--recognition-y", `${recognitionTop}%`);
     fog.style.setProperty("--recognition-radius-x", `${recognition.radius / viewport.width * 100}%`);
     fog.style.setProperty("--recognition-radius-y", `${recognition.radius / viewport.height * 100}%`);
-    positionGeneratedRegionMarker(copy, expeditionRegion, expeditionTile, runtime, viewport, personalMap.currentLocation.name);
+    positionGeneratedRegionMarker(copy, expeditionRegion, expeditionTile, runtime, viewport);
     positionGeneratedRegionMoveTargets(copy, runtime, expeditionRegion, expeditionTile, viewport);
+    renderGeneratedRegionMoveConfirmation(copy, runtime, viewport);
     positionGeneratedSiteMarkers(copy, runtime, viewport, dungeon, personalMap, selectedSite, colonyCandidate, recognition.recognizedTileIds, barbarianFrontier.sites, visibleObjectIds);
   });
   elements.generatedWorldMap.querySelectorAll("[data-generated-map-scale]").forEach((button) => button.classList.toggle("is-active", button.dataset.generatedMapScale === view.generatedMapScale));
+  paintGeneratedMapLegend();
   paintGeneratedWorldTime(getGeneratedWorldTimeView(state));
   elements.mapModeEyebrow.textContent = focusedNation ? "GENERATED NATION MAP" : view.generatedMapScale === "region" ? "REGIONAL PLAY MAP" : "GENERATED WORLD OVERVIEW";
   elements.mapCaptionTitle.textContent = focusedNation
     ? `${focusedNation.name} · 世界全図`
-    : view.generatedMapScale === "region" ? `現在地｜${expeditionRegion.name}｜${personalMap.currentLocation.name} · ${currentNation.name} · 認識範囲 ${recognition.radius}マス` : `${playerNation.name} · 世界全図`;
+    : view.generatedMapScale === "region" ? `現在地｜${expeditionRegion.name}` : `${playerNation.name} · 世界全図`;
+}
+
+function paintGeneratedMapLegend() {
+  if (!elements.generatedWorldMapHelp || !elements.generatedMapLegendToggle) return;
+  const open = view.generatedMapLegendOpen !== false;
+  elements.generatedWorldMapHelp.classList.toggle("is-collapsed", !open);
+  elements.generatedMapLegendToggle.setAttribute("aria-expanded", String(open));
+  elements.generatedMapLegendToggle.setAttribute("aria-label", open ? "凡例を非表示" : "凡例を表示");
+  elements.generatedMapLegendToggle.title = open ? "凡例を非表示" : "凡例を表示";
 }
 
 function nextAnimationFrame() {
   return new Promise((resolve) => requestAnimationFrame(resolve));
 }
 
-async function playGeneratedTravel(nextState, destinationName, message) {
+async function playGeneratedTravel(nextState, destinationName, message, travelPlan = null) {
   if (view.generatedTravel) return;
   const fromWorld = getGeneratedWorldView(state);
   const toWorld = getGeneratedWorldView(nextState);
@@ -4820,31 +4825,28 @@ async function playGeneratedTravel(nextState, destinationName, message) {
   const marker = copy?.querySelector(".generated-expedition-marker");
   const route = copy?.querySelector(".generated-travel-route");
   const routePath = route?.querySelector("path");
-  const start = {
-    left: (fromWorld.expeditionTile.x + 0.5) / fromWorld.runtime.terrain.width * 100,
-    top: (fromWorld.expeditionTile.y + 0.5) / fromWorld.runtime.terrain.height * 100,
-  };
-  const destination = {
-    left: (toWorld.expeditionTile.x + 0.5) / toWorld.runtime.terrain.width * 100,
-    top: (toWorld.expeditionTile.y + 0.5) / toWorld.runtime.terrain.height * 100,
-  };
-  const curve = Math.max(1.5, Math.min(8, Math.abs(destination.left - start.left) * 0.12));
-  const controlX = (start.left + destination.left) / 2;
-  const controlY = Math.max(1, Math.min(99, (start.top + destination.top) / 2 - curve));
-  if (routePath) routePath.setAttribute("d", `M ${start.left} ${start.top} Q ${controlX} ${controlY} ${destination.left} ${destination.top}`);
-  route?.classList.add("is-active");
+  const pathTiles = travelPlan?.pathTiles?.length ? travelPlan.pathTiles : [fromWorld.expeditionTile, toWorld.expeditionTile];
+  const pathPositions = pathTiles.map((tile) => ({
+    left: (tile.x + 0.5) / fromWorld.runtime.terrain.width * 100,
+    top: (tile.y + 0.5) / fromWorld.runtime.terrain.height * 100,
+  }));
+  if (routePath) routePath.setAttribute("d", generatedTravelPathData(pathTiles, fromWorld.runtime));
+  route?.classList.remove("is-preview", "is-route", "is-direct");
+  route?.classList.add("is-active", `is-${travelPlan?.id ?? "route"}`);
   marker?.classList.add("is-traveling");
   elements.generatedWorldMap.classList.add("is-traveling");
   elements.generatedWorldMap.setAttribute("aria-busy", "true");
   elements.generatedTravelOverlay.classList.remove("is-hidden");
   elements.generatedTravelRoute.textContent = `${fromWorld.expeditionRegion.name} → ${destinationName}`;
-  elements.generatedTravelDuration.textContent = `所要 ${formatGeneratedTravelDuration(elapsedMinutes)} · 世界時刻が進行中`;
+  elements.generatedTravelDuration.textContent = `${travelPlan?.name ?? "順路"} · 所要 ${formatGeneratedTravelDuration(elapsedMinutes)} · 世界時刻が進行中`;
   elements.generatedTravelProgress.style.width = "0%";
-  const markerAnimation = marker?.animate([
-    { left: `${start.left}%`, top: `${start.top}%`, transform: "translate(-50%, -50%) scale(1)" },
-    { offset: 0.48, transform: "translate(-50%, -50%) scale(1.35)" },
-    { left: `${destination.left}%`, top: `${destination.top}%`, transform: "translate(-50%, -50%) scale(1)" },
-  ], { duration: animationDuration, easing: "cubic-bezier(.36,.08,.22,1)", fill: "forwards" });
+  const markerKeyframes = pathPositions.map((position, index) => ({
+    left: `${position.left}%`,
+    top: `${position.top}%`,
+    offset: pathPositions.length === 1 ? 1 : index / (pathPositions.length - 1),
+    transform: `translate(-50%, -50%) scale(${index > 0 && index < pathPositions.length - 1 ? 1.12 : 1})`,
+  }));
+  const markerAnimation = marker?.animate(markerKeyframes, { duration: animationDuration, easing: "linear", fill: "forwards" });
 
   try {
     await new Promise((resolve) => {
@@ -4871,9 +4873,11 @@ async function playGeneratedTravel(nextState, destinationName, message) {
     elements.generatedWorldMap.classList.remove("is-traveling");
     elements.generatedWorldMap.removeAttribute("aria-busy");
     elements.generatedTravelOverlay.classList.add("is-hidden");
-    route?.classList.remove("is-active");
+    route?.classList.remove("is-active", "is-route", "is-direct");
     markerAnimation?.cancel();
-    commit(nextState, `${message}（${formatGeneratedTravelDuration(elapsedMinutes)}経過）`, "ui");
+    if (nextState.adventure?.activeRun?.mode === "travel") view.adventureOpen = true;
+    const encounterNote = nextState.generatedWorld?.lastTravel?.encounter ? " 移動中にモンスターと遭遇しました。" : "";
+    commit(nextState, `${message}（${formatGeneratedTravelDuration(elapsedMinutes)}経過）${encounterNote}`, "ui");
   }
 }
 
@@ -5173,12 +5177,11 @@ function renderBackMenu() {
 
 function renderTicker() {
   if (state.player) {
-    const latest = state.player.history[0];
-    elements.chronicleTicker.innerHTML = `<strong>${latest.year ?? state.year}年 ${latest.month ?? state.month}月 · ${escapeHtml(latest.title)}</strong><span>${escapeHtml(latest.detail)}</span>`;
+    const entries = state.player.history.slice(0, PERSONAL_CHRONICLE_TICKER_LIMIT);
+    elements.chronicleTicker.innerHTML = entries.map((entry) => `<div class="chronicle-ticker-row"><strong>${entry.year ?? state.year}年 ${entry.month ?? state.month}月 · ${escapeHtml(entry.title)}</strong><span>${escapeHtml(entry.detail)}</span></div>`).join("");
     return;
   }
-  const latest = state.log[0];
-  elements.chronicleTicker.innerHTML = `<strong>${latest.date} · ${latest.title}</strong><span>${latest.text}</span>`;
+  elements.chronicleTicker.innerHTML = state.log.slice(0, PERSONAL_CHRONICLE_TICKER_LIMIT).map((entry) => `<div class="chronicle-ticker-row"><strong>${entry.date} · ${entry.title}</strong><span>${entry.text}</span></div>`).join("");
 }
 
 function renderWarCouncil() {
@@ -6554,11 +6557,13 @@ function playNavigationCue(event) {
     "[data-spending-category]",
     "[data-spending-city]",
     "[data-world-mode]",
-    "[data-generated-region-candidate-id]",
     "[data-generated-map-move-region]",
-    "[data-generated-move-confirm]",
+    "[data-generated-travel-mode]",
+    "[data-generated-map-move-confirm]",
+    "[data-generated-map-move-cancel]",
     "[data-generated-region-id]",
     "[data-generated-map-scale]",
+    "[data-generated-map-legend-toggle]",
     "[data-world-guide-toggle]",
     "[data-world-filter]",
     "[data-generated-nation]",
@@ -7338,32 +7343,45 @@ document.addEventListener("click", async (event) => {
     renderMap();
     return;
   }
+  if (event.target.closest("[data-generated-map-legend-toggle]")) {
+    view.generatedMapLegendOpen = !view.generatedMapLegendOpen;
+    paintGeneratedMapLegend();
+    return;
+  }
   const generatedMapMoveRegion = event.target.closest("[data-generated-map-move-region]");
   if (generatedMapMoveRegion) {
-    try {
-      const next = moveGeneratedExpeditionToRegion(state, generatedMapMoveRegion.dataset.generatedMapMoveRegion);
-      const destination = getGeneratedWorldView(next).expeditionRegion;
-      view.pendingGeneratedDestinationId = null;
-      await playGeneratedTravel(next, destination.name, `${destination.name}へ移動しました。`);
-    } catch (error) { showToast(error.message, "danger"); }
+    view.pendingGeneratedDestinationId = generatedMapMoveRegion.dataset.generatedMapMoveRegion;
+    view.pendingGeneratedTravelMode = "route";
+    view.selectedGeneratedSite = null;
+    view.generatedSiteInfoOpen = false;
+    renderMap();
     return;
   }
-  const generatedRegionCandidate = event.target.closest("[data-generated-region-candidate-id]");
-  if (generatedRegionCandidate) {
-    view.pendingGeneratedDestinationId = generatedRegionCandidate.dataset.generatedRegionCandidateId;
-    const scrollTop = elements.leftPanel.scrollTop;
-    renderWorldPanel();
-    elements.leftPanel.scrollTop = scrollTop;
+  if (event.target.closest("[data-generated-map-move-cancel]")) {
+    view.pendingGeneratedDestinationId = null;
+    view.pendingGeneratedTravelMode = "route";
+    renderMap();
     return;
   }
-  const generatedMoveConfirm = event.target.closest("[data-generated-move-confirm]");
+  const generatedTravelMode = event.target.closest("[data-generated-travel-mode]");
+  if (generatedTravelMode && ["route", "direct"].includes(generatedTravelMode.dataset.generatedTravelMode)) {
+    view.pendingGeneratedTravelMode = generatedTravelMode.dataset.generatedTravelMode;
+    renderMap();
+    return;
+  }
+  const generatedMoveConfirm = event.target.closest("[data-generated-map-move-confirm]");
   if (generatedMoveConfirm) {
-    if (!view.pendingGeneratedDestinationId) return;
+    const regionId = generatedMoveConfirm.dataset.generatedMapMoveConfirm;
+    if (!regionId || regionId !== view.pendingGeneratedDestinationId) return;
     try {
-      const next = moveGeneratedExpeditionToRegion(state, view.pendingGeneratedDestinationId);
+      const travelPlan = getGeneratedExpeditionTravelOptions(state, regionId)
+        .find((option) => option.id === view.pendingGeneratedTravelMode);
+      let next = moveGeneratedExpeditionToRegion(state, regionId, { mode: view.pendingGeneratedTravelMode });
+      if (next.generatedWorld?.lastTravel?.encounter) next = startGeneratedTravelEncounter(next);
       const destination = getGeneratedWorldView(next).expeditionRegion;
       view.pendingGeneratedDestinationId = null;
-      await playGeneratedTravel(next, destination.name, `${destination.name}へ移動しました。`);
+      view.pendingGeneratedTravelMode = "route";
+      await playGeneratedTravel(next, destination.name, `${travelPlan?.name ?? "順路"}で${destination.name}へ移動しました。`, travelPlan);
     } catch (error) {
       showToast(error.message, "danger");
     }
@@ -7424,6 +7442,11 @@ document.addEventListener("click", async (event) => {
     if (backMenuRoute.dataset.backMenuRoute === "world-statistics") {
       view.panel = "world";
       view.atlasMode = "statistics";
+      view.generatedMapScale = "world";
+      view.scale = "world";
+    } else if (["source-peoples", "source-creatures"].includes(backMenuRoute.dataset.backMenuRoute)) {
+      view.panel = "world";
+      view.atlasMode = backMenuRoute.dataset.backMenuRoute === "source-peoples" ? "peoples" : "creatures";
       view.generatedMapScale = "world";
       view.scale = "world";
     } else if (backMenuRoute.dataset.backMenuRoute === "character-codex") {

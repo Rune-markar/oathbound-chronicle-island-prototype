@@ -673,6 +673,56 @@ function personalEncounterRun(state, context, location, resultId) {
   };
 }
 
+export function startGeneratedTravelEncounter(state, travel = state.generatedWorld?.lastTravel) {
+  if (!travel?.encounter?.triggered) return state;
+  const next = preparedClone(state);
+  if (next.adventure.activeRun) throw new Error("進行中の探索を終えてから移動してください。");
+  const strength = travel.encounter.strength ?? "standard";
+  const profiles = {
+    weak: { dungeonType: "forest", enemyName: "街道小鬼", enemySymbol: "牙", hp: 24, attack: 5, unitLimit: 1, label: "弱い魔物" },
+    standard: { dungeonType: "spring", enemyName: "荒野這獣", enemySymbol: "獣", hp: 42, attack: 8, unitLimit: 2, label: "通常の魔物" },
+    strong: { dungeonType: "cave", enemyName: "巨躯牙獣", enemySymbol: "爪", hp: 68, attack: 12, unitLimit: 3, label: "強い魔物" },
+  };
+  const profile = profiles[strength] ?? profiles.standard;
+  const life = next.player?.villageLife;
+  const playerMaxHp = life?.maxHp ?? 42;
+  const playerHp = life?.hp ?? playerMaxHp;
+  const resultId = `travel:${travel.fromRegionId}:${travel.destinationRegionId}:${travel.mode}:${next.turn ?? 0}`;
+  next.adventure.activeRun = {
+    id: `run:${resultId}`,
+    mode: "travel",
+    combatScale: "personal-units",
+    dungeonId: null,
+    dungeonName: `${travel.modeName ?? "地方移動"}中の遭遇`,
+    locationName: `${travel.modeName ?? "地方移動"}ルート`,
+    dungeonType: profile.dungeonType,
+    regionId: travel.destinationRegionId,
+    phase: "battle",
+    step: 0,
+    totalSteps: 1,
+    playerHp,
+    playerMaxHp,
+    enemyUnitLimit: profile.unitLimit,
+    skippedBattles: 0,
+    completedContractIds: [],
+    loot: [],
+    combat: {
+      enemyId: `travel-monster-${strength}`,
+      enemyName: profile.enemyName,
+      enemySymbol: profile.enemySymbol,
+      enemyHp: profile.hp,
+      enemyMaxHp: profile.hp,
+      enemyAttack: profile.attack,
+      turn: 1,
+      outcome: null,
+      tacticalBattleId: `travel-battle:${resultId}`,
+    },
+    logSerial: 1,
+    log: [{ id: "entry", message: `${travel.modeName ?? "移動"}中、${profile.label}「${profile.enemyName}」に遭遇した。`, tone: "danger" }],
+  };
+  return next;
+}
+
 export function explorePersonalMap(state, context, options = {}) {
   const next = preparedClone(state);
   if ((next.player?.villageLife?.hp ?? 0) < 35) throw new Error("HPが35未満です。村の神殿・治療所で負傷を治してから探索してください。");
@@ -1397,7 +1447,7 @@ export function createDungeonTacticalBattle(state) {
   const enemyCommanderId = `cmd:${run.id}:enemy`;
   if (run.mode === "personal-map" || run.combatScale === "personal-units") {
     const roster = getDungeonTacticalRoster(state);
-    const enemyUnitCount = Math.min(profile.enemyUnits.length, Math.max(1, roster.length + hashString(`${run.id}:enemy-count`) % 2));
+    const enemyUnitCount = Math.min(run.enemyUnitLimit ?? profile.enemyUnits.length, profile.enemyUnits.length, Math.max(1, roster.length + hashString(`${run.id}:enemy-count`) % 2));
     const unitClassForRole = (role = "") => (
       /治療|僧侶|神官/.test(role) ? "mage"
         : /術|魔/.test(role) ? "mage"
@@ -1701,9 +1751,10 @@ export function resolveDungeonTacticalBattle(state, battleResult) {
     run.combat.outcome = "victory";
     grantBattleTrophy(next, run);
     completeCombatObjectives(next, run);
-    run.phase = run.mode === "personal-map" ? "complete" : "exploring";
-    runLog(run, run.mode === "personal-map"
-      ? `${run.combat.enemyName}を退けた。周辺の安全を確保し、個人マップへ戻れる。`
+    const oneStepEncounter = ["personal-map", "travel"].includes(run.mode);
+    run.phase = oneStepEncounter ? "complete" : "exploring";
+    runLog(run, oneStepEncounter
+      ? run.mode === "travel" ? `${run.combat.enemyName}を退け、移動先へ到着した。` : `${run.combat.enemyName}を退けた。周辺の安全を確保し、個人マップへ戻れる。`
       : `既存の戦術戦闘で${run.combat.enemyName}を退けた。戦利品を自動回収し、探索を再開する。`, "success");
   } else {
     run.combat.outcome = battleResult.winner === "draw" ? "draw" : "defeat";
@@ -1735,9 +1786,10 @@ export function skipDungeonBattle(state) {
   run.skippedBattles += 1;
   grantBattleTrophy(next, run);
   completeCombatObjectives(next, run);
-  run.phase = run.mode === "personal-map" ? "complete" : "exploring";
-  runLog(run, run.mode === "personal-map"
-    ? `${run.combat.enemyName}との戦闘を自動解決した。戦利品を回収し、個人マップへ戻れる。`
+  const oneStepEncounter = ["personal-map", "travel"].includes(run.mode);
+  run.phase = oneStepEncounter ? "complete" : "exploring";
+  runLog(run, oneStepEncounter
+    ? run.mode === "travel" ? `${run.combat.enemyName}との遭遇戦を自動解決し、移動先へ到着した。` : `${run.combat.enemyName}との戦闘を自動解決した。戦利品を回収し、個人マップへ戻れる。`
     : `${run.combat.enemyName}との戦闘を自動解決した。戦利品を回収し、探索を再開する。`, "success");
   if (run.mode === "personal-map") {
     const region = next.adventure.personalMap.regions[run.regionId];

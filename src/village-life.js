@@ -4,6 +4,7 @@ import {
   recordRegionalAchievement,
 } from "./regional-reputation.js";
 import { normalizeAbilityScores } from "./character-abilities.js";
+import { discoverGeneratedWorldRumor } from "./generated-world-system.js";
 
 const clone = (value) => structuredClone(value);
 const clamp = (value, minimum, maximum) => Math.min(maximum, Math.max(minimum, value));
@@ -549,7 +550,7 @@ export function performVillageAction(state, villageInput, actionId, options = {}
   const access = getVillageActionAvailability(state, actionId, village);
   if (!access.allowed) throw new Error(access.reason);
 
-  const next = clone(state);
+  let next = clone(state);
   normalizeVillageLifeState(next);
   const player = next.player;
   const life = player.villageLife;
@@ -631,9 +632,13 @@ export function performVillageAction(state, villageInput, actionId, options = {}
       break;
     }
     case "hear_rumor": {
-      const rumor = `${village.name}の周辺では、夜の街道に古い石扉が現れるという。`;
+      const discovery = discoverGeneratedWorldRumor(next, village);
+      next = discovery.state;
+      const rumor = discovery.entry
+        ? `${discovery.entry.title}――${discovery.entry.summary}`
+        : `${village.name}では、すでに耳にした話ばかりだった。`;
       if (!life.rumors.includes(rumor)) life.rumors.push(rumor);
-      message = rumor;
+      message = discovery.entry ? `${rumor} 世界情勢へ記録した。` : rumor;
       break;
     }
     case "talk_npc": villageRelation(life, village.id, 2); message = "酒場の旅商人と話し、村での顔つなぎができた。"; break;
@@ -769,7 +774,16 @@ export function performVillageAction(state, villageInput, actionId, options = {}
         : `${standing.greeting} 村人から土地の近況と感謝を聞いた。`;
       break;
     }
-    case "gather_information": { const rumor = `${village.name}の水場と安全な街道を記録した。`; if (!life.rumors.includes(rumor)) life.rumors.push(rumor); message = rumor; break; }
+    case "gather_information": {
+      const discovery = discoverGeneratedWorldRumor(next, village);
+      next = discovery.state;
+      const rumor = discovery.entry
+        ? `${discovery.entry.title}――${discovery.entry.summary}`
+        : `${village.name}の水場と安全な街道を記録した。新しい世界の動きは聞けなかった。`;
+      if (!life.rumors.includes(rumor)) life.rumors.push(rumor);
+      message = discovery.entry ? `${rumor} 世界情勢へ記録した。` : rumor;
+      break;
+    }
     case "trigger_event": villageRelation(life, village.id, 3); recordRegionalAchievement(next, village, { label: "荷車事故の救援", merit: 4, renown: REGIONAL_REPUTATION_GAINS.goodDeed }); message = `荷車の事故を手伝い、この村との関係と地方名声が${REGIONAL_REPUTATION_GAINS.goodDeed}高まった。`; break;
     case "find_sidequest": life.quests.push({ id: `${village.id}-side-${life.quests.length + 1}`, name: "村人の失くし物", source: "villager", status: "active" }); message = "村人の失くし物を探すサブクエストを受けた。"; break;
     case "build_facility": villageProgress(life, village.id).buildings += 1; villageRelation(life, village.id, 4); recordRegionalAchievement(next, village, { label: "共同施設の建設支援", merit: 10, renown: REGIONAL_REPUTATION_GAINS.goodDeed }); message = `不足していた共同施設の建設を支援し、地方名声が${REGIONAL_REPUTATION_GAINS.goodDeed}高まった。`; break;

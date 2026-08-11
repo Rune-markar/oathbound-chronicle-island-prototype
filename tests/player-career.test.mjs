@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import {
   CAREER_STAGE_ROUTE,
   GOVERNMENT_TITLE_SYSTEMS,
+  PERSONAL_CHRONICLE_RECENT_LIMIT,
+  PERSONAL_CHRONICLE_TICKER_LIMIT,
   acceptServiceInvitation,
   authorizePlayerAction,
   createCareerInitialState,
@@ -10,6 +12,7 @@ import {
   executeGovernanceCommand,
   getGovernanceView,
   getGovernmentTitleSystem,
+  getPersonalChronicleView,
   getTitleForCareerStage,
   grantDelegatedAuthority,
   imposeProhibition,
@@ -18,6 +21,22 @@ import {
   queueOrder,
   submitPetition,
 } from "../src/simulation.js";
+
+test("personal chronicle keeps ten recent entries and folds older records by year", () => {
+  const history = Array.from({ length: 16 }, (_, index) => ({
+    year: index < 12 ? 317 : 316,
+    month: 12 - (index % 12),
+    title: `記録${index + 1}`,
+    detail: `詳細${index + 1}`,
+  }));
+  const chronicle = getPersonalChronicleView(history, { year: 317, month: 1 });
+  assert.equal(PERSONAL_CHRONICLE_TICKER_LIMIT, 4);
+  assert.equal(PERSONAL_CHRONICLE_RECENT_LIMIT, 10);
+  assert.equal(chronicle.recent.length, 10);
+  assert.deepEqual(chronicle.recent.map((entry) => entry.title), history.slice(0, 10).map((entry) => entry.title));
+  assert.deepEqual(chronicle.archives.map((archive) => [archive.year, archive.entries.length]), [[317, 2], [316, 4]]);
+  assert.equal(chronicle.total, 16);
+});
 
 test("the career route and government title systems use the canonical player titles", () => {
   assert.deepEqual(CAREER_STAGE_ROUTE.map((stage) => stage.name), [

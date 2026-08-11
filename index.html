@@ -174,6 +174,8 @@
                 <header><small>SETTING ARCHIVE</small><h2 id="backMenuSettingsTitle">設定集</h2></header>
                 <div class="back-menu-route-grid">
                   <button type="button" data-back-menu-route="world-statistics"><i aria-hidden="true">統</i><span><strong>世界統計</strong><small>国家・資源・世界の集計</small></span></button>
+                  <button type="button" data-back-menu-route="source-peoples"><i aria-hidden="true">種</i><span><strong>原案種族</strong><small>生成世界と分離した種族設定</small></span></button>
+                  <button type="button" data-back-menu-route="source-creatures"><i aria-hidden="true">獣</i><span><strong>原案巨獣</strong><small>超規格外生物の観測原案</small></span></button>
                   <button type="button" data-back-menu-route="character-codex"><i aria-hidden="true">辞</i><span><strong>キャラクター辞典</strong><small>人物・敵性存在・関係の記録</small></span></button>
                 </div>
                 <div id="backMenuSettingsCatalog"></div>
@@ -240,11 +242,15 @@
             <div class="generated-travel-copy"><small>EXPEDITION IN TRANSIT</small><strong id="generatedTravelRoute">移動中</strong><span id="generatedTravelClock">第1日 08:00</span><p id="generatedTravelDuration">時間が経過します</p></div>
             <div class="generated-travel-progress" aria-hidden="true"><i id="generatedTravelProgress"></i></div>
           </div>
-          <div class="personal-map-overlay is-hidden" id="personalMapOverlay" aria-live="polite"></div>
-          <div class="generated-world-map-help">
-            <div class="generated-map-scale" role="group" aria-label="生成地図の縮尺"><button type="button" class="is-active" data-generated-map-scale="region">地方でプレイ</button><button type="button" data-generated-map-scale="world">世界全図</button></div>
-            <span><i class="is-castle">城</i>城</span><span><i class="is-city">都</i>都市</span><span><i class="is-town">町</i>町</span><span><i class="is-village">村</i>村</span><span><i class="is-port">港</i>漁港・港・湾口都市</span><span><i class="is-fort">砦</i>砦</span><span><i class="is-monster_nest">巣</i>魔物の巣</span><span><i class="is-barbarian">蛮</i>蛮族・都市国家</span><span><i class="is-colony">旗</i>植民候補</span><span><i class="is-route"></i>街道</span><span><i class="is-sea-route"></i>海路</span><span>視界：現在地から約20マス</span>
-            <p>実在欧州の都市網を参考に、縮尺ごとに城郭都市・市場町・地方村落を階層表示します · 対になった峠・渡河砦は一つの防衛拠点として表示します · 街道外には集落のない空白地帯が残ります · 魔物の巣は周辺に実害を与え、知性ある蛮族拠点は村から都市国家へ発展します · 依頼や善行で地方名声25を得ると旗の候補地へ植民できます · 各国は複数地域で構成され、地域の支配交代・独立により国境線が変化します</p>
+          <div class="generated-world-map-help" id="generatedWorldMapHelp">
+            <div class="generated-map-help-head">
+              <strong>MAP KEY <span>凡例</span></strong>
+              <button type="button" class="generated-map-help-toggle" data-generated-map-legend-toggle aria-expanded="true" aria-controls="generatedMapLegendBody" aria-label="凡例を非表示" title="凡例を非表示"><i aria-hidden="true"></i></button>
+            </div>
+            <div class="generated-map-help-body" id="generatedMapLegendBody">
+              <div class="generated-map-scale" role="group" aria-label="生成地図の縮尺"><button type="button" class="is-active" data-generated-map-scale="region">地方でプレイ</button><button type="button" data-generated-map-scale="world">世界全図</button></div>
+              <span><i class="is-castle">城</i>城</span><span><i class="is-city">都</i>都市</span><span><i class="is-town">町</i>町</span><span><i class="is-village">村</i>村</span><span><i class="is-port">港</i>漁港・港・湾口都市</span><span><i class="is-fort">砦</i>砦</span><span><i class="is-monster_nest">巣</i>魔物の巣</span><span><i class="is-barbarian">蛮</i>蛮族・都市国家</span><span><i class="is-colony">旗</i>植民候補</span><span><i class="is-route"></i>街道</span><span><i class="is-sea-route"></i>海路</span><span>視界：現在地から約20マス</span>
+            </div>
           </div>
         </section>
 

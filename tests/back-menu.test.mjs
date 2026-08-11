@@ -16,10 +16,17 @@ test("front navigation shows world before person and keeps reference pages in th
   assert.ok(primaryTabs.indexOf('data-panel="world"') < primaryTabs.indexOf('data-panel="career"'));
   assert.doesNotMatch(primaryTabs, /data-panel="people"/);
   assert.match(backMenu, /設定集/);
-  assert.ok(backMenu.indexOf("世界統計") < backMenu.indexOf("キャラクター辞典"));
+  assert.ok(backMenu.indexOf("世界統計") < backMenu.indexOf("原案種族"));
+  assert.ok(backMenu.indexOf("原案種族") < backMenu.indexOf("原案巨獣"));
+  assert.ok(backMenu.indexOf("原案巨獣") < backMenu.indexOf("キャラクター辞典"));
+  assert.match(backMenu, /data-back-menu-route="source-peoples"/);
+  assert.match(backMenu, /data-back-menu-route="source-creatures"/);
   assert.match(backMenu, /id="backMenuSettingsCatalog"/);
   assert.match(backMenu, /id="audioToggle"/);
   assert.match(backMenu, /data-open-guide/);
   assert.doesNotMatch(worldSwitch, /data-world-mode="statistics"/);
+  assert.doesNotMatch(worldSwitch, /data-world-mode="peoples"/);
+  assert.doesNotMatch(worldSwitch, /data-world-mode="creatures"/);
+  assert.match(app, /view\.atlasMode = backMenuRoute\.dataset\.backMenuRoute === "source-peoples" \? "peoples" : "creatures"/);
   assert.match(app, /elements\.backMenuSettingsCatalog\.innerHTML = governmentTitleCatalog\(\)/);
 });

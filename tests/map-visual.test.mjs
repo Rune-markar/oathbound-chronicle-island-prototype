@@ -7,6 +7,7 @@ const markup = readFileSync(new URL("../index.html", import.meta.url), "utf8");
 const appSource = readFileSync(new URL("../src/app.js", import.meta.url), "utf8");
 const generatedWorldSource = readFileSync(new URL("../src/generated-world-system.js", import.meta.url), "utf8");
 const styleSource = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
+const manualSource = readFileSync(new URL("../MANUAL.md", import.meta.url), "utf8");
 const oceanAsset = new URL("../assets/generated/world-map-ocean-painted.png", import.meta.url);
 const landAsset = new URL("../assets/generated/world-map-land-painted.png", import.meta.url);
 const locationSceneAssets = [
@@ -41,7 +42,7 @@ test("normal play generates the whole world, then zooms to region-level movement
   assert.doesNotMatch(markup, /data-launch-action="new-generated"|FIXED WORLD/);
   assert.match(markup, /人物ごとに地形と国家を生成/);
   assert.match(markup, /地方でプレイ/);
-  assert.match(markup, /各国は複数地域で構成/);
+  assert.match(manualSource, /各国は複数地域で構成/);
   assert.match(appSource, /const showGeneratedWorld = !showWarBoard/);
   assert.match(appSource, /generatedMapScale: "region"/);
   assert.match(initialView, /panel: "world"/);
@@ -57,24 +58,36 @@ test("normal play generates the whole world, then zooms to region-level movement
   assert.match(appSource, /dataset\.generatedTileId = tile\.id/);
   assert.doesNotMatch(appSource, /expeditionRegion\.markerIndex \?\? expeditionRegion\.anchorIndex/);
   assert.match(appSource, /隣接地方/);
-  assert.match(appSource, /data-generated-region-candidate-id/);
-  assert.match(appSource, /data-generated-move-confirm/);
+  assert.doesNotMatch(appSource, /data-generated-region-candidate-id/);
+  assert.match(appSource, /data-generated-map-move-confirm/);
+  assert.match(appSource, /data-generated-map-move-cancel/);
   assert.match(appSource, /data-generated-map-move-region/);
-  assert.match(appSource, /マウスでクリック／タップすると、その地方へ直接移動/);
   assert.match(appSource, /positionGeneratedRegionMoveTargets\(copy, runtime, expeditionRegion, expeditionTile, viewport\)/);
+  assert.match(appSource, /renderGeneratedRegionMoveConfirmation\(copy, runtime, viewport\)/);
+  assert.match(appSource, /移動を実行すると世界時刻が進みます/);
+  assert.match(appSource, /pendingGeneratedTravelMode: "route"/);
+  assert.match(appSource, /data-generated-travel-mode/);
+  const mapMoveSelection = appSource.match(/const generatedMapMoveRegion = event\.target\.closest[\s\S]*?const generatedMoveConfirm/)?.[0] ?? "";
+  assert.match(mapMoveSelection, /view\.pendingGeneratedDestinationId = generatedMapMoveRegion\.dataset\.generatedMapMoveRegion/);
+  assert.doesNotMatch(mapMoveSelection, /moveGeneratedExpeditionToRegion/);
+  const mapMoveConfirmation = appSource.match(/const generatedMoveConfirm = event\.target\.closest[\s\S]*?const generatedRegionButton/)?.[0] ?? "";
+  assert.match(mapMoveConfirmation, /moveGeneratedExpeditionToRegion\(state, regionId, \{ mode: view\.pendingGeneratedTravelMode \}\)/);
+  assert.match(mapMoveConfirmation, /await playGeneratedTravel\(next, destination\.name/);
   assert.match(styleSource, /\.generated-region-move-target\s*\{[^}]*touch-action: manipulation;[^}]*pointer-events: auto;/s);
   assert.doesNotMatch(appSource, /data-generated-region-destination-id/);
   assert.match(appSource, /function generatedRegionViewport\(/);
   assert.match(appSource, /generatedRegionViewport\(expeditionRegion, expeditionTile, runtime\)/);
   assert.match(appSource, /copy\.dataset\.cameraTileId = expeditionTile\.id/);
-  assert.match(appSource, /positionGeneratedRegionMarker\(copy, expeditionRegion, expeditionTile, runtime, viewport, personalMap\.currentLocation\.name\)/);
-  assert.match(appSource, /現在地｜\$\{expeditionRegion\.name\}｜\$\{personalMap\.currentLocation\.name\}/);
+  assert.match(appSource, /positionGeneratedRegionMarker\(copy, expeditionRegion, expeditionTile, runtime, viewport\)/);
+  assert.match(appSource, /`現在地｜\$\{expeditionRegion\.name\}`/);
+  assert.doesNotMatch(appSource, /現在地｜\$\{expeditionRegion\.name\}｜\$\{personalMap\.currentLocation\.name\}/);
   assert.match(appSource, /aria-label="現在地"/);
+  assert.doesNotMatch(appSource, /<span><b>現在地<\/b><small>/);
   assert.match(styleSource, /@keyframes generated-current-location-pulse/);
   assert.match(appSource, /function generatedMapVisibleObjectIds\(/);
   assert.match(appSource, /illustrated-strategy-map-v8-european-settlement-hierarchy/);
   assert.match(appSource, /copy\.dataset\.visibleObjectCount/);
-  assert.match(markup, /実在欧州の都市網を参考に/);
+  assert.match(manualSource, /実在欧州の都市網を参考に/);
   assert.match(generatedWorldSource, /tile\.regionId/);
   assert.doesNotMatch(appSource, /function renderGeneratedRegionCells/);
   assert.doesNotMatch(appSource, /generated-region-layer/);
@@ -93,15 +106,40 @@ test("normal play generates the whole world, then zooms to region-level movement
   }
 });
 
-test("campaign information and generated movement commands live in the left dock", () => {
+test("campaign information stays in the left dock while regional movement is map-only", () => {
   const leftDock = markup.match(/<aside class="left-dock"[^>]*>[\s\S]*?<\/aside>/)?.[0] ?? "";
   assert.match(leftDock, /class="left-hud"/);
   assert.match(leftDock, /class="grand-topbar"/);
   assert.match(leftDock, /class="campaign-bar"/);
   assert.match(leftDock, /id="leftPanel"/);
   assert.match(appSource, /class="generated-command-status"/);
-  assert.match(appSource, /class="generated-move-command"/);
+  assert.doesNotMatch(appSource, /class="generated-move-command"/);
+  assert.doesNotMatch(appSource, /<h2>地方へ移動<\/h2>/);
   assert.match(styleSource, /\.strategy-shell\s*\{[^}]*height: 100vh;[^}]*grid-template-columns: 400px/s);
+});
+
+test("personal log ticker shows four rows and the full chronicle folds after ten entries", () => {
+  assert.match(appSource, /state\.player\.history\.slice\(0, PERSONAL_CHRONICLE_TICKER_LIMIT\)/);
+  assert.match(appSource, /class="chronicle-ticker-row"/);
+  assert.match(appSource, /function renderPersonalChronicle\(/);
+  assert.match(appSource, /class="career-history-year"/);
+  assert.match(appSource, /10件を超えた記録は年ごとに収納/);
+  assert.match(styleSource, /\.chronicle-ticker\s*\{[^}]*max-height: 92px;[^}]*display: grid;/s);
+  assert.match(styleSource, /\.career-history-year > summary/);
+});
+
+test("generated map legend sits at the upper right and can be shown or hidden", () => {
+  assert.match(markup, /id="generatedWorldMapHelp"/);
+  assert.match(markup, /data-generated-map-legend-toggle/);
+  assert.match(markup, /aria-controls="generatedMapLegendBody"/);
+  assert.doesNotMatch(markup, /実在欧州の都市網を参考に/);
+  assert.match(styleSource, /\.generated-world-map-help\s*\{[^}]*right: 16px;[^}]*top: 70px;/s);
+  assert.match(styleSource, /\.generated-world-map-help\.is-collapsed \.generated-map-help-body/);
+  assert.match(appSource, /generatedMapLegendOpen: true/);
+  assert.match(appSource, /function paintGeneratedMapLegend\(/);
+  assert.match(appSource, /data-generated-map-legend-toggle/);
+  assert.match(manualSource, /生成地図の凡例と表示規則/);
+  assert.match(manualSource, /実在欧州の都市網を参考に/);
 });
 
 test("world-map travel persists time and plays a visible route, clock, progress, and daylight transition", () => {
@@ -110,9 +148,13 @@ test("world-map travel persists time and plays a visible route, clock, progress,
   assert.match(markup, /id="generatedTravelProgress"/);
   assert.match(generatedWorldSource, /expeditionClockMinutes/);
   assert.match(generatedWorldSource, /getGeneratedWorldTimeView/);
-  assert.match(generatedWorldSource, /travelMinutes:\s*regionalTravelMinutes/);
+  assert.match(generatedWorldSource, /GENERATED_TRAVEL_MODES/);
+  assert.match(generatedWorldSource, /encounterChance: 0\.06/);
+  assert.match(generatedWorldSource, /encounterChance: 0\.38/);
+  assert.match(generatedWorldSource, /pathTileIds/);
   assert.match(appSource, /async function playGeneratedTravel\(/);
   assert.match(appSource, /marker\?\.animate\(/);
+  assert.match(appSource, /generatedTravelPathData\(pathTiles/);
   assert.match(appSource, /requestAnimationFrame\(tick\)/);
   assert.match(appSource, /await playGeneratedTravel\(next, destination\.name/);
   assert.match(appSource, /await playGeneratedTravel\(next, site\.name/);
@@ -139,8 +181,9 @@ test("generated maps expose coastal settlement hierarchy, sea lanes, and port-ga
 });
 
 test("roadside expansion leaves blank land and exposes an arrival-gated colonization action", () => {
-  assert.match(markup, /街道外には集落のない空白地帯/);
-  assert.match(markup, /地方名声25/);
+  assert.doesNotMatch(markup, /街道外には集落のない空白地帯/);
+  assert.match(manualSource, /街道外には集落のない空白地帯/);
+  assert.match(manualSource, /地方名声25/);
   assert.match(markup, /<i class="is-colony">旗<\/i>植民候補/);
   assert.match(generatedWorldSource, /GENERATED_OBJECT_MIN_DISTANCE/);
   assert.match(generatedWorldSource, /getGeneratedColonizationView/);
@@ -164,20 +207,25 @@ test("monster nests and intelligent barbarian settlements are visible as managed
   assert.match(markup, /<i class="is-barbarian">蛮<\/i>蛮族・都市国家/);
   assert.match(appSource, /getGeneratedBarbarianView\(state\)/);
   assert.match(appSource, /data-generated-site-kind="barbarian"/);
-  assert.match(appSource, /蛮族・都市国家/);
-  assert.match(appSource, /村落→町・都市→国家命令/);
-  assert.match(appSource, /取引による例外/);
   assert.match(styleSource, /\.generated-site-marker\.is-monster_nest/);
   assert.match(styleSource, /\.generated-site-marker\.is-barbarian_city_state/);
-  assert.match(styleSource, /\.barbarian-frontier-grid/);
 });
 
-test("map landmarks and translucent local actions share the world map without allowing a dungeon bypass", () => {
+test("world affairs is a player-known timeline learned through rumors or nearby presence", () => {
+  const panel = appSource.match(/function renderWorldGeopolitics\(\)[\s\S]*?function renderWorldPeoples/)?.[0] ?? "";
+  assert.match(panel, /getGeneratedWorldIntelligenceView\(state\)/);
+  assert.match(panel, /住人の噂/);
+  assert.match(panel, /現場・近傍/);
+  assert.match(panel, /新しく知った順/);
+  assert.doesNotMatch(panel, /国家別戦略|二国間関係|判断要因/);
+});
+
+test("map landmarks stay clear while local actions live in the left panel without allowing a dungeon bypass", () => {
   const generatedPanel = appSource.match(/function renderGeneratedWorldPanel\(\)[\s\S]*?function nationPeopleChips/)?.[0] ?? "";
-  assert.match(markup, /id="personalMapOverlay"/);
-  assert.match(appSource, /function renderPersonalMapOverlay\(/);
-  assert.match(appSource, /elements\.personalMapOverlay\.innerHTML/);
-  assert.doesNotMatch(generatedPanel, /renderPersonalMapOverlay|personal-map-command/);
+  assert.doesNotMatch(markup, /id="personalMapOverlay"/);
+  assert.match(appSource, /function renderPersonalMapCommand\(/);
+  assert.doesNotMatch(appSource, /elements\.personalMapOverlay/);
+  assert.match(generatedPanel, /renderPersonalMapCommand\(personalMap\)/);
   assert.match(appSource, /data-personal-map-explore/);
   assert.match(appSource, /data-personal-map-move/);
   assert.match(appSource, /発見済みの近くの場所だけ/);
@@ -190,9 +238,8 @@ test("map landmarks and translucent local actions share the world map without al
   assert.match(appSource, /movePersonalMap\(state, currentAdventureContext\(\), site\.id\)/);
   assert.match(appSource, /location\.reachable/);
   assert.match(appSource, /location\.current/);
-  assert.match(styleSource, /\.personal-map-overlay-card\s*\{/);
-  assert.match(styleSource, /\.personal-map-overlay-card\s*\{[^}]*background:[^;]*rgba\([^)]*,\s*\.7[0-9]\)/s);
-  assert.match(styleSource, /backdrop-filter:\s*blur/);
+  assert.match(styleSource, /\.personal-map-command\s*\{/);
+  assert.doesNotMatch(styleSource, /\.personal-map-overlay\s*\{/);
   assert.doesNotMatch(appSource, /class="personal-map-board"/);
   assert.match(styleSource, /\.generated-site-action-menu\s*\{/);
   assert.match(styleSource, /\.generated-site-marker:not\(\.is-dungeon\)/);

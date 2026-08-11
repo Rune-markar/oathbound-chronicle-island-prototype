@@ -10,6 +10,30 @@ const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const clone = (value) => structuredClone(value);
 
 export const CAREER_SCHEMA_VERSION = 4;
+export const PERSONAL_CHRONICLE_RECENT_LIMIT = 10;
+export const PERSONAL_CHRONICLE_TICKER_LIMIT = 4;
+
+export function getPersonalChronicleView(history, fallbackDate = {}) {
+  const entries = Array.isArray(history) ? history : [];
+  const fallbackYear = Number.isFinite(fallbackDate.year) ? fallbackDate.year : 0;
+  const fallbackMonth = Number.isFinite(fallbackDate.month) ? fallbackDate.month : 1;
+  const datedEntries = entries.map((entry) => ({
+    ...entry,
+    displayYear: Number.isFinite(entry?.year) ? entry.year : fallbackYear,
+    displayMonth: Number.isFinite(entry?.month) ? entry.month : fallbackMonth,
+  }));
+  const recent = datedEntries.slice(0, PERSONAL_CHRONICLE_RECENT_LIMIT);
+  const archiveByYear = new Map();
+  datedEntries.slice(PERSONAL_CHRONICLE_RECENT_LIMIT).forEach((entry) => {
+    if (!archiveByYear.has(entry.displayYear)) archiveByYear.set(entry.displayYear, []);
+    archiveByYear.get(entry.displayYear).push(entry);
+  });
+  return {
+    recent,
+    archives: [...archiveByYear].map(([year, yearEntries]) => ({ year, entries: yearEntries })),
+    total: datedEntries.length,
+  };
+}
 
 const titleSystem = (id, name, highest, offices) => Object.freeze({
   id,

@@ -157,6 +157,8 @@ import {
 import {
   CAREER_ACTIONS,
   CAREER_SCHEMA_VERSION,
+  PERSONAL_CHRONICLE_RECENT_LIMIT,
+  PERSONAL_CHRONICLE_TICKER_LIMIT,
   CAREER_STAGE_ROUTE,
   CAREER_STAGES,
   GOVERNMENT_TITLE_SYSTEMS,
@@ -170,6 +172,7 @@ import {
   deriveJurisdiction,
   executeGovernanceCommand,
   getCareerStage,
+  getPersonalChronicleView,
   getGovernmentTitleSystem,
   getGovernanceView,
   getTitleForCareerStage,
@@ -280,6 +283,8 @@ export {
 export {
   CAREER_ACTIONS,
   CAREER_SCHEMA_VERSION,
+  PERSONAL_CHRONICLE_RECENT_LIMIT,
+  PERSONAL_CHRONICLE_TICKER_LIMIT,
   CAREER_STAGE_ROUTE,
   CAREER_STAGES,
   DELEGATABLE_ROLES,
@@ -295,6 +300,7 @@ export {
   deriveJurisdiction,
   executeGovernanceCommand,
   getCareerStage,
+  getPersonalChronicleView,
   getGovernmentTitleSystem,
   getGovernanceView,
   getTitleForCareerStage,

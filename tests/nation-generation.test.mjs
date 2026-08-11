@@ -288,6 +288,14 @@ test("terrain renderer draws colored nations, regional routes, and world-object 
   const visibleObjectId = politics.objects.find((object) => object.type === "castle").id;
   const generalizedSvg = renderTerrainSvg(world, { cellSize: 12, nationMap: politics, visibleObjectIds: new Set([visibleObjectId]) });
   assert.equal(generalizedSvg.match(/data-object-id=/g)?.length, 1, "cartographic generalization must hide non-selected settlement markers");
+  const edgeTile = world.tiles.find((tile) => tile.x === 0 && tile.y > 0 && tile.y < world.height - 1);
+  const edgePolitics = {
+    ...politics,
+    objects: politics.objects.map((object) => object.id === visibleObjectId ? { ...object, tileIndex: edgeTile.index } : object),
+  };
+  const wrappedMarkerSvg = renderTerrainSvg(world, { cellSize: 12, nationMap: edgePolitics, visibleObjectIds: new Set([visibleObjectId]) });
+  assert.equal(wrappedMarkerSvg.match(/data-object-id=/g)?.length, 1, "wrapped visual copies must not duplicate semantic marker identities");
+  assert.match(wrappedMarkerSvg, new RegExp(`data-wrap-copy="${visibleObjectId}"[^>]*translate\\(${world.width * 12 + 6}\\.00 `), "an icon crossing the western edge must continue at the eastern edge");
   assert.equal(svg.match(/class="sea-route-edge /g)?.length, politics.seaRoutes.length);
   assert.match(svg, /class="region-route-edge [^"]*has-mountain/);
   assert.match(svg, /class="region-route-edge [^"]*has-river/);

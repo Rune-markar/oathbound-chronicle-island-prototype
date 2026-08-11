@@ -9,6 +9,7 @@ import {
   generatedWorldSaveSummary,
   getGeneratedColonizationView,
   getGeneratedExpeditionReachableRegions,
+  getGeneratedExpeditionTravelOptions,
   getGeneratedShippingDestinations,
   GENERATED_RECOGNITION_RADIUS,
   getGeneratedRecognitionView,
@@ -313,7 +314,8 @@ test("expeditions can move only to directly adjacent regions and never skip acro
   const reachable = getGeneratedExpeditionReachableRegions(state);
   assert.ok(reachable.length > 0);
   assert.ok(reachable.every((entry) => entry.cost > 0 && entry.cost <= state.generatedWorld.expeditionMovement));
-  assert.ok(reachable.every((entry) => entry.travelMinutes === entry.cost * 6 * 60));
+  assert.ok(reachable.every((entry) => entry.id === "route" && entry.travelMinutes > 0));
+  assert.ok(reachable.every((entry) => entry.pathTileIds.length >= 2));
   assert.ok(reachable.every((entry) => view.expeditionRegion.neighborIds.includes(entry.regionId)));
   assert.ok(reachable.every((entry) => entry.pathRegionIds.length === 1 && entry.pathRegionIds[0] === entry.regionId));
   const affordableNeighborIds = view.expeditionRegion.neighborIds.filter((regionId) => (
@@ -326,6 +328,7 @@ test("expeditions can move only to directly adjacent regions and never skip acro
   assert.equal(moved.generatedWorld.expeditionRegionId, destination.regionId);
   assert.equal(moved.generatedWorld.expeditionMovement, state.generatedWorld.expeditionMovement - destination.cost);
   assert.equal(moved.generatedWorld.expeditionClockMinutes, state.generatedWorld.expeditionClockMinutes + destination.travelMinutes);
+  assert.equal(moved.generatedWorld.lastTravel.mode, "route");
   assert.ok(destination.pathRegionIds.every((regionId) => moved.generatedWorld.discoveredRegionIds.includes(regionId)));
 
   const nonAdjacent = view.runtime.nations.regions.find((region) => (
@@ -335,6 +338,26 @@ test("expeditions can move only to directly adjacent regions and never skip acro
   assert.throws(() => moveGeneratedExpeditionToRegion(state, nonAdjacent.id), /隣接する地方だけです/);
   const exhausted = { ...state, generatedWorld: { ...state.generatedWorld, expeditionMovement: 0 } };
   assert.deepEqual(getGeneratedExpeditionReachableRegions(exhausted), []);
+});
+
+test("regional travel defaults to roads while direct travel spends more supplies and raises encounter danger", () => {
+  const state = setGeneratedPlayerNation(createCareerInitialState(), "nation-1");
+  const destination = getGeneratedExpeditionReachableRegions(state)[0];
+  const options = getGeneratedExpeditionTravelOptions(state, destination.regionId);
+  const route = options.find((entry) => entry.id === "route");
+  const direct = options.find((entry) => entry.id === "direct");
+  assert.ok(route.available && direct.available);
+  assert.equal(route.supplyCost, 1);
+  assert.equal(direct.supplyCost, 3);
+  assert.ok(route.travelMinutes < direct.travelMinutes);
+  assert.ok(route.encounterChance < direct.encounterChance);
+  assert.ok(route.pathTileIds.length >= 2 && direct.pathTileIds.length >= 2);
+
+  const quietRoute = moveGeneratedExpeditionToRegion(state, destination.regionId, { mode: "route", encounterRoll: 0.99 });
+  assert.equal(quietRoute.generatedWorld.lastTravel.encounter, null);
+  const dangerousDirect = moveGeneratedExpeditionToRegion(state, destination.regionId, { mode: "direct", encounterRoll: 0, strengthRoll: 0 });
+  assert.equal(dangerousDirect.generatedWorld.lastTravel.encounter.strength, "strong");
+  assert.equal(dangerousDirect.player.villageLife.supplies.food, state.player.villageLife.supplies.food - 3);
 });
 
 test("map sites expose shared reachability and move the expedition to the exact castle, village, or fort tile", () => {
