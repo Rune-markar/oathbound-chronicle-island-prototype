@@ -9,13 +9,21 @@ import {
   getRoleDelegation,
   normalizeWarState,
   performCareerAction,
+  performVillageAction,
   reassignDelegatedRole,
 } from "../src/simulation.js";
 
 function reachCommander() {
   let state = createCareerInitialState();
-  state = performCareerAction(state, "take_contract");
-  state = acceptServiceInvitation(state, "serena");
+  const village = { id: "test-village", name: "試験村" };
+  state = performVillageAction(state, village, "accept_request");
+  state = performVillageAction(state, village, "recruit_companion");
+  state = performVillageAction(state, village, "complete_request");
+  state = performVillageAction(state, village, "report_request");
+  state = performVillageAction(state, village, "receive_reward");
+  state = performVillageAction(state, village, "accept_request");
+  state = performVillageAction(state, village, "complete_request");
+  state = acceptServiceInvitation(state, "service-chance_rescue");
   return performCareerAction(state, "fulfill_order");
 }
 
@@ -98,4 +106,24 @@ test("さらに昇進しても下位組織と旧領は消えず、保存復元�
   assert.equal(overview.assignments.length, 2);
   assert.equal(overview.assignments.find((assignment) => assignment.roleId === "commander").organization.commanderId, "dario");
   assert.equal(overview.assignments.find((assignment) => assignment.roleId === "lord").holderId, "gaius");
+});
+
+test("独立時は地方領主の実務も委任し、選んだ国家形態の最高位称号を得る", () => {
+  let state = performCareerAction(reachLord(), "consolidate_power");
+  state = performCareerAction(state, "request_second_fief", { successorId: "gaius" });
+  state = performCareerAction(state, "consolidate_power");
+  state = performCareerAction(state, "declare_independence", {
+    successorId: "edras",
+    mandateId: "balanced",
+    authorityId: "standard",
+    governmentFormId: "theocracy",
+  });
+
+  const overview = getRoleDelegation(state);
+  assert.equal(state.player.stage, "independent_ruler");
+  assert.equal(state.player.title, "教皇");
+  assert.equal(state.player.governmentFormId, "theocracy");
+  assert.deepEqual(overview.assignments.map((assignment) => assignment.roleId).sort(), ["commander", "lord", "multi_lord"]);
+  assert.equal(overview.assignments.find((assignment) => assignment.roleId === "multi_lord").holderId, "edras");
+  assert.equal(state.cities.nereia.governorId, "edras");
 });

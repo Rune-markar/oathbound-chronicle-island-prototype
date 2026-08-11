@@ -47,13 +47,13 @@
 
     <section class="battle-preparation-screen is-hidden" id="battlePreparationScreen" aria-labelledby="battlePreparationTitle">
       <header class="battle-preparation-header">
-        <div><span>ORDER OF BATTLE / MUSTERING PHASE</span><h1 id="battlePreparationTitle">灰冠平原・戦闘前編成</h1><p>参陣人物、陣形、初期配置、兵站計画を確定してください。</p></div>
-        <button type="button" data-preparation-action="exit">開発メニューへ戻る</button>
+        <div><span>ORDER OF BATTLE / MUSTERING PHASE</span><h1 id="battlePreparationTitle">灰冠平原・戦闘前編成</h1><p id="battlePreparationIntro">参陣人物、陣形、初期配置、兵站計画を確定してください。</p></div>
+        <div><button type="button" data-preparation-action="skip" id="battlePreparationSkip" hidden>戦闘をスキップ</button><button type="button" data-preparation-action="exit" id="battlePreparationExit">開発メニューへ戻る</button></div>
       </header>
       <div class="battle-preparation-layout">
         <aside class="battle-participant-panel" aria-labelledby="battleParticipantHeading">
           <header><div><small>PARTICIPANTS</small><h2 id="battleParticipantHeading">参陣人物</h2></div><b id="battleParticipantCount">0 / 3</b></header>
-          <p>軍団長・副将・軍師として最大3名を選択。参加者は戦場上の指揮官となり、配下部隊を分担します。</p>
+          <p id="battleParticipantIntro">軍団長・副将・軍師として最大3名を選択。参加者は戦場上の指揮官となり、配下部隊を分担します。</p>
           <div class="battle-participant-list" id="battleParticipantList"></div>
         </aside>
         <main class="battle-deployment-panel">
@@ -82,15 +82,16 @@
         <div><span>FIELD COMMAND / TACTICAL ENGINE</span><h1 id="tacticalBattleTitle">灰冠平原・部隊戦闘試験</h1></div>
         <div class="tactical-battle-header-actions">
           <button type="button" data-battle-action="result" id="tacticalResultButton" hidden>戦果確認</button>
-          <button type="button" data-battle-action="reset">再編成</button>
-          <details class="tactical-more-actions">
+          <button type="button" data-battle-action="reset" id="tacticalBattleReset">再編成</button>
+          <button type="button" data-battle-action="skip-dungeon" id="tacticalBattleSkip" hidden>戦闘をスキップ</button>
+          <details class="tactical-more-actions" id="tacticalMoreActions">
             <summary>試験メニュー</summary>
             <div>
               <button type="button" data-battle-action="fortification-demo" title="開発用：城の完全包囲と基礎耐久力低下を確認">城塞包囲試験</button>
               <button type="button" data-battle-action="encirclement-demo" title="開発用：完全包囲撃滅後の捕縛・処遇画面を確認">包囲殲滅結果</button>
             </div>
           </details>
-          <button type="button" data-battle-action="exit">開発メニュー</button>
+          <button type="button" data-battle-action="exit" id="tacticalBattleExit">開発メニュー</button>
         </div>
       </header>
       <section class="tactical-battle-summary" id="tacticalBattleSummary" aria-live="polite"></section>
@@ -99,7 +100,7 @@
           <section class="tactical-deployment-bar" id="tacticalDeploymentBar" aria-label="初期陣形配置"></section>
           <div class="tactical-map-toolbar">
             <p><b>操作</b> 味方を選ぶと移動・攻撃可能範囲を表示。必要な指示を出して「進行」</p>
-            <span><i class="is-player"></i>王国軍</span><span><i class="is-enemy"></i>公国軍</span><span><i class="is-command"></i>指揮官</span><span><i class="is-reachable"></i>移動可能</span><span><i class="is-attackable"></i>攻撃可能</span>
+            <span><i class="is-player"></i><b id="tacticalPlayerLegend">王国軍</b></span><span><i class="is-enemy"></i><b id="tacticalEnemyLegend">公国軍</b></span><span><i class="is-command"></i>指揮官</span><span><i class="is-reachable"></i>移動可能</span><span><i class="is-attackable"></i>攻撃可能</span>
           </div>
           <div class="tactical-map-scroll">
             <div class="tactical-battle-map" id="tacticalBattleMap" role="grid" aria-label="20列14行の戦闘マップ"></div>
@@ -152,7 +153,7 @@
 
           <section class="campaign-bar" id="campaignBar" aria-live="polite">
             <div class="campaign-bar-goal"><small>立身段階</small><strong>一個人として身を立てる</strong></div>
-            <div class="campaign-bar-next"><small>現在の目標</small><strong>依頼を果たし、仕官の誘いを得る</strong></div>
+            <div class="campaign-bar-next"><small>現在の目標</small><strong>村へ入り、ギルドと酒場で依頼の準備をする</strong></div>
           </section>
         </div>
         <nav class="primary-tabs" id="primaryTabs">
@@ -165,7 +166,7 @@
           <button type="button" data-panel="town" hidden><span>町</span>町政</button>
           <button type="button" data-panel="diplomacy" hidden><span>⚖</span>外交</button>
           <button type="button" data-panel="military" hidden><span>⚔</span>軍事</button>
-          <button type="button" data-panel="people" hidden><span>♟</span>人材</button>
+          <button type="button" data-panel="people" hidden><span>♟</span>人物辞典</button>
           <button type="button" data-panel="world"><span>界</span>世界</button>
         </nav>
         <section class="ledger-panel" id="leftPanel" aria-live="polite"></section>
@@ -188,8 +189,8 @@
           </div>
           <div class="generated-world-map-help">
             <div class="generated-map-scale" role="group" aria-label="生成地図の縮尺"><button type="button" class="is-active" data-generated-map-scale="region">地方でプレイ</button><button type="button" data-generated-map-scale="world">世界全図</button></div>
-            <span><i class="is-castle">城</i>城</span><span><i class="is-village">村</i>村</span><span><i class="is-fort">砦</i>砦</span>
-            <p>隣接地方は左のコマンドで選択・確定 · 世界全図と地方図は同じ生成画像 · 国家は一つ以上の地方で構成</p>
+            <span><i class="is-castle">城</i>城</span><span><i class="is-village">村</i>村</span><span><i class="is-fort">砦</i>砦</span><span><i class="is-route"></i>地方導線</span>
+            <p>四角い地方拠点と線で隣接関係を表示 · 隣接地方は左のコマンドで選択・確定 · 世界全図と地方図は同じ生成画像 · 国家は一つ以上の地方で構成</p>
           </div>
         </section>
 
@@ -676,6 +677,10 @@
         </div>
       </section>
     </div>
+
+    <section class="adventure-screen is-hidden" id="adventureScreen" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="adventureTitle">
+      <div id="adventureContent"></div>
+    </section>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
     <script type="module" src="./src/app.js"></script>

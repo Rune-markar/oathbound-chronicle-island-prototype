@@ -148,13 +148,22 @@ test("every nation receives a capital castle, interior villages, and frontier fo
   }
 });
 
-test("terrain renderer draws colored nations, natural borders, and castle, village, and fort markers without letter tiles", () => {
+test("terrain renderer draws colored nations, regional routes, and world-object markers without letter tiles", () => {
   const world = generateTerrain(TERRAIN_OPTIONS);
   const politics = generateNations(world, { count: 7 });
   const svg = renderTerrainSvg(world, { cellSize: 12, nationMap: politics, textureUrl: "./terrain-natural-texture.png" });
+  const expectedRoutes = politics.regions.reduce((sum, region) => sum + region.neighborIds.length, 0) / 2;
   assert.match(svg, /id="nationOverlay"/);
   assert.match(svg, /id="nationBorders"/);
   assert.match(svg, /id="regionBorders"/);
+  assert.match(svg, /id="regionalTravelNetwork"/);
+  assert.match(svg, /id="regionalRoutes"/);
+  assert.match(svg, /id="regionalRouteNodes"/);
+  assert.equal(svg.match(/class="region-route-edge /g)?.length, expectedRoutes);
+  assert.equal(svg.match(/class="region-route-node(?: |")/g)?.length, politics.regions.length);
+  assert.equal(svg.match(/data-region-id="region-/g)?.length, politics.regions.length);
+  assert.match(svg, /class="region-route-line"/);
+  assert.match(svg, /class="region-route-node is-capital-region"/);
   assert.match(svg, /id="nationCapitals"/);
   assert.match(svg, /id="nationVillages"/);
   assert.match(svg, /id="nationForts"/);

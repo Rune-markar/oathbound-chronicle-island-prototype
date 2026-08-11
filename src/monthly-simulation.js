@@ -1,3 +1,21 @@
+import { createCharacterDefinition } from "./character-template.js";
+import {
+  CREED_AXIS_DEFINITIONS,
+  CREED_AXIS_IDS,
+  CREED_SCHEMA_VERSION,
+  advanceCreedGroup,
+  aggregateCreedGroup,
+  applyCreedImpact,
+  creedImpactFromEffects,
+  createCreedGroup,
+  createCreedProfile,
+  describeCreedAxis,
+  evaluateCreed,
+  evaluateGroupCreed,
+  generateCreedIdentity,
+  recordCreedPolicyDebate,
+  refreshCreedGroup,
+} from "./creed-system.js";
 import {
   DOCTRINES,
   FACILITIES,
@@ -119,7 +137,9 @@ import {
 import {
   CAREER_ACTIONS,
   CAREER_SCHEMA_VERSION,
+  CAREER_STAGE_ROUTE,
   CAREER_STAGES,
+  GOVERNMENT_TITLE_SYSTEMS,
   GOVERNANCE_COMMANDS,
   LOCAL_AUTHORITIES,
   NATIONAL_AUTHORITIES,
@@ -130,7 +150,9 @@ import {
   deriveJurisdiction,
   executeGovernanceCommand,
   getCareerStage,
+  getGovernmentTitleSystem,
   getGovernanceView,
+  getTitleForCareerStage,
   grantDelegatedAuthority,
   imposeProhibition,
   initializeCareerState,
@@ -138,6 +160,17 @@ import {
   performCareerAction as performPlayerCareerAction,
   submitPetition,
 } from "./player-career.js";
+import {
+  VILLAGE_FACILITIES,
+  VILLAGE_LIFE_SCHEMA_VERSION,
+  SERVICE_ROUTE_DEFINITIONS,
+  createVillageLifeState,
+  getServiceRouteProgress,
+  getVillageAction,
+  getVillageActionAvailability,
+  normalizeVillageLifeState,
+  performVillageAction,
+} from "./village-life.js";
 import {
   DELEGATABLE_ROLES,
   DELEGATION_AUTHORITY_LEVELS,
@@ -172,6 +205,18 @@ export {
 };
 
 export { HISTORY_SCHEMA_VERSION, PRESSURE_DEFINITIONS };
+export {
+  CREED_AXIS_DEFINITIONS,
+  CREED_AXIS_IDS,
+  CREED_SCHEMA_VERSION,
+  aggregateCreedGroup,
+  createCreedGroup,
+  createCreedProfile,
+  describeCreedAxis,
+  evaluateCreed,
+  evaluateGroupCreed,
+  generateCreedIdentity,
+};
 export { TOWN_COMMAND_IDS, isTownCommand };
 export { AFTERMATH_DECISIONS, AFTERMATH_POLICIES, BORDER_SETTLEMENTS, CAMPAIGN_ACTS, FOREIGN_AGENDAS, OFFICER_DEMAND_RESPONSES, OFFICER_POLITICS };
 export {
@@ -185,11 +230,13 @@ export {
 export {
   CAREER_ACTIONS,
   CAREER_SCHEMA_VERSION,
+  CAREER_STAGE_ROUTE,
   CAREER_STAGES,
   DELEGATABLE_ROLES,
   DELEGATION_AUTHORITY_LEVELS,
   DELEGATION_MANDATES,
   GOVERNANCE_COMMANDS,
+  GOVERNMENT_TITLE_SYSTEMS,
   LOCAL_AUTHORITIES,
   NATIONAL_AUTHORITIES,
   ROLE_DELEGATION_SCHEMA_VERSION,
@@ -198,11 +245,22 @@ export {
   deriveJurisdiction,
   executeGovernanceCommand,
   getCareerStage,
+  getGovernmentTitleSystem,
   getGovernanceView,
+  getTitleForCareerStage,
   grantDelegatedAuthority,
   imposeProhibition,
   normalizeCareerState,
   submitPetition,
+  VILLAGE_FACILITIES,
+  VILLAGE_LIFE_SCHEMA_VERSION,
+  SERVICE_ROUTE_DEFINITIONS,
+  createVillageLifeState,
+  getServiceRouteProgress,
+  getVillageAction,
+  getVillageActionAvailability,
+  normalizeVillageLifeState,
+  performVillageAction,
 };
 
 export const FORCED_ORDER_RULES = {
@@ -230,6 +288,15 @@ export const FACTION_ACTIONS = {
     effect: { faction: { support: -7, radicalism: -6 }, resources: { security: 3 }, internal: { fear: 5 } },
   },
 };
+
+function humanCharacter(definition, source = "WORLD.characters") {
+  return createCharacterDefinition({
+    ...definition,
+    raceId: "human",
+    identity: { raceId: "human", ...(definition.identity ?? {}) },
+    metadata: { source, ...(definition.metadata ?? {}) },
+  });
+}
 
 export const WORLD = {
   continent: { id: "eldoria", name: "エルドリア大陸", note: "王国・公国・連合国家が河川、峠、大陸公路を介して接する大陸圏。" },
@@ -271,18 +338,18 @@ export const WORLD = {
     imperial_road: { id: "imperial_road", name: "大陸公路", value: 74, note: "北西から東境へ通じ、外交と軍需の速度を左右する幹線。" },
   },
   characters: {
-    edras: { id: "edras", name: "エドラス・ヴェイン", portrait: "エ", portraitImage: "assets/generated/officer-edras.webp", role: "王都執政官", policy: "戸籍整備", stats: { leadership: 46, war: 31, intelligence: 70, politics: 84, charisma: 66 }, traits: ["commerce", "harbor"] },
-    mara: { id: "mara", name: "マーラ・ネレイス", portrait: "マ", portraitImage: "assets/generated/officer-mara.webp", role: "河港太守", policy: "河川交易", stats: { leadership: 73, war: 61, intelligence: 69, politics: 65, charisma: 78 }, traits: ["diplomacy", "scouting"] },
-    gaius: { id: "gaius", name: "ガイウス・オルタ", portrait: "ガ", portraitImage: "assets/generated/officer-gaius.webp", role: "北部太守", policy: "兵站改革", stats: { leadership: 76, war: 70, intelligence: 52, politics: 57, charisma: 62 }, traits: ["drill", "repair", "mobilize"] },
-    sera: { id: "sera", name: "セラ・クレフ", portrait: "セ", portraitImage: "assets/generated/officer-sera.webp", role: "王国軍師", policy: "情報府", stats: { leadership: 48, war: 36, intelligence: 86, politics: 79, charisma: 59 }, traits: ["scouting", "justification"] },
-    ilva: { id: "ilva", name: "イルヴァ・ロウ", portrait: "イ", portraitImage: "assets/generated/officer-ilva.webp", role: "無所属の測量士", policy: "峠測量", stats: { leadership: 55, war: 39, intelligence: 78, politics: 64, charisma: 51 }, traits: ["scouting", "repair"] },
-    dario: { id: "dario", name: "ダリオ・フェン", portrait: "ダ", portraitImage: "assets/generated/officer-dario.webp", role: "放浪軍の隊長", policy: "機動防衛", stats: { leadership: 81, war: 77, intelligence: 54, politics: 42, charisma: 69 }, traits: ["drill", "mobilize"] },
-    mirel: { id: "mirel", name: "ミレル・サーン", portrait: "ミ", portraitImage: "assets/generated/officer-mirel.webp", role: "ヴァルカ系商人", policy: "縦横術", stats: { leadership: 38, war: 29, intelligence: 73, politics: 81, charisma: 84 }, traits: ["diplomacy", "commerce", "recruitment"] },
+    edras: humanCharacter({ id: "edras", name: "エドラス・ヴェイン", portrait: "エ", portraitImage: "assets/generated/officer-edras.webp", role: "王都執政官", policy: "戸籍整備", archetypeId: "human_strategist", stats: { leadership: 46, war: 31, intelligence: 70, politics: 84, charisma: 66 }, traits: ["commerce", "harbor"] }),
+    mara: humanCharacter({ id: "mara", name: "マーラ・ネレイス", portrait: "マ", portraitImage: "assets/generated/officer-mara.webp", role: "河港太守", policy: "河川交易", archetypeId: "human_guardian", stats: { leadership: 73, war: 61, intelligence: 69, politics: 65, charisma: 78 }, traits: ["diplomacy", "scouting"] }),
+    gaius: humanCharacter({ id: "gaius", name: "ガイウス・オルタ", portrait: "ガ", portraitImage: "assets/generated/officer-gaius.webp", role: "北部太守", policy: "兵站改革", archetypeId: "human_honor", stats: { leadership: 76, war: 70, intelligence: 52, politics: 57, charisma: 62 }, traits: ["drill", "repair", "mobilize"] }),
+    sera: humanCharacter({ id: "sera", name: "セラ・クレフ", portrait: "セ", portraitImage: "assets/generated/officer-sera.webp", role: "王国軍師", policy: "情報府", archetypeId: "human_strategist", stats: { leadership: 48, war: 36, intelligence: 86, politics: 79, charisma: 59 }, traits: ["scouting", "justification"] }),
+    ilva: humanCharacter({ id: "ilva", name: "イルヴァ・ロウ", portrait: "イ", portraitImage: "assets/generated/officer-ilva.webp", role: "無所属の測量士", policy: "峠測量", archetypeId: "human_strategist", stats: { leadership: 55, war: 39, intelligence: 78, politics: 64, charisma: 51 }, traits: ["scouting", "repair"] }),
+    dario: humanCharacter({ id: "dario", name: "ダリオ・フェン", portrait: "ダ", portraitImage: "assets/generated/officer-dario.webp", role: "放浪軍の隊長", policy: "機動防衛", archetypeId: "human_honor", stats: { leadership: 81, war: 77, intelligence: 54, politics: 42, charisma: 69 }, traits: ["drill", "mobilize"] }),
+    mirel: humanCharacter({ id: "mirel", name: "ミレル・サーン", portrait: "ミ", portraitImage: "assets/generated/officer-mirel.webp", role: "ヴァルカ系商人", policy: "縦横術", archetypeId: "human_strategist", stats: { leadership: 38, war: 29, intelligence: 73, politics: 81, charisma: 84 }, traits: ["diplomacy", "commerce", "recruitment"] }),
   },
 };
 
 export const ENEMY_COMMANDERS = Object.freeze({
-  valka: Object.freeze({
+  valka: Object.freeze(humanCharacter({
     id: "adelheid_kraehe",
     countryId: "valka",
     name: "アデルハイト・クレーエ",
@@ -290,8 +357,11 @@ export const ENEMY_COMMANDERS = Object.freeze({
     portraitImage: "assets/generated/enemy-commander-valka.webp",
     role: "灰冠峠総司令",
     doctrine: "城砦防衛と局地反撃",
+    archetypeId: "human_honor",
+    biography: { affiliation: "ヴァルカ公国", occupation: "灰冠峠総司令" },
+    gameplay: { role: "灰冠峠総司令", doctrine: "城砦防衛と局地反撃", commander: true, recruitable: false },
     stats: Object.freeze({ leadership: 79, war: 75, intelligence: 72 }),
-  }),
+  }, "ENEMY_COMMANDERS")),
 });
 
 export const GREAT_POWER_FOUNDATIONS = Object.freeze({
@@ -402,7 +472,7 @@ const command = (id, group, spendingCategory, name, taskType, cost, description,
 });
 
 export const COMMANDS = {
-  "welfare.relief": command("welfare.relief", "city", "social_security", "生活支援給付", "patrol", { money: 6 }, "困窮世帯へ給付を行い、民心と地域の安定を回復する。", { repeatable: true }),
+  "welfare.relief": command("welfare.relief", "city", "social_security", "生活支援給付", "patrol", { money: 6 }, "困窮世帯へ給付を行い、民心と地域の安定を回復する。", { repeatable: true, creedEffects: [{ id: "asceticism", direction: -0.3, relevance: 0.4 }] }),
   "welfare.health": command("welfare.health", "city", "social_security", "公衆衛生事業", "repair", { money: 5 }, "診療所、井戸、下水を整備し、衛生と民心を改善する。", { repeatable: true }),
   "city.patrol": command("city.patrol", "city", "social_security", "治安巡回", "patrol", { money: 3 }, "巡回と負担調整を行い、治安と徴募回復を支える。", { repeatable: true }),
   "city.drill": command("city.drill", "city", "military_affairs", "駐屯訓練", "drill", { money: 4 }, "駐屯兵を訓練し、実効戦力を高める。", { repeatable: true }),
@@ -413,7 +483,7 @@ export const COMMANDS = {
   "navy.soundings": command("navy.soundings", "military", "research_development", "灰冠峠を測量", "scouting", { money: 5 }, "側道・渡河点・敵哨戒を確認し、軍情報を改善する。", { defaultCityId: "orta", durationTurns: 2, governanceCost: 2 }),
   "court.serve": command("court.serve", "people", "research_development", "測量士を研究職へ登用", "recruitment", { money: 4 }, "測量士イルヴァへ仕官を取り次ぐ。", { defaultCityId: "selene", targetOfficerId: "ilva" }),
   "diplomacy.talks": command("diplomacy.talks", "diplomacy", "foreign_aid", "相互通行を正式要求", "diplomacy", { money: 3 }, "隊商差押えの停止と相互通行権を正式議題にする。", { defaultCityId: "selene", durationTurns: 2, governanceCost: 2 }),
-  "diplomacy.concession": command("diplomacy.concession", "diplomacy", "foreign_aid", "共同関税案を提示", "diplomacy", { money: 5 }, "関税上限を相互化する譲歩で、条約の受諾見込みを高める。", { defaultCityId: "selene", governanceCost: 2, repeatable: true, requiresNegotiation: true }),
+  "diplomacy.concession": command("diplomacy.concession", "diplomacy", "foreign_aid", "共同関税案を提示", "diplomacy", { money: 5 }, "関税上限を相互化する譲歩で、条約の受諾見込みを高める。", { defaultCityId: "selene", governanceCost: 2, repeatable: true, requiresNegotiation: true, creedEffects: [{ id: "raceView", direction: -0.25, relevance: 0.45 }, { id: "orthodoxy", direction: -0.25, relevance: 0.35 }] }),
   "diplomacy.mediation": command("diplomacy.mediation", "diplomacy", "foreign_aid", "第三国の仲介を招請", "diplomacy", { money: 6 }, "友好国を仲介者に立て、拒否の外交費用を高める。", { defaultCityId: "selene", durationTurns: 2, governanceCost: 2, repeatable: true, requiresNegotiation: true }),
   "diplomacy.pressure": command("diplomacy.pressure", "diplomacy", "foreign_aid", "武装護送を公示", "justification", { money: 5 }, "隊商護送隊を編成し、武力を背景に限定妥協を迫る。", { defaultCityId: "orta", governanceCost: 2, repeatable: true, requiresNegotiation: true }),
   "diplomacy.aid": command("diplomacy.aid", "diplomacy", "foreign_aid", "国境商会を支援", "diplomacy", { money: 14 }, "ヴァルカの国境商会へ資金を供与する。", { defaultCityId: "selene", governanceCost: 2 }),
@@ -423,7 +493,7 @@ export const COMMANDS = {
   "city.cultivate": command("city.cultivate", "city", "economic_investment", "開墾", "cultivate", { money: 4 }, "水路と共同地を整え、生産力と食料収支を改善する。", { repeatable: true }),
   "city.commerce": command("city.commerce", "city", "economic_investment", "商業振興", "commerce", { money: 5 }, "市場・倉札・信用を整え、月次収入を伸ばす。", { repeatable: true }),
   "city.repair": command("city.repair", "city", "economic_investment", "都市基盤を補修", "repair", { money: 5 }, "城壁・街道・埠頭を補修し、防備と造船力を増やす。", { repeatable: true }),
-  "diplomacy.trade": command("diplomacy.trade", "diplomacy", "economic_investment", "大陸交易協定を打診", "diplomacy", { money: 6 }, "相互の市場と街道使用を制度化する。", { defaultCityId: "selene", governanceCost: 2 }),
+  "diplomacy.trade": command("diplomacy.trade", "diplomacy", "economic_investment", "大陸交易協定を打診", "diplomacy", { money: 6 }, "相互の市場と街道使用を制度化する。", { defaultCityId: "selene", governanceCost: 2, creedEffects: [{ id: "raceView", direction: -0.35, relevance: 0.45 }, { id: "asceticism", direction: -0.4, relevance: 0.7 }] }),
 };
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
@@ -435,6 +505,105 @@ function factionState(support, influence, radicalism) {
 
 function facilities(levels) {
   return Object.fromEntries(Object.keys(FACILITIES).map((id) => [id, { level: levels[id] ?? 0, condition: 100 }]));
+}
+
+function creedSeed(values = {}, importance = {}, flexibility = 0.7) {
+  return {
+    axes: Object.fromEntries(CREED_AXIS_IDS.map((axisId) => [axisId, {
+      value: values[axisId] ?? 0,
+      importance: importance[axisId] ?? 0.5,
+    }])),
+    flexibility,
+  };
+}
+
+const OFFICER_CREED_SEEDS = Object.freeze({
+  edras: creedSeed(
+    { raceView: -15, orthodoxy: 45, clericalAuthority: 55, theocracy: -30, ritualism: 55, asceticism: -40, missionary: 25 },
+    { raceView: 0.25, orthodoxy: 0.65, clericalAuthority: 0.75, theocracy: 0.55, ritualism: 0.7, asceticism: 0.35, missionary: 0.25 }, 0.5,
+  ),
+  mara: creedSeed(
+    { raceView: -65, orthodoxy: -45, clericalAuthority: -40, theocracy: -60, ritualism: -25, asceticism: -55, missionary: -20 },
+    { raceView: 0.7, orthodoxy: 0.55, clericalAuthority: 0.5, theocracy: 0.7, ritualism: 0.35, asceticism: 0.75, missionary: 0.25 }, 0.68,
+  ),
+  gaius: creedSeed(
+    { raceView: 40, orthodoxy: 55, clericalAuthority: -50, theocracy: 20, ritualism: 45, asceticism: 10, missionary: -40 },
+    { raceView: 0.65, orthodoxy: 0.55, clericalAuthority: 0.75, theocracy: 0.35, ritualism: 0.45, asceticism: 0.25, missionary: 0.3 }, 0.42,
+  ),
+  sera: creedSeed(
+    { raceView: -55, orthodoxy: -65, clericalAuthority: -35, theocracy: -70, ritualism: -60, asceticism: -25, missionary: 15 },
+    { raceView: 0.45, orthodoxy: 0.75, clericalAuthority: 0.45, theocracy: 0.8, ritualism: 0.65, asceticism: 0.3, missionary: 0.2 }, 0.56,
+  ),
+  ilva: creedSeed(
+    { raceView: -30, orthodoxy: -55, clericalAuthority: -75, theocracy: -55, ritualism: -40, asceticism: -15, missionary: -45 },
+    { raceView: 0.35, orthodoxy: 0.5, clericalAuthority: 0.85, theocracy: 0.55, ritualism: 0.45, asceticism: 0.2, missionary: 0.3 }, 0.72,
+  ),
+  dario: creedSeed(
+    { raceView: 65, orthodoxy: 40, clericalAuthority: -45, theocracy: 15, ritualism: 25, asceticism: 30, missionary: -35 },
+    { raceView: 0.8, orthodoxy: 0.45, clericalAuthority: 0.4, theocracy: 0.25, ritualism: 0.3, asceticism: 0.55, missionary: 0.2 }, 0.38,
+  ),
+  mirel: creedSeed(
+    { raceView: -80, orthodoxy: -70, clericalAuthority: -60, theocracy: -75, ritualism: -45, asceticism: -70, missionary: 20 },
+    { raceView: 0.85, orthodoxy: 0.7, clericalAuthority: 0.6, theocracy: 0.8, ritualism: 0.35, asceticism: 0.85, missionary: 0.25 }, 0.7,
+  ),
+});
+
+const CITY_CREED_SEEDS = Object.freeze({
+  selene: {
+    social: creedSeed({ raceView: -30, orthodoxy: 15, clericalAuthority: 35, theocracy: -10, ritualism: 20, asceticism: -25, missionary: 10 }, {}, 0.42),
+    ruling: creedSeed({ raceView: 5, orthodoxy: 40, clericalAuthority: 55, theocracy: 20, ritualism: 45, asceticism: -30, missionary: 20 }, {}, 0.28),
+    institutional: creedSeed({ raceView: 10, orthodoxy: 55, clericalAuthority: 65, theocracy: 35, ritualism: 60, asceticism: -5, missionary: 25 }, {}, 0.15),
+  },
+  nereia: {
+    social: creedSeed({ raceView: -65, orthodoxy: -55, clericalAuthority: -45, theocracy: -55, ritualism: -30, asceticism: -70, missionary: -15 }, {}, 0.58),
+    ruling: creedSeed({ raceView: -45, orthodoxy: -35, clericalAuthority: -20, theocracy: -40, ritualism: -15, asceticism: -65, missionary: 5 }, {}, 0.38),
+    institutional: creedSeed({ raceView: -20, orthodoxy: 20, clericalAuthority: 30, theocracy: -5, ritualism: 35, asceticism: -20, missionary: 20 }, {}, 0.2),
+  },
+  orta: {
+    social: creedSeed({ raceView: 55, orthodoxy: 30, clericalAuthority: -55, theocracy: 15, ritualism: 25, asceticism: 5, missionary: -45 }, {}, 0.35),
+    ruling: creedSeed({ raceView: 45, orthodoxy: 40, clericalAuthority: -35, theocracy: 25, ritualism: 35, asceticism: 15, missionary: -30 }, {}, 0.25),
+    institutional: creedSeed({ raceView: 30, orthodoxy: 50, clericalAuthority: 35, theocracy: 35, ritualism: 55, asceticism: 20, missionary: -10 }, {}, 0.16),
+  },
+});
+
+const FACTION_CREED_SEEDS = Object.freeze({
+  farmers: creedSeed({ raceView: 15, orthodoxy: -10, clericalAuthority: -60, theocracy: -35, ritualism: 15, asceticism: 10, missionary: -50 }, { clericalAuthority: 0.75, missionary: 0.5 }, 0.35),
+  merchants: creedSeed({ raceView: -70, orthodoxy: -55, clericalAuthority: -45, theocracy: -65, ritualism: -30, asceticism: -80, missionary: -10 }, { raceView: 0.75, theocracy: 0.7, asceticism: 0.9 }, 0.6),
+  landowners: creedSeed({ raceView: 60, orthodoxy: 50, clericalAuthority: 25, theocracy: 35, ritualism: 40, asceticism: -50, missionary: -40 }, { raceView: 0.75, orthodoxy: 0.6, asceticism: 0.65 }, 0.28),
+  military: creedSeed({ raceView: 45, orthodoxy: 35, clericalAuthority: 20, theocracy: 30, ritualism: 30, asceticism: 15, missionary: -20 }, { raceView: 0.7, theocracy: 0.5 }, 0.32),
+});
+
+function normalizeSimulationCreeds(state) {
+  state.creedSystem ??= {
+    schemaVersion: CREED_SCHEMA_VERSION,
+    socialSalience: Object.fromEntries(CREED_AXIS_IDS.map((axisId) => [axisId, 0.5])),
+    historyLoop: ["historical_experience", "creed_change", "decision_modifier", "political_consequence", "historical_experience"],
+    monthlyChanges: [],
+  };
+  state.creedSystem.schemaVersion = CREED_SCHEMA_VERSION;
+  state.creedSystem.monthlyChanges ??= [];
+  Object.entries(state.officers ?? {}).forEach(([officerId, officer]) => {
+    officer.creed = createCreedProfile(officer.creed ?? OFFICER_CREED_SEEDS[officerId] ?? {});
+  });
+  Object.entries(state.cities ?? {}).forEach(([cityId, city]) => {
+    city.creed = city.creed?.social?.axes
+      ? refreshCreedGroup(city.creed)
+      : createCreedGroup(CITY_CREED_SEEDS[cityId] ?? {});
+    Object.entries(city.factions ?? {}).forEach(([factionId, faction]) => {
+      faction.creed = createCreedProfile(faction.creed ?? FACTION_CREED_SEEDS[factionId] ?? {});
+    });
+  });
+  if (state.nationCreed?.social?.axes) state.nationCreed = refreshCreedGroup(state.nationCreed);
+  else {
+    state.nationCreed = aggregateCreedGroup({
+      social: Object.values(state.cities ?? {}).map((city) => ({ profile: city.creed.social, population: city.resources?.population ?? 1, culturalInertia: 60 })),
+      ruling: Object.values(state.cities ?? {}).map((city) => ({ profile: city.creed.ruling, politicalPower: 50, legalAuthority: city.internal?.administrativeEfficiency ?? 50 })),
+      institutional: Object.values(state.cities ?? {}).map((city) => ({ profile: city.creed.institutional, legalAuthority: 55, educationInfluence: 35, religiousAuthority: 30 })),
+    });
+  }
+  state.playerCreed = createCreedProfile(state.playerCreed ?? state.player?.creed ?? { flexibility: 0.75 });
+  if (state.player) state.player.creed = state.playerCreed;
+  return state;
 }
 
 function cityState({ population, food, money, production, commerce, security, support, defense, sanitation, corruption, administration, housing, preservation, fear, draft, troops, sailors, ships, training, shipyard, governorId, facilityLevels }) {
@@ -531,6 +700,7 @@ export function normalizeWarState(state) {
   normalizeHistoryState(WORLD, state);
   normalizeCareerState(state);
   normalizeRoleDelegationState(state);
+  normalizeSimulationCreeds(state);
   return normalizeCentralizationCampaign(WORLD, state);
 }
 
@@ -627,7 +797,7 @@ export function setDelegationAuthority(state, assignmentId, authorityId) {
 
 export function performCareerAction(state, actionId, delegation = {}) {
   const fromRoleId = state.player?.stage;
-  let next = performPlayerCareerAction(state, actionId);
+  let next = performPlayerCareerAction(state, actionId, delegation);
   const toRoleId = next.player?.stage;
   const role = DELEGATABLE_ROLES[fromRoleId];
   if (fromRoleId !== toRoleId && role) {
@@ -883,6 +1053,57 @@ export function startAuthorityReform(state, cityId, domainId, methodId, options 
 export function getHistoricalOverview(state, regionId = null) { return modelHistoricalOverview(WORLD, state, regionId); }
 export function traceHistoricalCauses(state, eventId, maximumDepth = 5) { return modelTraceHistoricalCauses(state, eventId, maximumDepth); }
 export function getOfficerReport(state, officerId) { return getOfficer(WORLD, state, officerId); }
+function creedProfileReport(profile) {
+  const normalized = createCreedProfile(profile ?? {});
+  return {
+    identity: normalized.identity,
+    dominantCreedTraits: normalized.dominantCreedTraits,
+    axes: CREED_AXIS_IDS.map((axisId) => ({
+      ...describeCreedAxis(axisId, normalized.axes[axisId].value),
+      importance: normalized.axes[axisId].importance,
+    })),
+    history: normalized.history,
+  };
+}
+export function getOfficerCreedReport(state, officerId) {
+  const officer = state.officers?.[officerId];
+  return officer ? creedProfileReport(officer.creed) : null;
+}
+export function getPlayerCreedReport(state) { return creedProfileReport(state.playerCreed); }
+export function getCityCreedReport(state, cityId) {
+  const group = state.cities?.[cityId]?.creed;
+  if (!group) return null;
+  return {
+    identity: group.identity,
+    tension: group.tension,
+    dominantCreedTraits: group.dominantCreedTraits,
+    layers: {
+      social: creedProfileReport(group.social),
+      ruling: creedProfileReport(group.ruling),
+      institutional: creedProfileReport(group.institutional),
+    },
+    policyDebates: group.policyDebates ?? [],
+  };
+}
+export function getNationCreedReport(state) {
+  const group = state.nationCreed;
+  if (!group) return null;
+  return {
+    identity: group.identity,
+    tension: group.tension,
+    dominantCreedTraits: group.dominantCreedTraits,
+    layers: {
+      social: creedProfileReport(group.social),
+      ruling: creedProfileReport(group.ruling),
+      institutional: creedProfileReport(group.institutional),
+    },
+  };
+}
+export function getPolicyCreedSupport(state, cityId, policyId, optionId) {
+  const city = state.cities?.[cityId];
+  if (!city) return null;
+  return policyCreedEvaluation(state, city, policyId, optionId);
+}
 export function getGovernance(state) { return deriveGovernance(WORLD, state); }
 export function getCityBreakdown(state, cityId) { return formatBreakdown(deriveCityMetrics(state, cityId)); }
 
@@ -1074,7 +1295,7 @@ export function queueOrder(state, specification) {
     const availability = getCommandAvailability(state, specification.commandId, specification.officerId, specification.cityId, specification.townId);
     if (!availability.allowed) throw new Error(availability.reason);
     const forcedPoints = assertGovernance(state, item.governanceCost, specification.force);
-    order = { id: orderId(next), kind, commandId: item.id, cityId: availability.cityId, townId: availability.townId, officerId: specification.officerId, cost: clone(item.cost), governanceCost: item.governanceCost, durationTurns: item.durationTurns, forced: forcedPoints > 0, forcedPoints };
+    order = { id: orderId(next), kind, commandId: item.id, cityId: availability.cityId, townId: availability.townId, officerId: specification.officerId, cost: clone(item.cost), governanceCost: item.governanceCost, durationTurns: item.durationTurns, creedEffects: clone(item.creedEffects ?? []), forced: forcedPoints > 0, forcedPoints };
   } else if (kind === "facility") {
     const city = state.cities[specification.cityId];
     assertPlayerAuthority(state, { authority: "local_construction", scope: "territory", targetTerritoryId: specification.cityId });
@@ -1102,7 +1323,7 @@ export function queueOrder(state, specification) {
     if (city.policies[specification.policyId] === specification.optionId) throw new Error("すでに採用中の方針です");
     if (state.pendingOrders.some((item) => item.kind === "policy" && item.cityId === specification.cityId && item.policyId === specification.policyId)) throw new Error("同じ政策変更を予約済みです");
     const forcedPoints = assertGovernance(state, 1, specification.force);
-    order = { id: orderId(next), kind, cityId: specification.cityId, policyId: specification.policyId, optionId: specification.optionId, cost: {}, governanceCost: 1, durationTurns: 1, forced: forcedPoints > 0, forcedPoints };
+    order = { id: orderId(next), kind, cityId: specification.cityId, policyId: specification.policyId, optionId: specification.optionId, cost: {}, governanceCost: 1, durationTurns: 1, creedEffects: clone(definition.options[specification.optionId].creedEffects ?? []), forced: forcedPoints > 0, forcedPoints };
   } else if (kind === "faction") {
     const city = state.cities[specification.cityId];
     const action = FACTION_ACTIONS[specification.action];
@@ -1171,9 +1392,19 @@ function completeCommand(state, task) {
   if (!item.repeatable && !state.completedCommands.includes(task.commandId)) state.completedCommands.push(task.commandId);
   const officer = state.officers[task.officerId];
   officer.assignment = null; officer.location = task.cityId; officer.merit += Math.max(3, Math.round(outcome / 9)); officer.stamina = clamp(officer.stamina - 14, 0, 100);
+  task.creedEffects = task.creedEffects?.length ? task.creedEffects : clone(item.creedEffects ?? []);
+  const livedCreedImpact = creedImpactFromEffects(task.creedEffects, 1.8);
+  const officerCreed = applyCreedImpact(officer.creed, livedCreedImpact, {
+    year: state.year, month: state.month, turn: state.turn, eventId: `command:${task.commandId}`,
+    cause: `${item.name}を遂行`, involvement: clamp(outcome / 100, 0.35, 1),
+  });
+  applyCreedImpact(state.playerCreed, creedImpactFromEffects(task.creedEffects, 0.8), {
+    year: state.year, month: state.month, turn: state.turn, eventId: `command:${task.commandId}`,
+    cause: `${item.name}を命令`, involvement: 0.7,
+  });
   const reactions = applyOfficerCommandPolitics(WORLD, state, task, outcome);
   logEntry(state, "達成", item.name, `${task.townId ? `${WORLD.villages[task.townId].name}で` : ""}${WORLD.characters[task.officerId].name}が成果 ${outcome}。`, outcome >= 70 ? "success" : "neutral");
-  return { outcome, delta, reactions, detail: `成果 ${outcome} / 基本改善 ${delta}${reactions.length ? ` / 人物反応 ${reactions.length}件` : ""}` };
+  return { outcome, delta, reactions, creedChanges: officerCreed.changes, detail: `成果 ${outcome} / 基本改善 ${delta}${reactions.length ? ` / 人物反応 ${reactions.length}件` : ""}${officerCreed.changes.length ? ` / 信条経験 ${officerCreed.changes.length}軸` : ""}` };
 }
 
 function payOrder(city, order) {
@@ -1207,9 +1438,103 @@ function actionRecord(order) {
   return {
     id: order.id, kind: order.kind, cityId: order.cityId, townId: order.townId ?? null, title: orderTitle(order),
     status: "started", detail: "実行を開始", cost: clone(order.cost ?? {}),
-    commandId: order.commandId ?? null, spendingCategory: orderSpendingCategory(order),
+    commandId: order.commandId ?? null, policyId: order.policyId ?? null, optionId: order.optionId ?? null,
+    creedEffects: clone(order.creedEffects ?? []), spendingCategory: orderSpendingCategory(order),
     governanceCost: order.governanceCost, forced: order.forced, forcedPoints: order.forcedPoints ?? 0,
   };
+}
+
+function policyCreedEvaluation(state, city, policyId, optionId) {
+  const definition = POLICY_DEFINITIONS[policyId];
+  const option = definition?.options?.[optionId];
+  const creedEffects = option?.creedEffects ?? [];
+  const groupEvaluation = evaluateGroupCreed(city.creed, creedEffects, { scale: 28 });
+  const factions = Object.entries(city.factions ?? {}).map(([factionId, faction]) => {
+    const creed = evaluateCreed(faction.creed, creedEffects, { scale: 28 });
+    const materialInterest = (option?.factions?.[factionId] ?? 0) * 6;
+    const score = clamp(creed.score + materialInterest, -100, 100);
+    const stance = score <= -18 ? "強く反対" : score < -5 ? "反対" : score >= 18 ? "強く支持" : score > 5 ? "支持" : "中立";
+    return { factionId, score: Number(score.toFixed(1)), stance, creedModifier: creed.score, materialInterest, influence: faction.influence ?? 0 };
+  });
+  const totalInfluence = factions.reduce((sum, faction) => sum + faction.influence, 0);
+  const factionScore = totalInfluence
+    ? factions.reduce((sum, faction) => sum + faction.score * faction.influence, 0) / totalInfluence
+    : 0;
+  const cityId = Object.entries(state.cities ?? {}).find(([, candidate]) => candidate === city)?.[0] ?? null;
+  const officers = Object.entries(state.officers ?? {})
+    .filter(([officerId, officer]) => officer.allegiance === "serving" && (officer.location === cityId || city.governorId === officerId))
+    .map(([officerId, officer]) => {
+      const creed = evaluateCreed(officer.creed, creedEffects, { scale: 28 });
+      const politicalWeight = Math.max(1, (officer.rankLevel ?? 0) * 3 + (officer.politicalCapital ?? 0) / 10);
+      const stance = creed.score <= -8 ? "反対" : creed.score >= 8 ? "支持" : "中立";
+      return { officerId, score: creed.score, stance, politicalWeight };
+    });
+  const officerWeight = officers.reduce((sum, officer) => sum + officer.politicalWeight, 0);
+  const officerScore = officerWeight
+    ? officers.reduce((sum, officer) => sum + officer.score * officer.politicalWeight, 0) / officerWeight
+    : 0;
+  const score = creedEffects.length
+    ? groupEvaluation.score * 0.45 + factionScore * 0.35 + officerScore * 0.2
+    : factionScore;
+  return {
+    policyId, optionId, tagged: creedEffects.length > 0, creedEffects,
+    score: Number(score.toFixed(1)), group: groupEvaluation, factions, officers,
+    opposedFactions: factions.filter((faction) => faction.score < -5).map((faction) => faction.factionId),
+    supportingFactions: factions.filter((faction) => faction.score > 5).map((faction) => faction.factionId),
+    opposedOfficers: officers.filter((officer) => officer.score <= -8).map((officer) => officer.officerId),
+    supportingOfficers: officers.filter((officer) => officer.score >= 8).map((officer) => officer.officerId),
+  };
+}
+
+function applyPolicyCreedPolitics(state, city, order) {
+  const evaluation = policyCreedEvaluation(state, city, order.policyId, order.optionId);
+  if (!evaluation.tagged) return null;
+  evaluation.factions.forEach((result) => {
+    const faction = city.factions[result.factionId];
+    const supportDelta = clamp(result.score / 10, -3, 3);
+    const radicalismDelta = result.score < -5 ? clamp(Math.abs(result.score) / 14, 0.4, 3) : result.score > 8 ? -0.4 : 0;
+    faction.support = clamp(faction.support + supportDelta, 0, 100);
+    faction.radicalism = clamp(faction.radicalism + radicalismDelta, 0, 100);
+  });
+  evaluation.officers.filter((result) => result.stance !== "中立").forEach((result) => {
+    const officer = state.officers[result.officerId];
+    const disposition = clamp(Math.round(result.score / 10), -2, 2);
+    officer.loyalty = clamp(officer.loyalty + disposition, 0, 100);
+    officer.resentment = clamp((officer.resentment ?? 0) + (disposition < 0 ? 1 : -0.5), 0, 100);
+    const reaction = {
+      officerId: result.officerId, policyId: order.policyId, optionId: order.optionId,
+      disposition, creedModifier: result.score,
+      title: `${WORLD.characters[result.officerId]?.name ?? result.officerId}が政策へ${disposition > 0 ? "支持" : "反発"}`,
+      detail: `個人信条との一致度 ${result.score >= 0 ? "+" : ""}${result.score.toFixed(1)}。利害・忠誠とは別の判断材料として記録。`,
+    };
+    state.monthlyPoliticalReactions.push(reaction);
+    state.politics.reactions.unshift({ ...reaction, year: state.year, month: state.month });
+  });
+  state.politics.reactions = state.politics.reactions.slice(0, 60);
+  const debate = recordCreedPolicyDebate(city.creed, {
+    year: state.year, month: state.month, turn: state.turn,
+    policyId: order.policyId, optionId: order.optionId,
+    evaluation: { ...evaluation.group, score: evaluation.score },
+  });
+  const institutionalImpact = creedImpactFromEffects(evaluation.creedEffects, 3);
+  const rulingImpact = creedImpactFromEffects(evaluation.creedEffects, 1.4);
+  applyCreedImpact(city.creed.institutional, institutionalImpact, {
+    flexibility: 0.45, involvement: 1, year: state.year, month: state.month, turn: state.turn,
+    eventId: `policy:${order.policyId}:${order.optionId}`, cause: "制度上の信条", important: true,
+  });
+  applyCreedImpact(city.creed.ruling, rulingImpact, {
+    flexibility: 0.4, involvement: 0.75, year: state.year, month: state.month, turn: state.turn,
+    eventId: `policy:${order.policyId}:${order.optionId}`, cause: "政策決定", important: false,
+  });
+  applyCreedImpact(state.playerCreed, creedImpactFromEffects(evaluation.creedEffects, 1.6), {
+    involvement: 0.8, year: state.year, month: state.month, turn: state.turn,
+    eventId: `policy:${order.policyId}:${order.optionId}`, cause: "繰り返した政策選択", important: false,
+  });
+  evaluation.creedEffects.forEach((effect) => {
+    city.creed.salience[effect.id] = clamp((city.creed.salience[effect.id] ?? 0.5) + Math.abs(effect.direction) * 0.025, 0, 1);
+  });
+  refreshCreedGroup(city.creed);
+  return { ...evaluation, debate };
 }
 
 function startOrders(state) {
@@ -1243,10 +1568,15 @@ function startOrders(state) {
       const changedAt = city.policyChangedAt[order.policyId];
       city.policies[order.policyId] = order.optionId;
       city.policyChangedAt[order.policyId] = state.turn;
+      const creedPolitics = applyPolicyCreedPolitics(state, city, order);
       const rapidChange = Number.isInteger(changedAt) && state.turn - changedAt < 3;
       if (rapidChange) { city.internal.corruption = clamp(city.internal.corruption + 1.5, 0, 100); city.resources.support = clamp(city.resources.support - 1.5, 0, 100); }
       action.status = "completed";
-      action.detail = rapidChange ? "政策を変更。短期再変更により腐敗 +1.5 / 民心 -1.5" : "政策変更を適用";
+      action.creedPolitics = creedPolitics;
+      const creedDetail = creedPolitics
+        ? `信条支持 ${creedPolitics.score >= 0 ? "+" : ""}${creedPolitics.score} / ${creedPolitics.debate.implementation}${creedPolitics.opposedFactions.length ? ` / 反対 ${creedPolitics.opposedFactions.map((id) => FACTION_DEFINITIONS[id].name).join("・")}` : ""}`
+        : "";
+      action.detail = `${rapidChange ? "政策を変更。短期再変更により腐敗 +1.5 / 民心 -1.5" : "政策変更を適用"}${creedDetail ? ` / ${creedDetail}` : ""}`;
     }
     if (order.kind === "faction") {
       applyFactionOrder(city, order);
@@ -1546,9 +1876,9 @@ export const EVENT_DEFINITIONS = {
     id: "crop_failure", name: "不作", summary: "降雨と病害が重なり、収穫見込みが崩れた。",
     risk: (city, metrics) => Math.max(0, 48 - city.resources.production) + Math.max(0, 1 - metrics.foodSatisfaction) * 60 + (city.issues.some((item) => item.id === "crop_failure") ? 25 : 0),
     choices: [
-      { id: "release", name: "備蓄を放出", detail: "食料 -900 / 民心 +2", effect: { resources: { food: -900, support: 2 }, factions: { farmers: { support: 2 } } } },
+      { id: "release", name: "備蓄を放出", detail: "食料 -900 / 民心 +2", effect: { resources: { food: -900, support: 2 }, factions: { farmers: { support: 2 } } }, creedImpact: [{ id: "asceticism", delta: -1 }] },
       { id: "import", name: "商人から購入", detail: "金銭 -10 / 食料 -200 / 商人支持 +2", effect: { resources: { money: -10, food: -200 }, factions: { merchants: { support: 2 } } } },
-      { id: "ration", name: "配給を制限", detail: "食料 -350 / 民心 -4 / 2か月の節約", effect: { resources: { food: -350, support: -4 }, activeEffect: { name: "配給制限", remainingTurns: 2, resources: { food: 280, support: -0.5 } } } },
+      { id: "ration", name: "配給を制限", detail: "食料 -350 / 民心 -4 / 2か月の節約", effect: { resources: { food: -350, support: -4 }, activeEffect: { name: "配給制限", remainingTurns: 2, resources: { food: 280, support: -0.5 } } }, creedImpact: [{ id: "asceticism", delta: 2 }] },
     ],
   },
   flood: {
@@ -1573,8 +1903,8 @@ export const EVENT_DEFINITIONS = {
     id: "epidemic", name: "疫病", summary: "港と井戸端で同じ熱病が報告された。",
     risk: (city) => Math.max(0, 58 - city.internal.sanitation) + Math.max(0, city.resources.population / city.internal.housingCapacity - 0.9) * 45,
     choices: [
-      { id: "quarantine", name: "隔離する", detail: "金銭 -5 / 人口 -70 / 商業 -2 / 衛生 +4", effect: { resources: { money: -5, population: -70, commerce: -2 }, internal: { sanitation: 4 } } },
-      { id: "clinics", name: "施療所を開く", detail: "金銭 -11 / 人口 -25 / 衛生 +6 / 民心 +2", effect: { resources: { money: -11, population: -25, support: 2 }, internal: { sanitation: 6 } } },
+      { id: "quarantine", name: "隔離する", detail: "金銭 -5 / 人口 -70 / 商業 -2 / 衛生 +4", effect: { resources: { money: -5, population: -70, commerce: -2 }, internal: { sanitation: 4 } }, creedImpact: [{ id: "ritualism", delta: 1 }] },
+      { id: "clinics", name: "施療所を開く", detail: "金銭 -11 / 人口 -25 / 衛生 +6 / 民心 +2", effect: { resources: { money: -11, population: -25, support: 2 }, internal: { sanitation: 6 } }, creedImpact: [{ id: "asceticism", delta: -2 }] },
       { id: "conceal", name: "流行を伏せる", detail: "人口 -180 / 腐敗 +2 / 商人支持 -2", effect: { resources: { population: -180 }, internal: { corruption: 2 }, factions: { merchants: { support: -2 } } } },
     ],
   },
@@ -1582,9 +1912,9 @@ export const EVENT_DEFINITIONS = {
     id: "refugees", name: "難民流入", summary: "国境地帯から家族を連れた避難民が到着した。",
     risk: (city, metrics, state) => 15 + Math.max(0, -state.foreignStates.valka.relation) / 4 + (metrics.housingRate > 1 ? 8 : 0),
     choices: [
-      { id: "accept", name: "受け入れる", detail: "人口 +260 / 食料 -500 / 民心 +1 / 治安 -2", effect: { resources: { population: 260, food: -500, support: 1, security: -2 } } },
-      { id: "settle", name: "管理入植させる", detail: "金銭 -6 / 人口 +180 / 生産 +1", effect: { resources: { money: -6, population: 180, production: 1 } } },
-      { id: "refuse", name: "国境で拒む", detail: "民心 -2 / 治安 +1 / 恐怖 +1", effect: { resources: { support: -2, security: 1 }, internal: { fear: 1 } } },
+      { id: "accept", name: "受け入れる", detail: "人口 +260 / 食料 -500 / 民心 +1 / 治安 -2", effect: { resources: { population: 260, food: -500, support: 1, security: -2 } }, creedImpact: [{ id: "raceView", delta: -3 }] },
+      { id: "settle", name: "管理入植させる", detail: "金銭 -6 / 人口 +180 / 生産 +1", effect: { resources: { money: -6, population: 180, production: 1 } }, creedImpact: [{ id: "raceView", delta: -2 }, { id: "clericalAuthority", delta: 1 }] },
+      { id: "refuse", name: "国境で拒む", detail: "民心 -2 / 治安 +1 / 恐怖 +1", effect: { resources: { support: -2, security: 1 }, internal: { fear: 1 } }, creedImpact: [{ id: "raceView", delta: 3 }] },
     ],
   },
   corruption: {
@@ -1791,6 +2121,39 @@ function refreshReportTotals(state, report) {
   return report;
 }
 
+function advanceCreedSimulation(state) {
+  const cities = Object.entries(state.cities).map(([cityId, city]) => {
+    advanceCreedGroup(city.creed, {
+      institutionalReach: clamp((city.internal.administrativeEfficiency ?? 50) / 100, 0.15, 0.85),
+      rulingReach: clamp((city.resources.support ?? 50) / 120, 0.15, 0.75),
+    });
+    return {
+      cityId,
+      creedName: city.creed.identity.name,
+      tension: city.creed.tension.score,
+      level: city.creed.tension.level,
+      faultLine: city.creed.tension.faultLines[0]?.axisId ?? null,
+    };
+  });
+  const previousHistory = state.nationCreed?.history ?? [];
+  const previousDebates = state.nationCreed?.policyDebates ?? [];
+  state.nationCreed = aggregateCreedGroup({
+    social: Object.values(state.cities).map((city) => ({ profile: city.creed.social, population: city.resources.population, culturalInertia: 60 })),
+    ruling: Object.values(state.cities).map((city) => ({ profile: city.creed.ruling, politicalPower: 50, socialAuthority: city.factions.landowners?.influence ?? 20 })),
+    institutional: Object.values(state.cities).map((city) => ({ profile: city.creed.institutional, legalAuthority: city.internal.administrativeEfficiency, educationInfluence: 35, religiousAuthority: 30 })),
+  });
+  state.nationCreed.history = previousHistory;
+  state.nationCreed.policyDebates = previousDebates;
+  const result = {
+    nation: { creedName: state.nationCreed.identity.name, tension: state.nationCreed.tension.score, level: state.nationCreed.tension.level },
+    cities,
+  };
+  state.creedSystem.monthlyChanges.unshift({ year: state.year, month: state.month, turn: state.turn, ...result });
+  state.creedSystem.monthlyChanges = state.creedSystem.monthlyChanges.slice(0, 24);
+  if (state.player) state.player.creed = state.playerCreed;
+  return result;
+}
+
 export function commitMonth(state) {
   if (state.phase !== "planning") throw new Error("先に事件への対応を決めてください");
   if (state.council.pending) throw new Error("季節評定の方針を先に決めてください");
@@ -1814,11 +2177,12 @@ export function commitMonth(state) {
   advanceCampaignState(WORLD, next);
   actions.push(...advanceCentralizationCampaign(WORLD, next));
   actions.push(...advanceLeviathanCycle(WORLD, next));
+  const creed = advanceCreedSimulation(next);
   const monthName = formatDate(next).split(" ")[1];
   const report = {
     id: `month-${next.year}-${next.month}`, year: next.year, month: next.month, monthName,
     season: seasonForMonth(next.month).name, cities, towns, aggression, war, occupations, events: [], actions,
-    foreignDispatches, officerReactions: clone(next.monthlyPoliticalReactions),
+    foreignDispatches, officerReactions: clone(next.monthlyPoliticalReactions), creed,
     campaign: { act: next.campaign.act, resolution: next.campaign.resolution, aftermathPolicy: next.campaign.aftermathPolicy, ending: clone(next.campaign.ending) },
     centralization: {
       stageId: next.centralizationCampaign.stageId,
@@ -1846,6 +2210,14 @@ export function resolveEventChoice(state, choiceId) {
   if (!choice) throw new Error("事件の選択肢が不明です");
   const city = next.cities[next.pendingEvent.cityId];
   applyEffect(city, choice.effect);
+  const creedContext = {
+    year: next.year, month: next.month, turn: next.turn, eventId: `${definition.id}:${choice.id}`,
+    cause: `${definition.name} — ${choice.name}`, involvement: 0.85,
+  };
+  const socialCreed = applyCreedImpact(city.creed.social, choice.creedImpact ?? [], { ...creedContext, flexibility: 0.5 });
+  const rulingCreed = applyCreedImpact(city.creed.ruling, choice.creedImpact ?? [], { ...creedContext, flexibility: 0.35, involvement: 0.55 });
+  const playerCreed = applyCreedImpact(next.playerCreed, choice.creedImpact ?? [], { ...creedContext, involvement: 0.75 });
+  refreshCreedGroup(city.creed);
   const historyEvent = recordResolvedWorldEvent(WORLD, next, {
     pendingEventId: next.pendingEvent.id,
     eventId: definition.id,
@@ -1859,6 +2231,7 @@ export function resolveEventChoice(state, choiceId) {
     eventId: definition.id, cityId: next.pendingEvent.cityId, choiceId,
     title: definition.name, choice: choice.name, detail: choice.detail,
     historyEventId: historyEvent.id,
+    creedChanges: { social: socialCreed.changes, ruling: rulingCreed.changes, player: playerCreed.changes },
     moneyEffect: choice.effect.resources?.money ?? 0,
     spendingCategory: EVENT_SPENDING_CATEGORIES[definition.id] ?? "social_security",
   };

@@ -8,15 +8,20 @@ export const ROLE_DELEGATION_SCHEMA_VERSION = 1;
 // the practical responsibility that must survive when the player leaves it.
 export const DELEGATABLE_ROLES = Object.freeze({
   commander: Object.freeze({
-    id: "commander", name: "国境隊長", delegatedName: "国境遊撃隊長", level: 2,
+    id: "commander", name: "部隊長", delegatedName: "国境遊撃隊部隊長", level: 2,
     organizationType: "unit", organizationId: "border_company", territoryId: "orta", minRankLevel: 1,
     successionCandidateIds: Object.freeze(["dario"]),
     description: "国境遊撃隊の訓練、警備、斥候、軍需点検を担う。開戦や国家軍全体の編成は決められない。",
   }),
   lord: Object.freeze({
-    id: "lord", name: "東境州辺境伯", delegatedName: "東境州代官", level: 3,
+    id: "lord", name: "城主", delegatedName: "東境州代官", level: 4,
     organizationType: "territory", organizationId: "orta", territoryId: "orta", minRankLevel: 2,
     description: "東境州の日常統治と州庫運用を担う。国家政策、他領への命令、開戦は決められない。",
+  }),
+  multi_lord: Object.freeze({
+    id: "multi_lord", name: "伯爵・地方領主", delegatedName: "南境州代官", level: 5,
+    organizationType: "territory", organizationId: "nereia", territoryId: "nereia", minRankLevel: 3,
+    description: "南境州の日常統治と州庫運用を担う。国家方針、外交、開戦は上位へ上申する。",
   }),
 });
 
@@ -58,8 +63,9 @@ export const DELEGATION_AUTHORITY_LEVELS = Object.freeze({
 });
 
 const CAREER_ORDER = Object.freeze({
-  individual: 0, retainer: 1, commander: 2, lord: 3, multi_lord: 4,
-  governor: 5, regent: 6, independent_ruler: 7, centralized_ruler: 8,
+  individual: 0, retainer: 1, commander: 2, castellan: 3, lord: 4,
+  multi_lord: 5, governor: 6, duke: 7, regent: 8,
+  independent_ruler: 9, centralized_ruler: 9,
 });
 
 const ACTIONS = Object.freeze({
@@ -162,6 +168,7 @@ export function normalizeRoleDelegationState(state) {
   // careers always create their handoff through the promotion path below.
   if (wasMissing && (CAREER_ORDER[state.player.stage] ?? 0) >= CAREER_ORDER.lord) seedMigratedAssignment(state, "commander");
   if (wasMissing && (CAREER_ORDER[state.player.stage] ?? 0) >= CAREER_ORDER.multi_lord) seedMigratedAssignment(state, "lord");
+  if (wasMissing && (CAREER_ORDER[state.player.stage] ?? 0) >= CAREER_ORDER.independent_ruler) seedMigratedAssignment(state, "multi_lord");
   return state;
 }
 

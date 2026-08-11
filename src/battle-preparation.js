@@ -252,7 +252,7 @@ export function finalizeBattlePreparation(preparation) {
     playerSupplyNode.maxStockpile = plan.nodeStockpile;
     playerSupplyNode.stockpile = plan.nodeStockpile;
     playerSupplyNode.throughput = plan.throughput;
-    playerSupplyNode.name = `王国軍補給所・${plan.name}`;
+    playerSupplyNode.name = `${playerSupplyNode.name || "王国軍補給所"}・${plan.name}`;
   }
   battle.units.filter((unit) => unit.side === "player").forEach((unit) => {
     unit.maxSupply = plan.unitSupply;

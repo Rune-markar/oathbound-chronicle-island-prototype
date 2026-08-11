@@ -77,25 +77,25 @@ export const POLICY_DEFINITIONS = {
   rationing: {
     id: "rationing", name: "食料配給", description: "住民消費と民心を交換する。",
     options: {
-      generous: { name: "手厚い配給", consumption: 1.08, support: 1.2, factions: { farmers: 0.5 } },
+      generous: { name: "手厚い配給", consumption: 1.08, support: 1.2, factions: { farmers: 0.5 }, creedEffects: [{ id: "asceticism", direction: -0.35, relevance: 0.45 }] },
       normal: { name: "通常配給", consumption: 1, support: 0, factions: {} },
-      restricted: { name: "制限配給", consumption: 0.88, support: -1.4, factions: { farmers: -1.2, military: -0.3 } },
+      restricted: { name: "制限配給", consumption: 0.88, support: -1.4, factions: { farmers: -1.2, military: -0.3 }, creedEffects: [{ id: "asceticism", direction: 0.65, relevance: 0.55 }] },
     },
   },
   immigration: {
     id: "immigration", name: "移民政策", description: "人口流入と治安負担を調整する。",
     options: {
-      closed: { name: "流入制限", migration: -0.0004, security: 0.25, support: -0.1, factions: { landowners: 0.4, merchants: -0.5 } },
+      closed: { name: "流入制限", migration: -0.0004, security: 0.25, support: -0.1, factions: { landowners: 0.4, merchants: -0.5 }, creedEffects: [{ id: "raceView", direction: 0.75, relevance: 0.9 }] },
       neutral: { name: "自然流入", migration: 0, security: 0, support: 0, factions: {} },
-      encourage: { name: "移民奨励", migration: 0.0014, security: -0.35, support: 0.3, factions: { merchants: 0.6, landowners: -0.5 } },
+      encourage: { name: "移民奨励", migration: 0.0014, security: -0.35, support: 0.3, factions: { merchants: 0.6, landowners: -0.5 }, creedEffects: [{ id: "raceView", direction: -0.75, relevance: 0.9 }] },
     },
   },
   securityPolicy: {
     id: "securityPolicy", name: "治安方針", description: "秩序、民心、恐怖、腐敗の関係を決める。",
     options: {
-      tolerant: { name: "寛容", security: 0.2, support: 0.8, fear: -0.6, corruption: 0, factions: { farmers: 0.4, merchants: 0.3 } },
+      tolerant: { name: "寛容", security: 0.2, support: 0.8, fear: -0.6, corruption: 0, factions: { farmers: 0.4, merchants: 0.3 }, creedEffects: [{ id: "orthodoxy", direction: -0.35, relevance: 0.5 }, { id: "ritualism", direction: -0.2, relevance: 0.35 }] },
       fair: { name: "公正", security: 0.65, support: 0.45, fear: -0.2, corruption: -0.3, factions: {} },
-      strict: { name: "厳罰", security: 1.15, support: -0.65, fear: 1, corruption: 0.1, factions: { military: 0.6, farmers: -0.4 } },
+      strict: { name: "厳罰", security: 1.15, support: -0.65, fear: 1, corruption: 0.1, factions: { military: 0.6, farmers: -0.4 }, creedEffects: [{ id: "ritualism", direction: 0.45, relevance: 0.55 }, { id: "orthodoxy", direction: 0.2, relevance: 0.35 }] },
       arbitrary: { name: "恣意的", security: 0.75, support: -1.4, fear: 1.4, corruption: 0.75, factions: { military: 0.3, merchants: -0.8, landowners: -0.5 } },
     },
   },

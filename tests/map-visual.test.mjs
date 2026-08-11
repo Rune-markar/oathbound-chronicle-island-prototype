@@ -75,6 +75,18 @@ test("campaign information and generated movement commands live in the left dock
   assert.match(styleSource, /\.strategy-shell\s*\{[^}]*height: 100vh;[^}]*grid-template-columns: 400px/s);
 });
 
+test("the individual world panel exposes exploration and nearby discovered movement without a dungeon bypass", () => {
+  assert.match(appSource, /function renderPersonalMapCommands\(/);
+  assert.match(appSource, /data-personal-map-explore/);
+  assert.match(appSource, /data-personal-map-move/);
+  assert.match(appSource, /発見済みの近くの場所だけ/);
+  assert.match(appSource, /dungeonMarker\.hidden = !dungeonLocation\?\.discovered/);
+  assert.match(appSource, /dungeonLocation\.current/);
+  assert.match(appSource, /dungeonLocation\.reachable/);
+  assert.match(styleSource, /\.personal-map-command\s*\{/);
+  assert.match(styleSource, /\.personal-map-node\.is-unknown/);
+});
+
 test("world, geopolitics, nation, and statistics panels share one generated-world representation", () => {
   const generatedPanel = appSource.match(/function renderGeneratedWorldPanel\(\)[\s\S]*?function nationPeopleChips/)?.[0] ?? "";
   const statisticsPanel = appSource.match(/function renderWorldStatistics\(\)[\s\S]*?function renderWorldPanel/)?.[0] ?? "";

@@ -1,19 +1,67 @@
+import { createVillageLifeState, normalizeVillageLifeState } from "./village-life.js";
+
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const clone = (value) => structuredClone(value);
 
-export const CAREER_SCHEMA_VERSION = 1;
+export const CAREER_SCHEMA_VERSION = 2;
+
+const titleSystem = (id, name, highest, offices) => Object.freeze({
+  id,
+  name,
+  highest: Object.freeze(highest),
+  offices: Object.freeze(offices),
+});
+
+export const GOVERNMENT_TITLE_SYSTEMS = Object.freeze({
+  empire: titleSystem("empire", "帝国", ["皇帝"], ["属王", "大公", "総督", "軍団長"]),
+  republic: titleSystem("republic", "共和国", ["執政官"], ["元老院議員", "護民官", "財務官"]),
+  city_state: titleSystem("city_state", "都市国家", ["僭主", "市長"], ["市参事", "ギルド長", "警備隊長"]),
+  theocracy: titleSystem("theocracy", "神権国家", ["教皇", "大神官"], ["枢機卿", "司教", "神殿長", "聖騎士"]),
+  nomadic_state: titleSystem("nomadic_state", "遊牧国家", ["大汗"], ["汗", "族長", "千人長", "百人長"]),
+  tribal_confederation: titleSystem("tribal_confederation", "部族連合", ["大族長"], ["族長", "長老", "戦士長", "祈祷師"]),
+  military_regime: titleSystem("military_regime", "軍事政権", ["大元帥"], ["将軍", "軍政官", "城塞司令官"]),
+  magocracy: titleSystem("magocracy", "魔導国家", ["魔導王", "首席魔導師"], ["塔主", "学院長", "魔術審問官"]),
+  maritime_state: titleSystem("maritime_state", "海洋国家", ["海王", "総督"], ["提督", "港湾長", "船団長", "商会頭"]),
+  federation: titleSystem("federation", "連邦", ["連邦議長"], ["構成国君主", "州総督", "評議員"]),
+});
+
+const careerStage = (id, order, name, defaultTitle, governance, focus, description, extra = {}) => Object.freeze({
+  id, order, name, defaultTitle, governance, focus, description, ...extra,
+});
 
 export const CAREER_STAGES = Object.freeze({
-  individual: Object.freeze({ id: "individual", order: 0, name: "浪人・冒険者", governance: false, description: "所属も領地も持たない一個人。依頼、移動、交流で身を立てる。" }),
-  retainer: Object.freeze({ id: "retainer", order: 1, name: "仕官者", governance: false, description: "主君の命令を受け、功績と信用を積む臣下。" }),
-  commander: Object.freeze({ id: "commander", order: 2, name: "指揮官", governance: false, description: "委任された部隊、軍需、軍事予算だけを扱う。" }),
-  lord: Object.freeze({ id: "lord", order: 3, name: "辺境領主", governance: true, description: "与えられた自領の内政、軍備、人事を統治する。" }),
-  multi_lord: Object.freeze({ id: "multi_lord", order: 4, name: "有力諸侯", governance: true, description: "複数所領と直属家臣を統治する。国家政策は建議する。" }),
-  governor: Object.freeze({ id: "governor", order: 5, name: "地方長官", governance: true, description: "委任された地方全域を統治する。中央政策は建議する。" }),
-  regent: Object.freeze({ id: "regent", order: 6, name: "摂政・宰相", governance: true, description: "委任範囲で国家政策を代行するが、正統性と反発を負う。" }),
-  independent_ruler: Object.freeze({ id: "independent_ruler", order: 7, name: "独立君主", governance: true, description: "自国全体の政策、外交、軍事を決定する。" }),
-  centralized_ruler: Object.freeze({ id: "centralized_ruler", order: 8, name: "中央集権君主", governance: true, description: "地方の介在を減らし、全国へ直接命令する。" }),
+  individual: careerStage("individual", 0, "平民・浪人・傭兵", "浪人", false, "direct", "所属も領地も持たず、依頼、移動、交流、直接戦闘で身を立てる。"),
+  retainer: careerStage("retainer", 1, "従士・下級兵", "従士", false, "direct", "主君の命令を受け、現場で功績と信用を積む。"),
+  commander: careerStage("commander", 2, "騎士・部隊長", "部隊長", false, "direct", "自ら戦いながら、委任された小部隊、軍需、軍事予算だけを扱う。"),
+  castellan: careerStage("castellan", 3, "城将・代官", "城将", false, "unit", "直接戦闘の一部を仲間へ任せ、城兵と複数部隊の運用を担う。"),
+  lord: careerStage("lord", 4, "男爵・城主", "城主", true, "unit", "城と自領を持ち、部隊運用と領内実務を配下へ割り振る。"),
+  multi_lord: careerStage("multi_lord", 5, "伯爵・地方領主", "伯爵", true, "territory", "複数所領と直属家臣を束ね、地方統治を担う。国家政策は建議する。"),
+  governor: careerStage("governor", 6, "侯爵・辺境領主", "侯爵", true, "territory", "辺境を含む地方全域を統治する。中央政策は建議する。"),
+  duke: careerStage("duke", 7, "公爵・地方大勢力", "公爵", true, "faction", "地方の大勢力として、直轄実務より派閥均衡と国家方針を中心に扱う。"),
+  regent: careerStage("regent", 8, "宰相・大元帥・摂政", "摂政", true, "faction", "委任範囲で国家政策を代行し、派閥、正統性、反発を扱う。"),
+  independent_ruler: careerStage("independent_ruler", 9, "国王・皇帝", "国王", true, "nation", "選んだ国家形態の最高位として、政策、外交、軍事を決定する。"),
+  // Kept as a save-compatible final-rank variant. Centralization is a state policy,
+  // not an eleventh personal promotion step, so it is omitted from the visible route.
+  centralized_ruler: careerStage("centralized_ruler", 9, "国王・皇帝", "国王", true, "nation", "地方の介在を減らし、全国へ直接命令する。", { routeAlias: "independent_ruler" }),
 });
+
+export const CAREER_STAGE_ROUTE = Object.freeze([
+  "individual", "retainer", "commander", "castellan", "lord",
+  "multi_lord", "governor", "duke", "regent", "independent_ruler",
+].map((id) => CAREER_STAGES[id]));
+
+export function getGovernmentTitleSystem(governmentFormId) {
+  return GOVERNMENT_TITLE_SYSTEMS[governmentFormId] ?? null;
+}
+
+export function getTitleForCareerStage(stageId, governmentFormId = null) {
+  const stage = CAREER_STAGES[stageId];
+  if (!stage) return null;
+  if (stage.order === CAREER_STAGES.independent_ruler.order) {
+    return getGovernmentTitleSystem(governmentFormId)?.highest[0] ?? stage.defaultTitle;
+  }
+  return stage.defaultTitle;
+}
 
 export const LOCAL_AUTHORITIES = Object.freeze([
   "local_tax", "local_economy", "local_construction", "local_security", "local_law",
@@ -68,12 +116,11 @@ export const GOVERNANCE_COMMANDS = Object.freeze({
 });
 
 export const CAREER_ACTIONS = Object.freeze({
-  take_contract: Object.freeze({ id: "take_contract", name: "街道護衛の依頼を受ける", stages: ["individual"] }),
   fulfill_order: Object.freeze({ id: "fulfill_order", name: "主君の討伐命令を果たす", stages: ["retainer"] }),
   command_campaign: Object.freeze({ id: "command_campaign", name: "辺境救援軍を指揮する", stages: ["commander"] }),
-  consolidate_power: Object.freeze({ id: "consolidate_power", name: "領内基盤を固める", stages: ["lord", "multi_lord", "governor"] }),
+  consolidate_power: Object.freeze({ id: "consolidate_power", name: "領内基盤を固める", stages: ["lord", "multi_lord", "governor", "duke"] }),
   request_second_fief: Object.freeze({ id: "request_second_fief", name: "第二の所領を願い出る", stages: ["lord"] }),
-  declare_independence: Object.freeze({ id: "declare_independence", name: "辺境に新国家を建てる", stages: ["lord", "multi_lord", "governor"] }),
+  declare_independence: Object.freeze({ id: "declare_independence", name: "辺境に新国家を建てる", stages: ["lord", "multi_lord", "governor", "duke"] }),
 });
 
 function defaultPlayer(options = {}) {
@@ -85,7 +132,8 @@ function defaultPlayer(options = {}) {
     origin: options.origin ?? "没落貴族",
     specialty: options.specialty ?? "武勇と交渉",
     stage: "individual",
-    title: "無位",
+    title: getTitleForCareerStage("individual"),
+    governmentFormId: null,
     locationId: "orta",
     affiliation: { nationId: null, liegeId: null, liegeName: null },
     sovereign: false,
@@ -99,6 +147,7 @@ function defaultPlayer(options = {}) {
       popularSupport: 8, fear: 0, legitimacy: 0, ambition: 24, wealth: 8,
     },
     progress: { contracts: 0, orders: 0, campaigns: 0, governanceActions: 0 },
+    villageLife: createVillageLifeState(),
     invitations: [],
     petitions: [],
     history: [{ turn: 0, title: "一個人として旅立つ", detail: "領地も私兵も持たず、辺境の街道へ立った。" }],
@@ -130,6 +179,7 @@ export function initializeCareerState(baseState, options = {}) {
 export function normalizeCareerState(state) {
   if (!state?.player) return state;
   const baseline = defaultPlayer();
+  const priorSchemaVersion = state.player.schemaVersion ?? 1;
   state.version = Math.max(10, state.version ?? 0);
   state.player = {
     ...baseline,
@@ -146,6 +196,12 @@ export function normalizeCareerState(state) {
     petitions: [...(state.player.petitions ?? [])],
     history: [...(state.player.history ?? baseline.history)],
   };
+  state.player.schemaVersion = CAREER_SCHEMA_VERSION;
+  if (!getGovernmentTitleSystem(state.player.governmentFormId)) state.player.governmentFormId = null;
+  if (priorSchemaVersion < CAREER_SCHEMA_VERSION || !state.player.title) {
+    state.player.title = getTitleForCareerStage(state.player.stage, state.player.governmentFormId);
+  }
+  normalizeVillageLifeState(state);
   return state;
 }
 
@@ -337,46 +393,40 @@ export function submitPetition(state, commandId) {
   return next;
 }
 
-export function acceptServiceInvitation(state, nationId) {
+export function acceptServiceInvitation(state, invitationId) {
   if (state.player?.stage !== "individual") throw new Error("現在は仕官先を選べません");
-  const invitation = state.player.invitations.find((item) => item.nationId === nationId);
+  const invitation = state.player.invitations.find((item) => item.id === invitationId || item.nationId === invitationId);
   if (!invitation) throw new Error("その勢力から仕官の誘いはありません");
   const next = clone(state);
   const lieges = {
     serena: ["serena_crown", "セレナ王"], valka: ["valka_duke", "ヴァルカ公"], forest_alliance: ["forest_council", "森の連合評議会"],
   };
+  const nationId = invitation.nationId;
   const [liegeId, liegeName] = lieges[nationId] ?? [`${nationId}_ruler`, nationId];
   next.player.stage = "retainer";
-  next.player.title = "従士";
+  next.player.title = getTitleForCareerStage("retainer");
   next.player.affiliation = { nationId, liegeId, liegeName };
   next.player.metrics.liegeTrust = invitation.trust;
+  next.player.progress.commissionRoute = invitation.routeId ?? "legacy_invitation";
   next.player.invitations = [];
-  careerLog(next.player, next, `${liegeName}へ仕官`, "俸禄と保護を受ける代わりに、軍役と命令への服従を誓った。");
+  careerLog(next.player, next, `${liegeName}へ仕官`, `${invitation.routeName ? `${invitation.routeName}ことを契機に、` : ""}俸禄と保護を受ける代わりに、軍役と命令への服従を誓った。`);
   return next;
 }
 
-export function performCareerAction(state, actionId) {
+export function performCareerAction(state, actionId, options = {}) {
   const action = CAREER_ACTIONS[actionId];
   if (!state.player || !action?.stages.includes(state.player.stage)) throw new Error("現在の地位ではその行動を選べません");
   const next = clone(state);
   const player = next.player;
   const metrics = player.metrics;
-  if (actionId === "take_contract") {
-    player.progress.contracts += 1; metrics.martialMerit += 22; metrics.renown += 8; metrics.wealth += 4;
-    player.invitations = [
-      { nationId: "serena", name: "セレナ王国", trust: 32, offer: "東境軍の従士" },
-      { nationId: "valka", name: "ヴァルカ公国", trust: 25, offer: "峠守備隊の客将" },
-      { nationId: "forest_alliance", name: "森の連合国", trust: 28, offer: "街道護衛団の契約士官" },
-    ];
-    careerLog(player, next, "護衛依頼を完遂", "隊商を救い、三勢力から仕官の誘いを受けた。");
-  } else if (actionId === "fulfill_order") {
+  if (actionId === "fulfill_order") {
     player.progress.orders += 1; metrics.martialMerit += 28; metrics.renown += 10; metrics.liegeTrust = clamp(metrics.liegeTrust + 18, 0, 100);
-    player.stage = "commander"; player.title = "国境隊長";
+    player.stage = "commander"; player.title = getTitleForCareerStage("commander");
     player.authorityGrants.push({ id: "commander-logistics", issuerId: player.affiliation.liegeId, territoryIds: ["orta"], authorities: ["local_logistics", "local_military_organization", "local_budget"], expiresTurn: null, reason: "国境隊の軍需委任" });
-    careerLog(player, next, "国境隊長へ昇進", "武勲と主君の信頼により、小部隊と軍需予算を委ねられた。");
+    careerLog(player, next, "部隊長へ昇進", "武勲と主君の信頼により、小部隊と軍需予算を委ねられた。");
   } else if (actionId === "command_campaign") {
     player.progress.campaigns += 1; metrics.martialMerit += 45; metrics.renown += 18; metrics.liegeTrust = clamp(metrics.liegeTrust + 20, 0, 100); metrics.legitimacy += 18;
-    player.stage = "lord"; player.title = "東境州辺境伯";
+    player.stage = "lord"; player.title = getTitleForCareerStage("lord");
     player.holdings.push({ id: "fief-orta", territoryId: "orta", grantedBy: player.affiliation.liegeId, tenure: "feudal", rights: [...LOCAL_AUTHORITIES] });
     player.authorityGrants = player.authorityGrants.filter((grant) => grant.id !== "commander-logistics");
     player.householdRetainers = ["dario"];
@@ -386,22 +436,27 @@ export function performCareerAction(state, actionId) {
       next.officers.dario.rankLevel = Math.max(2, next.officers.dario.rankLevel ?? 0);
     }
     metrics.householdSupport = 42; metrics.popularSupport = 38;
-    careerLog(player, next, "東境州へ封じられる", "救援戦の功績により、危険な辺境領と直属家臣を与えられた。統治画面が自領限定で解放された。");
+    careerLog(player, next, "東境州の城主となる", "救援戦の功績により、危険な辺境の城と直属家臣を与えられた。統治画面が自領限定で解放された。");
   } else if (actionId === "consolidate_power") {
     metrics.civilMerit += 12; metrics.householdSupport = clamp(metrics.householdSupport + 9, 0, 100); metrics.popularSupport = clamp(metrics.popularSupport + 8, 0, 100); metrics.legitimacy = clamp(metrics.legitimacy + 6, 0, 100); metrics.ambition = clamp(metrics.ambition + 4, 0, 100);
     careerLog(player, next, "領内基盤を強化", "家臣、領民、地方豪族との関係を固めた。中央は自立性の上昇を警戒している。");
   } else if (actionId === "request_second_fief") {
     if (metrics.liegeTrust < 62 || metrics.civilMerit < 10) throw new Error("第二の所領には、より高い主君の信頼と政績が必要です");
     if (!player.holdings.some((holding) => holding.territoryId === "nereia")) player.holdings.push({ id: "fief-nereia", territoryId: "nereia", grantedBy: player.affiliation.liegeId, tenure: "feudal", rights: [...LOCAL_AUTHORITIES] });
-    player.stage = "multi_lord"; player.title = "東南二州侯"; metrics.ambition = clamp(metrics.ambition + 12, 0, 100);
+    player.stage = "multi_lord"; player.title = getTitleForCareerStage("multi_lord"); metrics.ambition = clamp(metrics.ambition + 12, 0, 100);
     careerLog(player, next, "第二の所領を拝領", "政績と信頼によりネレイアを加増された。統治画面の管轄が二領へ拡張された。");
   } else if (actionId === "declare_independence") {
     if (metrics.householdSupport < 55 || metrics.popularSupport < 50 || metrics.legitimacy < 30) throw new Error("独立には家臣支持55、領民支持50、正統性30が必要です");
+    const governmentForm = getGovernmentTitleSystem(options.governmentFormId ?? "empire");
+    if (!governmentForm) throw new Error("国家形態を選んでください");
     const formerLiege = player.affiliation.liegeName;
-    player.stage = "independent_ruler"; player.title = "辺境王"; player.sovereign = true;
+    player.stage = "independent_ruler";
+    player.governmentFormId = governmentForm.id;
+    player.title = getTitleForCareerStage("independent_ruler", governmentForm.id);
+    player.sovereign = true;
     player.affiliation = { nationId: "player_realm", liegeId: null, liegeName: null };
     metrics.liegeTrust = 0; metrics.legitimacy = clamp(metrics.legitimacy + 12, 0, 100); metrics.ambition = clamp(metrics.ambition + 20, 0, 100);
-    careerLog(player, next, "辺境国家の独立を宣言", `${formerLiege ?? "旧主君"}との主従を解き、従来の統治画面の管轄を新国家全体へ拡張した。`);
+    careerLog(player, next, `${governmentForm.name}の独立を宣言`, `${formerLiege ?? "旧主君"}との主従を解き、${player.title}として従来の統治画面の管轄を新国家全体へ拡張した。`);
   }
   return next;
 }

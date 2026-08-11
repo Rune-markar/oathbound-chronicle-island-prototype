@@ -440,6 +440,8 @@ export function moveGeneratedExpeditionToRegion(state, destinationId) {
   if (!from.neighborIds.includes(destination.id)) throw new RangeError("移動できるのは現在地に隣接する地方だけです。");
   const reachable = getGeneratedExpeditionReachableRegions(refreshed).find((entry) => entry.regionId === destination.id);
   if (!reachable) throw new RangeError("この隣接地方へ移動するための移動力が不足しています。");
+  const destinationTile = playableTileForRegion(runtime, destination);
+  if (!destinationTile) throw new Error("移動先に通行可能な陸上区画がありません。");
   const discovered = new Set(generatedState.discoveredRegionIds);
   [from.id, ...reachable.pathRegionIds].forEach((pathRegionId) => {
     const pathRegion = regionById(runtime, pathRegionId);
@@ -450,7 +452,7 @@ export function moveGeneratedExpeditionToRegion(state, destinationId) {
     generatedWorld: {
       ...generatedState,
       expeditionRegionId: destination.id,
-      expeditionTileId: playableTileForRegion(runtime, destination)?.id ?? null,
+      expeditionTileId: destinationTile.id,
       selectedRegionId: destination.id,
       legacyExpeditionTileId: undefined,
       legacySelectedTileId: undefined,

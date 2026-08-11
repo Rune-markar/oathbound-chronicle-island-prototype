@@ -9,6 +9,8 @@ import {
   AUTHORITY_REFORM_STAGES,
   AUTHORITY_TRANSFER_METHODS,
   CENTRALIZATION_STAGES,
+  CAREER_STAGE_ROUTE,
+  CAREER_STAGES,
   COMMANDS,
   DOCTRINES,
   EVENT_DEFINITIONS,
@@ -18,6 +20,7 @@ import {
   FORCED_ORDER_RULES,
   FORMATIONS,
   HISTORY_POLICIES,
+  GOVERNMENT_TITLE_SYSTEMS,
   LEVIATHAN_POLICIES,
   NATIONAL_REFORM_BUDGETS,
   NATIONAL_REFORM_SYSTEMS,
@@ -27,6 +30,7 @@ import {
   REVENUE_CATEGORIES,
   REFORM_CONCESSIONS,
   SPENDING_CATEGORIES,
+  VILLAGE_FACILITIES,
   WAR_OBJECTIVES,
   WAR_PLANS,
   WORLD,
@@ -67,6 +71,7 @@ import {
   getGovernanceView,
   getDelegationCandidates,
   getRoleDelegation,
+  getServiceRouteProgress,
   getGreatPowerFoundation,
   getHistoricalOverview,
   getHistoricalRuleEffects,
@@ -76,12 +81,18 @@ import {
   getMilitarySummary,
   getLeviathanStatus,
   getPeaceOptions,
+  getCityCreedReport,
+  getNationCreedReport,
+  getOfficerCreedReport,
   getOfficerReport,
   getOfficerPoliticalReport,
+  getPlayerCreedReport,
+  getPolicyCreedSupport,
   getTaskForecast,
   getTownAdministration,
   getTurnGuidance,
   getTurnWarnings,
+  getVillageActionAvailability,
   getWarCouncilReport,
   getWarDeclarationEstimate,
   getWarSupport,
@@ -95,6 +106,7 @@ import {
   executeGovernanceCommand,
   getCareerStage,
   performCareerAction,
+  performVillageAction,
   reassignDelegatedRole,
   queueOrder,
   resolveBorderNegotiation,
@@ -151,6 +163,27 @@ import {
   selectGeneratedWorldRegion,
   setGeneratedPlayerNation,
 } from "./generated-world-system.js";
+import {
+  ADVENTURE_ART,
+  DUNGEON_ARCHETYPES,
+  acceptGuildContract,
+  acceptPartyInvitation,
+  advanceDungeonRun,
+  closeDungeonRun,
+  createDungeonTacticalBattle,
+  explorePersonalMap,
+  getDungeonTacticalRoster,
+  getGuildContracts,
+  getPersonalMapView,
+  getRegionAdventureSites,
+  getTavernCandidates,
+  inviteTavernCandidate,
+  movePersonalMap,
+  normalizeAdventureState,
+  resolveDungeonTacticalBattle,
+  skipDungeonBattle,
+  startDungeonRun,
+} from "./adventure-system.js";
 import { GEOPOLITICAL_MODEL_REFERENCES, GEOPOLITICAL_PULL_SET } from "./geopolitical-world.js";
 import { terrainSvgDataUrl } from "./terrain-renderer.js";
 import {
@@ -211,6 +244,12 @@ import {
   getDispositionLabel,
   PERSUASION_APPROACHES,
 } from "./commander-disposition.js";
+import {
+  CHARACTER_TEMPLATE_FIELD_COUNT,
+  CHARACTER_TEMPLATE_SECTIONS,
+  createCharacterCodexSections,
+  createCharacterDefinition,
+} from "./character-template.js";
 
 const STORAGE_KEY = "oathbound-career-chronicle-v10";
 const LEGACY_STORAGE_KEYS = ["oathbound-continental-grand-strategy-v9", "oathbound-continental-grand-strategy-v8", "oathbound-continental-grand-strategy-v7", "oathbound-continental-grand-strategy-v6"];
@@ -296,18 +335,20 @@ function cityArt(cityId) {
   return CITY_ART[cityId] ?? CITY_ART.selene;
 }
 
-let state = refreshGeneratedWorldForDate(loadState() ?? createCareerInitialState());
+let state = normalizeAdventureState(refreshGeneratedWorldForDate(loadState() ?? createCareerInitialState()));
 if (state.centralizationCampaign?.ending) state.council.pending = false;
 let toastTimer = null;
 let previewCache = { state: null, value: null };
 let generatedMapVisualCache = { key: null, url: null };
 let tacticalEffectTimer = null;
 let tacticalEffectsPlaying = false;
+let adventureAdvanceTimer = null;
 const view = {
   launchOpen: true,
   generation: { active: false, progress: 0, stage: "idle", label: "", error: null },
   battlePreparation: null,
   tacticalBattle: null,
+  tacticalOrigin: null,
   tacticalResult: null,
   tacticalResultOpen: false,
   commanderDisposition: null,
@@ -333,6 +374,9 @@ const view = {
   cityTab: "overview",
   selectedTownId: "mugiwano",
   townTab: "overview",
+  selectedVillageId: null,
+  selectedVillageFacilityId: "inn",
+  adventureOpen: Boolean(state.adventure.activeRun),
   selectedAuthorityDomain: "justice",
   selectedNationalReformSystem: "population_land_knowledge",
   selectedFacilityId: "farmland",
@@ -378,6 +422,10 @@ const elements = {
   launchGenerationDetail: document.querySelector("#launchGenerationDetail"),
   battlePreparationScreen: document.querySelector("#battlePreparationScreen"),
   battlePreparationTitle: document.querySelector("#battlePreparationTitle"),
+  battlePreparationIntro: document.querySelector("#battlePreparationIntro"),
+  battlePreparationExit: document.querySelector("#battlePreparationExit"),
+  battlePreparationSkip: document.querySelector("#battlePreparationSkip"),
+  battleParticipantIntro: document.querySelector("#battleParticipantIntro"),
   battleParticipantCount: document.querySelector("#battleParticipantCount"),
   battleParticipantList: document.querySelector("#battleParticipantList"),
   battlePlacementMode: document.querySelector("#battlePlacementMode"),
@@ -396,6 +444,12 @@ const elements = {
   tacticalBattleInspector: document.querySelector("#tacticalBattleInspector"),
   tacticalBattleLog: document.querySelector("#tacticalBattleLog"),
   tacticalResultButton: document.querySelector("#tacticalResultButton"),
+  tacticalBattleReset: document.querySelector("#tacticalBattleReset"),
+  tacticalBattleSkip: document.querySelector("#tacticalBattleSkip"),
+  tacticalMoreActions: document.querySelector("#tacticalMoreActions"),
+  tacticalBattleExit: document.querySelector("#tacticalBattleExit"),
+  tacticalPlayerLegend: document.querySelector("#tacticalPlayerLegend"),
+  tacticalEnemyLegend: document.querySelector("#tacticalEnemyLegend"),
   tacticalResultScreen: document.querySelector("#tacticalResultScreen"),
   tacticalResultContent: document.querySelector("#tacticalResultContent"),
   commanderDispositionScreen: document.querySelector("#commanderDispositionScreen"),
@@ -455,6 +509,8 @@ const elements = {
   endingModal: document.querySelector("#endingModal"),
   endingContent: document.querySelector("#endingContent"),
   resetModal: document.querySelector("#resetModal"),
+  adventureScreen: document.querySelector("#adventureScreen"),
+  adventureContent: document.querySelector("#adventureContent"),
   toast: document.querySelector("#toast"),
 };
 
@@ -483,7 +539,7 @@ function persist(showMessage = false) {
 
 function commit(nextState, message = "", cue = "confirm") {
   const wasAtWar = Boolean(state.war);
-  state = refreshGeneratedWorldForDate(nextState);
+  state = normalizeAdventureState(refreshGeneratedWorldForDate(nextState));
   if (!wasAtWar && state.war) {
     view.warMapView = "theater";
     view.warRegionId = state.war.theater?.activeRegionId ?? null;
@@ -611,7 +667,7 @@ function renderResources() {
       { icon: "⚔", value: formatValue(metrics.martialMerit), label: "武勲" },
       { icon: "政", value: formatValue(metrics.civilMerit), label: "政績" },
       { icon: "名", value: formatValue(metrics.renown), label: "名声" },
-      { icon: "信", value: formatValue(metrics.liegeTrust), label: player.affiliation.liegeName ? `${player.affiliation.liegeName}の信頼` : "主君なし" },
+      { icon: "信", value: formatValue(metrics.liegeTrust), label: player.sovereign ? "君主権" : player.affiliation.liegeName ? `${player.affiliation.liegeName}の信頼` : "主君なし" },
       { icon: "¤", value: formatValue(metrics.wealth), label: "個人財産" },
     ];
     elements.resourceLedger.innerHTML = resources.map(({ icon, value, label }) => `<div class="resource-item career-resource"><i>${icon}</i><strong>${value}</strong><small>${label}</small></div>`).join("");
@@ -661,7 +717,7 @@ function renderAnalysisMode() {
 function renderTabs() {
   const stage = getCareerStage(state);
   const allowed = state.player
-    ? new Set(["career", "world", ...(stage?.governance ? ["governance"] : [])])
+    ? new Set(["career", "people", "world", "village", ...(stage?.governance ? ["governance"] : [])])
     : null;
   if (allowed && !allowed.has(view.panel)) view.panel = stage?.governance ? "governance" : "career";
   elements.primaryTabs.querySelectorAll("[data-panel]").forEach((button) => {
@@ -684,7 +740,7 @@ function renderCampaignBar() {
     const player = state.player;
     const stage = getCareerStage(state);
     const next = {
-      individual: "依頼を果たし、仕官の誘いを得る",
+      individual: "村へ入り、依頼・救命・大会・紹介から仕官の縁を得る",
       retainer: "主君の命令で功績と信用を得る",
       commander: "委任された部隊を率い、辺境を救援する",
       lord: "自領を治め、忠誠・建議・独立の道を選ぶ",
@@ -695,7 +751,7 @@ function renderCampaignBar() {
       centralized_ruler: "全国への直接命令と反動を統治する",
     }[player.stage];
     elements.campaignBar.innerHTML = `
-      <div class="campaign-bar-goal"><small>立身段階 ${stage.order + 1}/9</small><strong>${stage.name} · ${player.title}</strong><span>${stage.description}</span></div>
+      <div class="campaign-bar-goal"><small>立身段階 ${stage.order + 1}/${CAREER_STAGE_ROUTE.length}</small><strong>${stage.name} · ${player.title}</strong><span>${stage.description}</span></div>
       <div class="campaign-bar-next"><small>現在の目標</small><strong>${next}</strong><span>武勲 ${player.metrics.martialMerit} · 政績 ${player.metrics.civilMerit} · 家臣支持 ${player.metrics.householdSupport}</span></div>
       <div class="campaign-bar-actions"><button class="campaign-primary-action" type="button" data-panel="${stage.governance ? "governance" : "career"}">${stage.governance ? "統治画面を開く" : "人物行動を開く"}</button><button class="campaign-help-action" type="button" data-open-guide>遊び方</button></div>`;
     return;
@@ -848,14 +904,14 @@ async function resetChronicle(options = {}) {
     view.generation = { active: true, progress: 95, stage: "character", label: "人物と開始地点を準備しています", error: null };
     renderLaunchScreen();
     await new Promise((resolve) => requestAnimationFrame(() => resolve()));
-    const nextState = refreshGeneratedWorldForDate(createCareerInitialState({ ...options, seed, generatedWorldRuntime }));
+    const nextState = normalizeAdventureState(refreshGeneratedWorldForDate(createCareerInitialState({ ...options, seed, generatedWorldRuntime })));
     localStorage.removeItem(STORAGE_KEY);
     state = nextState;
     Object.assign(view, {
-      battlePreparation: null, tacticalBattle: null, selectedTacticalUnitId: null, selectedTacticalCommanderId: null, selectedTacticalFortificationId: null, tacticalInspectorDismissed: false,
+      battlePreparation: null, tacticalBattle: null, tacticalOrigin: null, tacticalResult: null, tacticalResultOpen: false, commanderDisposition: null, commanderDispositionOpen: false, selectedTacticalUnitId: null, selectedTacticalCommanderId: null, selectedTacticalFortificationId: null, tacticalInspectorDismissed: false,
       panel: "career", spendingCategoryId: "social_security", spendingCityId: "selene", mapMode: "political", scale: "country",
       selectedType: null, selectedId: null, selectedTileName: null, selectedTerrain: null, selectedTerrainType: null, tileWindowOpen: false,
-      selectedCityId: "selene", cityTab: "overview", selectedTownId: "mugiwano", townTab: "overview", selectedAuthorityDomain: "justice", selectedNationalReformSystem: "population_land_knowledge",
+      selectedCityId: "selene", cityTab: "overview", selectedTownId: "mugiwano", townTab: "overview", selectedVillageId: null, selectedVillageFacilityId: "inn", adventureOpen: false, selectedAuthorityDomain: "justice", selectedNationalReformSystem: "population_land_knowledge",
       selectedFacilityId: "farmland", selectedCountryId: "valka", objectiveId: "transit", warMapView: "atlas", warRegionId: null, selectedWarHexId: null, warCouncilOpen: false, assignmentOpen: false,
       pendingTownId: null, guideOpen: false, endingOpen: false, resetOpen: false, expertMode: false, atlasMode: "generated", generatedMapScale: "region", pendingGeneratedDestinationId: null,
       selectedGeneratedNationId: nextState.generatedWorld.playerNationId, worldNationFilter: "all", focusedTownCommandId: null,
@@ -1315,7 +1371,12 @@ function policyCards(city) {
       <article class="policy-card">
         <header><div><small>都市政策</small><h3>${definition.name}</h3></div><b>${definition.options[pending?.optionId ?? current].name}</b></header>
         <p>${definition.description}</p>
-        <div class="policy-options">${Object.entries(definition.options).map(([optionId, option]) => `<button type="button" data-queue-policy="${definition.id}" data-option="${optionId}" data-city-id="${city.cityId}" class="${(pending?.optionId ?? current) === optionId ? "is-active" : ""}" ${current === optionId && !pending ? "disabled" : ""}><strong>${option.name}</strong><small>${policyOptionSummary(definition.id, option)}</small></button>`).join("")}</div>
+        <div class="policy-options">${Object.entries(definition.options).map(([optionId, option]) => {
+          const creed = getPolicyCreedSupport(state, city.cityId, definition.id, optionId);
+          const creedClass = creed?.score < -8 ? "is-opposed" : creed?.score > 8 ? "is-supported" : "is-neutral";
+          const creedLabel = creed?.tagged ? `<em class="policy-creed ${creedClass}">信条 ${creed.score >= 0 ? "+" : ""}${creed.score}${creed.opposedFactions.length ? ` · 反対${creed.opposedFactions.length}派` : ""}</em>` : "";
+          return `<button type="button" data-queue-policy="${definition.id}" data-option="${optionId}" data-city-id="${city.cityId}" class="${(pending?.optionId ?? current) === optionId ? "is-active" : ""}" ${current === optionId && !pending ? "disabled" : ""}><strong>${option.name}</strong><small>${policyOptionSummary(definition.id, option)}</small>${creedLabel}</button>`;
+        }).join("")}</div>
       </article>
     `;
   }).join("");
@@ -1558,10 +1619,36 @@ function renderCityFacilities(city) {
   `;
 }
 
+function creedAxisSummary(layer, maximum = 3, includeNeutral = false) {
+  return [...(layer?.axes ?? [])]
+    .filter((axis) => includeNeutral || axis.strength !== "neutral")
+    .sort((left, right) => Math.abs(right.value) * right.importance - Math.abs(left.value) * left.importance)
+    .slice(0, maximum)
+    .map((axis) => `<span><b>${escapeHtml(axis.label)}</b>${escapeHtml(axis.text)}</span>`)
+    .join("") || "<span><b>主要傾向</b>中立・未形成</span>";
+}
+
+function renderCityCreed(cityId) {
+  const creed = getCityCreedReport(state, cityId);
+  const nation = getNationCreedReport(state);
+  if (!creed) return "";
+  const layers = [
+    ["社会意識", creed.layers.social], ["支配層", creed.layers.ruling], ["制度", creed.layers.institutional],
+  ].map(([label, layer]) => `<article><small>${label}</small><strong>${escapeHtml(layer.identity.name)}</strong><div>${creedAxisSummary(layer, 2)}</div></article>`).join("");
+  const latest = creed.policyDebates[0];
+  return `<section class="city-creed-overview">
+    <header><div><small>SOCIAL CREED</small><h2>${escapeHtml(creed.identity.name)}</h2></div><b class="${creed.tension.score >= 35 ? "is-danger" : ""}">制度緊張 ${creed.tension.score}</b></header>
+    <p>${escapeHtml(creed.identity.shortDescription)} 国家主流：${escapeHtml(nation?.identity?.name ?? "未形成")}</p>
+    <div class="city-creed-layers">${layers}</div>
+    ${latest ? `<footer><strong>直近の政策争点</strong><span>${escapeHtml(latest.implementation)} · 支持 ${latest.score >= 0 ? "+" : ""}${latest.score}</span></footer>` : ""}
+  </section>`;
+}
+
 function renderCityFactions(city) {
   return `
+    ${renderCityCreed(city.cityId)}
     <section class="faction-grid">
-      ${city.factions.map((faction) => `<article class="faction-card ${faction.radicalism >= 45 ? "is-danger" : ""}"><header><span>${faction.icon}</span><div><small>派閥</small><h3>${faction.name}</h3></div><b>影響 ${faction.influence}</b></header><p>${faction.demand}</p><div class="faction-meters">${meter("支持", faction.support)}${meter("過激度", faction.radicalism, "/ 100", "danger-meter")}</div><div class="faction-actions">${Object.values(FACTION_ACTIONS).map((action) => `<button type="button" data-queue-faction="${faction.id}" data-action="${action.id}" data-city-id="${city.cityId}"><strong>${action.name}</strong><small>金${action.money}・統治${action.governanceCost}<br>${action.detail}</small></button>`).join("")}</div></article>`).join("")}
+      ${city.factions.map((faction) => `<article class="faction-card ${faction.radicalism >= 45 ? "is-danger" : ""}"><header><span>${faction.icon}</span><div><small>派閥</small><h3>${faction.name}</h3></div><b>影響 ${faction.influence}</b></header><p>${faction.demand}</p><div class="faction-creed"><small>集団信条</small><strong>${escapeHtml(faction.creed?.identity?.name ?? "特筆すべき信条なし")}</strong></div><div class="faction-meters">${meter("支持", faction.support)}${meter("過激度", faction.radicalism, "/ 100", "danger-meter")}</div><div class="faction-actions">${Object.values(FACTION_ACTIONS).map((action) => `<button type="button" data-queue-faction="${faction.id}" data-action="${action.id}" data-city-id="${city.cityId}"><strong>${action.name}</strong><small>金${action.money}・統治${action.governanceCost}<br>${action.detail}</small></button>`).join("")}</div></article>`).join("")}
     </section>
   `;
 }
@@ -1771,13 +1858,17 @@ function renderCityHistory(city) {
 }
 
 function renderCityWorkspace() {
-  const active = ["city", "town", "career", "governance"].includes(view.panel);
+  const active = ["city", "town", "career", "village", "governance"].includes(view.panel);
   elements.mapStage.classList.toggle("is-city-mode", active);
   elements.cityWorkspace.classList.toggle("is-hidden", !active);
   elements.cityWorkspace.setAttribute("aria-hidden", String(!active));
   if (!active) return;
   if (view.panel === "career") {
     elements.cityWorkspace.innerHTML = renderCareerWorkspace();
+    return;
+  }
+  if (view.panel === "village") {
+    elements.cityWorkspace.innerHTML = renderVillageWorkspace();
     return;
   }
   if (view.panel === "governance") {
@@ -1822,6 +1913,151 @@ function worldModeSwitch() {
   `;
 }
 
+function generatedVillageContexts(regionId = null) {
+  if (!state.player) return [];
+  const { runtime, expeditionRegion } = getGeneratedWorldView(state);
+  const targetRegionId = regionId ?? expeditionRegion.id;
+  return (runtime.nations.objects ?? [])
+    .filter((object) => object.type === "village" && object.regionId === targetRegionId)
+    .map((object) => {
+      const region = runtime.regionById.get(object.regionId);
+      const nation = runtime.nationById.get(object.nationId);
+      return {
+        id: object.id,
+        name: object.name,
+        source: "generated",
+        regionId: object.regionId,
+        regionName: region?.name ?? "地方不明",
+        nationId: object.nationId,
+        nationName: nation?.name ?? "所属不明",
+      };
+    })
+    .sort((left, right) => left.name.localeCompare(right.name, "ja"));
+}
+
+function villageContextById(villageId) {
+  if (!villageId) return null;
+  const { runtime } = getGeneratedWorldView(state);
+  const object = (runtime.nations.objects ?? []).find((entry) => entry.type === "village" && entry.id === villageId);
+  if (object) {
+    const region = runtime.regionById.get(object.regionId);
+    const nation = runtime.nationById.get(object.nationId);
+    return {
+      id: object.id,
+      name: object.name,
+      source: "generated",
+      regionId: object.regionId,
+      regionName: region?.name ?? "地方不明",
+      nationId: object.nationId,
+      nationName: nation?.name ?? "所属不明",
+    };
+  }
+  const town = WORLD.villages[villageId];
+  if (!town) return null;
+  return {
+    id: town.id,
+    name: town.name,
+    source: "static",
+    regionId: town.province,
+    regionName: WORLD.provinces[town.province]?.name ?? "地方不明",
+    nationId: WORLD.provinces[town.province]?.owner ?? WORLD.nation.id,
+    nationName: WORLD.countries[WORLD.provinces[town.province]?.owner]?.name ?? WORLD.nation.name,
+  };
+}
+
+function activeVillageContext() {
+  return villageContextById(view.selectedVillageId);
+}
+
+function currentAdventureContext() {
+  const world = getGeneratedWorldView(state);
+  return {
+    region: world.expeditionRegion,
+    nation: world.playerNation,
+    runtime: world.runtime,
+  };
+}
+
+function currentAdventureSites() {
+  return getRegionAdventureSites(state, currentAdventureContext());
+}
+
+function enterVillage(villageId) {
+  const context = villageContextById(villageId);
+  if (!context) throw new Error("入れる村が見つかりません");
+  view.selectedVillageId = context.id;
+  view.selectedVillageFacilityId = "inn";
+  view.panel = "village";
+  view.scale = "village";
+  view.tileWindowOpen = false;
+  if (context.source === "static") {
+    view.selectedTownId = context.id;
+    view.selectedCityId = context.regionId;
+    view.selectedType = "village";
+    view.selectedId = context.id;
+  } else {
+    view.selectedType = null;
+    view.selectedId = null;
+  }
+}
+
+function renderVillageEntrySection(compact = false) {
+  const { expeditionRegion } = getGeneratedWorldView(state);
+  const villages = generatedVillageContexts(expeditionRegion.id);
+  const buttons = villages.map((village) => `
+    <button type="button" data-enter-village="${village.id}">
+      <i aria-hidden="true">村</i><span><strong>${escapeHtml(village.name)}</strong><small>${escapeHtml(village.nationName)} · 宿・商・依頼・交流</small></span><b>入る →</b>
+    </button>`).join("");
+  return `<section class="village-entry-section ${compact ? "is-compact" : ""}">
+    <header><div><small>SETTLEMENTS / PERSONAL VISIT</small><h2>現在地の村</h2></div><strong>${villages.length}村</strong></header>
+    ${buttons ? `<div>${buttons}</div>` : `<p>${escapeHtml(expeditionRegion.name)}で立ち寄れる村はまだ見つかっていません。隣接地方へ移動し、村のある地方を探してください。</p>`}
+  </section>`;
+}
+
+function renderDungeonEntrySection(compact = false) {
+  if (!state.player) return "";
+  const { dungeon } = currentAdventureSites();
+  const archetype = DUNGEON_ARCHETYPES[dungeon.dungeonType];
+  return `<section class="dungeon-entry-section ${compact ? "is-compact" : ""}">
+    <header><div><small>DUNGEON / AUTO EXPLORATION</small><h2>現在地の探索地</h2></div><strong>${dungeon.cleared ? "踏破済み" : "未踏"}</strong></header>
+    <button type="button" data-enter-dungeon="${dungeon.id}" style="--dungeon-entry-art:url('${dungeon.art}')">
+      <i aria-hidden="true">${archetype.symbol}</i>
+      <span><small>${escapeHtml(dungeon.subtitle)}</small><strong>${escapeHtml(dungeon.name)}</strong><p>${escapeHtml(dungeon.description)}</p></span>
+      <b>探索開始 →</b>
+    </button>
+  </section>`;
+}
+
+function renderPersonalMapCommands(personalMap = getPersonalMapView(state, currentAdventureContext())) {
+  const result = personalMap.lastResult;
+  const resultIcon = result?.itemIcon ?? result?.enemySymbol ?? result?.symbol ?? ({ move: "歩", nothing: "―" }[result?.type] ?? "探");
+  const resultMarkup = result ? `
+    <article class="personal-map-result is-${result.type} ${result.outcome ? `outcome-${result.outcome}` : ""}">
+      <i aria-hidden="true">${escapeHtml(resultIcon)}</i>
+      <span><small>直前の結果</small><strong>${escapeHtml(result.title)}</strong><p>${escapeHtml(result.message)}</p></span>
+    </article>` : '<p class="personal-map-empty">「探索」で周辺を調べると、場所・モンスター・採取品などを発見します。</p>';
+  const nodes = personalMap.locations.map((location) => `
+    <span class="personal-map-node is-${location.type} ${location.current ? "is-current" : ""} ${location.discovered ? "is-discovered" : "is-unknown"}" style="--node-x:${location.x}%;--node-y:${location.y}%" title="${escapeHtml(location.name)}">
+      <i>${escapeHtml(location.symbol)}</i><b>${location.current ? "現在地" : escapeHtml(location.name)}</b>
+    </span>`).join("");
+  const destinations = personalMap.reachableLocations.map((location) => `
+    <button type="button" data-personal-map-move="${location.id}">
+      <i aria-hidden="true">${escapeHtml(location.symbol)}</i><span><small>近くの発見済み地点</small><strong>${escapeHtml(location.name)}</strong></span><b>移動</b>
+    </button>`).join("");
+  return `<section class="personal-map-command">
+    <header><div><small>PERSONAL MAP COMMAND</small><h2>個人マップ</h2></div><strong>${personalMap.locations.filter((location) => location.discovered).length} / ${personalMap.locations.length}地点</strong></header>
+    <div class="personal-map-layout">
+      <div class="personal-map-board" aria-label="${escapeHtml(personalMap.regionName)}の個人マップ"><span class="personal-map-route route-a"></span><span class="personal-map-route route-b"></span><span class="personal-map-route route-c"></span>${nodes}</div>
+      <div class="personal-map-current"><small>CURRENT LOCATION</small><strong>${escapeHtml(personalMap.currentLocation.name)}</strong><p>${escapeHtml(personalMap.currentLocation.description)}</p></div>
+    </div>
+    ${resultMarkup}
+    <div class="personal-map-actions">
+      <button type="button" class="personal-map-explore" data-personal-map-explore><i aria-hidden="true">探</i><span><strong>探索</strong><small>新たな場所・戦闘・アイテム・空振り</small></span></button>
+      <div class="personal-map-destinations"><header><strong>移動</strong><small>発見済みの近くの場所だけ</small></header>${destinations || "<p>移動できる発見済み地点がありません。</p>"}</div>
+    </div>
+  </section>`;
+}
+
 function generatedRegionTerrainLabel(region) {
   const terrain = GENERATED_TERRAIN_LABELS[region.dominantTerrain] ?? region.dominantTerrain;
   const relief = GENERATED_RELIEF_LABELS[region.dominantRelief] ?? region.dominantRelief;
@@ -1830,6 +2066,7 @@ function generatedRegionTerrainLabel(region) {
 
 function renderGeneratedWorldPanel() {
   const { runtime, generatedState, playerNation, expeditionRegion } = getGeneratedWorldView(state);
+  const personalMap = getPersonalMapView(state, { runtime, region: expeditionRegion, nation: playerNation });
   const reachableRegions = getGeneratedExpeditionReachableRegions(state);
   const discoveredRegionCount = new Set([
     ...generatedState.discoveredRegionIds,
@@ -1847,9 +2084,16 @@ function renderGeneratedWorldPanel() {
     const region = runtime.regionById.get(entry.regionId);
     const nation = runtime.nationById.get(region.nationId);
     const selected = entry.regionId === view.pendingGeneratedDestinationId;
-    return `<button type="button" data-generated-region-candidate-id="${region.id}" class="${selected ? "is-selected" : ""}" aria-pressed="${selected}"><b>${escapeHtml(region.name)}</b><small>${escapeHtml(nation.name)} · ${escapeHtml(generatedRegionTerrainLabel(region))} · 隣接地方</small><em>移動${entry.cost}</em></button>`;
+    return `<button type="button" data-generated-region-candidate-id="${region.id}" data-terrain="${region.dominantTerrain}" data-relief="${region.dominantRelief}" class="${selected ? "is-selected" : ""}" aria-pressed="${selected}">
+      <span class="generated-region-visual" aria-hidden="true"><i></i><u></u></span>
+      <span class="generated-region-copy"><b>${escapeHtml(region.name)}</b><small>${escapeHtml(nation.name)} · ${escapeHtml(generatedRegionTerrainLabel(region))}</small></span>
+      <em><b>${entry.cost}</b><small>移動力</small></em>
+    </button>`;
   }).join("");
   return `
+    ${renderPersonalMapCommands(personalMap)}
+    ${personalMap.currentLocation.type === "dungeon" ? renderDungeonEntrySection() : ""}
+    ${personalMap.currentLocation.type === "village" ? renderVillageEntrySection() : ""}
     <section class="generated-move-command">
       <header><div><small>COMMAND</small><h2>地方へ移動</h2></div><strong>${reachableRegions.length}候補</strong></header>
       <p>現在地に隣接する地方を一つ選び、内容を確認してから移動を実行します。地図をタップしただけでは移動しません。</p>
@@ -1859,16 +2103,17 @@ function renderGeneratedWorldPanel() {
       </div>
       <button type="button" class="generated-move-confirm" data-generated-move-confirm ${pendingRegion ? "" : "disabled"}>この地方へ移動</button>
     </section>
-    <section class="generated-command-status" style="--generated-nation-color:${playerNation.color}">
-      <header><div><small>CURRENT REGION</small><h2>${escapeHtml(expeditionRegion.name)}</h2></div><strong>移動力 ${generatedState.expeditionMovement} / 8</strong></header>
+    <section class="generated-command-status" data-terrain="${expeditionRegion.dominantTerrain}" data-relief="${expeditionRegion.dominantRelief}" style="--generated-nation-color:${playerNation.color}">
+      <div class="generated-region-vista" aria-hidden="true"><i></i><u></u><span>${escapeHtml(playerNation.shortName.slice(0, 1))}</span></div>
+      <header><div><small>CURRENT REGION</small><h2>${escapeHtml(expeditionRegion.name)}</h2><p>${escapeHtml(generatedRegionTerrainLabel(expeditionRegion))}</p></div><strong class="generated-movement-dial" style="--movement:${Math.min(100, generatedState.expeditionMovement / 8 * 100)}%"><b>${generatedState.expeditionMovement}</b><small>/ 8</small></strong></header>
       <div>
         <span><small>所属国家</small><strong>${escapeHtml(playerNation.name)}</strong></span>
-        <span><small>地勢</small><strong>${escapeHtml(generatedRegionTerrainLabel(expeditionRegion))}</strong></span>
+        <span><small>地勢</small><strong>${escapeHtml(GENERATED_RELIEF_LABELS[expeditionRegion.dominantRelief] ?? expeditionRegion.dominantRelief)}</strong></span>
         <span><small>発見済み</small><strong>${discoveredRegionCount}地方</strong></span>
       </div>
       <label><span>プレイヤー国家</span><select data-generated-player-nation>${nationOptions}</select></label>
     </section>
-    <p class="world-source-note">地形区画は地方内部の高精細地勢を生成するためだけに使い、移動・発見・コマンドは地方単位で処理します。</p>
+    <p class="world-source-note">地方間は生成世界の移動力で移動します。地方内では個人マップの「探索」と「移動」を使い、発見済みの近距離地点だけを行き来します。</p>
   `;
 }
 
@@ -2390,9 +2635,128 @@ function assignmentLabel(officer) {
   return task ? `${COMMANDS[task.commandId].name} · 残${task.remainingTurns}か月` : "任務中";
 }
 
+function characterCreedCard(creed) {
+  if (!creed) return "";
+  const doctrines = creed.identity.doctrines.slice(0, 3).map((text) => `<li>${escapeHtml(text)}</li>`).join("");
+  return `<details class="character-creed" ${creed.identity.formed ? "" : "data-unformed"}>
+    <summary><span><small>信条</small><strong>${escapeHtml(creed.identity.name)}</strong></span><b>${creed.identity.majorAxes.length ? creed.identity.majorAxes.map((axis) => escapeHtml(axis.text)).join(" · ") : "形成途上"}</b></summary>
+    <div class="character-creed-detail"><p>${escapeHtml(creed.identity.shortDescription)}</p><div>${creedAxisSummary(creed, 7, true)}</div>${doctrines ? `<ol>${doctrines}</ol>` : ""}</div>
+  </details>`;
+}
+
+function playerCharacterDefinition() {
+  const player = state.player;
+  if (!player) return null;
+  const stage = getCareerStage(state);
+  return createCharacterDefinition({
+    id: player.id,
+    name: player.name,
+    raceId: player.raceId,
+    portrait: player.name.slice(0, 1),
+    role: stage.name,
+    policy: player.specialty,
+    biography: {
+      origin: player.origin,
+      occupation: stage.name,
+      specialty: player.specialty,
+      affiliation: player.affiliation.liegeName,
+      goal: stage.description,
+    },
+    gameplay: {
+      role: stage.name,
+      titles: [player.title],
+      policy: player.specialty,
+      recruitable: false,
+      commander: ["commander", "castellan", "lord", "multi_lord", "governor", "duke", "regent", "independent_ruler", "centralized_ruler"].includes(player.stage),
+    },
+    metadata: { source: "state.player", tags: ["主人公", player.stage] },
+  });
+}
+
+function readableBonds(bonds = {}) {
+  return Object.fromEntries(Object.entries(bonds).map(([characterId, value]) => [WORLD.characters[characterId]?.name ?? characterId, value]));
+}
+
+function characterCodexEntries() {
+  const entries = [];
+  const playerDefinition = playerCharacterDefinition();
+  if (playerDefinition) {
+    const player = state.player;
+    entries.push({
+      category: "主人公",
+      definition: playerDefinition,
+      current: {
+        allegiance: player.affiliation.liegeName ?? "無所属",
+        rank: player.title,
+        location: WORLD.provinces[player.locationId]?.name ?? player.locationId,
+        merit: player.metrics.martialMerit + player.metrics.civilMerit,
+        bonds: readableBonds(Object.fromEntries((player.householdRetainers ?? []).map((id) => [id, "家臣"]))),
+        assignment: "本人行動",
+      },
+    });
+  }
+  Object.keys(state.officers ?? {}).forEach((officerId) => {
+    const officer = getOfficerReport(state, officerId);
+    if (!officer) return;
+    entries.push({
+      category: allegianceLabel(officer.allegiance),
+      definition: officer,
+      current: {
+        allegiance: allegianceLabel(officer.allegiance),
+        rank: officer.rank,
+        location: WORLD.provinces[officer.location]?.name ?? officer.location,
+        loyalty: officer.loyalty,
+        stamina: officer.stamina,
+        merit: officer.merit,
+        assignment: assignmentLabel(officer),
+        bonds: readableBonds(officer.bonds),
+      },
+    });
+  });
+  const enemyCommander = getEnemyCommander(state, "valka");
+  if (enemyCommander) {
+    entries.push({
+      category: "敵将",
+      definition: enemyCommander,
+      current: {
+        allegiance: enemyCommander.country?.name ?? "ヴァルカ公国",
+        rank: enemyCommander.role,
+        location: "灰冠峠方面",
+        assignment: enemyCommander.doctrine,
+      },
+    });
+  }
+  return entries;
+}
+
+function characterTemplateGuide() {
+  const sections = CHARACTER_TEMPLATE_SECTIONS.map((section) => `
+    <section><header><strong>${escapeHtml(section.label)}</strong><small>${section.fields.length}項目</small></header><p>${escapeHtml(section.description)}</p><div>${section.fields.map((field) => `<span>${escapeHtml(field.label)}</span>`).join("")}</div></section>`).join("");
+  return `<details class="character-template-guide"><summary><span><small>CHARACTER TEMPLATE</small><strong>キャラクター構成項目一覧</strong></span><b>${CHARACTER_TEMPLATE_FIELD_COUNT}項目</b></summary><div class="character-template-section-list">${sections}</div></details>`;
+}
+
+function characterCodexCard(entry, index) {
+  const character = entry.definition;
+  const sections = createCharacterCodexSections(character, entry.current);
+  const configured = sections.reduce((sum, section) => sum + section.fields.filter((field) => field.configured).length, 0);
+  const detailSections = sections.map((section) => `
+    <section class="character-codex-section is-${section.id}">
+      <header><div><strong>${escapeHtml(section.label)}</strong><small>${escapeHtml(section.description)}</small></div><b>${section.fields.filter((field) => field.configured).length}/${section.fields.length}</b></header>
+      <dl>${section.fields.map((field) => `<div class="${field.configured ? "" : "is-unset"}"><dt>${escapeHtml(field.label)}${field.current ? "<i>現在</i>" : ""}</dt><dd>${escapeHtml(field.value)}</dd></div>`).join("")}</dl>
+    </section>`).join("");
+  return `<details class="character-codex-entry" ${index === 0 ? "open" : ""}>
+    <summary>${officerSeal(character, "large")}<span><small>${escapeHtml(entry.category)} · ${escapeHtml(character.identity.raceId === "human" ? "人間" : character.identity.raceId)}</small><strong>${escapeHtml(character.name)}</strong><em>${escapeHtml(character.gameplay.role ?? "役割未設定")}</em></span><b>${configured}/${CHARACTER_TEMPLATE_FIELD_COUNT}</b></summary>
+    <div class="character-codex-detail">${detailSections}</div>
+  </details>`;
+}
+
 function renderPeoplePanel() {
+  const codexEntries = characterCodexEntries();
+  const codex = codexEntries.map(characterCodexCard).join("");
+  const playerCreed = getPlayerCreedReport(state);
   const cards = Object.keys(state.officers).map((officerId) => {
     const officer = getOfficerReport(state, officerId);
+    const creed = getOfficerCreedReport(state, officerId);
     const politics = getOfficerPoliticalReport(state, officerId);
     const strongestBond = Object.entries(officer.bonds ?? {}).sort((left, right) => right[1] - left[1])[0];
     return `
@@ -2401,14 +2765,18 @@ function renderPeoplePanel() {
         <div class="officer-stat-grid">${statCells(officer.stats)}</div>
         <div class="officer-state-line"><span>忠誠 ${officer.loyalty}</span><span>意欲 ${officer.stamina}</span><span>功績 ${officer.merit}</span>${politics ? `<span class="political-standing is-${politics.standing === "対立" ? "danger" : politics.standing === "要注意" ? "warning" : "stable"}">${politics.standing}</span>` : ""}</div>
         <p><strong>${officer.policy}</strong> · ${officer.traits.join(" / ")}<br>${assignmentLabel(officer)}</p>
+        ${characterCreedCard(creed)}
         ${politics ? `<div class="officer-politics"><strong>${politics.faction} · ${politics.agenda}</strong><span>出自：${politics.origin}</span><span>野心：${politics.ambition}</span><span class="officer-demand">要求：${politics.demand}</span><small>政治力 ${politics.politicalCapital} · 不満 ${politics.resentment}${strongestBond ? ` · 親密 ${WORLD.characters[strongestBond[0]]?.name ?? strongestBond[0]} ${strongestBond[1]}` : ""}</small><small>${politics.consequence}</small>${politics.activePromise ? `<p class="officer-promise"><strong>受諾済み</strong><span>${politics.activePromise.agenda}を支持する任務を残り${politics.responseCooldown}か月以内に完了</span></p>` : politics.canRespond ? `<div class="officer-demand-actions">${politics.responses.map((response) => `<button type="button" data-officer-demand-response="${response.id}" data-officer-id="${officerId}"><strong>${response.name}</strong><small>${response.impact}</small></button>`).join("")}</div>` : officer.allegiance === "serving" ? `<small class="officer-demand-cooldown">再回答まであと${politics.responseCooldown}か月</small>` : ""}${politics.latestReaction ? `<em>直近：${politics.latestReaction.title}</em>` : ""}</div>` : ""}
       </article>
     `;
   }).join("");
   elements.leftPanel.innerHTML = `
-    <header class="panel-heading"><span>OFFICERS</span><h1>人物と官職</h1><p>能力・忠誠・意欲・功績・所在地を任務へ接続</p></header>
+    <header class="panel-heading"><span>CHARACTER CODEX / OFFICERS</span><h1>キャラクター辞典</h1><p>人物の固定設定と、ゲーム中に変化する現在状態を分けて参照</p></header>
     <div class="panel-body">
-      <section class="panel-section"><div class="section-heading"><h2>人物一覧</h2><small>${Object.keys(state.officers).length}名</small></div><div class="officer-list">${cards}</div></section>
+      <section class="panel-section player-creed-panel"><div class="section-heading"><h2>プレイヤーの信条</h2><small>選択と経験から形成</small></div>${characterCreedCard(playerCreed)}</section>
+      ${characterTemplateGuide()}
+      <section class="panel-section character-codex"><div class="section-heading"><h2>登録人物</h2><small>${codexEntries.length}名</small></div><div class="character-codex-list">${codex}</div></section>
+      <section class="panel-section"><div class="section-heading"><h2>官職・政治状態</h2><small>${Object.keys(state.officers).length}名</small></div><div class="officer-list">${cards}</div></section>
       <section class="panel-section"><div class="section-heading"><h2>人材に関する支出</h2><small>目的別に分類</small></div><div class="spending-shortcut-list">${spendingShortcut("research_development", "測量士を研究職へ登用する")}${spendingShortcut("military_affairs", "軍務人材を勧誘する")}${spendingShortcut("foreign_aid", "外交顧問を登用する")}</div></section>
     </div>
   `;
@@ -2523,15 +2891,42 @@ function renderCentralizationPanel() {
 function careerMetricCards(player) {
   const metrics = player.metrics;
   return [
-    ["武勲", metrics.martialMerit, "戦場と軍務の功績"],
-    ["政績", metrics.civilMerit, "統治と交渉の成果"],
-    ["名声", metrics.renown, "世間からの認知"],
-    ["主君の信頼", metrics.liegeTrust, player.affiliation.liegeName ?? "主君なし"],
-    ["家臣支持", metrics.householdSupport, "直属家臣の支持"],
-    ["領民支持", metrics.popularSupport, "管轄住民の評価"],
-    ["正統性", metrics.legitimacy, "任官・継承・承認"],
-    ["野心", metrics.ambition, "周囲から見た危険度"],
-  ].map(([label, value, detail]) => `<article><small>${label}</small><strong>${value}</strong><span>${detail}</span><i style="--value:${value}%"></i></article>`).join("");
+    ["martial", "⚔", "武勲", metrics.martialMerit, "軍務"],
+    ["civil", "政", "政績", metrics.civilMerit, "統治"],
+    ["renown", "✦", "名声", metrics.renown, "認知"],
+    ["trust", "♜", player.sovereign ? "君主権" : "主君の信頼", metrics.liegeTrust, player.sovereign ? player.title : player.affiliation.liegeName ?? "主君なし"],
+    ["household", "旗", "家臣支持", metrics.householdSupport, "直属家臣"],
+    ["popular", "民", "領民支持", metrics.popularSupport, "管轄住民"],
+    ["legitimacy", "冠", "正統性", metrics.legitimacy, "任官・継承"],
+    ["ambition", "火", "野心", metrics.ambition, "警戒度"],
+  ].map(([id, icon, label, value, detail]) => {
+    const gauge = Math.max(0, Math.min(100, Number(value) || 0));
+    return `<article class="career-metric-card is-${id}" style="--value:${gauge}%">
+      <span class="career-metric-icon" aria-hidden="true">${icon}</span>
+      <div class="career-metric-ring"><strong>${value}</strong></div>
+      <div class="career-metric-copy"><small>${label}</small><span>${escapeHtml(detail)}</span></div>
+      <i aria-hidden="true"></i>
+    </article>`;
+  }).join("");
+}
+
+function careerStageRoute(stage) {
+  const stages = CAREER_STAGE_ROUTE;
+  const progress = stages.length > 1 ? stage.order / (stages.length - 1) * 100 : 0;
+  return `<ol class="career-stage-route" style="--career-progress:${progress}%" aria-label="立身段階 ${stage.order + 1}/${stages.length}">
+    ${stages.map((entry) => {
+      const stateClass = entry.order < stage.order ? "is-complete" : entry.order === stage.order ? "is-current" : "is-future";
+      return `<li class="${stateClass}" ${entry.order === stage.order ? 'aria-current="step"' : ""}><i>${entry.order < stage.order ? "✓" : entry.order + 1}</i><span>${escapeHtml(entry.name)}</span></li>`;
+    }).join("")}
+  </ol>`;
+}
+
+function careerIdentityCrest(player, stage, compact = false) {
+  const initial = escapeHtml(player.name.trim().slice(0, 1) || "人");
+  const progress = Math.round((stage.order + 1) / CAREER_STAGE_ROUTE.length * 100);
+  return `<div class="career-identity-crest ${compact ? "is-compact" : ""}" style="--career-rank:${progress}%" aria-label="${escapeHtml(player.name)}、立身段階${stage.order + 1}">
+    <span>${initial}</span><i aria-hidden="true"></i><b>${stage.order + 1}</b>
+  </div>`;
 }
 
 function promotionDelegationFields(roleId) {
@@ -2542,18 +2937,35 @@ function promotionDelegationFields(roleId) {
   return `<fieldset class="promotion-delegation"><legend>昇進後の引き継ぎ</legend><label>後任<select data-promotion-successor>${candidates.map((officer) => `<option value="${officer.id}">${escapeHtml(officer.name)} · ${escapeHtml(officer.role)}</option>`).join("")}</select></label><label>重視方針<select data-promotion-mandate>${mandateOptions}</select></label><label>裁量<select data-promotion-authority>${authorityOptions}</select></label><p>日常判断は後任が処理し、重大事項だけを上申します。</p></fieldset>`;
 }
 
+function governmentFormFields() {
+  const options = Object.values(GOVERNMENT_TITLE_SYSTEMS).map((system) => (
+    `<option value="${system.id}">${escapeHtml(system.name)} — ${escapeHtml(system.highest.join("・"))}</option>`
+  )).join("");
+  return `<fieldset class="promotion-delegation government-form-choice"><legend>建国する国家形態</legend><label>国家形態<select data-government-form>${options}</select></label><p>独立後のプレイヤー称号は、選んだ国家形態の最高位称号になります。</p></fieldset>`;
+}
+
+function governmentTitleCatalog() {
+  const systems = Object.values(GOVERNMENT_TITLE_SYSTEMS).map((system) => `<article>
+    <small>${escapeHtml(system.name)}</small>
+    <strong>${escapeHtml(system.highest.join("・"))}</strong>
+    <span>${escapeHtml(system.offices.join("、"))}</span>
+  </article>`).join("");
+  return `<details class="government-title-catalog"><summary>国家形態別の称号体系</summary><div>${systems}</div></details>`;
+}
+
 function careerActionButtons(player) {
   if (player.stage === "individual" && !player.invitations.length) {
-    return `<button class="career-primary-action" type="button" data-career-action="take_contract"><strong>街道護衛の依頼を受ける</strong><small>本人と少数の協力者で事件へ参加し、武勲・名声・財産を得る</small></button>`;
+    return `<button class="career-primary-action career-village-route" type="button" data-panel="world"><strong>地方地図で村を探す</strong><small>村へ入り、ギルドで依頼を受け、酒場で仲間を集めてから出発する</small></button>`;
   }
   if (player.stage === "individual") return "";
   if (player.stage === "retainer") return `<button class="career-primary-action" type="button" data-career-action="fulfill_order"><strong>主君の討伐命令を果たす</strong><small>命令への服従、成果、損耗が信頼と昇進へ影響する</small></button>`;
   if (player.stage === "commander") return `<article class="career-promotion-action" data-career-action-card>${promotionDelegationFields("commander")}<button class="career-primary-action" type="button" data-career-action="command_campaign"><strong>辺境救援軍を指揮する</strong><small>昇進した場合、国境隊と実務を選んだ後任へ引き継ぐ</small></button></article>`;
-  if (["lord", "multi_lord", "governor"].includes(player.stage)) {
+  if (["lord", "multi_lord", "governor", "duke"].includes(player.stage)) {
+    const independenceHandoff = ["lord", "multi_lord"].includes(player.stage) ? promotionDelegationFields(player.stage) : "";
     return `
       <button type="button" data-career-action="consolidate_power"><strong>領内基盤を固める</strong><small>家臣・領民・地方豪族の支持と正統性を積む。中央の警戒も強まる</small></button>
       ${player.stage === "lord" ? `<article class="career-promotion-action" data-career-action-card>${promotionDelegationFields("lord")}<button type="button" data-career-action="request_second_fief"><strong>第二の所領を願い出る</strong><small>加増された場合、東境州の日常統治を選んだ代官へ引き継ぐ</small></button></article>` : ""}
-      <button class="is-danger" type="button" data-career-action="declare_independence"><strong>辺境に新国家を建てる</strong><small>家臣支持55・領民支持50・正統性30が必要。旧主君との関係を失う</small></button>`;
+      <article class="career-promotion-action government-form-action" data-career-action-card>${independenceHandoff}${governmentFormFields()}<button class="is-danger" type="button" data-career-action="declare_independence"><strong>辺境に新国家を建てる</strong><small>家臣支持55・領民支持50・正統性30が必要。現在の実務は後任へ委任し、旧主君との関係を失う</small></button></article>`;
   }
   return "";
 }
@@ -2582,15 +2994,187 @@ function roleDelegationSection() {
   return `<section class="role-delegation-board"><header><div><small>DELEGATED RESPONSIBILITIES</small><h2>役割委任</h2></div><p>人選・方針・裁量を示し、通常実務は担当者へ任せます。</p></header><div class="delegation-assignment-grid">${assignments}</div>${reports ? `<div class="delegation-report-list"><h3>簡潔な実務報告</h3><ul>${reports}</ul></div>` : ""}</section>`;
 }
 
+function villageConditionSummary(life) {
+  const conditions = [...life.statusConditions, ...life.injuries, ...life.diseases, ...life.curses];
+  return conditions.length ? conditions.join("・") : "健康";
+}
+
+function renderVillagePanel() {
+  const village = activeVillageContext();
+  if (!village) {
+    elements.leftPanel.innerHTML = `<header class="panel-heading village-heading"><span>PERSONAL VILLAGE</span><h1>村を選択</h1><p>現在地の村から入場してください。</p></header><div class="panel-body"><button type="button" class="town-open-commands" data-leave-village="world">生成世界へ戻る</button></div>`;
+    return;
+  }
+  const life = state.player.villageLife;
+  const selected = VILLAGE_FACILITIES.find((facility) => facility.id === view.selectedVillageFacilityId) ?? VILLAGE_FACILITIES[0];
+  elements.leftPanel.innerHTML = `
+    <header class="panel-heading village-heading"><span>PERSONAL VILLAGE / ${escapeHtml(village.regionName)}</span><h1>${escapeHtml(village.name)}</h1><p>${escapeHtml(village.nationName)} · 個人行動</p></header>
+    <div class="panel-body village-panel-body">
+      <section class="panel-section village-vital-card"><div><small>HP</small><strong>${life.hp}<i> / ${life.maxHp}</i></strong></div><div><small>MP</small><strong>${life.mp}<i> / ${life.maxMp}</i></strong></div><p><b>${escapeHtml(villageConditionSummary(life))}</b><span>財産 ${state.player.metrics.wealth} · 食料 ${life.supplies.food} · 松明 ${life.supplies.torches}</span></p></section>
+      <section class="panel-section"><div class="section-heading"><h2>施設</h2><small>${VILLAGE_FACILITIES.length}か所</small></div><nav class="village-panel-facilities">${VILLAGE_FACILITIES.map((facility) => `<button type="button" data-village-facility="${facility.id}" class="${facility.id === selected.id ? "is-active" : ""}"><i>${facility.icon}</i><span>${facility.name}</span><small>${facility.actions.length}</small></button>`).join("")}</nav></section>
+      <section class="panel-section"><p class="adviser-note"><strong>${selected.name}</strong><br>${selected.summary}</p></section>
+      <section class="panel-section village-panel-exits"><button type="button" data-leave-village="career">人物画面へ</button><button type="button" data-leave-village="world">地方地図へ</button></section>
+    </div>`;
+}
+
+function activeGuildRequest(life) {
+  return life.quests.find((quest) => quest.source === "guild" && ["accepted", "active", "completed", "reported"].includes(quest.status)) ?? null;
+}
+
+function renderVillageQuestFlow(life) {
+  const quest = activeGuildRequest(life);
+  const hasParty = life.party.some((member) => member.active && member.alive !== false);
+  const dungeonBound = Boolean(quest?.dungeonId && ["accepted", "active"].includes(quest.status));
+  const current = !quest ? 0
+    : ["accepted", "active"].includes(quest.status) ? (hasParty ? 2 : 1)
+      : quest.status === "completed" ? 3
+        : 5;
+  const steps = ["ギルドで受注", "酒場で仲間を集める", "依頼を達成", "ギルドへ報告", "功績を得る"];
+  const destination = !quest ? "guild"
+    : ["accepted", "active"].includes(quest.status) ? (hasParty ? "preparation" : "tavern")
+      : "guild";
+  const nextLabel = !quest ? "ギルドで依頼を探す"
+    : ["accepted", "active"].includes(quest.status) ? (hasParty ? (dungeonBound ? "地方地図から指定ダンジョンへ出発" : "探索準備から依頼へ出発") : "酒場で仲間を募集")
+      : quest.status === "completed" ? "ギルドで達成報告"
+        : "ギルドで報酬を受け取る";
+  return `<section class="village-request-flow">
+    <header><div><small>REQUEST LOOP / GUILD MERIT</small><h2>村の依頼</h2></div><strong>ギルド功績 ${life.guildMerit}</strong></header>
+    <ol>${steps.map((label, index) => `<li class="${index < current ? "is-complete" : index === current ? "is-current" : ""}"><i>${index < current ? "✓" : index + 1}</i><span>${label}</span></li>`).join("")}</ol>
+    <article class="village-current-request">
+      <div><small>${quest ? `受注中 · ${quest.status === "completed" ? "達成済み" : quest.status === "reported" ? "報告済み" : "進行中"}` : "依頼なし"}</small><strong>${escapeHtml(quest?.name ?? "ギルドの掲示板を確認する")}</strong><p>${escapeHtml(quest?.objective ?? "依頼は村の冒険者ギルドでのみ受注できます。")}</p></div>
+      <button type="button" ${dungeonBound && hasParty ? 'data-leave-village="world"' : `data-village-facility="${destination}"`}>${nextLabel} →</button>
+    </article>
+  </section>`;
+}
+
+function renderGuildAdventureBoard() {
+  const context = currentAdventureContext();
+  const contracts = getGuildContracts(state, context);
+  const statusLabel = { available: "受注可能", accepted: "受注中", active: "受注中", completed: "達成・報告待ち", reported: "報告済み", rewarded: "精算済み" };
+  return `<section class="adventure-facility-board guild-contract-board">
+    <header><div><small>LIVE CONTRACTS</small><h3>周辺ダンジョンの依頼</h3></div><p>一件を受注し、酒場で仲間を集めてから地方地図のダンジョンへ向かいます。</p></header>
+    <div>${contracts.map((contract) => `<article class="is-${contract.status}">
+      <span><small>${statusLabel[contract.status] ?? contract.status}</small><strong>${escapeHtml(contract.title)}</strong><p>${escapeHtml(contract.detail)}</p></span>
+      <footer><b>報酬 財産${contract.reward.wealth}・名声${contract.reward.renown} · 功績${contract.merit}</b><button type="button" data-accept-adventure-contract="${contract.id}" ${contract.status === "available" ? "" : "disabled"}>${contract.status === "available" ? "受注する" : statusLabel[contract.status] ?? "処理済み"}</button></footer>
+    </article>`).join("")}</div>
+  </section>`;
+}
+
+function renderTavernAdventureBoard() {
+  const context = currentAdventureContext();
+  const candidates = getTavernCandidates(state, context);
+  const candidateCard = (candidate) => `<article class="${candidate.joined ? "is-joined" : ""}">
+    <i aria-hidden="true">${escapeHtml(candidate.name.slice(0, 1))}</i><span><small>Lv.${candidate.level} ${escapeHtml(candidate.role)}</small><strong>${escapeHtml(candidate.name)}</strong><p>${escapeHtml(candidate.specialty)}</p></span>
+    <button type="button" ${candidate.incoming ? `data-accept-party-invitation="${candidate.id}"` : `data-invite-party-candidate="${candidate.id}"`} ${candidate.joined ? "disabled" : ""}>${candidate.joined ? "加入済み" : candidate.incoming ? "誘いを受ける" : "こちらから誘う"}</button>
+  </article>`;
+  return `<section class="adventure-facility-board tavern-party-board">
+    <header><div><small>PARTY MEETING</small><h3>酒場の冒険者</h3></div><p>届いた誘いを受けることも、気になる冒険者をこちらから誘うこともできます。</p></header>
+    <div class="tavern-party-columns"><section><h4>パーティーへの誘い</h4>${candidates.filter((candidate) => candidate.incoming).map(candidateCard).join("")}</section><section><h4>こちらから誘う</h4>${candidates.filter((candidate) => !candidate.incoming).map(candidateCard).join("")}</section></div>
+  </section>`;
+}
+
+function villageFacilityAdventureContent(facilityId) {
+  if (facilityId === "guild") return renderGuildAdventureBoard();
+  if (facilityId === "tavern") return renderTavernAdventureBoard();
+  return "";
+}
+
+function villageFacilityArt(facilityId) {
+  return ADVENTURE_ART[facilityId] ?? ADVENTURE_ART.village;
+}
+
+function renderServiceRouteBoard() {
+  const routes = getServiceRouteProgress(state);
+  return `<section class="village-service-routes">
+    <header><div><small>MULTIPLE COMMISSION ROUTES</small><h2>士官への道</h2></div><p>依頼以外の出会いと人脈も、仕官の契機になる。</p></header>
+    <div>${routes.map((route) => `<article class="${route.unlocked ? "is-unlocked" : ""}">
+      <span>${route.unlocked ? "開" : route.progress}</span><div><small>${route.progress} / ${route.target}${route.unit}</small><strong>${escapeHtml(route.name)}</strong><p>${escapeHtml(route.summary)}</p></div><i style="--route-progress:${route.percent}%"></i>
+    </article>`).join("")}</div>
+  </section>`;
+}
+
+function renderVillageWorkspace() {
+  const village = activeVillageContext();
+  if (!village) return `<section class="village-missing"><h1>村が選択されていません</h1><button type="button" data-leave-village="world">生成世界へ戻る</button></section>`;
+  const player = state.player;
+  const life = player.villageLife;
+  const selected = VILLAGE_FACILITIES.find((facility) => facility.id === view.selectedVillageFacilityId) ?? VILLAGE_FACILITIES[0];
+  if (selected.id !== view.selectedVillageFacilityId) view.selectedVillageFacilityId = selected.id;
+  const progress = life.villageProgress[village.id] ?? { buildings: 0, facilityLevel: 1, specialists: 0 };
+  const activeParty = life.party.filter((member) => member.active && member.alive !== false);
+  const actionItems = selected.actions.filter((item) => !(
+    village.source === "generated"
+    && ((selected.id === "guild" && item.id === "accept_request") || (selected.id === "tavern" && item.id === "recruit_companion"))
+  ));
+  const actions = actionItems.map((item) => {
+    const availability = getVillageActionAvailability(state, item.id, village.id);
+    const cost = availability.cost ? `財産 ${availability.cost}` : "費用なし";
+    return `<button type="button" class="village-action-card" data-village-action="${item.id}" ${availability.allowed ? "" : "disabled"} title="${escapeHtml(availability.reason ?? item.description)}">
+      <span><small>${escapeHtml(selected.name)}</small><strong>${escapeHtml(item.name)}</strong></span>
+      <p>${escapeHtml(item.description)}</p>
+      <footer><b>${cost}</b><em>${availability.allowed ? "実行 →" : escapeHtml(availability.reason)}</em></footer>
+    </button>`;
+  }).join("");
+  const facilityNav = VILLAGE_FACILITIES.map((facility) => `
+    <button type="button" data-village-facility="${facility.id}" class="${facility.id === selected.id ? "is-active" : ""}" aria-pressed="${facility.id === selected.id}">
+      <i>${facility.icon}</i><span><strong>${facility.name}</strong><small>${facility.summary}</small></span><b>${facility.actions.length}</b>
+    </button>`).join("");
+  const records = life.actionHistory.filter((record) => record.villageId === village.id).slice(0, 6).map((record) => `
+    <li><span>${record.year ?? state.year}年 ${record.month ?? state.month}月</span><strong>${escapeHtml(record.actionName)}</strong><small>${escapeHtml(record.message)}</small></li>`).join("");
+  const administrationButton = getCareerStage(state)?.governance && getGovernanceView(state).jurisdiction.territoryIds.includes(village.regionId)
+    ? `<button type="button" data-panel="governance">管轄統治へ</button>`
+    : "";
+  return `
+    <header class="village-workspace-header" style="--village-art:url('${ADVENTURE_ART.village}')">
+      <div class="village-workspace-emblem" aria-hidden="true"><i>村</i><span>${escapeHtml(village.name.slice(0, 1))}</span></div>
+      <div><span>PERSONAL VISIT / ${escapeHtml(village.regionName)}</span><h1>${escapeHtml(village.name)}</h1><p>${escapeHtml(village.nationName)}。月次の統治とは別に、本人と仲間の準備・交流を行う。</p></div>
+      <aside><small>村との関係</small><strong>${life.villageRelations[village.id] ?? 0}</strong><span>施設水準 ${progress.facilityLevel}</span></aside>
+      <nav><button type="button" data-leave-village="career">人物画面</button><button type="button" data-leave-village="world">地方地図</button>${administrationButton}</nav>
+    </header>
+    <div class="village-workspace-body">
+      <section class="village-status-board">
+        <article class="is-hp"><small>HP</small><strong>${life.hp}<i> / ${life.maxHp}</i></strong><span>${escapeHtml(villageConditionSummary(life))}</span></article>
+        <article class="is-mp"><small>MP</small><strong>${life.mp}<i> / ${life.maxMp}</i></strong><span>疲労 ${life.fatigue}</span></article>
+        <article><small>財産</small><strong>${player.metrics.wealth}</strong><span>村内の支払いに使用</span></article>
+        <article><small>同行</small><strong>${activeParty.length}<i> / ${life.party.length}</i></strong><span>${activeParty.map((member) => escapeHtml(member.name)).join("・") || "単独行動"}</span></article>
+        <article><small>探索物資</small><strong>${life.supplies.food}<i>食</i> ${life.supplies.torches}<i>灯</i></strong><span>所持品 ${life.inventory.reduce((sum, item) => sum + (item.quantity ?? 1), 0)}</span></article>
+      </section>
+      ${renderVillageQuestFlow(life)}
+      <section class="village-facility-layout">
+        <nav class="village-facility-nav" aria-label="村の施設">${facilityNav}</nav>
+        <main class="village-facility-main" data-facility-art="${selected.id}" style="--village-interior-art:url('${villageFacilityArt(selected.id)}')">
+          <div class="village-interior-scene" style="--village-interior-art:url('${villageFacilityArt(selected.id)}')"><span>${escapeHtml(selected.name)}</span></div>
+          <header><div><small>${selected.id.toUpperCase()} / ${actionItems.length} ACTIONS</small><h2><i>${selected.icon}</i>${selected.name}</h2><p>${selected.summary}</p></div><span>財産 ${player.metrics.wealth}</span></header>
+          <div class="village-action-grid">${actions}</div>
+          ${villageFacilityAdventureContent(selected.id)}
+          ${life.lastAction?.villageId === village.id ? `<article class="village-action-result"><i>✓</i><div><small>直前の行動 · ${escapeHtml(life.lastAction.facilityName)}</small><strong>${escapeHtml(life.lastAction.actionName)}</strong><p>${escapeHtml(life.lastAction.message)}</p></div></article>` : ""}
+        </main>
+      </section>
+      <section class="village-ledger-grid">
+        <article><header><small>PERSONAL LOADOUT</small><h2>装備と所持品</h2></header><dl><div><dt>武器</dt><dd>${escapeHtml(life.equipment.weapon.name)} +${life.equipment.weapon.enhancement ?? 0}</dd></div><div><dt>防具</dt><dd>${escapeHtml(life.equipment.armor.name)}</dd></div><div><dt>所持品</dt><dd>${life.inventory.map((item) => `${escapeHtml(item.name)}×${item.quantity ?? 1}`).join("・") || "なし"}</dd></div><div><dt>倉庫</dt><dd>${life.storage.items.length + life.storage.equipment.length + life.storage.materials.length}品</dd></div></dl></article>
+        <article><header><small>LOCAL PROGRESS</small><h2>依頼と村の発展</h2></header><dl><div><dt>ギルド功績</dt><dd>${life.guildMerit}</dd></div><div><dt>報告済み依頼</dt><dd>${life.guildRequestsReported}件</dd></div><div><dt>建設支援</dt><dd>${progress.buildings}件</dd></div><div><dt>誘致</dt><dd>${progress.specialists}人</dd></div></dl></article>
+      </section>
+      ${renderServiceRouteBoard()}
+      <section class="village-history"><header><small>VISIT LOG</small><h2>${escapeHtml(village.name)}での行動</h2></header><ol>${records || "<li><strong>まだ行動していません</strong><small>施設を選び、行動を実行してください。</small></li>"}</ol></section>
+    </div>`;
+}
+
 function renderCareerPanel() {
   const player = state.player;
   const stage = getCareerStage(state);
   const latest = player.history[0];
+  const government = GOVERNMENT_TITLE_SYSTEMS[player.governmentFormId];
+  const positionStatus = player.sovereign ? `${government?.name ?? "自国"}元首` : player.affiliation.liegeName ? "主従あり" : "自由身分";
+  const relation = player.sovereign ? `${escapeHtml(player.title)}として自国を統治しています。` : player.affiliation.liegeName ? `主君：${escapeHtml(player.affiliation.liegeName)}` : "特定の主君には仕えていません。";
   elements.leftPanel.innerHTML = `
-    <header class="panel-heading career-heading"><span>PERSONAL CHRONICLE</span><h1>${escapeHtml(player.name)}</h1><p>${stage.name} · ${escapeHtml(player.title)}</p></header>
+    <header class="panel-heading career-heading">
+      ${careerIdentityCrest(player, stage, true)}
+      <div><span>PERSONAL CHRONICLE</span><h1>${escapeHtml(player.name)}</h1><p>${stage.name} · ${escapeHtml(player.title)}</p></div>
+      <div class="career-panel-rank"><small>立身段階</small><strong>${stage.order + 1}<i>/${CAREER_STAGE_ROUTE.length}</i></strong></div>
+    </header>
     <div class="panel-body">
-      <section class="panel-section"><div class="section-heading"><h2>現在の立場</h2><small>段階 ${stage.order + 1}/9</small></div><p class="adviser-note"><strong>${stage.description}</strong><br>${player.affiliation.liegeName ? `主君：${escapeHtml(player.affiliation.liegeName)}` : "特定の主君には仕えていません。"}</p></section>
-      <section class="panel-section"><div class="realm-facts"><div><small>武勲</small><strong>${player.metrics.martialMerit}</strong></div><div><small>政績</small><strong>${player.metrics.civilMerit}</strong></div><div><small>名声</small><strong>${player.metrics.renown}</strong></div><div><small>財産</small><strong>${player.metrics.wealth}</strong></div></div></section>
+      <section class="panel-section career-position-card"><div class="section-heading"><h2>現在の立場</h2><small>${escapeHtml(positionStatus)}</small></div><p class="adviser-note"><strong>${stage.description}</strong><br>${relation}</p><div class="career-panel-track"><i style="--value:${(stage.order + 1) / CAREER_STAGE_ROUTE.length * 100}%"></i><span>個人</span><span>領主</span><span>君主</span></div></section>
+      <section class="panel-section"><div class="realm-facts career-facts"><div><i>⚔</i><small>武勲</small><strong>${player.metrics.martialMerit}</strong></div><div><i>政</i><small>政績</small><strong>${player.metrics.civilMerit}</strong></div><div><i>✦</i><small>名声</small><strong>${player.metrics.renown}</strong></div><div><i>¤</i><small>財産</small><strong>${player.metrics.wealth}</strong></div></div></section>
       <section class="panel-section"><div class="section-heading"><h2>最新の年代記</h2><small>${latest.year ?? state.year}年</small></div><p class="adviser-note"><strong>${escapeHtml(latest.title)}</strong><br>${escapeHtml(latest.detail)}</p></section>
       ${stage.governance ? `<section class="panel-section"><button class="town-open-commands" type="button" data-panel="governance">管轄統治を開く</button></section>` : ""}
     </div>`;
@@ -2611,17 +3195,27 @@ function renderGovernancePanel() {
 function renderCareerWorkspace() {
   const player = state.player;
   const stage = getCareerStage(state);
+  const government = GOVERNMENT_TITLE_SYSTEMS[player.governmentFormId];
+  const affiliationLabel = player.sovereign ? `${government?.name ?? "自国"}元首` : player.affiliation.liegeName ?? "なし";
+  const nextPosition = stage.order >= 9 ? "国家形態の最高位" : stage.order >= 8 ? "派閥と国家方針を担う" : "功績と政治選択で変化";
   const invitations = player.invitations.length ? `
-    <section class="career-invitations"><header><div><small>SERVICE OFFERS</small><h2>仕官先を選ぶ</h2></div><p>所属タグではなく、具体的な主君との主従関係を結びます。</p></header><div>${player.invitations.map((invitation) => `
-      <button type="button" data-accept-service="${invitation.nationId}"><strong>${escapeHtml(invitation.name)}</strong><b>${escapeHtml(invitation.offer)}</b><small>初期信頼 ${invitation.trust} · 俸禄と保護を得る代わりに軍役と命令への服従を負う</small></button>`).join("")}</div></section>` : "";
+    <section class="career-invitations"><header><div><small>SERVICE OFFERS</small><h2>仕官先を選ぶ</h2></div><p>村で積み上げた行動を契機に、具体的な主君との主従関係を結びます。</p></header><div>${player.invitations.map((invitation) => `
+      <button type="button" data-accept-service="${invitation.id ?? invitation.nationId}"><strong>${escapeHtml(invitation.name)}</strong><b>${escapeHtml(invitation.offer)}</b><small>${invitation.routeName ? `経路：${escapeHtml(invitation.routeName)} · ` : ""}初期信頼 ${invitation.trust} · 俸禄と保護を得る代わりに軍役と命令への服従を負う</small></button>`).join("")}</div></section>` : "";
   const holdings = player.holdings.length ? player.holdings.map((holding) => `<span>${WORLD.provinces[holding.territoryId]?.name ?? holding.territoryId}</span>`).join("") : "<span>所領なし</span>";
   const history = player.history.slice(0, 8).map((entry) => `<li><span>${entry.year ?? state.year}年 ${entry.month ?? state.month}月</span><strong>${escapeHtml(entry.title)}</strong><small>${escapeHtml(entry.detail)}</small></li>`).join("");
   return `
-    <header class="career-workspace-header"><div><span>PERSONAL RISE / ${stage.id.toUpperCase()}</span><h1>${escapeHtml(player.name)}の立身記</h1><p>${escapeHtml(player.origin)} · ${escapeHtml(player.specialty)}。国家ではなく本人の選択と関係を追う。</p></div><aside><small>現在の地位</small><strong>${stage.name}</strong><b>${escapeHtml(player.title)}</b></aside></header>
+    <header class="career-workspace-header">
+      <div class="career-hero-visual">${careerIdentityCrest(player, stage)}<span class="career-hero-caption">CHRONICLE ${String(stage.order + 1).padStart(2, "0")}</span></div>
+      <div class="career-hero-copy"><span>PERSONAL RISE / ${stage.id.toUpperCase()}</span><h1>${escapeHtml(player.name)}の立身記</h1><p>${escapeHtml(player.origin)} · ${escapeHtml(player.specialty)}。選択と関係が、次の身分を開く。</p></div>
+      <aside><small>現在の地位</small><strong>${stage.name}</strong><b>${escapeHtml(player.title)}</b></aside>
+    </header>
+    <nav class="career-route-board" aria-label="個人から君主までの立身ルート"><header><span>RISE ROUTE</span><strong>${stage.order + 1} / ${CAREER_STAGE_ROUTE.length}</strong></header>${careerStageRoute(stage)}</nav>
     <div class="career-workspace-body">
-      <section class="career-status-strip"><div><small>所属</small><strong>${escapeHtml(player.affiliation.liegeName ?? "なし")}</strong></div><div><small>所領</small><strong>${player.holdings.length}領</strong><span>${holdings}</span></div><div><small>直属家臣</small><strong>${player.householdRetainers.length}名</strong></div><div><small>次の立場</small><strong>${stage.order >= 7 ? "国家を治める" : "功績と政治選択で変化"}</strong></div></section>
+      <section class="career-status-strip"><div><small>所属</small><strong>${escapeHtml(affiliationLabel)}</strong></div><div><small>所領</small><strong>${player.holdings.length}領</strong><span>${holdings}</span></div><div><small>直属家臣</small><strong>${player.householdRetainers.length}名</strong></div><div><small>次の立場</small><strong>${nextPosition}</strong></div></section>
+      ${governmentTitleCatalog()}
       <section class="career-metric-grid">${careerMetricCards(player)}</section>
       ${invitations}
+      ${renderVillageEntrySection(true)}
       <section class="career-actions"><header><div><small>CURRENT CHOICES</small><h2>今できること</h2></div><p>権限を得ていない国家命令は表示しません。</p></header><div>${careerActionButtons(player) || (stage.governance ? `<button type="button" data-panel="governance"><strong>統治画面を開く</strong><small>現在の管轄と委任権限で実行可能な命令だけを表示</small></button>` : `<p class="career-action-note">上の仕官先を選び、具体的な主君との主従関係を結んでください。</p>`)}</div></section>
       ${roleDelegationSection()}
       <section class="career-history"><header><small>PERSONAL CHRONICLE</small><h2>人物の年代記</h2></header><ol>${history}</ol></section>
@@ -2653,12 +3247,13 @@ function renderGovernanceWorkspace() {
       ${petitions ? `<section class="governance-command-group is-petition"><header><div><small>PETITION TO THE LIEGE</small><h2>国家政策への建議</h2></div><p>直接実行ではありません。採用後も実施者は主君または中央政府です。</p></header><div>${petitions}</div></section>` : ""}
       <section class="governance-delegations"><header><div><small>OFFICES / DELEGATION / PROHIBITIONS</small><h2>官職と委任</h2></div><p>単純な身分以外の一時権限をここで確認します。</p></header><ul>${delegated || "<li><strong>追加委任なし</strong><span>現在は地位と所領に基づく権限のみ</span></li>"}</ul></section>
       ${roleDelegationSection()}
-      ${["lord", "multi_lord", "governor"].includes(player.stage) ? `<section class="career-actions governance-politics"><header><div><small>LOYALTY / INTRIGUE / INDEPENDENCE</small><h2>領主としての政治選択</h2></div><p>国家命令の代替ではなく、地位そのものを変える政治行動です。</p></header><div>${careerActionButtons(player)}</div></section>` : ""}
+      ${["lord", "multi_lord", "governor", "duke"].includes(player.stage) ? `<section class="career-actions governance-politics"><header><div><small>LOYALTY / INTRIGUE / INDEPENDENCE</small><h2>領主としての政治選択</h2></div><p>国家命令の代替ではなく、地位そのものを変える政治行動です。</p></header><div>${careerActionButtons(player)}</div></section>` : ""}
     </div>`;
 }
 
 function renderLeftPanel() {
   if (view.panel === "career") renderCareerPanel();
+  else if (view.panel === "village") renderVillagePanel();
   else if (view.panel === "governance") renderGovernancePanel();
   else if (view.panel === "centralization") renderCentralizationPanel();
   else if (view.panel === "spending") renderSpendingPanel();
@@ -2897,7 +3492,7 @@ function visibleUnwrappedTileX(tileX, viewport, worldWidth) {
     .sort((left, right) => Math.abs(left + 0.5 - (viewport.x + viewport.width / 2)) - Math.abs(right + 0.5 - (viewport.x + viewport.width / 2)))[0];
 }
 
-function positionGeneratedRegionMarker(copy, expeditionRegion, expeditionTile, runtime, viewport) {
+function positionGeneratedRegionMarker(copy, expeditionRegion, expeditionTile, runtime, viewport, dungeon, personalMap) {
   const expedition = copy.querySelector(".generated-expedition-marker");
   const tile = expeditionTile;
   const x = visibleUnwrappedTileX(tile.x, viewport, runtime.terrain.width);
@@ -2906,10 +3501,40 @@ function positionGeneratedRegionMarker(copy, expeditionRegion, expeditionTile, r
   expedition.dataset.generatedRegionId = expeditionRegion.id;
   expedition.dataset.generatedTileId = tile.id;
   expedition.title = `探索隊 · ${expeditionRegion.name}`;
+  const dungeonMarker = copy.querySelector(".generated-dungeon-marker");
+  const dungeonLocation = personalMap?.locations.find((location) => location.id === dungeon?.id);
+  if (dungeonMarker) {
+    dungeonMarker.hidden = !dungeonLocation?.discovered;
+    dungeonMarker.disabled = false;
+    delete dungeonMarker.dataset.enterDungeon;
+    delete dungeonMarker.dataset.personalMapMove;
+  }
+  if (dungeonMarker && dungeon?.tile && dungeonLocation?.discovered) {
+    const dungeonX = visibleUnwrappedTileX(dungeon.tile.x, viewport, runtime.terrain.width);
+    dungeonMarker.style.left = `${(dungeonX + 0.5 - viewport.x) / viewport.width * 100}%`;
+    dungeonMarker.style.top = `${(dungeon.tile.y + 0.5 - viewport.y) / viewport.height * 100}%`;
+    dungeonMarker.dataset.dungeonType = dungeon.dungeonType;
+    if (dungeonLocation.current) {
+      dungeonMarker.dataset.enterDungeon = dungeon.id;
+      dungeonMarker.title = `${dungeon.name} · 入ると自動探索を開始`;
+      dungeonMarker.setAttribute("aria-label", `${dungeon.name}へ入る`);
+    } else if (dungeonLocation.reachable) {
+      dungeonMarker.dataset.personalMapMove = dungeon.id;
+      dungeonMarker.title = `${dungeon.name} · 個人マップで移動`;
+      dungeonMarker.setAttribute("aria-label", `${dungeon.name}へ移動`);
+    } else {
+      dungeonMarker.disabled = true;
+      dungeonMarker.title = `${dungeon.name} · 現在地から直接移動できません`;
+      dungeonMarker.setAttribute("aria-label", `${dungeon.name}、現在地から直接移動不可`);
+    }
+    dungeonMarker.textContent = DUNGEON_ARCHETYPES[dungeon.dungeonType].symbol;
+  }
 }
 
 function renderGeneratedWorldMapLayer() {
   const { runtime, expeditionRegion, expeditionTile, playerNation } = getGeneratedWorldView(state);
+  const { dungeon } = getRegionAdventureSites(state, { runtime, region: expeditionRegion, nation: playerNation });
+  const personalMap = getPersonalMapView(state, { runtime, region: expeditionRegion, nation: playerNation });
   const viewport = generatedRegionViewport(expeditionRegion, runtime);
   const focusedNation = ["geopolitics", "nations", "statistics"].includes(view.atlasMode)
     ? runtime.nationById.get(view.selectedGeneratedNationId) ?? playerNation
@@ -2934,6 +3559,7 @@ function renderGeneratedWorldMapLayer() {
           <img alt="生成世界の西側複製" draggable="false"><img alt="高精細な海岸、山脈、森林、河川、地方、国家、拠点を描いた生成世界" draggable="false"><img alt="生成世界の東側複製" draggable="false">
         </div>
         <button type="button" class="generated-expedition-marker" aria-label="探索隊">◆</button>
+        <button type="button" class="generated-dungeon-marker" aria-label="ダンジョンへ入る">迷</button>
       </div>
     `;
     elements.generatedWorldStrip.querySelectorAll("img").forEach((image) => { image.src = generatedMapVisualCache.url; });
@@ -2949,7 +3575,7 @@ function renderGeneratedWorldMapLayer() {
     canvas.style.top = `${-viewport.y / viewport.height * 100}%`;
     canvas.style.width = `${runtime.terrain.width * 3 / viewport.width * 100}%`;
     canvas.style.height = `${runtime.terrain.height / viewport.height * 100}%`;
-    positionGeneratedRegionMarker(copy, expeditionRegion, expeditionTile, runtime, viewport);
+    positionGeneratedRegionMarker(copy, expeditionRegion, expeditionTile, runtime, viewport, dungeon, personalMap);
   });
   elements.generatedWorldMap.querySelectorAll("[data-generated-map-scale]").forEach((button) => button.classList.toggle("is-active", button.dataset.generatedMapScale === view.generatedMapScale));
   elements.mapModeEyebrow.textContent = focusedNation ? "GENERATED NATION MAP" : view.generatedMapScale === "region" ? "REGIONAL PLAY MAP" : "GENERATED WORLD OVERVIEW";
@@ -3097,7 +3723,7 @@ function closeTileDetail() {
 }
 
 function renderSelection() {
-  if (view.panel === "world") {
+  if (view.panel === "world" || view.panel === "village") {
     elements.selectionCard.innerHTML = "";
     return;
   }
@@ -3218,7 +3844,7 @@ function renderOutliner() {
     const history = player.history.slice(0, 5).map((entry) => `<div class="outliner-item"><strong>${escapeHtml(entry.title)}</strong><small>${escapeHtml(entry.detail)}</small></div>`).join("");
     elements.outlinerContent.innerHTML = `
       <section class="outliner-section campaign-outliner"><h3>${stage.name}</h3><div class="outliner-item"><strong>${escapeHtml(player.title)}</strong><small>${stage.description}</small></div></section>
-      <section class="outliner-section"><h3>主従関係</h3><div class="outliner-item"><strong>${escapeHtml(player.affiliation.liegeName ?? "主君なし")}</strong><small>信頼 ${player.metrics.liegeTrust} · 野心 ${player.metrics.ambition}</small></div></section>
+      <section class="outliner-section"><h3>${player.sovereign ? "国家主権" : "主従関係"}</h3><div class="outliner-item"><strong>${escapeHtml(player.sovereign ? `${GOVERNMENT_TITLE_SYSTEMS[player.governmentFormId]?.name ?? "自国"} · ${player.title}` : player.affiliation.liegeName ?? "主君なし")}</strong><small>${player.sovereign ? `正統性 ${player.metrics.legitimacy}` : `信頼 ${player.metrics.liegeTrust}`} · 野心 ${player.metrics.ambition}</small></div></section>
       <section class="outliner-section"><h3>管轄</h3>${holdings}</section>
       <section class="outliner-section"><h3>人物年代記</h3>${history}</section>
       <button type="button" class="plan-end-month" data-end-month>月を進める<span>関係と政治状況を更新</span></button>`;
@@ -3410,8 +4036,22 @@ function battlePreparationDefaults(roster) {
   return [...new Set(preferred)].filter((id) => availableIds.has(id)).slice(0, 3);
 }
 
+function tacticalOriginLabels() {
+  if (view.tacticalOrigin?.type === "dungeon") {
+    return {
+      player: "探索隊",
+      enemy: view.tacticalOrigin.enemyName,
+      playerVictory: "探索隊勝利",
+      enemyVictory: `${view.tacticalOrigin.enemyName}優勢`,
+      exit: "ダンジョンへ戻る",
+    };
+  }
+  return { player: "セレナ王国軍", enemy: "ヴァルカ公国軍", playerVictory: "王国軍勝利", enemyVictory: "公国軍勝利", exit: "開発メニュー" };
+}
+
 function renderBattlePreparationMap(preparation) {
   const battle = preparation.battle;
+  const dungeonBattle = view.tacticalOrigin?.type === "dungeon";
   const selectedUnit = getBattleUnit(battle, preparation.selectedUnitId);
   const unitsByPosition = new Map(battle.units.map((unit) => [`${unit.position.x},${unit.position.y}`, unit]));
   const fortificationsByPosition = new Map((battle.fortifications ?? []).map((fortification) => [`${fortification.position.x},${fortification.position.y}`, fortification]));
@@ -3439,7 +4079,7 @@ function renderBattlePreparationMap(preparation) {
         : `<b>${escapeHtml(unitClass?.symbol ?? "兵")}</b>`
       : fortification ? `<b>${escapeHtml(BATTLE_FORTIFICATION_TYPES[fortification.typeId]?.symbol ?? "城")}</b>` : "";
     const label = unit
-      ? `${unit.name}・${unitClass?.name ?? unit.unitClassId} ${unit.soldierCount}名`
+      ? `${unit.name}・${unitClass?.name ?? unit.unitClassId} ${unit.soldierCount}${dungeonBattle ? "戦力" : "名"}`
       : fortification ? fortification.name : `${terrain.name} ${tile.position.x + 1}-${tile.position.y + 1}`;
     return `<button type="button" class="${classNames}" data-preparation-tile="${key}" ${unit ? `data-preparation-unit="${unit.id}"` : ""} title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}">${icon}</button>`;
   }).join("");
@@ -3449,9 +4089,18 @@ function renderBattlePreparation() {
   const preparation = view.battlePreparation;
   elements.battlePreparationScreen.classList.toggle("is-hidden", !preparation);
   if (!preparation) return;
+  const dungeonBattle = view.tacticalOrigin?.type === "dungeon";
   const summary = getBattlePreparationSummary(preparation);
   const selectedIds = new Set(preparation.selectedCharacterIds);
   elements.battlePreparationTitle.textContent = `${preparation.battle.name}・戦闘前編成`;
+  elements.battlePreparationIntro.textContent = dungeonBattle
+    ? "探索隊から参陣者を選び、既存の陣形・初期配置・兵站計画で遭遇戦へ入ります。"
+    : "参陣人物、陣形、初期配置、兵站計画を確定してください。";
+  elements.battleParticipantIntro.textContent = dungeonBattle
+    ? "主人公と酒場で編成した仲間から最大3名を選択。正式な戦術戦闘の指揮官として各班を受け持ちます。"
+    : "軍団長・副将・軍師として最大3名を選択。参加者は戦場上の指揮官となり、配下部隊を分担します。";
+  elements.battlePreparationExit.textContent = dungeonBattle ? "遭遇地点へ戻る" : "開発メニューへ戻る";
+  elements.battlePreparationSkip.hidden = !dungeonBattle;
   elements.battleParticipantCount.textContent = `${selectedIds.size} / 3`;
   elements.battleParticipantList.innerHTML = preparation.roster.map((participant) => {
     const selected = selectedIds.has(participant.id);
@@ -3481,7 +4130,7 @@ function renderBattlePreparation() {
       : `<b>手動配置中</b> 自軍部隊を選択し、続けて青枠の空きマスを指定してください。`;
   const sustainTone = summary.sustainableDays >= 20 ? "is-long" : summary.sustainableDays >= 10 ? "is-standard" : "is-short";
   elements.battleSustainmentCard.className = `battle-sustainment-card ${sustainTone}`;
-  elements.battleSustainmentCard.innerHTML = `<small>ESTIMATED ENDURANCE</small><span><strong>約${summary.sustainableDays}日</strong><em>継戦可能</em></span><dl><div><dt>軍団規模</dt><dd>${formatValue(summary.soldiers)}名 · ${summary.units}部隊</dd></div><div><dt>一日需要</dt><dd>${formatValue(summary.dailyDemand)}口</dd></div><div><dt>携行糧秣</dt><dd>${formatValue(summary.rationUnits)}口</dd></div><div><dt>輜重隊</dt><dd>${summary.wagonColumns}隊</dd></div></dl>`;
+  elements.battleSustainmentCard.innerHTML = `<small>ESTIMATED ENDURANCE</small><span><strong>約${summary.sustainableDays}日</strong><em>継戦可能</em></span><dl><div><dt>${dungeonBattle ? "戦力規模" : "軍団規模"}</dt><dd>${formatValue(summary.soldiers)}${dungeonBattle ? "戦力" : "名"} · ${summary.units}部隊</dd></div><div><dt>一日需要</dt><dd>${formatValue(summary.dailyDemand)}口</dd></div><div><dt>${dungeonBattle ? "携行物資" : "携行糧秣"}</dt><dd>${formatValue(summary.rationUnits)}口</dd></div><div><dt>${dungeonBattle ? "補給班" : "輜重隊"}</dt><dd>${summary.wagonColumns}隊</dd></div></dl>`;
   elements.battleLogisticsOptions.innerHTML = Object.values(BATTLE_LOGISTICS_PLANS).map((plan) => {
     const planDraft = setBattleLogisticsPlan(preparation, plan.id);
     const days = getBattlePreparationSummary(planDraft).sustainableDays;
@@ -3495,15 +4144,16 @@ function renderBattlePreparation() {
   elements.battlePreparationScreen.querySelector('[data-preparation-action="start"]').disabled = !ready;
 }
 
-function openTacticalBattle() {
+function openTacticalBattle({ battle = createSampleBattle(), roster = null, defaultParticipantIds = null, origin = null } = {}) {
   stopTacticalBattleEffects();
   view.launchOpen = false;
   view.guideOpen = false;
-  const roster = tacticalParticipantRoster();
+  const participants = roster ?? tacticalParticipantRoster();
+  view.tacticalOrigin = origin;
   view.battlePreparation = createBattlePreparation({
-    battle: createSampleBattle(),
-    roster,
-    defaultParticipantIds: battlePreparationDefaults(roster),
+    battle,
+    roster: participants,
+    defaultParticipantIds: defaultParticipantIds ?? battlePreparationDefaults(participants),
   });
   view.tacticalBattle = null;
   view.tacticalResult = null;
@@ -3515,6 +4165,18 @@ function openTacticalBattle() {
   view.selectedTacticalFortificationId = null;
   view.tacticalInspectorDismissed = false;
   render();
+}
+
+function openDungeonTacticalBattle() {
+  const run = state.adventure?.activeRun;
+  if (!run || run.phase !== "battle" || !run.combat) throw new Error("戦術戦闘を開始できる遭遇がありません。");
+  const roster = getDungeonTacticalRoster(state);
+  openTacticalBattle({
+    battle: createDungeonTacticalBattle(state),
+    roster,
+    defaultParticipantIds: roster.filter((entry) => entry.available).slice(0, 3).map((entry) => entry.id),
+    origin: { type: run.mode === "personal-map" ? "personal-map" : "dungeon", runId: run.id, enemyName: run.combat.enemyName, dungeonName: run.dungeonName },
+  });
 }
 
 function startTacticalBattle() {
@@ -3532,15 +4194,22 @@ function prepareTacticalResult({ open = true } = {}) {
   const battle = view.tacticalBattle;
   if (!battle?.winner) return;
   view.tacticalResult = createBattleResult(battle);
+  if (["dungeon", "personal-map"].includes(view.tacticalOrigin?.type)) {
+    view.tacticalResult.title = view.tacticalResult.winner === "player" ? "探索隊勝利" : view.tacticalResult.winner === "enemy" ? "探索隊撤退" : "相討ち・探索中断";
+  }
   view.tacticalResultOpen = open;
   view.commanderDispositionOpen = false;
+  if (["dungeon", "personal-map"].includes(view.tacticalOrigin?.type)) {
+    view.commanderDisposition = null;
+    return;
+  }
   const commander = getBattleCommander(battle, view.tacticalResult.capture.commanderId);
   view.commanderDisposition = commander
     ? createCommanderDispositionCase({ commander, battleResult: view.tacticalResult })
     : null;
 }
 
-function exitTacticalBattle() {
+function clearTacticalBattleView() {
   stopTacticalBattleEffects();
   view.battlePreparation = null;
   view.tacticalBattle = null;
@@ -3552,8 +4221,38 @@ function exitTacticalBattle() {
   view.selectedTacticalCommanderId = null;
   view.selectedTacticalFortificationId = null;
   view.tacticalInspectorDismissed = false;
+}
+
+function exitTacticalBattle({ applyDungeonResult = false } = {}) {
+  const origin = view.tacticalOrigin;
+  const battleResult = view.tacticalResult;
+  clearTacticalBattleView();
+  view.tacticalOrigin = null;
+  if (["dungeon", "personal-map"].includes(origin?.type)) {
+    view.launchOpen = false;
+    view.adventureOpen = true;
+    if (applyDungeonResult && battleResult) {
+      const next = resolveDungeonTacticalBattle(state, battleResult);
+      const won = battleResult.winner === "player";
+      const wonMessage = origin.type === "personal-map" ? "遭遇したモンスターを退けました。" : "戦術戦闘に勝利し、自動探索を再開しました。";
+      commit(next, won ? wonMessage : "戦術戦闘の結果、探索隊は撤退しました。", won ? "confirm" : "danger");
+    } else {
+      render();
+    }
+    return;
+  }
   view.launchOpen = true;
   render();
+}
+
+function skipActiveDungeonBattle() {
+  if (state.adventure?.activeRun?.phase !== "battle") throw new Error("スキップできる戦闘がありません。");
+  clearTacticalBattleView();
+  view.tacticalOrigin = null;
+  view.launchOpen = false;
+  view.adventureOpen = true;
+  const personalEncounter = state.adventure.activeRun.mode === "personal-map";
+  commit(skipDungeonBattle(state), personalEncounter ? "遭遇戦を自動解決しました。" : "戦闘をスキップし、自動探索を再開しました。", "confirm");
 }
 
 function tacticalStateLabel(unit) {
@@ -3692,6 +4391,7 @@ function playTacticalBattleEffects(effects, battle, onComplete) {
 
 function renderTacticalSummary(battle) {
   const summary = getBattleSummary(battle);
+  const labels = tacticalOriginLabels();
   const side = (data, id, label) => `
     <section class="tactical-side-summary is-${id}">
       <strong>${label}</strong>
@@ -3700,9 +4400,9 @@ function renderTacticalSummary(battle) {
       ${data.cutOff ? `<em title="補給線接続 ${data.supplied}/${data.units}部隊">${data.cutOff}隊 補給断</em>` : ""}
     </section>`;
   elements.tacticalBattleSummary.innerHTML = `
-    ${side(summary.player, "player", "セレナ王国軍")}
-    <div class="tactical-turn-counter"><small>${summary.winner ? "決着" : "指示フェーズ"}</small><strong>${summary.winner ? summary.winner === "player" ? "王国軍勝利" : summary.winner === "enemy" ? "公国軍勝利" : "引き分け" : `第${summary.turn + 1}ターン`}</strong></div>
-    ${side(summary.enemy, "enemy", "ヴァルカ公国軍")}
+    ${side(summary.player, "player", labels.player)}
+    <div class="tactical-turn-counter"><small>${summary.winner ? "決着" : "指示フェーズ"}</small><strong>${summary.winner ? summary.winner === "player" ? labels.playerVictory : summary.winner === "enemy" ? labels.enemyVictory : "引き分け" : `第${summary.turn + 1}ターン`}</strong></div>
+    ${side(summary.enemy, "enemy", labels.enemy)}
   `;
 }
 
@@ -3724,7 +4424,7 @@ function renderTacticalDeployment(battle) {
   }
   elements.tacticalDeploymentBar.innerHTML = `
     <div class="tactical-deployment-copy"><span>DEPLOYMENT</span><strong>${formation.name} · ${preparation?.placementMode === "manual" ? "手動配置" : "自動配置"}</strong><small>${preparation?.finalized ? `${preparation.participantNames.join("・")}が参陣` : locked ? "戦闘開始後は変更できません" : formation.description}</small></div>
-    <div class="tactical-formation-options" role="group" aria-label="王国軍の陣形">
+    <div class="tactical-formation-options" role="group" aria-label="${escapeHtml(tacticalOriginLabels().player)}の陣形">
       ${Object.values(TACTICAL_FORMATIONS).map((option) => `<button type="button" data-battle-formation="${option.id}" class="${formation.id === option.id ? "is-active" : ""}" ${locked ? "disabled" : ""} title="${escapeHtml(option.description)}"><b>${option.name}</b><small>攻 ${Math.round((option.modifiers.attack ?? 1) * 100)} / 守 ${Math.round((option.modifiers.defense ?? 1) * 100)} / 動 ${Math.round((option.modifiers.movement ?? 1) * 100)}</small></button>`).join("")}
     </div>
     <p class="tactical-logistics-brief"><b>兵站</b> ${logistics}</p>
@@ -3932,12 +4632,18 @@ function renderTacticalResult() {
     elements.tacticalResultContent.innerHTML = "";
     return;
   }
-  const sideCard = (side, label, tone) => `
+  const dungeonBattle = view.tacticalOrigin?.type === "dungeon";
+  const labels = tacticalOriginLabels();
+  const sideCard = (side, label, tone) => {
+    const symbol = dungeonBattle ? tone === "player" ? "探" : "敵" : tone === "player" ? "王" : "公";
+    const code = dungeonBattle ? tone === "player" ? "EXPEDITION PARTY" : "DUNGEON ENCOUNTER" : tone === "player" ? "SELENE KINGDOM" : "VALKA DUCHY";
+    return `
     <article class="tactical-result-army is-${tone}">
-      <header><span>${tone === "player" ? "王" : "公"}</span><div><small>${tone === "player" ? "SELENE KINGDOM" : "VALKA DUCHY"}</small><h3>${label}</h3></div><b>${side.standing} / ${side.units}部隊</b></header>
+      <header><span>${symbol}</span><div><small>${code}</small><h3>${escapeHtml(label)}</h3></div><b>${side.standing} / ${side.units}部隊</b></header>
       <div><span><small>初期兵力</small><strong>${formatValue(side.initialSoldiers)}</strong></span><span><small>残存兵</small><strong>${formatValue(side.remainingSoldiers)}</strong></span><span><small>損耗</small><strong>${formatValue(side.casualties)}</strong></span><span><small>平均補給</small><strong>${side.supply}%</strong></span></div>
       <footer><span>壊滅 ${side.destroyed}</span><span>潰走 ${side.routed}</span><span>離脱 ${side.escaped}</span></footer>
     </article>`;
+  };
   const captureStatus = view.commanderDisposition ? getDispositionLabel(view.commanderDisposition) : null;
   elements.tacticalResultContent.innerHTML = `
     <article class="tactical-result-card is-${result.winner}">
@@ -3946,22 +4652,14 @@ function renderTacticalResult() {
         <b>${result.resultType === "encirclement_annihilation" ? "ENCIRCLEMENT" : result.winner === "draw" ? "DRAW" : "VICTORY"}</b>
       </header>
       <section class="tactical-result-overview">
-        ${sideCard(result.player, "セレナ王国軍", "player")}
+        ${sideCard(result.player, labels.player, "player")}
         <div class="tactical-result-versus"><small>RESULT</small><strong>${result.winner === "player" ? "勝" : result.winner === "enemy" ? "敗" : "分"}</strong><span>渡河 ${result.crossings}回</span></div>
-        ${sideCard(result.enemy, "ヴァルカ公国軍", "enemy")}
+        ${sideCard(result.enemy, labels.enemy, "enemy")}
       </section>
-      <section class="tactical-encirclement-report ${result.encirclement.complete ? "is-complete" : ""}">
-        <header><div><small>ENCIRCLEMENT ASSESSMENT</small><h2>${result.encirclement.complete ? "完全包囲を確認" : "通常戦果"}</h2></div><b>${result.encirclement.complete ? "全退路遮断" : "捕縛条件未達"}</b></header>
-        <div>${result.encirclement.reasons.map((reason) => `<span>${escapeHtml(reason)}</span>`).join("")}</div>
-      </section>
-      <section class="tactical-capture-result ${result.capture.eligible ? "is-captured" : ""}">
-        ${result.capture.commanderIconUrl ? `<img src="${escapeHtml(result.capture.commanderIconUrl)}" alt="${escapeHtml(result.capture.commanderName)}">` : `<i>${result.capture.eligible ? "縛" : "退"}</i>`}
-        <div><small>ENEMY COMMANDER</small><h2>${result.capture.eligible ? `${escapeHtml(result.capture.commanderName)}を捕縛` : "敵将捕縛なし"}</h2><p>${escapeHtml(result.capture.reason)}</p>${captureStatus ? `<b>現在の処遇：${escapeHtml(captureStatus)}</b>` : ""}</div>
-        ${result.capture.eligible ? '<button type="button" data-result-action="disposition">戦後処遇局へ</button>' : ""}
-      </section>
+      ${dungeonBattle ? `<section class="tactical-encirclement-report"><header><div><small>DUNGEON EXPEDITION</small><h2>${result.winner === "player" ? "探索を再開できます" : "探索隊は撤退します"}</h2></div><b>${escapeHtml(view.tacticalOrigin.dungeonName)}</b></header><div><span>戦術戦闘の損耗をHPへ反映</span><span>勝利時は戦利品を自動回収</span><span>敗北・引き分け時は獲得済み戦利品を保持</span></div></section>` : `<section class="tactical-encirclement-report ${result.encirclement.complete ? "is-complete" : ""}"><header><div><small>ENCIRCLEMENT ASSESSMENT</small><h2>${result.encirclement.complete ? "完全包囲を確認" : "通常戦果"}</h2></div><b>${result.encirclement.complete ? "全退路遮断" : "捕縛条件未達"}</b></header><div>${result.encirclement.reasons.map((reason) => `<span>${escapeHtml(reason)}</span>`).join("")}</div></section><section class="tactical-capture-result ${result.capture.eligible ? "is-captured" : ""}">${result.capture.commanderIconUrl ? `<img src="${escapeHtml(result.capture.commanderIconUrl)}" alt="${escapeHtml(result.capture.commanderName)}">` : `<i>${result.capture.eligible ? "縛" : "退"}</i>`}<div><small>ENEMY COMMANDER</small><h2>${result.capture.eligible ? `${escapeHtml(result.capture.commanderName)}を捕縛` : "敵将捕縛なし"}</h2><p>${escapeHtml(result.capture.reason)}</p>${captureStatus ? `<b>現在の処遇：${escapeHtml(captureStatus)}</b>` : ""}</div>${result.capture.eligible ? '<button type="button" data-result-action="disposition">戦後処遇局へ</button>' : ""}</section>`}
       <footer class="tactical-result-actions">
         <button type="button" data-result-action="battlefield">戦場を確認</button>
-        <button type="button" data-result-action="exit">開発メニューへ</button>
+        <button type="button" data-result-action="exit">${dungeonBattle ? result.winner === "player" ? "探索を再開" : "ダンジョンから撤退" : "開発メニューへ"}</button>
       </footer>
     </article>`;
 }
@@ -4053,7 +4751,15 @@ function renderTacticalBattle() {
     renderTacticalPostBattle();
     return;
   }
+  const dungeonBattle = view.tacticalOrigin?.type === "dungeon";
+  const labels = tacticalOriginLabels();
   elements.tacticalBattleTitle.textContent = battle.name;
+  elements.tacticalBattleReset.textContent = dungeonBattle ? "探索隊を再編成" : "再編成";
+  elements.tacticalBattleSkip.hidden = !dungeonBattle;
+  elements.tacticalMoreActions.hidden = dungeonBattle;
+  elements.tacticalBattleExit.textContent = dungeonBattle ? "遭遇地点へ戻る" : "開発メニュー";
+  elements.tacticalPlayerLegend.textContent = labels.player;
+  elements.tacticalEnemyLegend.textContent = labels.enemy;
   renderTacticalSummary(battle);
   renderTacticalDeployment(battle);
   renderTacticalMap(battle);
@@ -4154,6 +4860,61 @@ function handleTacticalTile(button) {
   renderTacticalBattle();
 }
 
+function renderAdventureScreen() {
+  clearTimeout(adventureAdvanceTimer);
+  adventureAdvanceTimer = null;
+  const run = state.adventure.activeRun;
+  const visible = Boolean(view.adventureOpen && run && !view.battlePreparation && !view.tacticalBattle && !view.tacticalResultOpen && !view.commanderDispositionOpen);
+  elements.adventureScreen.classList.toggle("is-hidden", !visible);
+  elements.adventureScreen.setAttribute("aria-hidden", String(!visible));
+  if (!visible) {
+    elements.adventureContent.innerHTML = "";
+    return;
+  }
+  const archetype = DUNGEON_ARCHETYPES[run.dungeonType];
+  const personalEncounter = run.mode === "personal-map";
+  const progress = Math.min(100, run.step / run.totalSteps * 100);
+  const party = state.player?.villageLife?.party?.filter((member) => member.active !== false && member.alive !== false) ?? [];
+  const loot = run.loot.map((item) => `<li><i>${escapeHtml(item.icon)}</i><span><strong>${escapeHtml(item.name)}</strong><small>自動取得済み</small></span><b>×${item.quantity}</b></li>`).join("");
+  const battle = run.combat;
+  let phaseMarkup = "";
+  if (run.phase === "exploring") {
+    phaseMarkup = `<section class="adventure-auto-state"><span class="adventure-compass" aria-hidden="true"><i></i></span><small>AUTO EXPLORATION</small><h2>探索隊が自動で進行中</h2><p>安全確認、採取、戦利品の収納を自動で行っています。敵と遭遇した場合だけ戦闘操作へ切り替わります。</p></section>`;
+  } else if (run.phase === "battle" && battle) {
+    phaseMarkup = `<section class="adventure-battle-state">
+      <div class="adventure-enemy"><i>${escapeHtml(battle.enemySymbol)}</i><small>ENCOUNTER</small><h2>${escapeHtml(battle.enemyName)}</h2><div><span style="width:${battle.enemyHp / battle.enemyMaxHp * 100}%"></span></div><b>HP ${battle.enemyHp} / ${battle.enemyMaxHp}</b></div>
+      <div class="adventure-battle-actions adventure-tactical-handoff"><p><small>TACTICAL ENGINE</small><strong>既存の戦闘準備・戦術戦闘システムを使用します</strong><span>参陣者、陣形、初期配置、兵站を確定して戦闘へ進みます。</span></p><button type="button" data-open-dungeon-tactical><b>戦術戦闘を起動</b><small>正式な戦闘前編成へ</small></button><button type="button" class="is-skip" data-skip-adventure-battle><b>戦闘をスキップ</b><small>自動解決して探索を続行</small></button></div>
+    </section>`;
+  } else if (run.phase === "complete") {
+    phaseMarkup = personalEncounter
+      ? `<section class="adventure-finish-state"><i>勝利</i><small>ENCOUNTER CLEARED</small><h2>周辺の安全を確保</h2><p>${escapeHtml(battle.enemyName)}を退け、${run.loot.length}種の戦利品を回収しました。</p><button type="button" data-close-adventure>個人マップへ戻る</button></section>`
+      : `<section class="adventure-finish-state"><i>踏破</i><small>DUNGEON CLEARED</small><h2>探索完了</h2><p>${run.skippedBattles ? `戦闘${run.skippedBattles}回をスキップし、` : "戦闘を突破し、"}${run.loot.length}種の戦利品を持ち帰りました。</p><button type="button" data-close-adventure>地方地図へ戻る</button></section>`;
+  } else {
+    phaseMarkup = `<section class="adventure-finish-state is-failed"><i>撤退</i><small>${personalEncounter ? "ENCOUNTER WITHDRAWN" : "EXPEDITION WITHDRAWN"}</small><h2>探索隊は撤退した</h2><p>獲得済みの戦利品は保持されています。村で回復と準備を行い、再挑戦できます。</p><button type="button" data-close-adventure>${personalEncounter ? "個人マップ" : "地方地図"}へ戻る</button></section>`;
+  }
+  elements.adventureScreen.style.setProperty("--adventure-art", `url('${ADVENTURE_ART[run.dungeonType]}')`);
+  elements.adventureContent.innerHTML = `<main class="adventure-shell">
+    <header><div><small>${personalEncounter ? "PERSONAL MAP ENCOUNTER" : `${escapeHtml(archetype.name)}型ダンジョン`} / ${escapeHtml(run.regionId)}</small><h1 id="adventureTitle">${escapeHtml(run.dungeonName)}</h1></div><span>${run.phase === "battle" ? `戦闘 ${battle.turn}` : run.phase === "complete" ? (personalEncounter ? "安全確保" : "踏破済み") : run.phase === "failed" ? "撤退" : `深度 ${run.step + 1} / ${run.totalSteps}`}</span></header>
+    <div class="adventure-progress"><i style="width:${progress}%"></i></div>
+    <div class="adventure-layout">
+      <section class="adventure-stage">${phaseMarkup}<ol class="adventure-log">${run.log.map((entry) => `<li class="is-${entry.tone}"><i></i><span>${escapeHtml(entry.message)}</span></li>`).join("")}</ol></section>
+      <aside><section class="adventure-party-status"><header><small>EXPEDITION PARTY</small><h2>探索隊</h2></header><div><article><i>${escapeHtml(state.player.name.slice(0, 1))}</i><span><strong>${escapeHtml(state.player.name)}</strong><small>HP ${run.playerHp} / ${run.playerMaxHp}</small></span></article>${party.map((member) => `<article><i>${escapeHtml(member.name.slice(0, 1))}</i><span><strong>${escapeHtml(member.name)}</strong><small>Lv.${member.level} ${escapeHtml(member.role ?? "冒険者")}</small></span></article>`).join("")}</div></section><section class="adventure-loot"><header><small>AUTO LOOT</small><h2>戦利品</h2></header><ul>${loot || "<li class=\"is-empty\">まだ戦利品はありません</li>"}</ul></section></aside>
+    </div>
+  </main>`;
+  if (run.phase === "exploring") {
+    adventureAdvanceTimer = setTimeout(() => {
+      try {
+        const next = advanceDungeonRun(state);
+        const opensTacticalBattle = next.adventure.activeRun?.phase === "battle";
+        commit(next, "", null);
+        if (opensTacticalBattle) openDungeonTacticalBattle();
+      } catch (error) {
+        showToast(error.message, "danger");
+      }
+    }, 900);
+  }
+}
+
 function render() {
   renderLaunchScreen();
   renderBattlePreparation();
@@ -4177,6 +4938,7 @@ function render() {
   renderGuideModal();
   renderEndingModal();
   renderResetModal();
+  renderAdventureScreen();
 }
 
 function renderPanelFromTop() {
@@ -4339,6 +5101,11 @@ function playNavigationCue(event) {
     "[data-open-guide]",
     "[data-guide-action]",
     "[data-panel]",
+    "[data-enter-village]",
+    "[data-village-facility]",
+    "[data-village-action]",
+    "[data-leave-village]",
+    "[data-open-village-administration]",
     "[data-central-decision-action]",
     "[data-national-reform-system]",
     "[data-start-national-reform]",
@@ -4410,7 +5177,7 @@ document.addEventListener("click", (event) => {
     }
     view.launchOpen = false;
     view.guideOpen = false;
-    if (["realm", "war-council"].includes(action) && state.player) state = refreshGeneratedWorldForDate(createInitialState({ scenarioMode: state.scenarioMode }));
+    if (["realm", "war-council"].includes(action) && state.player) state = normalizeAdventureState(refreshGeneratedWorldForDate(createInitialState({ scenarioMode: state.scenarioMode })));
     if (action === "world") {
       view.panel = "world";
       view.atlasMode = "generated";
@@ -4426,6 +5193,134 @@ document.addEventListener("click", (event) => {
     renderPanelFromTop();
     return;
   }
+  const dungeonEntry = event.target.closest("[data-enter-dungeon]");
+  if (dungeonEntry) {
+    try {
+      const context = currentAdventureContext();
+      const { dungeon } = getRegionAdventureSites(state, context);
+      if (dungeon.id !== dungeonEntry.dataset.enterDungeon) throw new Error("この地方のダンジョンではありません。");
+      view.adventureOpen = true;
+      commit(startDungeonRun(state, dungeon, context.region), `${dungeon.name}へ入り、自動探索を開始しました。`, "ui");
+    } catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
+  if (event.target.closest("[data-personal-map-explore]")) {
+    try {
+      const context = currentAdventureContext();
+      const next = explorePersonalMap(state, context);
+      const result = next.adventure.personalMap.regions[context.region.id].lastResult;
+      view.adventureOpen = result.type === "monster";
+      commit(next, result.message, result.type === "monster" ? "danger" : result.type === "item" || result.type === "location" ? "confirm" : "ui");
+      if (result.type === "monster") openDungeonTacticalBattle();
+    } catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
+  const personalMove = event.target.closest("[data-personal-map-move]");
+  if (personalMove) {
+    try {
+      const context = currentAdventureContext();
+      const next = movePersonalMap(state, context, personalMove.dataset.personalMapMove);
+      const result = next.adventure.personalMap.regions[context.region.id].lastResult;
+      commit(next, result.message, "ui");
+    } catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
+  const adventureContract = event.target.closest("[data-accept-adventure-contract]");
+  if (adventureContract) {
+    try {
+      const next = acceptGuildContract(state, adventureContract.dataset.acceptAdventureContract, currentAdventureContext());
+      commit(next, "ギルドの依頼を受注しました。地方地図のダンジョンから出発できます。", "confirm");
+    } catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
+  const partyInvitation = event.target.closest("[data-accept-party-invitation]");
+  if (partyInvitation) {
+    try {
+      const next = acceptPartyInvitation(state, partyInvitation.dataset.acceptPartyInvitation, currentAdventureContext());
+      const member = next.adventure.party.at(-1);
+      commit(next, `${member.name}からの誘いを受け、パーティーを組みました。`, "confirm");
+    } catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
+  const partyCandidate = event.target.closest("[data-invite-party-candidate]");
+  if (partyCandidate) {
+    try {
+      const next = inviteTavernCandidate(state, partyCandidate.dataset.invitePartyCandidate, currentAdventureContext());
+      const member = next.adventure.party.at(-1);
+      commit(next, `${member.name}を誘い、パーティーへ迎えました。`, "confirm");
+    } catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
+  if (event.target.closest("[data-open-dungeon-tactical]")) {
+    try { openDungeonTacticalBattle(); }
+    catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
+  if (event.target.closest("[data-skip-adventure-battle]")) {
+    try { skipActiveDungeonBattle(); }
+    catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
+  if (event.target.closest("[data-close-adventure]")) {
+    try {
+      view.adventureOpen = false;
+      commit(closeDungeonRun(state), "地方地図へ戻りました。", "ui");
+    } catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
+  const villageEntry = event.target.closest("[data-enter-village]");
+  if (villageEntry) {
+    try {
+      enterVillage(villageEntry.dataset.enterVillage);
+      renderPanelFromTop();
+    } catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
+  const villageFacility = event.target.closest("[data-village-facility]");
+  if (villageFacility) {
+    view.selectedVillageFacilityId = villageFacility.dataset.villageFacility;
+    renderPanelFromTop();
+    return;
+  }
+  const villageAction = event.target.closest("[data-village-action]");
+  if (villageAction) {
+    const village = activeVillageContext();
+    if (!village) {
+      showToast("行動する村が選択されていません。", "danger");
+      return;
+    }
+    try {
+      const next = performVillageAction(state, { id: village.id, name: village.name }, villageAction.dataset.villageAction);
+      commit(next, next.player.villageLife.lastAction.message, villageAction.dataset.villageAction === "save" ? "confirm" : "ui");
+    } catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
+  const villageExit = event.target.closest("[data-leave-village]");
+  if (villageExit) {
+    view.panel = villageExit.dataset.leaveVillage === "world" ? "world" : "career";
+    if (view.panel === "world") {
+      view.atlasMode = "generated";
+      view.generatedMapScale = "region";
+    }
+    renderPanelFromTop();
+    return;
+  }
+  const villageAdministration = event.target.closest("[data-open-village-administration]");
+  if (villageAdministration) {
+    const townId = villageAdministration.dataset.openVillageAdministration;
+    if (!WORLD.villages[townId] || !getCareerStage(state)?.governance) {
+      showToast("この村の町政を開く権限がありません。", "danger");
+      return;
+    }
+    view.selectedTownId = townId;
+    view.selectedCityId = WORLD.villages[townId].province;
+    view.selectedType = "village";
+    view.selectedId = townId;
+    view.panel = "town";
+    view.townTab = "overview";
+    renderPanelFromTop();
+    return;
+  }
   const careerAction = event.target.closest("[data-career-action]");
   if (careerAction) {
     try {
@@ -4434,6 +5329,7 @@ document.addEventListener("click", (event) => {
         successorId: actionCard.querySelector("[data-promotion-successor]")?.value,
         mandateId: actionCard.querySelector("[data-promotion-mandate]")?.value,
         authorityId: actionCard.querySelector("[data-promotion-authority]")?.value,
+        governmentFormId: actionCard.querySelector("[data-government-form]")?.value,
       } : {};
       const next = performCareerAction(state, careerAction.dataset.careerAction, delegation);
       const becameLord = getCareerStage(next)?.governance && !getCareerStage(state)?.governance;
@@ -4481,6 +5377,9 @@ document.addEventListener("click", (event) => {
   if (preparationAction) {
     if (preparationAction.dataset.preparationAction === "exit") {
       exitTacticalBattle();
+    } else if (preparationAction.dataset.preparationAction === "skip") {
+      try { skipActiveDungeonBattle(); }
+      catch (error) { showToast(error.message, "danger"); }
     } else if (preparationAction.dataset.preparationAction === "start") {
       try { startTacticalBattle(); }
       catch (error) { showToast(error.message, "danger"); }
@@ -4552,7 +5451,11 @@ document.addEventListener("click", (event) => {
     if (action === "exit") {
       exitTacticalBattle();
     } else if (action === "reset") {
-      openTacticalBattle();
+      if (view.tacticalOrigin?.type === "dungeon") openDungeonTacticalBattle();
+      else openTacticalBattle();
+    } else if (action === "skip-dungeon") {
+      try { skipActiveDungeonBattle(); }
+      catch (error) { showToast(error.message, "danger"); }
     } else if (action === "encirclement-demo") {
       view.tacticalBattle = createEncirclementCaptureDemo();
       view.selectedTacticalUnitId = null;
@@ -4586,7 +5489,7 @@ document.addEventListener("click", (event) => {
   if (resultAction) {
     const action = resultAction.dataset.resultAction;
     if (action === "exit") {
-      exitTacticalBattle();
+      exitTacticalBattle({ applyDungeonResult: ["dungeon", "personal-map"].includes(view.tacticalOrigin?.type) });
       return;
     }
     if (action === "battlefield") {
@@ -5206,7 +6109,10 @@ document.addEventListener("click", (event) => {
     if (view.selectedType === "creature") { view.selectedCreatureId = view.selectedId; view.atlasMode = "creatures"; view.panel = "world"; view.scale = "world"; }
     if (view.selectedType === "province" && state.cities[view.selectedId]) { view.selectedCityId = view.selectedId; view.panel = "city"; view.scale = "city"; }
     if (view.selectedType === "country" && view.selectedId !== WORLD.nation.id) { view.selectedCountryId = view.selectedId; view.panel = "diplomacy"; }
-    if (view.selectedType === "village") { view.selectedTownId = view.selectedId; view.selectedCityId = WORLD.villages[view.selectedId].province; view.panel = "town"; view.scale = "village"; }
+    if (view.selectedType === "village") {
+      if (state.player && !getCareerStage(state)?.governance) enterVillage(view.selectedId);
+      else { view.selectedTownId = view.selectedId; view.selectedCityId = WORLD.villages[view.selectedId].province; view.panel = "town"; view.scale = "village"; }
+    }
     renderPanelFromTop();
     return;
   }
@@ -5320,6 +6226,11 @@ elements.guideModal.addEventListener("click", (event) => {
   }
 });
 document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && view.adventureOpen && ["complete", "failed"].includes(state.adventure.activeRun?.phase)) {
+    view.adventureOpen = false;
+    commit(closeDungeonRun(state), "地方地図へ戻りました。", "ui");
+    return;
+  }
   if (event.key === "Escape" && view.tacticalBattle && (view.selectedTacticalUnitId || view.selectedTacticalCommanderId || view.selectedTacticalFortificationId)) {
     if (!view.tacticalInspectorDismissed) view.tacticalInspectorDismissed = true;
     else {

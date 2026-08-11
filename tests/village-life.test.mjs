@@ -1,0 +1,131 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import {
+  VILLAGE_FACILITIES,
+  createCareerInitialState,
+  getServiceRouteProgress,
+  getVillageActionAvailability,
+  performVillageAction,
+} from "../src/simulation.js";
+
+const EXPECTED_ACTIONS = Object.freeze({
+  "宿屋": ["HP・MP回復", "状態異常回復", "休息", "セーブ"],
+  "商店": ["武器購入", "防具購入", "道具購入", "食料購入", "アイテム売却"],
+  "鍛冶屋": ["装備強化", "装備修理", "装備鑑定"],
+  "酒場": ["仲間募集", "パーティ編成", "噂を聞く", "NPCとの会話", "紹介を頼む"],
+  "冒険者ギルド": ["依頼受注", "依頼報告", "報酬受取", "ダンジョン情報確認"],
+  "神殿・治療所": ["負傷治療", "毒・病気の治療", "呪い解除", "蘇生"],
+  "訓練所": ["能力強化", "スキル習得", "転職", "仲間育成", "武術大会へ出場"],
+  "倉庫": ["アイテム保管", "装備保管", "素材管理"],
+  "村人との交流": ["会話", "情報収集", "イベント発生", "サブクエスト"],
+  "村の発展": ["施設建設", "施設強化", "新しい商人・職人の誘致"],
+  "探索準備": ["パーティ編成", "受注依頼へ出発", "装備変更", "アイテム整理", "食料・松明などの補給"],
+});
+
+test("the personal village menu exposes every requested facility and action", () => {
+  assert.equal(VILLAGE_FACILITIES.length, Object.keys(EXPECTED_ACTIONS).length);
+  for (const [facilityName, requiredActions] of Object.entries(EXPECTED_ACTIONS)) {
+    const actualActions = VILLAGE_FACILITIES.find((facility) => facility.name === facilityName)?.actions.map((action) => action.name) ?? [];
+    requiredActions.forEach((actionName) => assert.ok(actualActions.includes(actionName), `${facilityName}に「${actionName}」が必要です`));
+  }
+  const actionIds = VILLAGE_FACILITIES.flatMap((facility) => facility.actions.map((action) => action.id));
+  assert.ok(actionIds.length >= 45);
+  assert.equal(new Set(actionIds).size, actionIds.length);
+});
+
+test("a new personal career receives save-compatible village life state", () => {
+  const state = createCareerInitialState();
+  assert.equal(state.player.villageLife.hp, state.player.villageLife.maxHp);
+  assert.equal(state.player.villageLife.mp, state.player.villageLife.maxMp);
+  assert.equal(state.player.villageLife.supplies.food, 3);
+  assert.ok(state.player.villageLife.inventory.some((item) => item.name === "保存食"));
+});
+
+test("village actions are immutable, spend personal wealth, and enter the chronicle", () => {
+  const state = createCareerInitialState();
+  const beforeWealth = state.player.metrics.wealth;
+  const next = performVillageAction(state, { id: "test-village", name: "試験村" }, "buy_weapon");
+  assert.equal(state.player.metrics.wealth, beforeWealth);
+  assert.equal(next.player.metrics.wealth, beforeWealth - 2);
+  assert.ok(next.player.villageLife.inventory.some((item) => item.name === "村鍛冶の鋼剣"));
+  assert.equal(next.player.villageLife.lastAction.villageName, "試験村");
+  assert.match(next.player.history[0].title, /試験村・武器購入/);
+});
+
+test("quest reporting and rewards follow an explicit lifecycle", () => {
+  let state = createCareerInitialState();
+  const village = { id: "test-village", name: "試験村" };
+  assert.equal(getVillageActionAvailability(state, "report_request").allowed, false);
+  state = performVillageAction(state, village, "accept_request");
+  assert.equal(state.player.villageLife.quests[0].status, "accepted");
+  assert.equal(getVillageActionAvailability(state, "report_request").allowed, false);
+  assert.match(getVillageActionAvailability(state, "complete_request").reason, /酒場/);
+  state = performVillageAction(state, village, "recruit_companion");
+  assert.equal(getVillageActionAvailability(state, "complete_request").allowed, true);
+  state = performVillageAction(state, village, "complete_request");
+  assert.equal(state.player.villageLife.quests[0].status, "completed");
+  assert.equal(getVillageActionAvailability(state, "report_request").allowed, true);
+  const meritBefore = state.player.metrics.martialMerit;
+  state = performVillageAction(state, village, "report_request");
+  assert.equal(state.player.villageLife.guildMerit, 10);
+  assert.equal(state.player.metrics.martialMerit, meritBefore + 8);
+  assert.equal(state.player.progress.contracts, 1);
+  assert.equal(getVillageActionAvailability(state, "receive_reward").allowed, true);
+  const wealth = state.player.metrics.wealth;
+  state = performVillageAction(state, village, "receive_reward");
+  assert.equal(state.player.metrics.wealth, wealth + 4);
+  assert.equal(state.player.villageLife.quests[0].status, "rewarded");
+});
+
+test("repeated guild reports attract the local lord's envoy", () => {
+  let state = createCareerInitialState();
+  const village = { id: "test-village", name: "試験村" };
+  state = performVillageAction(state, village, "recruit_companion");
+  for (let index = 0; index < 3; index += 1) {
+    state = performVillageAction(state, village, "accept_request");
+    state = performVillageAction(state, village, "complete_request");
+    state = performVillageAction(state, village, "report_request");
+    state = performVillageAction(state, village, "receive_reward");
+  }
+  const route = getServiceRouteProgress(state).find((entry) => entry.id === "guild_recognition");
+  assert.equal(route.unlocked, true);
+  assert.ok(state.player.villageLife.guildMerit >= 30);
+  assert.ok(state.player.invitations.some((invitation) => invitation.routeId === "guild_recognition"));
+});
+
+test("rescue, tournament, and recommendation are independent commission routes", () => {
+  const village = { id: "test-village", name: "試験村" };
+
+  let rescue = createCareerInitialState();
+  rescue = performVillageAction(rescue, village, "recruit_companion");
+  rescue = performVillageAction(rescue, village, "accept_request");
+  rescue = performVillageAction(rescue, village, "complete_request");
+  rescue = performVillageAction(rescue, village, "report_request");
+  rescue = performVillageAction(rescue, village, "receive_reward");
+  rescue = performVillageAction(rescue, village, "accept_request");
+  rescue = performVillageAction(rescue, village, "complete_request");
+  assert.ok(rescue.player.invitations.some((invitation) => invitation.routeId === "chance_rescue"));
+
+  let tournament = createCareerInitialState();
+  for (let index = 0; index < 3; index += 1) tournament = performVillageAction(tournament, village, "enter_tournament");
+  assert.ok(tournament.player.invitations.some((invitation) => invitation.routeId === "tournament_victory"));
+
+  let referred = createCareerInitialState();
+  for (let index = 0; index < 3; index += 1) referred = performVillageAction(referred, village, "talk_npc");
+  assert.equal(getVillageActionAvailability(referred, "seek_recommendation", village.id).allowed, true);
+  referred = performVillageAction(referred, village, "seek_recommendation");
+  assert.ok(referred.player.invitations.some((invitation) => invitation.routeId === "personal_recommendation"));
+});
+
+test("the browser UI enters villages and does not expose the old instant contract action", () => {
+  const app = readFileSync(new URL("../src/app.js", import.meta.url), "utf8");
+  const css = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
+  assert.match(app, /data-enter-village/);
+  assert.match(app, /data-village-action/);
+  assert.match(app, /renderVillageQuestFlow/);
+  assert.match(app, /renderServiceRouteBoard/);
+  assert.doesNotMatch(app, /data-career-action="take_contract"/);
+  assert.match(css, /\.village-request-flow/);
+  assert.match(css, /\.village-service-routes/);
+});

@@ -1,3 +1,5 @@
+import { evaluateCreed, evaluateCreedRelationship } from "./creed-system.js";
+
 const clamp = (value, minimum, maximum) => Math.min(maximum, Math.max(minimum, value));
 
 export const CAMPAIGN_ACTS = Object.freeze({
@@ -433,15 +435,22 @@ export function applyOfficerCommandPolitics(world, state, task, outcome) {
     if (officerId === task.officerId || officer.allegiance !== "serving") return;
     const profile = OFFICER_POLITICS[officerId];
     if (!profile) return;
-    const disposition = commandDisposition(profile, task.commandId);
+    const interestDisposition = commandDisposition(profile, task.commandId);
+    const creedEvaluation = evaluateCreed(officer.creed, task, { scale: 18, maximum: 18 });
+    const creedModifier = clamp(Math.round(creedEvaluation.score / 6), -2, 2);
+    const disposition = clamp(interestDisposition + creedModifier, -3, 3);
     if (!disposition) return;
     officer.loyalty = clamp(officer.loyalty + disposition, 0, 100);
     officer.resentment = clamp(officer.resentment + (disposition < 0 ? 2 : -1), 0, 100);
-    setBond(state, officerId, task.officerId, disposition > 0 ? 2 : -2);
+    const issueSalience = Object.fromEntries((task.creedEffects ?? []).map((effect) => [effect.id, effect.relevance ?? 1]));
+    const creedRelationship = evaluateCreedRelationship(officer, sponsor, { salience: issueSalience, defaultSalience: 0 });
+    const relationshipModifier = clamp(Math.round(creedRelationship.score), -2, 2);
+    setBond(state, officerId, task.officerId, (disposition > 0 ? 2 : -2) + relationshipModifier);
     reactions.push({
       officerId, sponsorId: task.officerId, commandId: task.commandId, disposition,
+      interestDisposition, creedModifier, creedScore: creedEvaluation.score, relationshipCreedModifier: relationshipModifier,
       title: `${world.characters[officerId].name}が${disposition > 0 ? "支持" : "反発"}`,
-      detail: `${profile.agenda}の立場から「${world.characters[task.officerId].name}の任務」へ${disposition > 0 ? "協力を表明" : "異議を留保"}。`,
+      detail: `${profile.agenda}の利害と信条補正 ${creedModifier >= 0 ? "+" : ""}${creedModifier}から「${world.characters[task.officerId].name}の任務」へ${disposition > 0 ? "協力を表明" : "異議を留保"}。`,
     });
   });
   if (reactions.length) {
