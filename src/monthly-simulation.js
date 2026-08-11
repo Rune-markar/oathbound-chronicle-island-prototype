@@ -76,8 +76,11 @@ import {
 import { advanceWarTheater, createWarTheater, normalizeWarTheater } from "./war-map.js";
 import {
   advanceGeneratedWorldGeopolitics,
+  advanceGeneratedWorldRegions,
+  appointGeneratedRegionalLord,
   createCharacterWorldSeed,
   createGeneratedWorldState,
+  declareGeneratedRegionIndependence,
   normalizeGeneratedWorldState,
   setGeneratedPlayerNation,
 } from "./generated-world-system.js";
@@ -172,6 +175,14 @@ import {
   performVillageAction,
 } from "./village-life.js";
 import {
+  REGIONAL_REPUTATION_SCHEMA_VERSION,
+  createRegionalReputationState,
+  getRegionalReputationReport,
+  getReputationSpreadRadius,
+  normalizeRegionalReputationState,
+  recordRegionalAchievement,
+} from "./regional-reputation.js";
+import {
   DELEGATABLE_ROLES,
   DELEGATION_AUTHORITY_LEVELS,
   DELEGATION_MANDATES,
@@ -261,6 +272,12 @@ export {
   getVillageActionAvailability,
   normalizeVillageLifeState,
   performVillageAction,
+  REGIONAL_REPUTATION_SCHEMA_VERSION,
+  createRegionalReputationState,
+  getRegionalReputationReport,
+  getReputationSpreadRadius,
+  normalizeRegionalReputationState,
+  recordRegionalAchievement,
 };
 
 export const FORCED_ORDER_RULES = {
@@ -813,13 +830,36 @@ export function performCareerAction(state, actionId, delegation = {}) {
       authorityId: delegation.authorityId,
     });
   }
+  const activeRegionId = next.generatedWorld?.expeditionRegionId;
+  if (next.scenarioMode === "generated" && activeRegionId && actionId === "request_second_fief") {
+    next = appointGeneratedRegionalLord(next, activeRegionId, {
+      lordId: next.player.id,
+      lordName: next.player.name,
+    });
+  }
+  if (next.scenarioMode === "generated" && activeRegionId && actionId === "declare_independence") {
+    const government = GOVERNMENT_TITLE_SYSTEMS[next.player.governmentFormId];
+    next = declareGeneratedRegionIndependence(next, activeRegionId, {
+      polityId: "player_realm",
+      name: `${next.player.name}の${government?.name ?? "独立国"}`,
+      shortName: next.player.name,
+      government: government?.name ?? "独立地域政権",
+      founderId: next.player.id,
+      founderName: next.player.name,
+      officeTitle: next.player.title,
+      playerControlled: true,
+    });
+  }
   return next;
 }
 
 export function advanceCareerMonth(state) {
   let next = advancePlayerCareerMonth(state);
   resolveRoleDelegations(WORLD, next);
-  if (next.scenarioMode === "generated") next = advanceGeneratedWorldGeopolitics(next);
+  if (next.scenarioMode === "generated") {
+    next = advanceGeneratedWorldRegions(next);
+    next = advanceGeneratedWorldGeopolitics(next);
+  }
   return next;
 }
 

@@ -9,6 +9,11 @@ const generatedWorldSource = readFileSync(new URL("../src/generated-world-system
 const styleSource = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
 const oceanAsset = new URL("../assets/generated/world-map-ocean-painted.png", import.meta.url);
 const landAsset = new URL("../assets/generated/world-map-land-painted.png", import.meta.url);
+const locationSceneAssets = [
+  new URL("../assets/generated/castle-main-courtyard.png", import.meta.url),
+  new URL("../assets/generated/dungeon-main-cave.png", import.meta.url),
+  new URL("../assets/generated/fort-main-yard.png", import.meta.url),
+];
 const countryIds = ["forest_alliance", "vinia", "heavens_gate", "lustrond", "izmenia", "valka", "selena", "deadland", "great_empire", "avanheln"];
 
 test("every mapped nation subdivides each major region into three territory tiles", () => {
@@ -29,13 +34,23 @@ test("every mapped nation subdivides each major region into three territory tile
 });
 
 test("normal play generates the whole world, then zooms to region-level movement", () => {
+  const initialView = appSource.match(/const view = \{[\s\S]*?\n\};/)?.[0] ?? "";
+  const resetFlow = appSource.match(/async function resetChronicle[\s\S]*?function costLabel/)?.[0] ?? "";
+  const launchFlow = appSource.match(/const launchAction = event\.target\.closest[\s\S]*?const developerAction/)?.[0] ?? "";
   assert.equal(markup.match(/data-launch-action="new"/g)?.length, 1);
   assert.doesNotMatch(markup, /data-launch-action="new-generated"|FIXED WORLD/);
   assert.match(markup, /人物ごとに地形と国家を生成/);
   assert.match(markup, /地方でプレイ/);
-  assert.match(markup, /国家は一つ以上の地方で構成/);
+  assert.match(markup, /各国は複数地域で構成/);
   assert.match(appSource, /const showGeneratedWorld = !showWarBoard/);
   assert.match(appSource, /generatedMapScale: "region"/);
+  assert.match(initialView, /panel: "world"/);
+  assert.match(initialView, /scale: "world"/);
+  assert.match(resetFlow, /panel: "world"[\s\S]*?atlasMode: "generated"[\s\S]*?generatedMapScale: "region"/);
+  assert.match(resetFlow, /view\.launchOpen = false;\s+view\.guideOpen = false;/);
+  assert.match(launchFlow, /view\.panel = "world";/);
+  assert.match(launchFlow, /view\.atlasMode = "generated";/);
+  assert.match(launchFlow, /view\.generatedMapScale = "region";/);
   assert.match(appSource, /view\.atlasMode === "generated"\) view\.generatedMapScale = "region"/);
   assert.match(appSource, /getGeneratedExpeditionReachableRegions\(state\)/);
   assert.match(appSource, /expeditionTile/);
@@ -59,7 +74,7 @@ test("normal play generates the whole world, then zooms to region-level movement
   assert.match(appSource, /x \+ 0\.5 - viewport\.x/);
   assert.match(appSource, /tile\.y \+ 0\.5 - viewport\.y/);
   assert.doesNotMatch(appSource, /generatedDestinationId = tile\.id/);
-  for (const type of ["castle", "village", "fort"]) {
+  for (const type of ["castle", "city", "town", "village", "fort"]) {
     assert.match(markup, new RegExp(`class="is-${type}"`));
   }
 });
@@ -75,16 +90,104 @@ test("campaign information and generated movement commands live in the left dock
   assert.match(styleSource, /\.strategy-shell\s*\{[^}]*height: 100vh;[^}]*grid-template-columns: 400px/s);
 });
 
-test("the individual world panel exposes exploration and nearby discovered movement without a dungeon bypass", () => {
-  assert.match(appSource, /function renderPersonalMapCommands\(/);
+test("world-map travel persists time and plays a visible route, clock, progress, and daylight transition", () => {
+  assert.match(markup, /id="generatedWorldTime"/);
+  assert.match(markup, /id="generatedTravelOverlay"/);
+  assert.match(markup, /id="generatedTravelProgress"/);
+  assert.match(generatedWorldSource, /expeditionClockMinutes/);
+  assert.match(generatedWorldSource, /getGeneratedWorldTimeView/);
+  assert.match(generatedWorldSource, /travelMinutes:\s*regionalTravelMinutes/);
+  assert.match(appSource, /async function playGeneratedTravel\(/);
+  assert.match(appSource, /marker\?\.animate\(/);
+  assert.match(appSource, /requestAnimationFrame\(tick\)/);
+  assert.match(appSource, /await playGeneratedTravel\(next, destination\.name/);
+  assert.match(appSource, /await playGeneratedTravel\(next, site\.name/);
+  assert.match(appSource, /await playGeneratedTravel\(next, result\.locationName/);
+  assert.match(styleSource, /\.generated-travel-route\.is-active/);
+  assert.match(styleSource, /data-world-phase="night"/);
+  assert.match(styleSource, /data-world-phase="dusk"/);
+  assert.match(styleSource, /\.generated-world-map\.is-traveling/);
+});
+
+test("generated maps expose coastal settlement hierarchy, sea lanes, and port-gated shipping commands", () => {
+  assert.match(markup, /漁港・港・湾口都市/);
+  assert.match(markup, /<i class="is-sea-route"><\/i>海路/);
+  assert.match(generatedWorldSource, /getGeneratedShippingDestinations/);
+  assert.match(generatedWorldSource, /travelMode,/);
+  assert.match(generatedWorldSource, /港に停泊して海路/);
+  assert.match(appSource, /class="generated-shipping-command"/);
+  assert.match(appSource, /data-generated-shipping-site-id/);
+  assert.match(appSource, /site\.travelMode === "sea"/);
+  assert.match(styleSource, /\.generated-shipping-list/);
+  assert.match(styleSource, /\.generated-site-marker\.is-fishing_port/);
+  assert.match(styleSource, /\.generated-site-marker\.is-port/);
+  assert.match(styleSource, /\.generated-site-marker\.is-bay_city/);
+});
+
+test("map landmarks and translucent local actions share the world map without allowing a dungeon bypass", () => {
+  const generatedPanel = appSource.match(/function renderGeneratedWorldPanel\(\)[\s\S]*?function nationPeopleChips/)?.[0] ?? "";
+  assert.match(markup, /id="personalMapOverlay"/);
+  assert.match(appSource, /function renderPersonalMapOverlay\(/);
+  assert.match(appSource, /elements\.personalMapOverlay\.innerHTML/);
+  assert.doesNotMatch(generatedPanel, /renderPersonalMapOverlay|personal-map-command/);
   assert.match(appSource, /data-personal-map-explore/);
   assert.match(appSource, /data-personal-map-move/);
   assert.match(appSource, /発見済みの近くの場所だけ/);
-  assert.match(appSource, /dungeonMarker\.hidden = !dungeonLocation\?\.discovered/);
-  assert.match(appSource, /dungeonLocation\.current/);
-  assert.match(appSource, /dungeonLocation\.reachable/);
-  assert.match(styleSource, /\.personal-map-command\s*\{/);
-  assert.match(styleSource, /\.personal-map-node\.is-unknown/);
+  assert.match(appSource, /data-generated-site-kind="object"/);
+  assert.match(appSource, /data-generated-site-kind="dungeon"/);
+  assert.match(appSource, /class="generated-site-action-menu/);
+  assert.match(appSource, /data-generated-site-info/);
+  assert.match(appSource, /data-generated-site-move/);
+  assert.match(appSource, /moveGeneratedExpeditionToSite\(state, site\.id\)/);
+  assert.match(appSource, /movePersonalMap\(state, currentAdventureContext\(\), site\.id\)/);
+  assert.match(appSource, /location\.reachable/);
+  assert.match(appSource, /location\.current/);
+  assert.match(styleSource, /\.personal-map-overlay-card\s*\{/);
+  assert.match(styleSource, /\.personal-map-overlay-card\s*\{[^}]*background:[^;]*rgba\([^)]*,\s*\.7[0-9]\)/s);
+  assert.match(styleSource, /backdrop-filter:\s*blur/);
+  assert.doesNotMatch(appSource, /class="personal-map-board"/);
+  assert.match(styleSource, /\.generated-site-action-menu\s*\{/);
+  assert.match(styleSource, /\.generated-site-marker:not\(\.is-dungeon\)/);
+  assert.match(styleSource, /\.generated-site-marker\.is-village\s*\{\s*z-index:\s*1;/);
+  assert.match(styleSource, /\.generated-site-marker\.is-town\s*\{\s*z-index:\s*3;/);
+  assert.match(styleSource, /\.generated-site-marker\.is-city\s*\{\s*z-index:\s*4;/);
+  assert.match(styleSource, /\.generated-site-marker\.is-castle\s*\{\s*z-index:\s*5;/);
+});
+
+test("castle, dungeon, and fort open dedicated background-led command scenes only after arrival", () => {
+  const sceneContext = appSource.match(/function activeLocationSceneContext\(\)[\s\S]*?function enterLocationScene/)?.[0] ?? "";
+  const sceneWorkspace = appSource.match(/function renderLocationWorkspace\(\)[\s\S]*?function villageFacilityActions/)?.[0] ?? "";
+  const dungeonEntryHandler = appSource.match(/const dungeonEntry = event\.target\.closest[\s\S]*?if \(event\.target\.closest\("\[data-personal-map-explore\]"\)/)?.[0] ?? "";
+  const dungeonStartHandler = dungeonEntryHandler.match(/const dungeonStart[\s\S]*?return;\s*\}/)?.[0] ?? "";
+
+  for (const asset of locationSceneAssets) {
+    assert.equal(existsSync(asset), true, `${asset.pathname} must exist`);
+    assert.ok(statSync(asset).size > 1_000_000, `${asset.pathname} must be a production background`);
+  }
+  assert.match(appSource, /castle-main-courtyard\.png/);
+  assert.match(appSource, /dungeon-main-cave\.png/);
+  assert.match(appSource, /fort-main-yard\.png/);
+  assert.match(appSource, /CASTLE COMMAND/);
+  assert.match(appSource, /DUNGEON COMMAND/);
+  assert.match(appSource, /FORT COMMAND/);
+  assert.match(appSource, /new Set\(\["career", "people", "world", "village", "location"/);
+  assert.match(sceneContext, /!site\.current/);
+  assert.match(sceneContext, /!location\?\.discovered \|\| !location\.current/);
+  assert.match(appSource, /data-enter-location-kind="\$\{site\.locationKind\}"/);
+  assert.match(appSource, /locationId: \["castle", "fort"\]\.includes\(site\.type\) && site\.current/);
+  assert.match(sceneWorkspace, /class="village-choice-overlay location-choice-overlay/);
+  assert.match(sceneWorkspace, /data-location-zone/);
+  assert.match(sceneWorkspace, /data-location-action/);
+  assert.match(sceneWorkspace, /data-start-dungeon/);
+  assert.match(dungeonEntryHandler, /enterLocationScene\("dungeon", dungeon\.id\)/);
+  assert.doesNotMatch(dungeonEntryHandler.split("const dungeonStart")[0], /startDungeonRun/);
+  assert.match(dungeonStartHandler, /startDungeonRun\(state, dungeon, context\.region\)/);
+  assert.match(dungeonStartHandler, /activeLocationSceneContext\(\)/);
+  assert.match(styleSource, /body\.is-location-focus/);
+  assert.match(styleSource, /\.location-choice-overlay\.is-castle/);
+  assert.match(styleSource, /\.location-choice-overlay\.is-dungeon/);
+  assert.match(styleSource, /\.location-choice-overlay\.is-fort/);
+  assert.match(styleSource, /\.location-action-result\s*\{/);
 });
 
 test("world, geopolitics, nation, and statistics panels share one generated-world representation", () => {
@@ -154,7 +257,7 @@ test("clicking a tile is wired to a compact terrain dossier", () => {
   assert.match(appSource, /profile\.resources/);
 });
 
-test("country scale opens on the castle-centered frontier while world scale retains three great powers", () => {
+test("world scale opens first while the country frontier and three great powers remain available", () => {
   assert.match(markup, /class="strategy-map scale-country" viewBox="20 35 960 585"/);
   assert.match(markup, /data-scale="world">世界/);
   assert.match(markup, /data-scale="country" class="is-active">国家/);
@@ -167,7 +270,7 @@ test("country scale opens on the castle-centered frontier while world scale reta
   assert.match(markup, /data-country="avanheln"[^>]*transform="translate\(120 178\) scale\(\.9 \.82\)"/);
   assert.match(appSource, /world: "0 0 1800 1050"/);
   assert.match(appSource, /country: "20 35 960 585"/);
-  assert.match(appSource, /scale: "country"/);
+  assert.match(appSource, /scale: "world"/);
 });
 
 test("strategic map exposes castle garrisons, armies, routes, and a live pass state", () => {

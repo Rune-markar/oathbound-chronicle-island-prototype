@@ -112,7 +112,7 @@ test("a unilateral ceasefire request remains an offer until the opponent accepts
 });
 
 test("an alliance proposal needs a reciprocal decision and enforces both nations' caps", () => {
-  let proposalState = createWorld("proposal-check-0");
+  let proposalState = createWorld("proposal-check-1");
   const before = structuredClone(proposalState.generatedWorld.geopolitics.relations);
   proposalState = advanceWorldMonth(proposalState);
   const proposalEvents = proposalState.generatedWorld.geopolitics.events.filter((event) => (

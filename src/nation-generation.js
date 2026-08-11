@@ -22,14 +22,38 @@ const NAME_ROOTS = Object.freeze([
 
 export const GENERATED_WORLD_OBJECT_TYPES = Object.freeze({
   castle: Object.freeze({ id: "castle", name: "城" }),
+  city: Object.freeze({ id: "city", name: "都市" }),
+  town: Object.freeze({ id: "town", name: "町" }),
   village: Object.freeze({ id: "village", name: "村" }),
+  fishing_port: Object.freeze({ id: "fishing_port", name: "漁港" }),
+  port: Object.freeze({ id: "port", name: "港" }),
+  bay_city: Object.freeze({ id: "bay_city", name: "湾口都市" }),
   fort: Object.freeze({ id: "fort", name: "砦" }),
+});
+
+export const SETTLEMENT_POPULATION_THRESHOLDS = Object.freeze({
+  village: 0,
+  town: 2500,
+  city: 10000,
 });
 
 const VILLAGE_NAME_STEMS = Object.freeze([
   "川辺", "森辺", "麦丘", "白樺", "石渡", "泉守",
   "高瀬", "星見", "柳原", "赤土", "霧谷", "緑野",
 ]);
+
+const MARITIME_NAME_STEMS = Object.freeze([
+  "潮見", "白帆", "碧波", "汐守", "海門", "月浦",
+  "風待", "朝凪", "青岬", "真珠", "千舟", "灯台",
+]);
+
+export const MARITIME_SETTLEMENT_HIERARCHY = Object.freeze([
+  Object.freeze({ type: "fishing_port", name: "漁港", tier: 1, settlementLevel: "village", minimumPopulation: 900, maximumPopulation: 2499 }),
+  Object.freeze({ type: "port", name: "港", tier: 2, settlementLevel: "town", minimumPopulation: 3600, maximumPopulation: 9999 }),
+  Object.freeze({ type: "bay_city", name: "湾口都市", tier: 3, settlementLevel: "city", minimumPopulation: 14000, maximumPopulation: 36000 }),
+]);
+
+const MARITIME_OBJECT_TYPES = new Set(MARITIME_SETTLEMENT_HIERARCHY.map((entry) => entry.type));
 
 const REGION_NAME_STEMS = Object.freeze([
   "中央", "青河", "白峰", "緑野", "霧谷", "石原", "湖畔", "森境",
@@ -40,6 +64,7 @@ export const GENERATED_REGION_TARGET_TILES = 210;
 
 export const NATURAL_FRONTIER_DEFAULT_WEIGHT = 30;
 export const NATURAL_FRONTIER_CANDIDATE_WEIGHTS = Object.freeze([6, NATURAL_FRONTIER_DEFAULT_WEIGHT, 50]);
+export const STRATEGIC_CROSSING_FORT_PROBABILITY = 0.86;
 
 const LAND_TERRAINS = new Set(["grassland", "plains", "desert", "tundra", "snow"]);
 
@@ -81,6 +106,10 @@ function hashUnit(seed, ...values) {
 
 function isLand(tile) {
   return LAND_TERRAINS.has(tile.terrain);
+}
+
+function isSea(tile) {
+  return Boolean(tile) && ["ocean", "coast"].includes(tile.terrain);
 }
 
 function naturalFrontierBetween(from, to) {
@@ -130,7 +159,7 @@ function cardinalNeighbors(index, world) {
 }
 
 function isCoastal(tile, world) {
-  return cardinalNeighbors(tile.index, world).some((index) => !isLand(world.tiles[index]));
+  return cardinalNeighbors(tile.index, world).some((index) => isSea(world.tiles[index]));
 }
 
 function habitatAffinity(tile, world, habitat) {
@@ -391,7 +420,116 @@ function frontierDirection(tile, capital, world) {
   return dy >= 0 ? "南境" : "北境";
 }
 
-function buildWorldObjects(world, nations, ownerIndex, seed, reservedTileIndices = new Set()) {
+export function settlementLevelForPopulation(population) {
+  const value = Math.max(0, Math.round(Number(population) || 0));
+  if (value >= SETTLEMENT_POPULATION_THRESHOLDS.city) return "city";
+  if (value >= SETTLEMENT_POPULATION_THRESHOLDS.town) return "town";
+  return "village";
+}
+
+function settlementName(baseName, level) {
+  return `${baseName}${level === "city" ? "市" : level === "town" ? "町" : "村"}`;
+}
+
+function settlementPopulation(tile, seed, nation, region, localIndex, role) {
+  const variation = hashUnit(seed, nation.index, region.index, tile.index, localIndex, "settlement-population");
+  const natural = Math.round(
+    420
+    + tile.settlementScore * 31
+    + tile.yields.food * 210
+    + tile.freshwater * 520
+    - tile.floodRisk * 240
+    + variation * 760,
+  );
+  if (role === "capital-city") return Math.max(12000, natural + 7600);
+  if (role === "regional-seat") return Math.max(2800, natural + 900);
+  return Math.min(2420, Math.max(480, natural));
+}
+
+function seaAccessIndices(tile, world) {
+  return cardinalNeighbors(tile.index, world).filter((index) => isSea(world.tiles[index]));
+}
+
+function maritimeSettlementScore(tile, world, seed, nationIndex) {
+  const cardinalSea = seaAccessIndices(tile, world).map((index) => world.tiles[index]);
+  const nearbySea = squareNeighborIndices(tile.index, world, { diagonal: true })
+    .map((index) => world.tiles[index])
+    .filter(isSea);
+  const shelteredWater = nearbySea.filter((neighbor) => neighbor.terrain === "coast").length;
+  const openWater = nearbySea.filter((neighbor) => neighbor.terrain === "ocean").length;
+  return tile.settlementScore * 2.2
+    + tile.yields.commerce * 19
+    + tile.yields.food * 5
+    + tile.freshwater * 13
+    + cardinalSea.length * 18
+    + shelteredWater * 5
+    + Math.min(3, openWater) * 3
+    - tile.floodRisk * 9
+    - (tile.relief === "mountains" ? 42 : tile.relief === "hills" ? 8 : 0)
+    + hashUnit(seed, nationIndex, tile.index, "maritime-settlement") * 7;
+}
+
+function buildCoastalSettlements(world, nations, regions, ownerIndex, seed, occupied) {
+  const objects = [];
+  for (const nation of nations) {
+    const candidates = world.tiles.filter((tile) => (
+      ownerIndex[tile.index] === nation.index
+      && tile.index !== nation.capitalIndex
+      && isCoastal(tile, world)
+      && tile.relief !== "mountains"
+      && tile.feature !== "marsh"
+    ));
+    const count = Math.min(MARITIME_SETTLEMENT_HIERARCHY.length, candidates.filter((tile) => !occupied.has(tile.index)).length);
+    if (!count) continue;
+    const selected = takeSpacedObjectTiles(
+      candidates,
+      count,
+      world,
+      occupied,
+      2,
+      (tile) => maritimeSettlementScore(tile, world, seed, nation.index),
+    ).sort((left, right) => (
+      maritimeSettlementScore(left, world, seed, nation.index) - maritimeSettlementScore(right, world, seed, nation.index)
+      || left.index - right.index
+    ));
+    const nameOffset = Math.floor(hashUnit(seed, nation.index, "maritime-names") * MARITIME_NAME_STEMS.length);
+    selected.forEach((tile, localIndex) => {
+      const hierarchy = MARITIME_SETTLEMENT_HIERARCHY[localIndex];
+      const region = regions.find((candidate) => candidate.tileIndices.includes(tile.index));
+      const variation = hashUnit(seed, nation.index, tile.index, "maritime-population");
+      const population = Math.min(hierarchy.maximumPopulation, Math.max(
+        hierarchy.minimumPopulation,
+        Math.round(hierarchy.minimumPopulation * (1 + variation * 0.58) + tile.settlementScore * (hierarchy.tier * 12)),
+      ));
+      const stem = MARITIME_NAME_STEMS[(nameOffset + localIndex) % MARITIME_NAME_STEMS.length];
+      const baseName = `${nation.shortName}${stem}`;
+      objects.push({
+        id: `${nation.id}-maritime-${hierarchy.tier}`,
+        type: hierarchy.type,
+        typeName: hierarchy.name,
+        settlementLevel: hierarchy.settlementLevel,
+        baseName,
+        population,
+        growthRate: Number((0.003 + tile.yields.commerce * 0.0005 + tile.freshwater * 0.0008 + variation * 0.0018).toFixed(5)),
+        nationId: nation.id,
+        regionId: region?.id ?? null,
+        tileIndex: tile.index,
+        x: tile.x,
+        y: tile.y,
+        name: `${baseName}${hierarchy.name}`,
+        importance: hierarchy.tier,
+        maritime: true,
+        maritimeTier: hierarchy.tier,
+        harborScore: Number(maritimeSettlementScore(tile, world, seed, nation.index).toFixed(2)),
+        seaAccessTileIndices: seaAccessIndices(tile, world),
+        seaRouteIds: [],
+      });
+    });
+  }
+  return objects;
+}
+
+function buildWorldObjects(world, nations, regions, ownerIndex, seed, reservedTileIndices = new Set()) {
   const occupied = new Set(reservedTileIndices);
   const objects = [];
   for (const nation of nations) {
@@ -407,8 +545,11 @@ function buildWorldObjects(world, nations, ownerIndex, seed, reservedTileIndices
       y: capital.y,
       name: `${nation.shortName}王城`,
       importance: 3,
+      regionId: regions.find((region) => region.capital && region.nationId === nation.id)?.id ?? null,
     });
   }
+
+  objects.push(...buildCoastalSettlements(world, nations, regions, ownerIndex, seed, occupied));
 
   for (const nation of nations) {
     const capital = world.tiles[nation.capitalIndex];
@@ -440,40 +581,462 @@ function buildWorldObjects(world, nations, ownerIndex, seed, reservedTileIndices
         y: tile.y,
         name: `${nation.shortName}${direction}${forts.filter((other) => frontierDirection(other, capital, world) === direction).length > 1 ? index + 1 : ""}砦`,
         importance: 2,
+        regionId: regions.find((region) => region.tileIndices.includes(tile.index))?.id ?? null,
       });
     });
+  }
 
-    const villageCount = Math.min(12, Math.max(2, Math.round(nation.tileCount / 85)));
-    const viableVillages = ownedTiles.filter((tile) => (
+  for (const region of regions) {
+    const nation = nations.find((candidate) => candidate.id === region.nationId);
+    const capital = world.tiles[nation.capitalIndex];
+    const regionTiles = region.tileIndices.map((index) => world.tiles[index]);
+    const viableSettlements = regionTiles.filter((tile) => (
       tile.index !== capital.index && tile.relief !== "mountains" && tile.feature !== "marsh" && tile.settlementScore > 0
     ));
-    const villages = takeSpacedObjectTiles(
-      viableVillages.length ? viableVillages : ownedTiles,
-      villageCount,
+    const settlementCount = Math.min(6, Math.max(region.capital ? 4 : 2, Math.round(region.tileCount / 55) + 2));
+    const selectedSettlements = takeSpacedObjectTiles(
+      viableSettlements.length ? viableSettlements : regionTiles,
+      settlementCount,
       world,
       occupied,
-      Math.max(2, Math.round(Math.min(world.width, world.height) / 32)),
-      (tile) => tile.settlementScore * 2 + tile.yields.food * 8 + tile.freshwater * 12
-        - tile.floodRisk * 14 - tile.movementCost * 2
-        + hashUnit(seed, nation.index, tile.index, "village") * 5,
+      2,
+      (tile) => tile.settlementScore * 2.4 + tile.yields.food * 9 + tile.freshwater * 15
+        - tile.floodRisk * 12 - tile.movementCost * 2
+        - (region.capital ? gridDistance(tile, capital, world) * 1.4 : gridDistance(tile, world.tiles[region.anchorIndex], world) * 0.45)
+        + hashUnit(seed, region.index, tile.index, "settlement") * 6,
     );
-    const stemOffset = Math.floor(hashUnit(seed, nation.index, "village-names") * VILLAGE_NAME_STEMS.length);
-    villages.forEach((tile, index) => {
-      const stem = VILLAGE_NAME_STEMS[(stemOffset + index) % VILLAGE_NAME_STEMS.length];
+    const settlements = selectedSettlements.length
+      ? selectedSettlements
+      : [world.tiles[region.anchorIndex ?? region.markerIndex]];
+    const stemOffset = Math.floor(hashUnit(seed, nation.index, region.index, "settlement-names") * VILLAGE_NAME_STEMS.length);
+    settlements.forEach((tile, localIndex) => {
+      const role = localIndex === 0 ? (region.capital ? "capital-city" : "regional-seat") : "village";
+      const population = settlementPopulation(tile, seed, nation, region, localIndex, role);
+      const settlementLevel = settlementLevelForPopulation(population);
+      const stem = VILLAGE_NAME_STEMS[(stemOffset + localIndex) % VILLAGE_NAME_STEMS.length];
+      const duplicateCycle = Math.floor((stemOffset + localIndex) / VILLAGE_NAME_STEMS.length);
+      const baseName = `${nation.shortName}${stem}${duplicateCycle ? duplicateCycle + 1 : ""}`;
       objects.push({
-        id: `${nation.id}-village-${index + 1}`,
-        type: "village",
-        typeName: GENERATED_WORLD_OBJECT_TYPES.village.name,
+        id: `${region.id}-settlement-${localIndex + 1}`,
+        type: settlementLevel,
+        typeName: GENERATED_WORLD_OBJECT_TYPES[settlementLevel].name,
+        settlementLevel,
+        baseName,
+        population,
+        growthRate: Number((0.0025 + tile.yields.food * 0.00035 + tile.freshwater * 0.0012 + hashUnit(seed, tile.index, "growth") * 0.0015).toFixed(5)),
+        regionSeat: localIndex === 0,
+        capitalCity: role === "capital-city",
         nationId: nation.id,
+        regionId: region.id,
         tileIndex: tile.index,
         x: tile.x,
         y: tile.y,
-        name: `${nation.shortName}${stem}村`,
-        importance: 1,
+        name: settlementName(baseName, settlementLevel),
+        importance: settlementLevel === "city" ? 3 : settlementLevel === "town" ? 2 : 1,
       });
     });
   }
   return objects;
+}
+
+class RoadSearchHeap {
+  constructor() {
+    this.items = [];
+  }
+
+  push(item) {
+    this.items.push(item);
+    let index = this.items.length - 1;
+    while (index > 0) {
+      const parent = Math.floor((index - 1) / 2);
+      if (this.items[parent].priority <= item.priority) break;
+      this.items[index] = this.items[parent];
+      index = parent;
+    }
+    this.items[index] = item;
+  }
+
+  pop() {
+    if (this.items.length === 1) return this.items.pop();
+    const root = this.items[0];
+    const tail = this.items.pop();
+    let index = 0;
+    while (true) {
+      const left = index * 2 + 1;
+      const right = left + 1;
+      if (left >= this.items.length) break;
+      const child = right < this.items.length && this.items[right].priority < this.items[left].priority ? right : left;
+      if (this.items[child].priority >= tail.priority) break;
+      this.items[index] = this.items[child];
+      index = child;
+    }
+    this.items[index] = tail;
+    return root;
+  }
+
+  get length() {
+    return this.items.length;
+  }
+}
+
+function roadTraversalCost(tile) {
+  return 1
+    + Math.max(0, (tile.movementCost ?? 1) - 1) * 0.34
+    + (tile.relief === "mountains" ? 0.72 : tile.relief === "hills" ? 0.18 : 0)
+    + (tile.feature === "marsh" ? 0.9 : 0)
+    + (tile.riverId ? 0.24 : 0);
+}
+
+function findRoadPath(world, startIndex, endIndex, allowedTileIndices) {
+  if (startIndex === endIndex) return [startIndex];
+  const allowed = allowedTileIndices instanceof Set ? allowedTileIndices : new Set(allowedTileIndices);
+  const costs = new Float64Array(world.tiles.length);
+  costs.fill(Number.POSITIVE_INFINITY);
+  const previous = new Int32Array(world.tiles.length);
+  previous.fill(-1);
+  const open = new RoadSearchHeap();
+  costs[startIndex] = 0;
+  open.push({ index: startIndex, priority: 0 });
+  while (open.length) {
+    const current = open.pop();
+    if (current.index === endIndex) break;
+    const currentTile = world.tiles[current.index];
+    const expectedPriority = costs[current.index] + gridDistance(currentTile, world.tiles[endIndex], world);
+    if (current.priority > expectedPriority + 1e-9) continue;
+    for (const neighborIndex of cardinalNeighbors(current.index, world)) {
+      if (!allowed.has(neighborIndex) && neighborIndex !== endIndex) continue;
+      const neighbor = world.tiles[neighborIndex];
+      if (!isLand(neighbor)) continue;
+      const nextCost = costs[current.index] + roadTraversalCost(neighbor);
+      if (nextCost >= costs[neighborIndex] - 1e-9) continue;
+      costs[neighborIndex] = nextCost;
+      previous[neighborIndex] = current.index;
+      open.push({
+        index: neighborIndex,
+        priority: nextCost + gridDistance(neighbor, world.tiles[endIndex], world),
+      });
+    }
+  }
+  if (previous[endIndex] < 0) return [];
+  const path = [endIndex];
+  while (path.at(-1) !== startIndex) path.push(previous[path.at(-1)]);
+  return path.reverse();
+}
+
+function featureRunsOnRoad(world, tileIndices, type) {
+  const matches = (tile) => type === "mountain" ? tile.relief === "mountains" : Boolean(tile.riverId);
+  const runs = [];
+  for (let offset = 1; offset < tileIndices.length - 1; offset += 1) {
+    if (!matches(world.tiles[tileIndices[offset]])) continue;
+    const startOffset = offset;
+    while (offset + 1 < tileIndices.length - 1 && matches(world.tiles[tileIndices[offset + 1]])) offset += 1;
+    const endOffset = offset;
+    if (startOffset > 0 && endOffset < tileIndices.length - 1) {
+      runs.push({
+        type,
+        startOffset,
+        endOffset,
+        approachTileIndex: tileIndices[startOffset - 1],
+        departureTileIndex: tileIndices[endOffset + 1],
+      });
+    }
+  }
+  return runs;
+}
+
+function buildRegionalRoadNetwork(world, regions, objects) {
+  const objectById = new Map(objects.map((object) => [object.id, object]));
+  const regionById = new Map(regions.map((region) => [region.id, region]));
+  const regionTileSets = new Map(regions.map((region) => [region.id, new Set(region.tileIndices)]));
+  const hubs = new Map();
+  for (const region of regions) {
+    const local = objects.filter((object) => object.regionId === region.id);
+    const hub = local.find((object) => object.type === "castle")
+      ?? local.find((object) => object.regionSeat)
+      ?? [...local].sort((left, right) => right.importance - left.importance || left.id.localeCompare(right.id))[0];
+    if (hub) hubs.set(region.id, hub);
+  }
+  const roads = [];
+  const edgeKeys = new Set();
+  const addRoad = (from, to, scope, regionIds) => {
+    if (!from || !to || from.id === to.id) return;
+    const key = [from.id, to.id].sort().join("|");
+    if (edgeKeys.has(key)) return;
+    edgeKeys.add(key);
+    const allowedTileIndices = new Set(regionIds.flatMap((regionId) => [...(regionTileSets.get(regionId) ?? [])]));
+    const tileIndices = findRoadPath(world, from.tileIndex, to.tileIndex, allowedTileIndices);
+    if (!tileIndices.length) return;
+    const strategicCrossings = [
+      ...featureRunsOnRoad(world, tileIndices, "mountain"),
+      ...featureRunsOnRoad(world, tileIndices, "river"),
+    ].map((crossing, index) => ({ ...crossing, id: `road-${roads.length + 1}-crossing-${index + 1}` }));
+    roads.push({
+      id: `road-${roads.length + 1}`,
+      fromObjectId: from.id,
+      toObjectId: to.id,
+      fromTileIndex: from.tileIndex,
+      toTileIndex: to.tileIndex,
+      regionIds: [...regionIds],
+      nationIds: [...new Set([from.nationId, to.nationId])],
+      scope,
+      importance: from.type === "castle" || to.type === "castle" || from.type === "city" || to.type === "city" ? 3 : 2,
+      tileIndices,
+      crossingKinds: [...new Set(strategicCrossings.map((crossing) => crossing.type))],
+      strategicCrossings,
+    });
+  };
+  for (const region of regions) {
+    const hub = hubs.get(region.id);
+    objects.filter((object) => object.regionId === region.id && object.id !== hub?.id)
+      .forEach((object) => addRoad(hub, object, "local", [region.id]));
+  }
+  for (const region of regions) {
+    for (const neighborId of region.neighborIds) {
+      if (region.id.localeCompare(neighborId) >= 0) continue;
+      const neighbor = regionById.get(neighborId);
+      addRoad(hubs.get(region.id), hubs.get(neighborId), region.nationId === neighbor?.nationId ? "regional" : "frontier", [region.id, neighborId]);
+    }
+  }
+  return {
+    roads,
+    hubObjectIds: Object.fromEntries([...hubs].map(([regionId, object]) => [regionId, object.id])),
+    objectById,
+  };
+}
+
+function buildSeaComponents(world) {
+  const componentByTile = new Int32Array(world.tiles.length);
+  componentByTile.fill(-1);
+  let componentCount = 0;
+  for (const tile of world.tiles) {
+    if (!isSea(tile) || componentByTile[tile.index] >= 0) continue;
+    const queue = [tile.index];
+    componentByTile[tile.index] = componentCount;
+    for (let cursor = 0; cursor < queue.length; cursor += 1) {
+      for (const neighborIndex of cardinalNeighbors(queue[cursor], world)) {
+        if (!isSea(world.tiles[neighborIndex]) || componentByTile[neighborIndex] >= 0) continue;
+        componentByTile[neighborIndex] = componentCount;
+        queue.push(neighborIndex);
+      }
+    }
+    componentCount += 1;
+  }
+  return componentByTile;
+}
+
+function shortestSeaPath(world, fromAccess, toAccess, componentId, componentByTile) {
+  const targets = new Set(toAccess.filter((index) => componentByTile[index] === componentId));
+  const starts = fromAccess.filter((index) => componentByTile[index] === componentId);
+  if (!starts.length || !targets.size) return null;
+  const previous = new Int32Array(world.tiles.length);
+  previous.fill(-2);
+  const queue = new Int32Array(world.tiles.length);
+  let head = 0;
+  let tail = 0;
+  for (const index of starts) {
+    previous[index] = -1;
+    queue[tail] = index;
+    tail += 1;
+  }
+  let destination = starts.find((index) => targets.has(index)) ?? null;
+  while (destination === null && head < tail) {
+    const current = queue[head];
+    head += 1;
+    for (const neighborIndex of cardinalNeighbors(current, world)) {
+      if (componentByTile[neighborIndex] !== componentId || previous[neighborIndex] !== -2) continue;
+      previous[neighborIndex] = current;
+      if (targets.has(neighborIndex)) {
+        destination = neighborIndex;
+        break;
+      }
+      queue[tail] = neighborIndex;
+      tail += 1;
+    }
+  }
+  if (destination === null) return null;
+  const path = [];
+  for (let index = destination; index >= 0; index = previous[index]) path.push(index);
+  return path.reverse();
+}
+
+function buildMaritimeNetwork(world, objects) {
+  const ports = objects.filter((object) => object.maritime && object.seaAccessTileIndices?.length);
+  const componentByTile = buildSeaComponents(world);
+  const accessByPort = new Map();
+  const portsByComponent = new Map();
+  for (const port of ports) {
+    const components = port.seaAccessTileIndices.reduce((counts, index) => {
+      const componentId = componentByTile[index];
+      if (componentId >= 0) counts.set(componentId, (counts.get(componentId) ?? 0) + 1);
+      return counts;
+    }, new Map());
+    const componentId = [...components].sort((left, right) => right[1] - left[1] || left[0] - right[0])[0]?.[0];
+    if (componentId === undefined) continue;
+    const access = port.seaAccessTileIndices.filter((index) => componentByTile[index] === componentId);
+    accessByPort.set(port.id, { componentId, access });
+    if (!portsByComponent.has(componentId)) portsByComponent.set(componentId, []);
+    portsByComponent.get(componentId).push(port);
+  }
+
+  const routes = [];
+  const edgeKeys = new Set();
+  const addRoute = (left, right) => {
+    if (!left || !right || left.id === right.id) return;
+    const [from, to] = [left, right].sort((a, b) => a.id.localeCompare(b.id));
+    const edgeKey = `${from.id}|${to.id}`;
+    if (edgeKeys.has(edgeKey)) return;
+    const fromAccess = accessByPort.get(from.id);
+    const toAccess = accessByPort.get(to.id);
+    if (!fromAccess || !toAccess || fromAccess.componentId !== toAccess.componentId) return;
+    const seaPath = shortestSeaPath(world, fromAccess.access, toAccess.access, fromAccess.componentId, componentByTile);
+    if (!seaPath) return;
+    edgeKeys.add(edgeKey);
+    const seaDistance = Math.max(1, seaPath.length);
+    const movementCost = Math.min(8, Math.max(1, Math.ceil(seaDistance / 12)));
+    const route = {
+      id: `sea-route-${routes.length + 1}`,
+      type: "shipping",
+      name: `${from.name}―${to.name}航路`,
+      fromObjectId: from.id,
+      toObjectId: to.id,
+      fromTileIndex: from.tileIndex,
+      toTileIndex: to.tileIndex,
+      pathTileIndices: [from.tileIndex, ...seaPath, to.tileIndex],
+      nationIds: [...new Set([from.nationId, to.nationId])],
+      regionIds: [...new Set([from.regionId, to.regionId].filter(Boolean))],
+      scope: from.nationId === to.nationId ? "coastal" : "international",
+      seaDistance,
+      movementCost,
+      travelMinutes: Math.max(6 * 60, seaDistance * 2 * 60),
+    };
+    routes.push(route);
+    from.seaRouteIds.push(route.id);
+    to.seaRouteIds.push(route.id);
+  };
+
+  for (const componentPorts of portsByComponent.values()) {
+    const byNation = componentPorts.reduce((groups, port) => {
+      if (!groups.has(port.nationId)) groups.set(port.nationId, []);
+      groups.get(port.nationId).push(port);
+      return groups;
+    }, new Map());
+    for (const nationPorts of byNation.values()) {
+      nationPorts.sort((left, right) => left.maritimeTier - right.maritimeTier || left.id.localeCompare(right.id));
+      for (let index = 1; index < nationPorts.length; index += 1) addRoute(nationPorts[index - 1], nationPorts[index]);
+    }
+    const ordered = [...componentPorts].sort((left, right) => right.maritimeTier - left.maritimeTier || left.id.localeCompare(right.id));
+    if (ordered.length < 2) continue;
+    const connected = [ordered.shift()];
+    while (ordered.length) {
+      const candidate = connected.flatMap((from) => ordered.map((to) => ({
+        from,
+        to,
+        distance: gridDistance(world.tiles[from.tileIndex], world.tiles[to.tileIndex], world),
+      }))).sort((left, right) => left.distance - right.distance || left.from.id.localeCompare(right.from.id) || left.to.id.localeCompare(right.to.id))[0];
+      addRoute(candidate.from, candidate.to);
+      connected.push(candidate.to);
+      ordered.splice(ordered.indexOf(candidate.to), 1);
+    }
+  }
+  return { routes };
+}
+
+function crossingFortSideNames(world, fromTile, toTile) {
+  const dx = squareWrappedDeltaX(fromTile.x, toTile.x, world.width, world.config.wrapX);
+  const dy = toTile.y - fromTile.y;
+  if (Math.abs(dx) > Math.abs(dy)) return dx >= 0 ? ["西詰", "東詰"] : ["東詰", "西詰"];
+  return dy >= 0 ? ["北詰", "南詰"] : ["南詰", "北詰"];
+}
+
+function addStrategicCrossingForts(world, regions, objects, roads, seed) {
+  const occupied = new Set(objects.map((object) => object.tileIndex));
+  const fortByTile = new Map(objects.filter((object) => object.type === "fort").map((fort) => [fort.tileIndex, fort]));
+  const regionByTile = new Array(world.tiles.length).fill(null);
+  for (const region of regions) for (const tileIndex of region.tileIndices) regionByTile[tileIndex] = region;
+  const findGuardTile = (candidates, crossingType, excludedIndex = -1) => {
+    const valid = (tileIndex) => {
+      if (tileIndex === excludedIndex) return false;
+      const tile = world.tiles[tileIndex];
+      if (!isLand(tile)) return false;
+      return crossingType === "mountain" ? tile.relief !== "mountains" : !tile.riverId;
+    };
+    const pathFort = candidates.find((tileIndex) => valid(tileIndex) && fortByTile.has(tileIndex));
+    if (pathFort !== undefined) return pathFort;
+    const pathSpace = candidates.find((tileIndex) => valid(tileIndex) && !occupied.has(tileIndex));
+    if (pathSpace !== undefined) return pathSpace;
+    const homeNationId = regionByTile[candidates[0]]?.nationId;
+    const visited = new Set(candidates);
+    let frontier = [...candidates];
+    for (let radius = 0; radius < 6; radius += 1) {
+      const next = [];
+      for (const tileIndex of frontier) {
+        for (const neighborIndex of cardinalNeighbors(tileIndex, world)) {
+          if (visited.has(neighborIndex) || regionByTile[neighborIndex]?.nationId !== homeNationId) continue;
+          visited.add(neighborIndex);
+          next.push(neighborIndex);
+        }
+      }
+      const nearbyFort = next.find((tileIndex) => valid(tileIndex) && fortByTile.has(tileIndex));
+      if (nearbyFort !== undefined) return nearbyFort;
+      const nearbySpace = next.find((tileIndex) => valid(tileIndex) && !occupied.has(tileIndex));
+      if (nearbySpace !== undefined) return nearbySpace;
+      frontier = next;
+    }
+    const relaxedFort = [...visited].find((tileIndex) => tileIndex !== excludedIndex && fortByTile.has(tileIndex));
+    if (relaxedFort !== undefined) return relaxedFort;
+    const relaxedSpace = [...visited].find((tileIndex) => (
+      tileIndex !== excludedIndex && isLand(world.tiles[tileIndex]) && !occupied.has(tileIndex)
+    ));
+    if (relaxedSpace !== undefined) return relaxedSpace;
+    return undefined;
+  };
+  const added = [];
+  for (const road of roads) {
+    for (const crossing of road.strategicCrossings) {
+      crossing.guardFortIds = [];
+      if (hashUnit(seed, road.id, crossing.id, "paired-crossing-forts") >= STRATEGIC_CROSSING_FORT_PROBABILITY) continue;
+      const approachCandidates = road.tileIndices.slice(0, crossing.startOffset).reverse();
+      const departureCandidates = road.tileIndices.slice(crossing.endOffset + 1);
+      const approachTileIndex = findGuardTile(approachCandidates, crossing.type);
+      const departureTileIndex = findGuardTile(departureCandidates, crossing.type, approachTileIndex);
+      if (approachTileIndex === undefined || departureTileIndex === undefined) continue;
+      const tiles = [world.tiles[approachTileIndex], world.tiles[departureTileIndex]];
+      const sideNames = crossingFortSideNames(world, tiles[0], tiles[1]);
+      const pairId = `${road.id}-${crossing.type}-guard-${crossing.startOffset}`;
+      const pair = tiles.map((tile, sideIndex) => {
+        const existing = fortByTile.get(tile.index);
+        if (existing) return existing;
+        const region = regionByTile[tile.index];
+        const fort = {
+          id: `${pairId}-${sideIndex + 1}`,
+          type: "fort",
+          typeName: GENERATED_WORLD_OBJECT_TYPES.fort.name,
+          nationId: region.nationId,
+          regionId: region.id,
+          tileIndex: tile.index,
+          x: tile.x,
+          y: tile.y,
+          name: `${region.name}${crossing.type === "mountain" ? "峠" : "渡河点"}${sideNames[sideIndex]}砦`,
+          importance: 2,
+          guardSide: sideIndex === 0 ? "approach" : "departure",
+        };
+        occupied.add(fort.tileIndex);
+        fortByTile.set(fort.tileIndex, fort);
+        objects.push(fort);
+        added.push(fort);
+        return fort;
+      });
+      pair.forEach((fort) => {
+        fort.strategicGuard = true;
+        fort.guardedRoadIds = [...new Set([...(fort.guardedRoadIds ?? []), road.id])];
+        fort.guardedCrossingIds = [...new Set([...(fort.guardedCrossingIds ?? []), crossing.id])];
+        fort.guardedCrossingTypes = [...new Set([...(fort.guardedCrossingTypes ?? []), crossing.type])];
+        fort.pairedFortIds = [...new Set([...(fort.pairedFortIds ?? []), ...pair.filter((other) => other.id !== fort.id).map((other) => other.id)])];
+      });
+      crossing.guardFortIds = pair.map((fort) => fort.id);
+    }
+  }
+  return added;
 }
 
 function governmentFor(stats, archetype) {
@@ -624,7 +1187,8 @@ function ownedComponents(world, ownerIndex, nationIndex) {
 function chooseRegionSeeds(world, nation, ownerIndex, targetTileCount) {
   const components = ownedComponents(world, ownerIndex, nation.index);
   const ownedTileCount = components.reduce((sum, component) => sum + component.length, 0);
-  const targetCount = Math.max(components.length, Math.min(12, Math.max(1, Math.floor(ownedTileCount / targetTileCount))));
+  const minimumAdministrativeRegions = ownedTileCount >= 2 ? 2 : 1;
+  const targetCount = Math.max(components.length, Math.min(12, Math.max(minimumAdministrativeRegions, Math.ceil(ownedTileCount / targetTileCount))));
   const componentByTile = new Map(components.flatMap((component, componentIndex) => component.map((index) => [index, componentIndex])));
   const seeds = components.map((component) => {
     const capitalIndex = component.includes(nation.capitalIndex) ? nation.capitalIndex : null;
@@ -815,7 +1379,10 @@ export function validateNationWorld(world, nationWorld) {
     const castles = (nationWorld.objects ?? []).filter((object) => object.nationId === nation.id && object.type === "castle");
     if (castles.length !== 1 || castles[0]?.tileIndex !== nation.capitalIndex) issues.push(`${nation.name} has no castle on its capital tile.`);
     if (!nation.regionIds?.length) issues.push(`${nation.name} is not composed of any regions.`);
+    if (nation.tileCount >= 2 && nation.regionIds?.length < 2) issues.push(`${nation.name} is not divided into multiple administrative regions.`);
     if (!nation.regionIds?.includes(nation.capitalRegionId)) issues.push(`${nation.name} has no capital region.`);
+    const cities = (nationWorld.objects ?? []).filter((object) => object.nationId === nation.id && object.type === "city");
+    if (!cities.length) issues.push(`${nation.name} has no city-level settlement.`);
   }
   for (const region of nationWorld.regions ?? []) {
     if (!region.tileIndices.length) issues.push(`${region.name} has no territory.`);
@@ -824,6 +1391,9 @@ export function validateNationWorld(world, nationWorld) {
     if (!region.tileIndices.every((index) => nationWorld.tileRegionIds[index] === region.id)) issues.push(`${region.name} has inconsistent tile membership.`);
     if (!region.tileIndices.every((index) => nationWorld.tileNationIds[index] === region.nationId)) issues.push(`${region.name} crosses a national boundary.`);
     if (region.neighborIds.some((neighborId) => !(nationWorld.regions ?? []).some((candidate) => candidate.id === neighborId))) issues.push(`${region.name} has an invalid neighbor.`);
+    if (!region.officeTitle) issues.push(`${region.name} has no regional lordship office.`);
+    if (!region.settlementIds?.length) issues.push(`${region.name} has no settlement network.`);
+    if (!region.roadHubObjectId) issues.push(`${region.name} has no road hub.`);
   }
   const objectIds = new Set();
   for (const object of nationWorld.objects ?? []) {
@@ -833,6 +1403,38 @@ export function validateNationWorld(world, nationWorld) {
     const tile = world.tiles[object.tileIndex];
     if (!tile || !isLand(tile)) issues.push(`World object ${object.id} is not placed on land.`);
     if (tile && nationWorld.tileNationIds[object.tileIndex] !== object.nationId) issues.push(`World object ${object.id} is outside its nation.`);
+    if (object.settlementLevel && (object.settlementLevel !== settlementLevelForPopulation(object.population) || !object.baseName)) issues.push(`Settlement ${object.id} has an invalid population level.`);
+    if (object.maritime && (!MARITIME_OBJECT_TYPES.has(object.type) || !tile || !isCoastal(tile, world) || !object.seaAccessTileIndices?.length)) issues.push(`Maritime settlement ${object.id} has no valid sea access.`);
+  }
+  for (const road of nationWorld.roads ?? []) {
+    if (!objectIds.has(road.fromObjectId) || !objectIds.has(road.toObjectId)) issues.push(`Road ${road.id} has a missing endpoint.`);
+    if (!world.tiles[road.fromTileIndex] || !world.tiles[road.toTileIndex]) issues.push(`Road ${road.id} has an invalid tile endpoint.`);
+    if (!road.tileIndices?.length || road.tileIndices[0] !== road.fromTileIndex || road.tileIndices.at(-1) !== road.toTileIndex) {
+      issues.push(`Road ${road.id} has an invalid terrain route.`);
+    } else {
+      if (road.tileIndices.some((index) => !isLand(world.tiles[index]))) issues.push(`Road ${road.id} crosses non-land terrain.`);
+      if (road.tileIndices.slice(1).some((index, offset) => !cardinalNeighbors(road.tileIndices[offset], world).includes(index))) {
+        issues.push(`Road ${road.id} contains a disconnected route step.`);
+      }
+    }
+    for (const crossing of road.strategicCrossings ?? []) {
+      if (![0, 2].includes(crossing.guardFortIds?.length ?? 0)) issues.push(`Road crossing ${crossing.id} has an incomplete fort pair.`);
+      if ((crossing.guardFortIds ?? []).some((id) => !objectIds.has(id))) issues.push(`Road crossing ${crossing.id} references a missing fort.`);
+    }
+  }
+  for (const route of nationWorld.seaRoutes ?? []) {
+    const from = (nationWorld.objects ?? []).find((object) => object.id === route.fromObjectId);
+    const to = (nationWorld.objects ?? []).find((object) => object.id === route.toObjectId);
+    if (!from?.maritime || !to?.maritime) issues.push(`Sea route ${route.id} has a non-port endpoint.`);
+    if (!route.pathTileIndices?.length || route.pathTileIndices.slice(1, -1).some((index) => !isSea(world.tiles[index]))) issues.push(`Sea route ${route.id} leaves navigable sea tiles.`);
+    if (!(route.movementCost >= 1 && route.movementCost <= 8) || route.travelMinutes < 6 * 60) issues.push(`Sea route ${route.id} has invalid travel costs.`);
+  }
+  for (const object of nationWorld.objects ?? []) {
+    if (!object.strategicGuard) continue;
+    const pairs = (object.pairedFortIds ?? []).map((id) => (nationWorld.objects ?? []).find((candidate) => candidate.id === id));
+    if (!object.guardedCrossingIds?.length || !pairs.length || pairs.some((pair) => !pair || !pair.pairedFortIds?.includes(object.id))) {
+      issues.push(`Strategic fort ${object.id} has no valid opposite-side pair.`);
+    }
   }
   return { valid: issues.length === 0, issues };
 }
@@ -885,12 +1487,29 @@ export function generateNations(world, options = {}) {
   const naturalFrontierWeight = selectedTerritory.weight;
   const baseNations = buildNationRecords(world, capitalEntries, ownerIndex, seed);
   const tileNationIds = ownerIndex.map((index, tileIndex) => isLand(world.tiles[tileIndex]) ? baseNations[index].id : null);
-  const regional = buildRegions(world, baseNations, ownerIndex, seed, options.regionTargetTileCount);
+  const regional = buildRegions(world, baseNations, ownerIndex, seed, options.regionTargetTileCount ?? 140);
   const reservedMarkerTiles = new Set(regional.regions.map((region) => region.markerIndex));
-  const objects = buildWorldObjects(world, baseNations, ownerIndex, seed, reservedMarkerTiles).map((object) => ({
+  const objects = buildWorldObjects(world, baseNations, regional.regions, ownerIndex, seed, reservedMarkerTiles).map((object) => ({
     ...object,
-    regionId: regional.tileRegionIds[object.tileIndex],
+    regionId: object.regionId ?? regional.tileRegionIds[object.tileIndex],
   }));
+  const roadNetwork = buildRegionalRoadNetwork(world, regional.regions, objects);
+  const strategicForts = addStrategicCrossingForts(world, regional.regions, objects, roadNetwork.roads, seed);
+  const maritimeNetwork = buildMaritimeNetwork(world, objects);
+  const regionById = new Map(regional.regions.map((region) => [region.id, region]));
+  regional.regions.forEach((region) => {
+    const localSettlements = objects.filter((object) => object.regionId === region.id && object.settlementLevel);
+    const neighborRegions = region.neighborIds.map((id) => regionById.get(id)).filter(Boolean);
+    region.frontier = neighborRegions.some((neighbor) => neighbor.nationId !== region.nationId);
+    region.status = "integrated";
+    region.officeTitle = region.capital ? "王都総督" : region.frontier ? "辺境伯" : "地方伯";
+    region.seatObjectId = localSettlements.find((object) => object.regionSeat)?.id ?? localSettlements[0]?.id ?? null;
+    region.roadHubObjectId = roadNetwork.hubObjectIds[region.id] ?? region.seatObjectId;
+    region.settlementIds = localSettlements.map((object) => object.id);
+    region.portIds = objects.filter((object) => object.regionId === region.id && object.maritime).map((object) => object.id);
+    region.seaRouteIds = maritimeNetwork.routes.filter((route) => route.regionIds.includes(region.id)).map((route) => route.id);
+    region.population = localSettlements.reduce((sum, object) => sum + object.population, 0);
+  });
   const objectsByNation = objects.reduce((groups, object) => {
     if (!groups.has(object.nationId)) groups.set(object.nationId, []);
     groups.get(object.nationId).push(object);
@@ -906,6 +1525,10 @@ export function generateNations(world, options = {}) {
       capitalRegionId: nationRegions.find((region) => region.capital)?.id ?? nationRegions[0]?.id,
       objectIds: nationObjects.map((object) => object.id),
       objectCounts: Object.fromEntries(Object.keys(GENERATED_WORLD_OBJECT_TYPES).map((type) => [type, nationObjects.filter((object) => object.type === type).length])),
+      roadIds: roadNetwork.roads.filter((road) => road.nationIds.includes(nation.id)).map((road) => road.id),
+      portIds: nationObjects.filter((object) => object.maritime).map((object) => object.id),
+      seaRouteIds: maritimeNetwork.routes.filter((route) => route.nationIds.includes(nation.id)).map((route) => route.id),
+      settlementPopulation: nationObjects.reduce((sum, object) => sum + (object.population ?? 0), 0),
     };
   });
   const borders = buildBorders(world, ownerIndex, nations);
@@ -917,12 +1540,21 @@ export function generateNations(world, options = {}) {
   }, new Map())].sort());
   const regionBorders = buildRegionBorders(world, regional.tileRegionIds, regional.regions);
   const nationWorld = {
-    version: 3,
+    version: 6,
     seed,
-    config: Object.freeze({ count, minCapitalDistance, naturalFrontierPolicy: "adaptive-preferred", naturalFrontierWeight, naturalFrontierCandidateWeights: Object.freeze(naturalFrontierCandidateWeights) }),
+    config: Object.freeze({
+      count,
+      minCapitalDistance,
+      naturalFrontierPolicy: "adaptive-preferred",
+      naturalFrontierWeight,
+      naturalFrontierCandidateWeights: Object.freeze(naturalFrontierCandidateWeights),
+      strategicCrossingFortProbability: STRATEGIC_CROSSING_FORT_PROBABILITY,
+    }),
     nations,
     regions: regional.regions,
     objects,
+    roads: roadNetwork.roads,
+    seaRoutes: maritimeNetwork.routes,
     tileNationIds,
     tileRegionIds: regional.tileRegionIds,
     borderSegments: borders.segments,
@@ -942,6 +1574,15 @@ export function generateNations(world, options = {}) {
       largestNationId: [...nations].sort((left, right) => right.tileCount - left.tileCount)[0].id,
       objectCount: objects.length,
       objectCounts: Object.fromEntries(Object.keys(GENERATED_WORLD_OBJECT_TYPES).map((type) => [type, objects.filter((object) => object.type === type).length])),
+      roadCount: roadNetwork.roads.length,
+      portCount: objects.filter((object) => object.maritime).length,
+      seaRouteCount: maritimeNetwork.routes.length,
+      internationalSeaRouteCount: maritimeNetwork.routes.filter((route) => route.scope === "international").length,
+      strategicCrossingCount: roadNetwork.roads.reduce((sum, road) => sum + road.strategicCrossings.length, 0),
+      guardedStrategicCrossingCount: roadNetwork.roads.reduce((sum, road) => sum + road.strategicCrossings.filter((crossing) => crossing.guardFortIds.length === 2).length, 0),
+      strategicFortCount: objects.filter((object) => object.strategicGuard).length,
+      addedStrategicFortCount: strategicForts.length,
+      settlementPopulation: objects.reduce((sum, object) => sum + (object.population ?? 0), 0),
       peopleCounts: Object.fromEntries([...nations.reduce((counts, nation) => {
         counts.set(nation.peopleId, (counts.get(nation.peopleId) ?? 0) + 1);
         return counts;

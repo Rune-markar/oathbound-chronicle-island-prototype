@@ -435,52 +435,78 @@ function regionBorderPaths(world, nationMap, cellSize) {
   }, cellSize);
 }
 
+function routedRoadPathData(world, road, cellSize) {
+  const tileIndices = road.tileIndices?.length ? road.tileIndices : [road.fromTileIndex, road.toTileIndex];
+  const pixelWidth = world.width * cellSize;
+  const points = [];
+  tileIndices.forEach((tileIndex) => {
+    const tile = world.tiles[tileIndex];
+    let x = (tile.x + 0.5) * cellSize;
+    const y = (tile.y + 0.5) * cellSize;
+    if (points.length > 0 && world.config.wrapX) {
+      const previousX = points.at(-1).x;
+      while (x - previousX > pixelWidth / 2) x -= pixelWidth;
+      while (previousX - x > pixelWidth / 2) x += pixelWidth;
+    }
+    points.push({ x, y });
+  });
+  const simplified = points.filter((point, index) => {
+    if (index === 0 || index === points.length - 1) return true;
+    const previous = points[index - 1];
+    const next = points[index + 1];
+    return (point.x - previous.x) * (next.y - point.y) !== (point.y - previous.y) * (next.x - point.x);
+  });
+  const makePath = (shiftX) => {
+    const shifted = simplified.map((point) => ({ x: point.x + shiftX, y: point.y }));
+    if (shifted.length === 1) return `M${shifted[0].x.toFixed(2)} ${shifted[0].y.toFixed(2)}`;
+    if (shifted.length === 2) return `M${shifted[0].x.toFixed(2)} ${shifted[0].y.toFixed(2)}L${shifted[1].x.toFixed(2)} ${shifted[1].y.toFixed(2)}`;
+    let path = `M${shifted[0].x.toFixed(2)} ${shifted[0].y.toFixed(2)}`;
+    for (let index = 1; index < shifted.length - 1; index += 1) {
+      const point = shifted[index];
+      const next = shifted[index + 1];
+      path += `Q${point.x.toFixed(2)} ${point.y.toFixed(2)} ${((point.x + next.x) / 2).toFixed(2)} ${((point.y + next.y) / 2).toFixed(2)}`;
+    }
+    const last = shifted.at(-1);
+    return `${path}L${last.x.toFixed(2)} ${last.y.toFixed(2)}`;
+  };
+  return (world.config.wrapX ? [-pixelWidth, 0, pixelWidth] : [0]).map(makePath);
+}
+
 function regionalTravelNetwork(world, nationMap, cellSize) {
   if (!Array.isArray(nationMap.regions) || !nationMap.regions.length) return "";
   const regionById = new Map(nationMap.regions.map((region) => [region.id, region]));
-  const edgeKeys = new Set();
+  const objectById = new Map((nationMap.objects ?? []).map((object) => [object.id, object]));
   const pixelWidth = world.width * cellSize;
   const routeEdges = [];
 
-  for (const region of nationMap.regions) {
-    for (const neighborId of region.neighborIds ?? []) {
-      const neighbor = regionById.get(neighborId);
-      if (!neighbor) continue;
-      const [fromId, toId] = [region.id, neighbor.id].sort();
-      const edgeKey = `${fromId}|${toId}`;
-      if (edgeKeys.has(edgeKey)) continue;
-      edgeKeys.add(edgeKey);
-
-      const from = regionById.get(fromId);
-      const to = regionById.get(toId);
-      const fromTile = world.tiles[from.markerIndex ?? from.anchorIndex];
-      const toTile = world.tiles[to.markerIndex ?? to.anchorIndex];
+  const roads = Array.isArray(nationMap.roads) && nationMap.roads.length
+    ? nationMap.roads
+    : nationMap.regions.flatMap((region) => (region.neighborIds ?? []).filter((neighborId) => region.id.localeCompare(neighborId) < 0).map((neighborId) => ({
+      id: `fallback-${region.id}-${neighborId}`,
+      fromTileIndex: region.markerIndex ?? region.anchorIndex,
+      toTileIndex: regionById.get(neighborId)?.markerIndex ?? regionById.get(neighborId)?.anchorIndex,
+      fromObjectId: region.id,
+      toObjectId: neighborId,
+      scope: region.nationId === regionById.get(neighborId)?.nationId ? "regional" : "frontier",
+      importance: 2,
+    })));
+  for (const road of roads) {
+      const fromTile = world.tiles[road.fromTileIndex ?? objectById.get(road.fromObjectId)?.tileIndex];
+      const toTile = world.tiles[road.toTileIndex ?? objectById.get(road.toObjectId)?.tileIndex];
       if (!fromTile || !toTile) continue;
-      const start = { x: (fromTile.x + 0.5) * cellSize, y: (fromTile.y + 0.5) * cellSize };
-      const end = { x: (toTile.x + 0.5) * cellSize, y: (toTile.y + 0.5) * cellSize };
-      if (world.config.wrapX && Math.abs(end.x - start.x) > pixelWidth / 2) {
-        end.x += end.x > start.x ? -pixelWidth : pixelWidth;
-      }
-      const dx = end.x - start.x;
-      const dy = end.y - start.y;
-      const distance = Math.max(1, Math.hypot(dx, dy));
-      const bend = (hashUnit(nationMap.seed ?? world.seed, edgeKey, "regional-route") - 0.5)
-        * Math.min(cellSize * 3.2, distance * 0.24);
-      const control = {
-        x: (start.x + end.x) / 2 - dy / distance * bend,
-        y: (start.y + end.y) / 2 + dx / distance * bend,
-      };
-      const shifts = world.config.wrapX ? [-pixelWidth, 0, pixelWidth] : [0];
-      const pathData = shifts.map((shiftX) => (
-        `M${(start.x + shiftX).toFixed(2)} ${start.y.toFixed(2)} Q${(control.x + shiftX).toFixed(2)} ${control.y.toFixed(2)} ${(end.x + shiftX).toFixed(2)} ${end.y.toFixed(2)}`
-      ));
-      const scope = from.nationId === to.nationId ? "domestic" : "frontier";
-      routeEdges.push(`<g class="region-route-edge is-${scope}" data-route-from="${escapeAttribute(from.id)}" data-route-to="${escapeAttribute(to.id)}"><title>${escapeAttribute(`${from.name}―${to.name} 地方導線`)}</title>${pathData.map((d) => `<path class="region-route-casing" d="${d}"/><path class="region-route-line" d="${d}"/>`).join("")}</g>`);
-    }
+      const pathData = routedRoadPathData(world, road, cellSize);
+      const from = objectById.get(road.fromObjectId);
+      const to = objectById.get(road.toObjectId);
+      const crossingKinds = road.crossingKinds ?? [];
+      const crossingLabel = crossingKinds.length ? `（${crossingKinds.map((kind) => kind === "mountain" ? "山越え" : "渡河").join("・")}）` : "";
+      const title = from && to ? `${from.name}―${to.name} 街道${crossingLabel}` : `地方街道${crossingLabel}`;
+      const terrainClasses = crossingKinds.map((kind) => ` has-${kind}`).join("");
+      routeEdges.push(`<g class="region-route-edge is-${escapeAttribute(road.scope ?? "regional")}${road.importance >= 3 ? " is-arterial" : ""}${terrainClasses}" data-road-id="${escapeAttribute(road.id)}" data-route-from="${escapeAttribute(road.fromObjectId)}" data-route-to="${escapeAttribute(road.toObjectId)}" data-crossing-kinds="${escapeAttribute(crossingKinds.join(" "))}"><title>${escapeAttribute(title)}</title>${pathData.map((d) => `<path class="region-route-casing" d="${d}"/><path class="region-route-line" d="${d}"/>`).join("")}</g>`);
   }
 
   const nodes = nationMap.regions.map((region) => {
-    const tile = world.tiles[region.markerIndex ?? region.anchorIndex];
+    const hub = objectById.get(region.roadHubObjectId);
+    const tile = world.tiles[hub?.tileIndex ?? region.markerIndex ?? region.anchorIndex];
     if (!tile) return "";
     const x = (tile.x + 0.5) * cellSize;
     const y = (tile.y + 0.5) * cellSize;
@@ -489,7 +515,19 @@ function regionalTravelNetwork(world, nationMap, cellSize) {
     return `<g class="region-route-node${region.capital ? " is-capital-region" : ""}" data-region-id="${escapeAttribute(region.id)}" transform="translate(${x.toFixed(2)} ${y.toFixed(2)})"><title>${escapeAttribute(`${region.name} · 地方拠点${region.capital ? "・首都地方" : ""}`)}</title><rect class="region-route-node-shadow" x="${(-size / 2 - 1).toFixed(2)}" y="${(-size / 2 - 1).toFixed(2)}" width="${(size + 2).toFixed(2)}" height="${(size + 2).toFixed(2)}" rx="${(size * 0.13).toFixed(2)}"/><rect class="region-route-node-frame" x="${(-size / 2).toFixed(2)}" y="${(-size / 2).toFixed(2)}" width="${size.toFixed(2)}" height="${size.toFixed(2)}" rx="${(size * 0.1).toFixed(2)}"/><rect class="region-route-node-core" x="${(-size / 2 + inset).toFixed(2)}" y="${(-size / 2 + inset).toFixed(2)}" width="${(size - inset * 2).toFixed(2)}" height="${(size - inset * 2).toFixed(2)}"/></g>`;
   }).join("");
 
-  return `<g id="regionalTravelNetwork" aria-label="地方拠点と隣接地方への導線"><style>.region-route-casing{fill:none;stroke:#10282b;stroke-width:${Math.max(2.8, cellSize * 0.3).toFixed(2)};stroke-linecap:round;stroke-linejoin:round;opacity:.72}.region-route-line{fill:none;stroke:#f4ead0;stroke-width:${Math.max(1.15, cellSize * 0.12).toFixed(2)};stroke-linecap:round;stroke-linejoin:round;opacity:.92}.region-route-edge.is-frontier .region-route-line{stroke:#f1d59b}.region-route-node-shadow{fill:#10272a;opacity:.88}.region-route-node-frame{fill:#fff8de;stroke:#263636;stroke-width:${Math.max(0.65, cellSize * 0.065).toFixed(2)}}.region-route-node-core{fill:#5f6f63}.region-route-node.is-capital-region .region-route-node-core{fill:#d5a84e}</style><g id="regionalRoutes">${routeEdges.join("")}</g><g id="regionalRouteNodes">${nodes}</g></g>`;
+  return `<g id="regionalTravelNetwork" aria-label="都市・町・村・城砦を結び、山越えと渡河点を守る地方街道網"><style>.region-route-casing{fill:none;stroke:#10282b;stroke-width:${Math.max(2.5, cellSize * 0.27).toFixed(2)};stroke-linecap:round;stroke-linejoin:round;opacity:.74}.region-route-line{fill:none;stroke:#efe3bf;stroke-width:${Math.max(1.05, cellSize * 0.105).toFixed(2)};stroke-linecap:round;stroke-linejoin:round;opacity:.94}.region-route-edge.is-local .region-route-casing{stroke-width:${Math.max(1.9, cellSize * 0.21).toFixed(2)}}.region-route-edge.is-local .region-route-line{stroke-width:${Math.max(.72, cellSize * 0.075).toFixed(2)};opacity:.82}.region-route-edge.is-frontier .region-route-line{stroke:#f1d59b}.region-route-edge.is-arterial .region-route-line{stroke:#fff0c7}.region-route-edge.has-mountain .region-route-casing{stroke:#2e2420}.region-route-edge.has-river .region-route-line{stroke:#f3d69e}.region-route-node-shadow{fill:#10272a;opacity:.88}.region-route-node-frame{fill:#fff8de;stroke:#263636;stroke-width:${Math.max(0.65, cellSize * 0.065).toFixed(2)}}.region-route-node-core{fill:#5f6f63}.region-route-node.is-capital-region .region-route-node-core{fill:#d5a84e}</style><g id="regionalRoutes">${routeEdges.join("")}</g><g id="regionalRouteNodes">${nodes}</g></g>`;
+}
+
+function maritimeTravelNetwork(world, nationMap, cellSize) {
+  const objectById = new Map((nationMap.objects ?? []).map((object) => [object.id, object]));
+  const routes = (nationMap.seaRoutes ?? []).map((route) => {
+    const from = objectById.get(route.fromObjectId);
+    const to = objectById.get(route.toObjectId);
+    const paths = routedRoadPathData(world, { tileIndices: route.pathTileIndices }, cellSize);
+    return `<g class="sea-route-edge is-${escapeAttribute(route.scope)}" data-sea-route-id="${escapeAttribute(route.id)}" data-route-from="${escapeAttribute(route.fromObjectId)}" data-route-to="${escapeAttribute(route.toObjectId)}"><title>${escapeAttribute(`${from?.name ?? "港"}―${to?.name ?? "港"} 海路・約${route.travelMinutes / 60}時間`)}</title>${paths.map((d) => `<path class="sea-route-casing" d="${d}"/><path class="sea-route-line" d="${d}"/>`).join("")}</g>`;
+  }).join("");
+  if (!routes) return "";
+  return `<g id="maritimeTravelNetwork" aria-label="漁港・港・湾口都市を結ぶ海運航路"><style>.sea-route-casing{fill:none;stroke:#071f29;stroke-width:${Math.max(2.4, cellSize * 0.24).toFixed(2)};stroke-linecap:round;stroke-linejoin:round;opacity:.72}.sea-route-line{fill:none;stroke:#7fd7df;stroke-width:${Math.max(.82, cellSize * 0.082).toFixed(2)};stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:${Math.max(1.8, cellSize * .18).toFixed(2)} ${Math.max(1.15, cellSize * .11).toFixed(2)};opacity:.9}.sea-route-edge.is-international .sea-route-line{stroke:#bcecf0;stroke-width:${Math.max(1.05, cellSize * .1).toFixed(2)}}</style>${routes}</g>`;
 }
 
 function fallbackCapitalObjects(world, nationMap) {
@@ -506,21 +544,36 @@ function worldObjectShape(type) {
   if (type === "fort") {
     return `<path d="M-5 5V-4l2-2 2 2 2-2 2 2 2-2v11Z" fill="#a75e46" stroke="#241f1c" stroke-width="1"/><path d="M-2 5V1h4v4M-4-1h8" fill="none" stroke="#f3d49a" stroke-width=".9"/>`;
   }
+  if (type === "fishing_port") {
+    return `<path d="M-5 2Q0 6 5 2L4 5H-4Z" fill="#c8e4dc" stroke="#1d3434" stroke-width=".9"/><path d="M0 3V-5M0-4L4-1H0" fill="none" stroke="#f5e6b4" stroke-width="1"/>`;
+  }
+  if (type === "port") {
+    return `<path d="M0-6V4M-4-2Q-4 3 0 5Q4 3 4-2M-6 1H6" fill="none" stroke="#d8f1e8" stroke-width="1.35"/><circle cy="-4" r="1.4" fill="#e8c66f" stroke="#263636" stroke-width=".55"/>`;
+  }
+  if (type === "bay_city") {
+    return `<path d="M-6 5V0h2v-4h2v4h2v-6h2v6h2v-4h2v9Z" fill="#e8c66f" stroke="#263636" stroke-width="1"/><path d="M0-5V4M-4 1Q-4 4 0 5Q4 4 4 1M-5 2H5" fill="none" stroke="#d9f4eb" stroke-width=".85"/>`;
+  }
+  if (type === "city") {
+    return `<path d="M-6 5V-1h2v-3h2v3h2v-5h2v5h2v-3h2v9Z" fill="#e8c66f" stroke="#2a2420" stroke-width="1"/><path d="M-4 5V1h2v4M0 5V-1h2v6M4 5V1h1v4" fill="none" stroke="#fff0b5" stroke-width=".8"/>`;
+  }
+  if (type === "town") {
+    return `<path d="M-6 5V0l3-3 3 3v5ZM0 5V-2l3-3 3 3v7Z" fill="#d9b96f" stroke="#32291f" stroke-width=".9"/><path d="M-4 5V2h2v3M2 5V1h2v4M-6 0h6M0-2h6" fill="none" stroke="#fff0b5" stroke-width=".75"/>`;
+  }
   return `<path d="M-6 5V0l3-3 3 3v5ZM0 5V-2l3-3 3 3v7Z" fill="#e7d5a2" stroke="#32291f" stroke-width=".9"/><path d="M-4 5V2h2v3M2 5V1h2v4" fill="none" stroke="#8f5d3f" stroke-width=".8"/>`;
 }
 
 function worldObjectMarkers(world, nationMap, cellSize) {
   const nationById = new Map(nationMap.nations.map((nation) => [nation.id, nation]));
   const objects = Array.isArray(nationMap.objects) ? nationMap.objects : fallbackCapitalObjects(world, nationMap);
-  const groupIds = { village: "nationVillages", fort: "nationForts", castle: "nationCapitals" };
-  return ["village", "fort", "castle"].map((type) => {
+  const groupIds = { village: "nationVillages", town: "nationTowns", city: "nationCities", fishing_port: "nationFishingPorts", port: "nationPorts", bay_city: "nationBayCities", fort: "nationForts", castle: "nationCapitals" };
+  return ["village", "town", "city", "fishing_port", "port", "bay_city", "fort", "castle"].map((type) => {
     const markers = objects.filter((object) => object.type === type).map((object) => {
       const tile = world.tiles[object.tileIndex];
       if (!tile) return "";
       const nation = nationById.get(object.nationId);
       const x = (tile.x + 0.5) * cellSize;
       const y = (tile.y + 0.5) * cellSize;
-      const baseSize = type === "castle" ? 1.78 : type === "fort" ? 1.46 : 1.02;
+      const baseSize = type === "castle" ? 1.78 : ["city", "bay_city"].includes(type) ? 1.58 : type === "fort" ? 1.46 : ["town", "port"].includes(type) ? 1.22 : 1.02;
       const scale = Math.max(0.68, cellSize * baseSize / 12);
       return `<g class="world-object object-${type}${type === "castle" ? " nation-capital" : ""}" data-object-id="${escapeAttribute(object.id)}" data-object-type="${type}" transform="translate(${x.toFixed(2)} ${y.toFixed(2)}) scale(${scale.toFixed(3)})" filter="url(#markerShadow)"><title>${escapeAttribute(`${object.name} · ${nation?.name ?? "無主地"}`)}</title><rect x="-7" y="-7" width="14" height="14" rx="1.8" fill="${escapeAttribute(nation?.color ?? "#66777b")}" stroke="#fff0bd" stroke-width="1.05"/><rect x="-5.8" y="-5.8" width="11.6" height="11.6" rx="1" fill="#172629" fill-opacity=".3" stroke="#172326" stroke-width=".55"/>${worldObjectShape(type)}</g>`;
     }).join("");
@@ -546,7 +599,7 @@ export function renderTerrainSvg(world, options = {}) {
   const pixelsPerTile = Math.max(4, Math.round(options.pixelsPerTile ?? 12));
   const rasterUrl = renderTerrainBmpDataUrl(world, pixelsPerTile);
   const coastlines = coastlinePathData(world, cellSize);
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${pixelWidth} ${pixelHeight}" width="${pixelWidth}" height="${pixelHeight}" preserveAspectRatio="none" role="img" aria-label="東西に循環する高精細自然地形と城・村・砦" data-grid="square" data-wrap="longitude" data-terrain-resolution="${world.width}x${world.height}" data-raster-resolution="${world.width * pixelsPerTile}x${world.height * pixelsPerTile}" data-map-style="illustrated-strategy">
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${pixelWidth} ${pixelHeight}" width="${pixelWidth}" height="${pixelHeight}" preserveAspectRatio="none" role="img" aria-label="東西に循環する高精細自然地形と城・都市・町・村・漁港・港・湾口都市・砦・街道・海路" data-grid="square" data-wrap="longitude" data-terrain-resolution="${world.width}x${world.height}" data-raster-resolution="${world.width * pixelsPerTile}x${world.height * pixelsPerTile}" data-map-style="illustrated-strategy">
   <defs>
     <linearGradient id="oceanDepth" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#173944"/><stop offset="1" stop-color="#0b2833"/></linearGradient>
     <pattern id="naturalTexture" width="256" height="256" patternUnits="userSpaceOnUse"><image href="${textureUrl}" x="0" y="0" width="256" height="256" preserveAspectRatio="xMidYMid slice"/></pattern>
@@ -569,7 +622,7 @@ export function renderTerrainSvg(world, options = {}) {
   <g filter="url(#riverSoft)">${riverPaths(world, cellSize)}</g>
   ${showGrid ? `<g fill="none" stroke="#d9d0b3" stroke-width="0.36" opacity="0.08">${squareGrid(world, cellSize)}</g>` : ""}
   ${nationMap ? `<g id="regionBorders" fill="none" stroke="#253b3b" stroke-width="${Math.max(0.42, cellSize * 0.038).toFixed(2)}" stroke-dasharray="${Math.max(0.8, cellSize * 0.09).toFixed(2)} ${Math.max(0.7, cellSize * 0.07).toFixed(2)}" stroke-linecap="round" opacity="0.72">${regionBorderPaths(world, nationMap, cellSize)}</g>` : ""}
-  ${nationMap ? `<g id="nationBorders" fill="none" stroke="#f4e6bb" stroke-width="${Math.max(0.65, cellSize * 0.062).toFixed(2)}" stroke-linecap="round" stroke-linejoin="round" opacity="0.76"><style>.nation-border.is-natural-border{stroke-width:${Math.max(0.76, cellSize * 0.07).toFixed(2)}}.nation-border.is-artificial-border{stroke-dasharray:${Math.max(1.5, cellSize * 0.2).toFixed(2)} ${Math.max(1, cellSize * 0.13).toFixed(2)};opacity:.68}.nation-border.is-river-border{stroke:#bfe6e8;stroke-width:${Math.max(0.8, cellSize * 0.078).toFixed(2)}}</style>${nationBorderPaths(world, nationMap, cellSize)}</g>${regionalTravelNetwork(world, nationMap, cellSize)}<g id="worldObjects">${worldObjectMarkers(world, nationMap, cellSize)}</g>` : ""}
+  ${nationMap ? `<g id="nationBorders" fill="none" stroke="#f4e6bb" stroke-width="${Math.max(0.65, cellSize * 0.062).toFixed(2)}" stroke-linecap="round" stroke-linejoin="round" opacity="0.76"><style>.nation-border.is-natural-border{stroke-width:${Math.max(0.76, cellSize * 0.07).toFixed(2)}}.nation-border.is-artificial-border{stroke-dasharray:${Math.max(1.5, cellSize * 0.2).toFixed(2)} ${Math.max(1, cellSize * 0.13).toFixed(2)};opacity:.68}.nation-border.is-river-border{stroke:#bfe6e8;stroke-width:${Math.max(0.8, cellSize * 0.078).toFixed(2)}}</style>${nationBorderPaths(world, nationMap, cellSize)}</g>${maritimeTravelNetwork(world, nationMap, cellSize)}${regionalTravelNetwork(world, nationMap, cellSize)}<g id="worldObjects">${worldObjectMarkers(world, nationMap, cellSize)}</g>` : ""}
 </svg>`;
 }
 

@@ -1,9 +1,10 @@
 import { createVillageLifeState, normalizeVillageLifeState } from "./village-life.js";
+import { createRegionalReputationState, recordRegionalAchievement } from "./regional-reputation.js";
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const clone = (value) => structuredClone(value);
 
-export const CAREER_SCHEMA_VERSION = 2;
+export const CAREER_SCHEMA_VERSION = 3;
 
 const titleSystem = (id, name, highest, offices) => Object.freeze({
   id,
@@ -143,9 +144,10 @@ function defaultPlayer(options = {}) {
     prohibitions: [],
     householdRetainers: [],
     metrics: {
-      martialMerit: 0, civilMerit: 0, renown: 4, liegeTrust: 0, householdSupport: 12,
+      martialMerit: 0, civilMerit: 0, renown: 0, liegeTrust: 0, householdSupport: 12,
       popularSupport: 8, fear: 0, legitimacy: 0, ambition: 24, wealth: 8,
     },
+    regionalReputation: createRegionalReputationState({ legacyMigrated: true }),
     progress: { contracts: 0, orders: 0, campaigns: 0, governanceActions: 0 },
     villageLife: createVillageLifeState(),
     invitations: [],
@@ -419,13 +421,21 @@ export function performCareerAction(state, actionId, options = {}) {
   const next = clone(state);
   const player = next.player;
   const metrics = player.metrics;
+  const reputationOrigin = {
+    id: player.locationId ?? next.generatedWorld?.expeditionRegionId,
+    name: player.locationId ?? next.generatedWorld?.expeditionRegionId ?? "現在地",
+    regionId: next.generatedWorld?.expeditionRegionId ?? player.locationId,
+    nationId: next.generatedWorld?.playerNationId ?? player.affiliation.nationId,
+  };
   if (actionId === "fulfill_order") {
-    player.progress.orders += 1; metrics.martialMerit += 28; metrics.renown += 10; metrics.liegeTrust = clamp(metrics.liegeTrust + 18, 0, 100);
+    player.progress.orders += 1; metrics.martialMerit += 28; metrics.liegeTrust = clamp(metrics.liegeTrust + 18, 0, 100);
+    recordRegionalAchievement(next, reputationOrigin, { label: "主君の討伐命令を達成", merit: 28, renown: 10 });
     player.stage = "commander"; player.title = getTitleForCareerStage("commander");
     player.authorityGrants.push({ id: "commander-logistics", issuerId: player.affiliation.liegeId, territoryIds: ["orta"], authorities: ["local_logistics", "local_military_organization", "local_budget"], expiresTurn: null, reason: "国境隊の軍需委任" });
     careerLog(player, next, "部隊長へ昇進", "武勲と主君の信頼により、小部隊と軍需予算を委ねられた。");
   } else if (actionId === "command_campaign") {
-    player.progress.campaigns += 1; metrics.martialMerit += 45; metrics.renown += 18; metrics.liegeTrust = clamp(metrics.liegeTrust + 20, 0, 100); metrics.legitimacy += 18;
+    player.progress.campaigns += 1; metrics.martialMerit += 45; metrics.liegeTrust = clamp(metrics.liegeTrust + 20, 0, 100); metrics.legitimacy += 18;
+    recordRegionalAchievement(next, reputationOrigin, { label: "辺境救援軍を指揮", merit: 45, renown: 18 });
     player.stage = "lord"; player.title = getTitleForCareerStage("lord");
     player.holdings.push({ id: "fief-orta", territoryId: "orta", grantedBy: player.affiliation.liegeId, tenure: "feudal", rights: [...LOCAL_AUTHORITIES] });
     player.authorityGrants = player.authorityGrants.filter((grant) => grant.id !== "commander-logistics");

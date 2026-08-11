@@ -39,7 +39,6 @@
           <button type="button" data-developer-action="world"><i>界</i><span><strong>世界生成</strong><small>地形区画・地方・国家の生成を確認</small></span><b>開く</b></button>
           <button type="button" data-developer-action="war-council"><i>軍</i><span><strong>戦争評議会</strong><small>政治目的・兵站・講和判断を確認</small></span><b>開く</b></button>
           <a href="./terrain-preview.html"><i>地</i><span><strong>地形生成ラボ</strong><small>地形モデルと描画結果を単独検証</small></span><b>別画面</b></a>
-          <a href="./manual.html"><i>書</i><span><strong>仕様書・遊び方</strong><small>国家運営システムの詳細マニュアル</small></span><b>別画面</b></a>
         </div>
       </section>
       <footer><span>LOCAL PROTOTYPE</span><span>データはこの端末のブラウザに保存されます</span></footer>
@@ -140,10 +139,6 @@
                 <span aria-hidden="true">⌘</span>
                 <span><strong>専門台帳</strong><small>表示</small></span>
               </button>
-              <button class="audio-toggle" id="audioToggle" type="button" aria-label="BGMと効果音をミュートする" aria-pressed="false">
-                <span id="audioIcon" aria-hidden="true">♫</span>
-                <span><strong>音響</strong><small id="audioStatus">開始</small></span>
-              </button>
               <button class="date-button month-end-button" id="endMonthButton" type="button">
                 <strong id="dateLabel">誓暦317年 青月</strong>
                 <small id="dateHint">月を終える</small>
@@ -155,9 +150,44 @@
             <div class="campaign-bar-goal"><small>立身段階</small><strong>一個人として身を立てる</strong></div>
             <div class="campaign-bar-next"><small>現在の目標</small><strong>村へ入り、ギルドと酒場で依頼の準備をする</strong></div>
           </section>
+
+          <details class="outliner left-info-drawer" id="backMenu">
+            <summary><span>バックメニュー</span><strong>設定・情報</strong></summary>
+            <div class="back-menu-content">
+              <section class="back-menu-section" aria-labelledby="backMenuSettingsTitle">
+                <header><small>SETTING ARCHIVE</small><h2 id="backMenuSettingsTitle">設定集</h2></header>
+                <div class="back-menu-route-grid">
+                  <button type="button" data-back-menu-route="world-statistics"><i aria-hidden="true">統</i><span><strong>世界統計</strong><small>国家・資源・世界の集計</small></span></button>
+                  <button type="button" data-back-menu-route="character-codex"><i aria-hidden="true">辞</i><span><strong>キャラクター辞典</strong><small>人物・種族・関係の記録</small></span></button>
+                </div>
+                <div id="backMenuSettingsCatalog"></div>
+              </section>
+              <section class="back-menu-section" aria-labelledby="backMenuSystemTitle">
+                <header><small>SYSTEM</small><h2 id="backMenuSystemTitle">システム</h2></header>
+                <div class="back-menu-system-grid">
+                  <button class="audio-toggle" id="audioToggle" type="button" aria-label="BGMと効果音をミュートする" aria-pressed="false">
+                    <span id="audioIcon" aria-hidden="true">♫</span>
+                    <span><strong>音響</strong><small id="audioStatus">開始</small></span>
+                  </button>
+                  <button type="button" data-open-guide><i aria-hidden="true">?</i><span><strong>遊び方</strong><small>現在の段階と操作案内</small></span></button>
+                  <a href="./manual.html" target="_blank" rel="noopener noreferrer"><i aria-hidden="true">書</i><span><strong>完全版マニュアル</strong><small>詳細な仕様と遊び方</small></span></a>
+                </div>
+              </section>
+              <details class="back-menu-chronicle">
+                <summary>情報・年代記</summary>
+                <div id="outlinerContent"></div>
+              </details>
+            </div>
+            <footer>
+              <button id="saveButton" type="button">記録</button>
+              <button id="resetButton" type="button">最初から</button>
+              <a href="https://github.com/Rune-markar/oathbound-chronicle-island-prototype/blob/main/CHANGELOG.md" target="_blank" rel="noopener noreferrer">更新履歴</a>
+            </footer>
+          </details>
         </div>
         <nav class="primary-tabs" id="primaryTabs">
-          <button class="is-active" type="button" data-panel="career"><span>人</span>人物</button>
+          <button class="is-active" type="button" data-panel="world"><span>界</span>世界</button>
+          <button type="button" data-panel="career"><span>人</span>人物</button>
           <button type="button" data-panel="governance" hidden><span>領</span>統治</button>
           <button type="button" data-panel="centralization" hidden><span>冠</span>国制</button>
           <button type="button" data-panel="council" hidden><span>♜</span>評定</button>
@@ -166,8 +196,6 @@
           <button type="button" data-panel="town" hidden><span>町</span>町政</button>
           <button type="button" data-panel="diplomacy" hidden><span>⚖</span>外交</button>
           <button type="button" data-panel="military" hidden><span>⚔</span>軍事</button>
-          <button type="button" data-panel="people" hidden><span>♟</span>人物辞典</button>
-          <button type="button" data-panel="world"><span>界</span>世界</button>
         </nav>
         <section class="ledger-panel" id="leftPanel" aria-live="polite"></section>
       </aside>
@@ -187,10 +215,20 @@
           <div class="generated-world-scroll" id="generatedWorldScroll" tabindex="0" aria-label="生成済み世界を現在地の地方レベルへ拡大した地図">
             <div class="generated-world-strip" id="generatedWorldStrip"></div>
           </div>
+          <div class="generated-world-light" id="generatedWorldLight" aria-hidden="true"></div>
+          <div class="generated-world-time" id="generatedWorldTime" aria-live="polite">
+            <span>WORLD TIME</span><strong id="generatedWorldTimeLabel">第1日 08:00</strong><small id="generatedWorldPhaseLabel">昼</small>
+          </div>
+          <div class="generated-travel-overlay is-hidden" id="generatedTravelOverlay" aria-live="assertive">
+            <div class="generated-travel-compass" aria-hidden="true"><i></i><b>◆</b></div>
+            <div class="generated-travel-copy"><small>EXPEDITION IN TRANSIT</small><strong id="generatedTravelRoute">移動中</strong><span id="generatedTravelClock">第1日 08:00</span><p id="generatedTravelDuration">時間が経過します</p></div>
+            <div class="generated-travel-progress" aria-hidden="true"><i id="generatedTravelProgress"></i></div>
+          </div>
+          <div class="personal-map-overlay is-hidden" id="personalMapOverlay" aria-live="polite"></div>
           <div class="generated-world-map-help">
             <div class="generated-map-scale" role="group" aria-label="生成地図の縮尺"><button type="button" class="is-active" data-generated-map-scale="region">地方でプレイ</button><button type="button" data-generated-map-scale="world">世界全図</button></div>
-            <span><i class="is-castle">城</i>城</span><span><i class="is-village">村</i>村</span><span><i class="is-fort">砦</i>砦</span><span><i class="is-route"></i>地方導線</span>
-            <p>四角い地方拠点と線で隣接関係を表示 · 隣接地方は左のコマンドで選択・確定 · 世界全図と地方図は同じ生成画像 · 国家は一つ以上の地方で構成</p>
+            <span><i class="is-castle">城</i>城</span><span><i class="is-city">都</i>都市</span><span><i class="is-town">町</i>町</span><span><i class="is-village">村</i>村</span><span><i class="is-port">港</i>漁港・港・湾口都市</span><span><i class="is-fort">砦</i>砦</span><span><i class="is-route"></i>街道</span><span><i class="is-sea-route"></i>海路</span>
+            <p>沿岸都市は漁港→港→湾口都市の階層で配置 · 港同士を海運航路で接続 · 城・都市から町・村・砦へ街道が延びます · 各国は複数地域で構成され、地域の支配交代・独立により国境線が変化します</p>
           </div>
         </section>
 
@@ -539,16 +577,6 @@
         <div class="chronicle-ticker" id="chronicleTicker"></div>
       </main>
 
-      <aside class="outliner">
-        <header><span>OUTLINER</span><strong>人物年代記摘要</strong></header>
-        <div id="outlinerContent"></div>
-        <footer>
-          <button id="saveButton" type="button">記録</button>
-          <button id="resetButton" type="button">最初から</button>
-          <button type="button" data-open-guide>遊び方</button>
-          <a href="https://github.com/Rune-markar/oathbound-chronicle-island-prototype/blob/main/CHANGELOG.md" target="_blank" rel="noopener noreferrer">更新履歴</a>
-        </footer>
-      </aside>
     </div>
 
     <div class="modal-backdrop is-hidden" id="guideModal" role="dialog" aria-modal="true" aria-labelledby="guideTitle">

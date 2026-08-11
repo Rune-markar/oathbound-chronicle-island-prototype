@@ -1,3 +1,8 @@
+import {
+  normalizeRegionalReputationState,
+  recordRegionalAchievement,
+} from "./regional-reputation.js";
+
 const clone = (value) => structuredClone(value);
 const clamp = (value, minimum, maximum) => Math.min(maximum, Math.max(minimum, value));
 
@@ -205,6 +210,7 @@ export function createVillageLifeState(source = {}) {
 export function normalizeVillageLifeState(state) {
   if (!state?.player) return state;
   state.player.villageLife = createVillageLifeState(state.player.villageLife);
+  normalizeRegionalReputationState(state);
   return state;
 }
 
@@ -384,7 +390,7 @@ export function performVillageAction(state, villageInput, actionId) {
   if (!definition) throw new Error("不明な村行動です");
   const village = typeof villageInput === "string"
     ? { id: villageInput, name: villageInput }
-    : { id: villageInput?.id, name: villageInput?.name };
+    : { ...villageInput, id: villageInput?.id, name: villageInput?.name };
   if (!village.id || !village.name) throw new Error("行動する村を指定してください");
   const access = getVillageActionAvailability(state, actionId, village.id);
   if (!access.allowed) throw new Error(access.reason);
@@ -501,9 +507,9 @@ export function performVillageAction(state, villageInput, actionId) {
       life.guildMerit += quest.merit ?? 10;
       player.progress.contracts = (player.progress.contracts ?? 0) + 1;
       player.metrics.martialMerit += 8;
-      player.metrics.renown += 2;
+      recordRegionalAchievement(next, village, { label: quest.name, merit: quest.merit ?? 10, renown: 2 });
       villageRelation(life, village.id, 3);
-      message = `${quest.name}を報告した。ギルド功績${quest.merit ?? 10}、武勲8、名声2を得た。`;
+      message = `${quest.name}を報告した。ギルド功績${quest.merit ?? 10}、武勲8を得て、この町を起点に功績が知られ始めた。`;
       break;
     }
     case "receive_reward": {
@@ -511,8 +517,8 @@ export function performVillageAction(state, villageInput, actionId) {
       const reward = { wealth: 4, renown: 1, ...(quest.reward ?? {}) };
       quest.status = "rewarded";
       player.metrics.wealth += reward.wealth;
-      player.metrics.renown += reward.renown;
-      message = `${quest.name}の報酬として財産${reward.wealth}と名声${reward.renown}を得た。`;
+      recordRegionalAchievement(next, village, { label: `${quest.name}の公式評価`, merit: 0, renown: reward.renown });
+      message = `${quest.name}の報酬として財産${reward.wealth}を得て、この町での評価が${reward.renown}高まった。`;
       break;
     }
     case "check_dungeon": {
@@ -532,19 +538,19 @@ export function performVillageAction(state, villageInput, actionId) {
     case "enter_tournament":
       life.tournamentWins += 1;
       player.metrics.martialMerit += 2;
-      player.metrics.renown += 1;
-      message = `地方武術大会で${life.tournamentWins}勝目を挙げた。武勲2、名声1を得た。`;
+      recordRegionalAchievement(next, village, { label: `地方武術大会${life.tournamentWins}勝目`, merit: 6, renown: 1 });
+      message = `地方武術大会で${life.tournamentWins}勝目を挙げた。武勲2を得て、この町で武勇が知られた。`;
       break;
     case "store_items": message = toggleStorage(life, ["item", "food", "supply"], "items"); break;
     case "store_equipment": message = toggleStorage(life, ["equipment"], "equipment"); break;
     case "manage_materials": message = toggleStorage(life, ["material"], "materials"); break;
     case "talk_villagers": villageRelation(life, village.id, 1); message = "村人と話し、土地の暮らしを知った。"; break;
     case "gather_information": { const rumor = `${village.name}の水場と安全な街道を記録した。`; if (!life.rumors.includes(rumor)) life.rumors.push(rumor); message = rumor; break; }
-    case "trigger_event": villageRelation(life, village.id, 3); player.metrics.renown += 1; message = "荷車の事故を手伝い、村での名声と関係が少し深まった。"; break;
+    case "trigger_event": villageRelation(life, village.id, 3); recordRegionalAchievement(next, village, { label: "荷車事故の救援", merit: 4, renown: 1 }); message = "荷車の事故を手伝い、この村での評判と関係が少し深まった。"; break;
     case "find_sidequest": life.quests.push({ id: `${village.id}-side-${life.quests.length + 1}`, name: "村人の失くし物", source: "villager", status: "active" }); message = "村人の失くし物を探すサブクエストを受けた。"; break;
-    case "build_facility": villageProgress(life, village.id).buildings += 1; villageRelation(life, village.id, 4); message = "不足していた共同施設の建設を支援した。"; break;
-    case "upgrade_facility": villageProgress(life, village.id).facilityLevel += 1; villageRelation(life, village.id, 3); message = `村の施設水準が${villageProgress(life, village.id).facilityLevel}になった。`; break;
-    case "invite_specialist": villageProgress(life, village.id).specialists += 1; villageRelation(life, village.id, 3); message = "新しい商人・職人の定着を支援した。"; break;
+    case "build_facility": villageProgress(life, village.id).buildings += 1; villageRelation(life, village.id, 4); recordRegionalAchievement(next, village, { label: "共同施設の建設支援", merit: 10, renown: 1 }); message = "不足していた共同施設の建設を支援し、この村で功績として記録された。"; break;
+    case "upgrade_facility": villageProgress(life, village.id).facilityLevel += 1; villageRelation(life, village.id, 3); recordRegionalAchievement(next, village, { label: "村の施設強化", merit: 8, renown: 1 }); message = `村の施設水準が${villageProgress(life, village.id).facilityLevel}になり、地域の功績として記録された。`; break;
+    case "invite_specialist": villageProgress(life, village.id).specialists += 1; villageRelation(life, village.id, 3); recordRegionalAchievement(next, village, { label: "商人・職人の誘致", merit: 8, renown: 1 }); message = "新しい商人・職人の定着を支援し、この村で功績として知られた。"; break;
     case "change_equipment": {
       const index = firstInventoryIndex(life, ["equipment"]);
       const replacement = removeOneInventoryItem(life, index);

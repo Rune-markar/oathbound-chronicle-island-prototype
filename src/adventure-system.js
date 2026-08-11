@@ -7,6 +7,7 @@ import {
   setBattleTerrain,
   setBattleTileFeature,
 } from "./tactical-battle.js";
+import { advanceGeneratedWorldTime } from "./generated-world-system.js";
 
 const clone = (value) => structuredClone(value);
 
@@ -244,7 +245,7 @@ export function getRegionAdventureSites(state, { region, nation, runtime }) {
 }
 
 function personalMapLocationDefinitions(state, context) {
-  const { region, nation } = context;
+  const { region, nation, runtime } = context;
   if (!region?.id) throw new Error("個人マップを作成できる地方がありません。");
   const { village, dungeon } = getRegionAdventureSites(state, context);
   const terrain = region.dominantTerrain ?? "plains";
@@ -252,6 +253,9 @@ function personalMapLocationDefinitions(state, context) {
   const campId = `personal:${region.id}:camp`;
   const forageId = `personal:${region.id}:forage`;
   const landmarkId = `personal:${region.id}:landmark`;
+  const campTile = regionTile(region, runtime, "personal:camp");
+  const forageTile = regionTile(region, runtime, "personal:forage");
+  const landmarkTile = regionTile(region, runtime, "personal:landmark");
   return [
     {
       id: campId,
@@ -261,6 +265,7 @@ function personalMapLocationDefinitions(state, context) {
       description: `${region.name}を歩くための荷物と目印を置いた野営地。`,
       x: 48,
       y: 72,
+      tileId: campTile?.id ?? null,
       neighborIds: [village.id, forageId, landmarkId],
     },
     {
@@ -271,6 +276,7 @@ function personalMapLocationDefinitions(state, context) {
       description: `${nation?.shortName ?? region.name}の人々が暮らす、宿と店のある集落。`,
       x: 18,
       y: 43,
+      tileId: village.tile?.id ?? null,
       neighborIds: [campId, forageId],
     },
     {
@@ -281,6 +287,7 @@ function personalMapLocationDefinitions(state, context) {
       description: "野草や小さな素材を探せる、比較的安全な場所。",
       x: 70,
       y: 48,
+      tileId: forageTile?.id ?? null,
       neighborIds: [campId, village.id, dungeon.id],
     },
     {
@@ -291,6 +298,7 @@ function personalMapLocationDefinitions(state, context) {
       description: landmark.description,
       x: 76,
       y: 17,
+      tileId: landmarkTile?.id ?? null,
       neighborIds: [campId, dungeon.id],
     },
     {
@@ -301,6 +309,7 @@ function personalMapLocationDefinitions(state, context) {
       description: dungeon.description,
       x: 39,
       y: 14,
+      tileId: dungeon.tile?.id ?? null,
       neighborIds: [forageId, landmarkId],
       dungeonType: dungeon.dungeonType,
     },
@@ -374,12 +383,14 @@ export function getPersonalMapView(state, context) {
 }
 
 export function movePersonalMap(state, context, destinationId) {
-  const next = preparedClone(state);
+  let next = preparedClone(state);
   const { byId, record } = personalRegionSnapshot(next, context);
   const current = byId.get(record.currentLocationId);
   const destination = byId.get(destinationId);
   if (!destination || !record.discoveredLocationIds.includes(destinationId)) throw new RangeError("その場所はまだ発見されていません。");
   if (!current.neighborIds.includes(destinationId)) throw new Error("現在地から直接移動できる近くの場所ではありません。");
+  const distance = Math.hypot(destination.x - current.x, destination.y - current.y);
+  const travelMinutes = Math.min(6 * 60, Math.max(90, Math.ceil(distance / 10) * 30));
   record.currentLocationId = destinationId;
   const result = {
     id: `move:${context.region.id}:${record.explorationCount}:${destinationId}`,
@@ -388,9 +399,19 @@ export function movePersonalMap(state, context, destinationId) {
     message: `${destination.name}へ移動した。`,
     locationId: destinationId,
     locationName: destination.name,
+    travelMinutes,
   };
   personalMapResult(record, result);
   storePersonalRegion(next, context.region.id, record);
+  if (next.generatedWorld && destination.tileId) {
+    next.generatedWorld = {
+      ...next.generatedWorld,
+      expeditionRegionId: context.region.id,
+      expeditionTileId: destination.tileId,
+      selectedRegionId: context.region.id,
+    };
+  }
+  next = advanceGeneratedWorldTime(next, travelMinutes);
   return next;
 }
 

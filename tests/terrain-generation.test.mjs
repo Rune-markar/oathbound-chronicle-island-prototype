@@ -32,6 +32,23 @@ function wrappedSquareDistance(left, right, world) {
   return Math.max(Math.abs(dx), Math.abs(dy));
 }
 
+function sharpCoastTipRatio(world) {
+  const isLand = (tile) => Boolean(tile) && !["ocean", "coast", "lake"].includes(tile.terrain);
+  let coastTiles = 0;
+  let sharpTips = 0;
+  for (const tile of world.tiles.filter(isLand)) {
+    const cardinal = [[1, 0], [0, 1], [-1, 0], [0, -1]].map(([dx, dy]) => {
+      const x = (tile.x + dx + world.width) % world.width;
+      const y = tile.y + dy;
+      return y >= 0 && y < world.height ? world.tiles[y * world.width + x] : null;
+    });
+    const landNeighbors = cardinal.filter(isLand).length;
+    if (landNeighbors < 4) coastTiles += 1;
+    if (landNeighbors <= 1) sharpTips += 1;
+  }
+  return sharpTips / Math.max(1, coastTiles);
+}
+
 test("terrain generation is deterministic by seed and changes with a different seed", () => {
   const first = generateTerrain({ ...TEST_SIZE, seed: "deterministic-world" });
   const second = generateTerrain({ ...TEST_SIZE, seed: "deterministic-world" });
@@ -41,6 +58,14 @@ test("terrain generation is deterministic by seed and changes with a different s
   assert.notDeepEqual(first.tiles.map((tile) => tile.elevation), different.tiles.map((tile) => tile.elevation));
   assert.equal(first.gridType, "square");
   assert.ok(first.tiles.every((tile) => Number.isInteger(tile.x) && Number.isInteger(tile.y)));
+});
+
+test("continental coast shaping suppresses needle peninsulas and favors rounded outlines", () => {
+  const worlds = ["eldoria-317", "rounded-a", "rounded-b"].map((seed) => generateTerrain({ ...TEST_SIZE, seed }));
+  const ratios = worlds.map(sharpCoastTipRatio);
+  assert.ok(ratios[0] <= 0.012, `reference sharp-tip ratio was ${ratios[0]}`);
+  assert.ok(average(ratios.map((value) => ({ value })), "value") <= 0.02, `mean sharp-tip ratio was ${ratios}`);
+  assert.ok(worlds.every((world) => Math.abs(world.summary.landRatio - world.config.landRatio) < 0.015));
 });
 
 test("terrain is assembled from reusable coherent template pieces", () => {

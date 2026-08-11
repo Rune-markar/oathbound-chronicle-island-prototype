@@ -7,9 +7,18 @@ import {
   getGeopoliticalWorldView,
   preserveGeopoliticalState,
 } from "./geopolitical-world.js";
+import {
+  advanceRegionalDomains,
+  appointRegionalLord,
+  createRegionalDomainState,
+  declareRegionIndependence,
+  getRegionalDomainView,
+  preserveRegionalDomainState,
+  transferRegionControl,
+} from "./regional-domain-system.js";
 
 export const GENERATED_WORLD_DEFAULTS = Object.freeze({
-  version: 7,
+  version: 10,
   seed: "eldoria-317",
   width: 160,
   height: 100,
@@ -21,16 +30,19 @@ export const GENERATED_WORLD_DEFAULTS = Object.freeze({
   expeditionTileId: null,
   expeditionMovement: 8,
   expeditionPeriod: "317-4",
+  expeditionClockMinutes: 8 * 60,
   discoveredRegionIds: [],
   geopolitics: null,
+  regionalDomains: null,
 });
 
 const DIRECTION_BY_NAME = new Map(SQUARE_CARDINAL_DIRECTIONS.map((direction) => [direction.name, direction]));
 let runtimeCache = { key: null, value: null };
 let characterWorldSequence = 0;
+const GENERATED_WORLD_CLOCK_LIMIT = 999 * 24 * 60 - 1;
 
 function generatedWorldRuntimeKey(generatedState) {
-  return ["regional-hd-v5", generatedState.seed, generatedState.width, generatedState.height, generatedState.plateCount, generatedState.nationCount].join("|");
+  return ["regional-hd-v6-maritime", generatedState.seed, generatedState.width, generatedState.height, generatedState.plateCount, generatedState.nationCount].join("|");
 }
 
 function cloneGeneratedWorldState(value) {
@@ -38,6 +50,7 @@ function cloneGeneratedWorldState(value) {
     ...value,
     discoveredRegionIds: [...(value.discoveredRegionIds ?? [])],
     geopolitics: preserveGeopoliticalState(value.geopolitics),
+    regionalDomains: preserveRegionalDomainState(value.regionalDomains),
   };
 }
 
@@ -48,6 +61,29 @@ function clampInteger(value, fallback, minimum, maximum) {
 
 function periodFor(state) {
   return `${Number.isInteger(state?.year) ? state.year : 317}-${Number.isInteger(state?.month) ? state.month : 4}`;
+}
+
+function clockMinutes(value) {
+  return clampInteger(value, GENERATED_WORLD_DEFAULTS.expeditionClockMinutes, 0, GENERATED_WORLD_CLOCK_LIMIT);
+}
+
+function advancedClockMinutes(current, elapsedMinutes) {
+  return Math.min(GENERATED_WORLD_CLOCK_LIMIT, clockMinutes(current) + clampInteger(elapsedMinutes, 0, 0, 30 * 24 * 60));
+}
+
+function wrappedTileDistance(runtime, fromTile, toTile) {
+  const directX = Math.abs(fromTile.x - toTile.x);
+  const dx = runtime.terrain.config.wrapX ? Math.min(directX, runtime.terrain.width - directX) : directX;
+  return dx + Math.abs(fromTile.y - toTile.y);
+}
+
+function localTravelMinutes(runtime, fromTile, toTile) {
+  const distance = wrappedTileDistance(runtime, fromTile, toTile);
+  return Math.min(8 * 60, Math.max(90, Math.ceil((45 + distance * 12) / 30) * 30));
+}
+
+function regionalTravelMinutes(cost) {
+  return clampInteger(cost, 1, 1, GENERATED_WORLD_DEFAULTS.expeditionMovement) * 6 * 60;
 }
 
 function tileIdFor(tile) {
@@ -69,8 +105,31 @@ function regionById(runtime, regionId) {
 }
 
 function effectivePlayerNation(runtime, generatedState) {
-  return runtime.nations.nations.find((nation) => nation.id === generatedState.playerNationId)
-    ?? runtime.nations.nations[0];
+  const selected = runtime.nations.nations.find((nation) => nation.id === generatedState.playerNationId);
+  return selected && !selected.dissolved
+    ? selected
+    : runtime.nations.nations.find((nation) => !nation.dissolved) ?? runtime.nations.nations[0];
+}
+
+function revisionHash(value) {
+  let hash = 2166136261;
+  for (const character of String(value)) {
+    hash ^= character.charCodeAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function effectiveRuntimeFor(baseRuntime, generatedState, dateState = null) {
+  const regional = getRegionalDomainView(baseRuntime, generatedState.regionalDomains, dateState);
+  return {
+    ...baseRuntime,
+    key: `${baseRuntime.key}|domains-${revisionHash(regional.visualRevision)}`,
+    nations: regional.nationMap,
+    nationById: regional.nationById,
+    regionById: regional.regionById,
+    regionalDomains: regional.domains,
+  };
 }
 
 function effectiveExpeditionRegion(runtime, generatedState) {
@@ -166,8 +225,10 @@ export function createGeneratedWorldState(options = {}, dateState = null) {
       : !upgradeResolution && options.version < 3 && typeof options.expeditionTileId === "string" ? options.expeditionTileId : undefined,
     expeditionMovement: clampInteger(options.expeditionMovement, GENERATED_WORLD_DEFAULTS.expeditionMovement, 0, 8),
     expeditionPeriod: options.expeditionPeriod ?? periodFor(dateState),
+    expeditionClockMinutes: clockMinutes(options.expeditionClockMinutes),
     discoveredRegionIds: [...new Set((options.discoveredRegionIds ?? []).filter((id) => typeof id === "string"))].slice(0, 512),
     geopolitics: preserveGeopoliticalState(options.geopolitics),
+    regionalDomains: preserveRegionalDomainState(options.regionalDomains),
   };
 }
 
@@ -185,9 +246,41 @@ export function refreshGeneratedWorldForDate(state) {
       ...next.generatedWorld,
       expeditionMovement: GENERATED_WORLD_DEFAULTS.expeditionMovement,
       expeditionPeriod: currentPeriod,
+      expeditionClockMinutes: GENERATED_WORLD_DEFAULTS.expeditionClockMinutes,
     };
   }
   return next;
+}
+
+export function getGeneratedWorldTimeView(state) {
+  const generatedState = createGeneratedWorldState(state?.generatedWorld ?? state ?? {}, state?.generatedWorld ? state : null);
+  const elapsedMinutes = clockMinutes(generatedState.expeditionClockMinutes);
+  const minuteOfDay = elapsedMinutes % (24 * 60);
+  const hour = Math.floor(minuteOfDay / 60);
+  const minute = minuteOfDay % 60;
+  const phase = hour < 5 || hour >= 20 ? "night" : hour < 7 ? "dawn" : hour < 17 ? "day" : "dusk";
+  const phaseLabels = { night: "夜", dawn: "夜明け", day: "昼", dusk: "夕暮れ" };
+  return {
+    period: generatedState.expeditionPeriod,
+    elapsedMinutes,
+    day: Math.floor(elapsedMinutes / (24 * 60)) + 1,
+    hour,
+    minute,
+    phase,
+    phaseLabel: phaseLabels[phase],
+    timeLabel: `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`,
+  };
+}
+
+export function advanceGeneratedWorldTime(state, elapsedMinutes) {
+  const refreshed = refreshGeneratedWorldForDate(state);
+  return {
+    ...refreshed,
+    generatedWorld: {
+      ...cloneGeneratedWorldState(refreshed.generatedWorld),
+      expeditionClockMinutes: advancedClockMinutes(refreshed.generatedWorld.expeditionClockMinutes, elapsedMinutes),
+    },
+  };
 }
 
 export function buildGeneratedWorld(stateOrGeneratedWorld) {
@@ -278,7 +371,7 @@ export async function buildGeneratedWorldAsync(stateOrGeneratedWorld, onProgress
     count: generatedState.nationCount,
     seed: `${generatedState.seed}:nations`,
   });
-  onProgress({ progress: 94, stage: "nations", label: "地方・国境・開始地点を確定しています" });
+  onProgress({ progress: 94, stage: "nations", label: "沿岸都市・海路・開始地点を確定しています" });
   await yieldGenerationFrame();
   runtimeCache = {
     key,
@@ -296,8 +389,8 @@ export async function buildGeneratedWorldAsync(stateOrGeneratedWorld, onProgress
 }
 
 export function getGeneratedWorldView(state) {
-  const runtime = buildGeneratedWorld(state);
   const generatedState = createGeneratedWorldState(state.generatedWorld ?? {}, state);
+  const runtime = effectiveRuntimeFor(buildGeneratedWorld(state), generatedState, state);
   const playerNation = effectivePlayerNation(runtime, generatedState);
   const expeditionRegion = effectiveExpeditionRegion(runtime, generatedState);
   const selectedRegion = effectiveSelectedRegion(runtime, generatedState, expeditionRegion);
@@ -307,19 +400,27 @@ export function getGeneratedWorldView(state) {
 }
 
 export function getGeneratedGeopoliticalView(state) {
-  const runtime = buildGeneratedWorld(state);
   const generatedState = createGeneratedWorldState(state.generatedWorld ?? {}, state);
+  const runtime = effectiveRuntimeFor(buildGeneratedWorld(state), generatedState, state);
   return getGeopoliticalWorldView(runtime, generatedState.geopolitics, state);
 }
 
-export function initializeGeneratedWorldGeopolitics(state) {
-  const runtime = buildGeneratedWorld(state);
+export function getGeneratedRegionalDomainView(state) {
   const generatedState = createGeneratedWorldState(state.generatedWorld ?? {}, state);
-  if (generatedState.geopolitics) return { ...state, generatedWorld: generatedState };
+  return getRegionalDomainView(buildGeneratedWorld(state), generatedState.regionalDomains, state);
+}
+
+export function initializeGeneratedWorldGeopolitics(state) {
+  const generatedState = createGeneratedWorldState(state.generatedWorld ?? {}, state);
+  const baseRuntime = buildGeneratedWorld(state);
+  const regionalDomains = createRegionalDomainState(baseRuntime, generatedState.regionalDomains, state);
+  const runtime = effectiveRuntimeFor(baseRuntime, { ...generatedState, regionalDomains }, state);
+  if (generatedState.geopolitics) return { ...state, generatedWorld: { ...generatedState, regionalDomains } };
   return {
     ...state,
     generatedWorld: {
       ...generatedState,
+      regionalDomains,
       geopolitics: createGeopoliticalWorldState(runtime, null, state),
     },
   };
@@ -332,17 +433,80 @@ function previousPeriodDate(state) {
 }
 
 export function advanceGeneratedWorldGeopolitics(state) {
-  const runtime = buildGeneratedWorld(state);
   const generatedState = createGeneratedWorldState(state.generatedWorld ?? {}, state);
+  const baseRuntime = buildGeneratedWorld(state);
+  const regionalDomains = createRegionalDomainState(baseRuntime, generatedState.regionalDomains, state);
+  const runtime = effectiveRuntimeFor(baseRuntime, { ...generatedState, regionalDomains }, state);
   const baseline = generatedState.geopolitics
     ?? createGeopoliticalWorldState(runtime, null, previousPeriodDate(state));
   return {
     ...state,
     generatedWorld: {
       ...generatedState,
+      regionalDomains,
       geopolitics: advanceGeopoliticalWorld(runtime, baseline, state),
     },
   };
+}
+
+export function advanceGeneratedWorldRegions(state) {
+  const generatedState = createGeneratedWorldState(state.generatedWorld ?? {}, state);
+  const runtime = buildGeneratedWorld(state);
+  return {
+    ...state,
+    generatedWorld: {
+      ...generatedState,
+      regionalDomains: advanceRegionalDomains(runtime, generatedState.regionalDomains, state),
+    },
+  };
+}
+
+export function transferGeneratedRegionControl(state, regionId, nationId, options = {}) {
+  const generatedState = createGeneratedWorldState(state.generatedWorld ?? {}, state);
+  const runtime = buildGeneratedWorld(state);
+  return {
+    ...state,
+    generatedWorld: {
+      ...generatedState,
+      regionalDomains: transferRegionControl(runtime, generatedState.regionalDomains, regionId, nationId, options, state),
+    },
+  };
+}
+
+export function declareGeneratedRegionIndependence(state, regionId, options = {}) {
+  const generatedState = createGeneratedWorldState(state.generatedWorld ?? {}, state);
+  const runtime = buildGeneratedWorld(state);
+  const regionalDomains = declareRegionIndependence(runtime, generatedState.regionalDomains, regionId, options, state);
+  const polityId = regionalDomains.regionStates[regionId].nationId;
+  return {
+    ...state,
+    generatedWorld: {
+      ...generatedState,
+      playerNationId: options.playerControlled ? polityId : generatedState.playerNationId,
+      regionalDomains,
+    },
+  };
+}
+
+export function appointGeneratedRegionalLord(state, regionId, appointment = {}) {
+  const generatedState = createGeneratedWorldState(state.generatedWorld ?? {}, state);
+  const runtime = buildGeneratedWorld(state);
+  const next = {
+    ...state,
+    generatedWorld: {
+      ...generatedState,
+      regionalDomains: appointRegionalLord(runtime, generatedState.regionalDomains, regionId, appointment, state),
+    },
+  };
+  if (appointment.lordId === state.player?.id) {
+    next.player = structuredClone(state.player);
+    next.player.generatedRegionalOffices = [...(next.player.generatedRegionalOffices ?? []).filter((office) => office.regionId !== regionId), {
+      regionId,
+      officeTitle: next.generatedWorld.regionalDomains.regionStates[regionId].officeTitle,
+      appointedPeriod: periodFor(state),
+    }];
+  }
+  return next;
 }
 
 export function selectGeneratedWorldRegion(state, regionId) {
@@ -368,7 +532,9 @@ export function selectGeneratedWorldTile(state, tileId) {
 
 export function setGeneratedPlayerNation(state, nationId, preparedRuntime = null) {
   const generatedState = createGeneratedWorldState(state.generatedWorld ?? {}, state);
-  const runtime = preparedRuntime?.key === generatedWorldRuntimeKey(generatedState) ? preparedRuntime : buildGeneratedWorld(state);
+  const baseRuntime = preparedRuntime?.key === generatedWorldRuntimeKey(generatedState) ? preparedRuntime : buildGeneratedWorld(state);
+  const regionalDomains = createRegionalDomainState(baseRuntime, generatedState.regionalDomains, state);
+  const runtime = effectiveRuntimeFor(baseRuntime, { ...generatedState, regionalDomains }, state);
   const nation = runtime.nationById.get(nationId);
   if (!nation) throw new RangeError("存在しない国家です。");
   const capitalRegion = regionById(runtime, nation.capitalRegionId);
@@ -386,7 +552,9 @@ export function setGeneratedPlayerNation(state, nationId, preparedRuntime = null
       legacySelectedTileId: undefined,
       expeditionMovement: GENERATED_WORLD_DEFAULTS.expeditionMovement,
       expeditionPeriod: periodFor(state),
+      expeditionClockMinutes: GENERATED_WORLD_DEFAULTS.expeditionClockMinutes,
       discoveredRegionIds: discoveredAround(capitalRegion),
+      regionalDomains,
     },
   };
   return initializeGeneratedWorldGeopolitics(next);
@@ -418,6 +586,7 @@ export function getGeneratedExpeditionReachableRegions(state) {
       regionId: region.id,
       regionIndex: region.index,
       cost: movementCostFor(region),
+      travelMinutes: regionalTravelMinutes(movementCostFor(region)),
       pathRegionIds: [region.id],
     }))
     .filter((entry) => entry.cost <= budget)
@@ -426,6 +595,89 @@ export function getGeneratedExpeditionReachableRegions(state) {
 
 export function getGeneratedExpeditionReachableTiles(state) {
   return getGeneratedExpeditionReachableRegions(state);
+}
+
+function shippingDestinationsFor(runtime, generatedState) {
+  const expeditionRegion = effectiveExpeditionRegion(runtime, generatedState);
+  const expeditionTile = effectiveExpeditionTile(runtime, generatedState, expeditionRegion);
+  const currentPort = runtime.nations.objects.find((object) => object.maritime && object.tileIndex === expeditionTile.index) ?? null;
+  if (!currentPort) return [];
+  return (runtime.nations.seaRoutes ?? []).filter((route) => (
+    route.fromObjectId === currentPort.id || route.toObjectId === currentPort.id
+  )).map((route) => {
+    const siteId = route.fromObjectId === currentPort.id ? route.toObjectId : route.fromObjectId;
+    const object = runtime.nations.objects.find((entry) => entry.id === siteId);
+    const region = object ? regionById(runtime, object.regionId) : null;
+    const nation = object ? runtime.nationById.get(object.nationId) ?? null : null;
+    return object && region ? {
+      routeId: route.id,
+      route,
+      currentPort,
+      siteId,
+      name: object.name,
+      type: object.type,
+      object,
+      region,
+      nation,
+      cost: route.movementCost,
+      travelMinutes: route.travelMinutes,
+      canMove: route.movementCost <= generatedState.expeditionMovement,
+    } : null;
+  }).filter(Boolean).sort((left, right) => (
+    Number(right.canMove) - Number(left.canMove)
+    || left.cost - right.cost
+    || left.name.localeCompare(right.name, "ja")
+  ));
+}
+
+export function getGeneratedShippingDestinations(state) {
+  const refreshed = refreshGeneratedWorldForDate(state);
+  const generatedState = createGeneratedWorldState(refreshed.generatedWorld ?? {}, refreshed);
+  const runtime = effectiveRuntimeFor(buildGeneratedWorld(refreshed), generatedState, refreshed);
+  return shippingDestinationsFor(runtime, generatedState);
+}
+
+export function getGeneratedWorldSiteView(state, siteId) {
+  const refreshed = refreshGeneratedWorldForDate(state);
+  const generatedState = createGeneratedWorldState(refreshed.generatedWorld ?? {}, refreshed);
+  const runtime = effectiveRuntimeFor(buildGeneratedWorld(refreshed), generatedState, refreshed);
+  const object = runtime.nations.objects.find((entry) => entry.id === siteId);
+  if (!object) throw new RangeError("存在しない地図上の拠点です。");
+  const tile = runtime.tiles[object.tileIndex];
+  const region = regionById(runtime, object.regionId ?? tile?.regionId);
+  const nation = runtime.nationById.get(object.nationId) ?? null;
+  if (!tile?.passable || !region || tile.regionId !== region.id) throw new Error("この拠点には移動可能な陸上区画がありません。");
+  const expeditionRegion = effectiveExpeditionRegion(runtime, generatedState);
+  const expeditionTile = effectiveExpeditionTile(runtime, generatedState, expeditionRegion);
+  const sameRegion = region.id === expeditionRegion.id;
+  const reachableRegion = sameRegion
+    ? { regionId: region.id, cost: 0, travelMinutes: 0, pathRegionIds: [] }
+    : getGeneratedExpeditionReachableRegions(refreshed).find((entry) => entry.regionId === region.id) ?? null;
+  const shippingDestination = object.maritime
+    ? shippingDestinationsFor(runtime, generatedState).find((entry) => entry.siteId === object.id) ?? null
+    : null;
+  const current = expeditionTile.id === tile.id;
+  const regionalArrivalTile = sameRegion ? expeditionTile : playableTileForRegion(runtime, region);
+  const approachMinutes = current || !regionalArrivalTile ? 0 : localTravelMinutes(runtime, regionalArrivalTile, tile);
+  const travelMode = shippingDestination ? "sea" : "land";
+  const canMove = !current && (travelMode === "sea" ? Boolean(shippingDestination.canMove) : Boolean(reachableRegion));
+  return {
+    id: object.id,
+    type: object.type,
+    name: object.name,
+    object,
+    tile,
+    region,
+    nation,
+    current,
+    sameRegion,
+    canMove,
+    travelMode,
+    movementCost: travelMode === "sea" ? shippingDestination?.cost ?? null : reachableRegion?.cost ?? null,
+    travelMinutes: travelMode === "sea" ? shippingDestination?.travelMinutes ?? null : reachableRegion ? reachableRegion.travelMinutes + approachMinutes : null,
+    shippingRoute: shippingDestination?.route ?? null,
+    currentPort: shippingDestination?.currentPort ?? null,
+  };
 }
 
 export function moveGeneratedExpeditionToRegion(state, destinationId) {
@@ -457,6 +709,7 @@ export function moveGeneratedExpeditionToRegion(state, destinationId) {
       legacyExpeditionTileId: undefined,
       legacySelectedTileId: undefined,
       expeditionMovement: generatedState.expeditionMovement - reachable.cost,
+      expeditionClockMinutes: advancedClockMinutes(generatedState.expeditionClockMinutes, reachable.travelMinutes),
       discoveredRegionIds: [...discovered].slice(-512),
     },
   };
@@ -464,6 +717,64 @@ export function moveGeneratedExpeditionToRegion(state, destinationId) {
 
 export function moveGeneratedExpeditionTo(state, destinationId) {
   return moveGeneratedExpeditionToRegion(state, destinationId);
+}
+
+export function moveGeneratedExpeditionToSite(state, siteId) {
+  const refreshed = refreshGeneratedWorldForDate(state);
+  const site = getGeneratedWorldSiteView(refreshed, siteId);
+  if (site.current) return selectGeneratedWorldRegion(refreshed, site.region.id);
+  if (!site.canMove) {
+    if (site.shippingRoute) throw new RangeError(`この海路を利用するための移動力が不足しています（必要 ${site.movementCost}）。`);
+    const { expeditionRegion } = getGeneratedWorldView(refreshed);
+    if (!expeditionRegion.neighborIds.includes(site.region.id)) {
+      throw new RangeError("陸路は隣接地方までです。遠方の港へは港に停泊して海路を利用してください。");
+    }
+    throw new RangeError("この拠点へ移動するための移動力が不足しています。");
+  }
+  if (site.travelMode === "sea") {
+    const generatedState = cloneGeneratedWorldState(refreshed.generatedWorld);
+    const runtime = effectiveRuntimeFor(buildGeneratedWorld(refreshed), generatedState, refreshed);
+    const from = effectiveExpeditionRegion(runtime, generatedState);
+    const discovered = new Set(generatedState.discoveredRegionIds);
+    [from, site.region].forEach((region) => discoveredAround(region).forEach((id) => discovered.add(id)));
+    return {
+      ...refreshed,
+      generatedWorld: {
+        ...generatedState,
+        expeditionRegionId: site.region.id,
+        expeditionTileId: site.tile.id,
+        selectedRegionId: site.region.id,
+        legacyExpeditionTileId: undefined,
+        legacySelectedTileId: undefined,
+        expeditionMovement: generatedState.expeditionMovement - site.movementCost,
+        expeditionClockMinutes: advancedClockMinutes(generatedState.expeditionClockMinutes, site.travelMinutes),
+        discoveredRegionIds: [...discovered].slice(-512),
+      },
+    };
+  }
+  if (site.sameRegion) {
+    return {
+      ...refreshed,
+      generatedWorld: {
+        ...cloneGeneratedWorldState(refreshed.generatedWorld),
+        expeditionRegionId: site.region.id,
+        expeditionTileId: site.tile.id,
+        selectedRegionId: site.region.id,
+        legacyExpeditionTileId: undefined,
+        legacySelectedTileId: undefined,
+        expeditionClockMinutes: advancedClockMinutes(refreshed.generatedWorld.expeditionClockMinutes, site.travelMinutes),
+      },
+    };
+  }
+  const moved = moveGeneratedExpeditionToRegion(refreshed, site.region.id);
+  return {
+    ...moved,
+    generatedWorld: {
+      ...moved.generatedWorld,
+      expeditionTileId: site.tile.id,
+      expeditionClockMinutes: advancedClockMinutes(refreshed.generatedWorld.expeditionClockMinutes, site.travelMinutes),
+    },
+  };
 }
 
 export function moveGeneratedExpedition(state, directionName) {

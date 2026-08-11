@@ -21,7 +21,7 @@ import {
 } from "../src/adventure-system.js";
 import { createBattlePreparation, finalizeBattlePreparation } from "../src/battle-preparation.js";
 import { executeBattleTurn } from "../src/tactical-battle.js";
-import { getGeneratedWorldView } from "../src/generated-world-system.js";
+import { getGeneratedWorldTimeView, getGeneratedWorldView } from "../src/generated-world-system.js";
 import { createCareerInitialState, performVillageAction } from "../src/simulation.js";
 
 function fixture(seed = "adventure-system-test") {
@@ -153,6 +153,12 @@ test("personal map movement is limited to discovered nearby locations", () => {
   const moved = getPersonalMapView(next, context);
   assert.equal(moved.currentLocation.type, "village");
   assert.equal(moved.lastResult.type, "move");
+  assert.ok(moved.lastResult.travelMinutes >= 90);
+  assert.equal(next.generatedWorld.expeditionTileId, moved.currentLocation.tileId);
+  assert.equal(
+    getGeneratedWorldTimeView(next).elapsedMinutes,
+    getGeneratedWorldTimeView(state).elapsedMinutes + moved.lastResult.travelMinutes,
+  );
 });
 
 test("personal exploration can discover locations, find nothing, and collect forage", () => {

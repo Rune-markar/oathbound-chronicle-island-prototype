@@ -1,7 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { generateTerrain } from "../src/terrain-generation.js";
-import { generateNations, validateNationWorld } from "../src/nation-generation.js";
+import {
+  generateNations,
+  STRATEGIC_CROSSING_FORT_PROBABILITY,
+  validateNationWorld,
+} from "../src/nation-generation.js";
 import { renderTerrainSvg } from "../src/terrain-renderer.js";
 
 const TERRAIN_OPTIONS = { width: 48, height: 32, plateCount: 9, erosionIterations: 4, seed: "nation-polities" };
@@ -39,7 +43,7 @@ test("regions are connected terrain-pixel groups and nations are sets of one or 
   assert.equal(politics.summary.regionCount, politics.regions.length);
   assert.ok(politics.regions.length >= politics.nations.length);
   for (const nation of politics.nations) {
-    assert.ok(nation.regionIds.length >= 1);
+    assert.ok(nation.tileCount < 2 || nation.regionIds.length >= 2);
     assert.equal(nation.regionCount, nation.regionIds.length);
     assert.ok(nation.regionIds.includes(nation.capitalRegionId));
     assert.ok(nation.regionIds.every((regionId) => politics.regions.find((region) => region.id === regionId)?.nationId === nation.id));
@@ -129,22 +133,81 @@ test("natural-frontier policy reduces artificial straight-line borders", () => {
   assert.ok(preferred.summary.artificialBorderShare < unconstrained.summary.artificialBorderShare);
 });
 
-test("every nation receives a capital castle, interior villages, and frontier forts", () => {
+test("every nation receives a castle, cities, towns, villages, and frontier forts", () => {
   const world = generateTerrain(TERRAIN_OPTIONS);
   const politics = generateNations(world, { count: 7 });
-  assert.deepEqual(Object.keys(politics.summary.objectCounts).sort(), ["castle", "fort", "village"]);
+  assert.deepEqual(Object.keys(politics.summary.objectCounts).sort(), ["bay_city", "castle", "city", "fishing_port", "fort", "port", "town", "village"]);
   assert.equal(politics.summary.objectCount, politics.objects.length);
   assert.equal(new Set(politics.objects.map((object) => object.id)).size, politics.objects.length);
   for (const nation of politics.nations) {
     const objects = politics.objects.filter((object) => object.nationId === nation.id);
     const castle = objects.find((object) => object.type === "castle");
+    const cities = objects.filter((object) => object.type === "city");
+    const towns = objects.filter((object) => object.type === "town");
     const villages = objects.filter((object) => object.type === "village");
     const forts = objects.filter((object) => object.type === "fort");
     assert.equal(castle.tileIndex, nation.capitalIndex);
-    assert.ok(villages.length >= 1, `${nation.name} must have a village`);
+    assert.ok(cities.length >= 1, `${nation.name} must have a city`);
+    assert.ok(towns.length >= 1, `${nation.name} must have a town`);
+    assert.ok(nation.tileCount <= 5 || villages.length >= 1, `${nation.name} must have a village unless its whole realm is smaller than a normal settlement network`);
     assert.ok(forts.length >= 1, `${nation.name} must have a fort`);
-    assert.ok(forts.every((fort) => politics.tiles[fort.tileIndex].borderSides.length > 0), `${nation.name} forts must guard a frontier`);
+    assert.ok(forts.filter((fort) => fort.id.startsWith(`${nation.id}-fort-`)).every((fort) => politics.tiles[fort.tileIndex].borderSides.length > 0), `${nation.name} national forts must guard a frontier`);
+    assert.ok(forts.filter((fort) => fort.strategicGuard).every((fort) => fort.guardedRoadIds.length && fort.pairedFortIds.length), `${nation.name} strategic forts must guard a road crossing in pairs`);
     assert.ok(objects.every((object) => politics.tileNationIds[object.tileIndex] === nation.id));
+  }
+});
+
+test("coastal nations develop fishing ports into ports and bay-mouth cities linked by navigable sea routes", () => {
+  const world = generateTerrain(TERRAIN_OPTIONS);
+  const politics = generateNations(world, { count: 7 });
+  assert.ok(politics.summary.seaRouteCount > 0);
+  assert.ok(politics.summary.internationalSeaRouteCount > 0);
+  assert.equal(politics.summary.portCount, politics.objects.filter((object) => object.maritime).length);
+  for (const nation of politics.nations) {
+    const ports = politics.objects.filter((object) => object.nationId === nation.id && object.maritime)
+      .sort((left, right) => left.maritimeTier - right.maritimeTier);
+    assert.deepEqual(ports.map((port) => port.type), ["fishing_port", "port", "bay_city"]);
+    assert.deepEqual(ports.map((port) => port.settlementLevel), ["village", "town", "city"]);
+    assert.ok(ports[0].harborScore <= ports[1].harborScore && ports[1].harborScore <= ports[2].harborScore);
+    assert.ok(ports.every((port) => cardinalNeighbors(port.tileIndex, world).some((index) => ["ocean", "coast"].includes(world.tiles[index].terrain))));
+    assert.ok(ports.every((port) => port.seaRouteIds.length > 0));
+  }
+  for (const route of politics.seaRoutes) {
+    assert.ok(politics.objects.find((object) => object.id === route.fromObjectId)?.maritime);
+    assert.ok(politics.objects.find((object) => object.id === route.toObjectId)?.maritime);
+    assert.ok(route.pathTileIndices.slice(1, -1).every((index) => ["ocean", "coast"].includes(world.tiles[index].terrain)));
+    assert.ok(route.pathTileIndices.slice(1).every((index, offset) => cardinalNeighbors(route.pathTileIndices[offset], world).includes(index)));
+    assert.ok(route.movementCost >= 1 && route.movementCost <= 8);
+    assert.ok(route.travelMinutes >= 6 * 60);
+  }
+});
+
+test("roads follow land routes through mountains and rivers, with high-probability paired crossing forts", () => {
+  const world = generateTerrain(TERRAIN_OPTIONS);
+  const politics = generateNations(world, { count: 7 });
+  const mountainRoads = politics.roads.filter((road) => road.crossingKinds.includes("mountain"));
+  const riverRoads = politics.roads.filter((road) => road.crossingKinds.includes("river"));
+  const crossings = politics.roads.flatMap((road) => road.strategicCrossings);
+  const guarded = crossings.filter((crossing) => crossing.guardFortIds.length === 2);
+  assert.equal(politics.config.strategicCrossingFortProbability, STRATEGIC_CROSSING_FORT_PROBABILITY);
+  assert.ok(mountainRoads.length > 0, "the generated road network must include mountain passages");
+  assert.ok(riverRoads.length > 0, "the generated road network must include river crossings");
+  assert.ok(guarded.length / crossings.length >= 0.75, "most strategic crossings should receive a two-fort guard pair");
+  for (const road of politics.roads) {
+    assert.equal(road.tileIndices[0], road.fromTileIndex);
+    assert.equal(road.tileIndices.at(-1), road.toTileIndex);
+    assert.ok(road.tileIndices.every((index) => !["ocean", "coast", "lake"].includes(world.tiles[index].terrain)));
+    assert.ok(road.tileIndices.slice(1).every((index, offset) => cardinalNeighbors(road.tileIndices[offset], world).includes(index)));
+    if (road.crossingKinds.includes("mountain")) assert.ok(road.tileIndices.some((index) => world.tiles[index].relief === "mountains"));
+    if (road.crossingKinds.includes("river")) assert.ok(road.tileIndices.some((index) => world.tiles[index].riverId));
+  }
+  for (const crossing of guarded) {
+    assert.equal(new Set(crossing.guardFortIds).size, 2);
+    const forts = crossing.guardFortIds.map((id) => politics.objects.find((object) => object.id === id));
+    assert.ok(forts.every((fort) => fort?.type === "fort" && fort.strategicGuard));
+    assert.ok(forts.every((fort) => fort.guardedCrossingIds.includes(crossing.id)));
+    assert.ok(forts[0].pairedFortIds.includes(forts[1].id));
+    assert.ok(forts[1].pairedFortIds.includes(forts[0].id));
   }
 });
 
@@ -152,11 +215,12 @@ test("terrain renderer draws colored nations, regional routes, and world-object 
   const world = generateTerrain(TERRAIN_OPTIONS);
   const politics = generateNations(world, { count: 7 });
   const svg = renderTerrainSvg(world, { cellSize: 12, nationMap: politics, textureUrl: "./terrain-natural-texture.png" });
-  const expectedRoutes = politics.regions.reduce((sum, region) => sum + region.neighborIds.length, 0) / 2;
+  const expectedRoutes = politics.roads.length;
   assert.match(svg, /id="nationOverlay"/);
   assert.match(svg, /id="nationBorders"/);
   assert.match(svg, /id="regionBorders"/);
   assert.match(svg, /id="regionalTravelNetwork"/);
+  assert.match(svg, /id="maritimeTravelNetwork"/);
   assert.match(svg, /id="regionalRoutes"/);
   assert.match(svg, /id="regionalRouteNodes"/);
   assert.equal(svg.match(/class="region-route-edge /g)?.length, expectedRoutes);
@@ -165,9 +229,18 @@ test("terrain renderer draws colored nations, regional routes, and world-object 
   assert.match(svg, /class="region-route-line"/);
   assert.match(svg, /class="region-route-node is-capital-region"/);
   assert.match(svg, /id="nationCapitals"/);
+  assert.match(svg, /id="nationCities"/);
+  assert.match(svg, /id="nationTowns"/);
   assert.match(svg, /id="nationVillages"/);
+  assert.match(svg, /id="nationFishingPorts"/);
+  assert.match(svg, /id="nationPorts"/);
+  assert.match(svg, /id="nationBayCities"/);
   assert.match(svg, /id="nationForts"/);
-  for (const type of ["castle", "village", "fort"]) assert.match(svg, new RegExp(`data-object-type="${type}"`));
+  for (const type of ["castle", "city", "town", "village", "fishing_port", "port", "bay_city", "fort"]) assert.match(svg, new RegExp(`data-object-type="${type}"`));
+  assert.equal(svg.match(/class="sea-route-edge /g)?.length, politics.seaRoutes.length);
+  assert.match(svg, /class="region-route-edge [^"]*has-mountain/);
+  assert.match(svg, /class="region-route-edge [^"]*has-river/);
+  assert.match(svg, /data-crossing-kinds="[^"]*(mountain|river)/);
   assert.match(svg, /class="nation-border/);
   assert.match(svg, /is-natural-border/);
   assert.match(svg, /is-artificial-border/);

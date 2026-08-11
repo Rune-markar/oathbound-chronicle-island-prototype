@@ -295,6 +295,36 @@ function quantile(values, fraction) {
   return sorted[index];
 }
 
+function roundContinentalField(config, field) {
+  let rounded = [...field];
+  for (let pass = 0; pass < 5; pass += 1) {
+    rounded = rounded.map((value, index) => {
+      const { x, y } = tileCoordinates(index, config.width);
+      let nearbyTotal = 0;
+      let nearbyWeight = 0;
+      for (let offsetY = -2; offsetY <= 2; offsetY += 1) {
+        const sampleY = y + offsetY;
+        if (sampleY < 0 || sampleY >= config.height) continue;
+        for (let offsetX = -2; offsetX <= 2; offsetX += 1) {
+          if (offsetX === 0 && offsetY === 0) continue;
+          const distance = Math.hypot(offsetX, offsetY);
+          if (distance > 2.25) continue;
+          const sampleX = config.wrapX
+            ? (x + offsetX + config.width) % config.width
+            : x + offsetX;
+          if (sampleX < 0 || sampleX >= config.width) continue;
+          const weight = 1 / (1 + distance);
+          nearbyTotal += rounded[tileIndex(sampleX, sampleY, config.width)] * weight;
+          nearbyWeight += weight;
+        }
+      }
+      const nearbyAverage = nearbyTotal / Math.max(0.001, nearbyWeight);
+      return value * 0.58 + nearbyAverage * 0.42;
+    });
+  }
+  return rounded;
+}
+
 function createPlates(config, random) {
   return Array.from({ length: config.plateCount }, (_, id) => {
     const angle = random() * Math.PI * 2;
@@ -388,12 +418,18 @@ function generateElevation(config, plates, plateIds, stress, seed, templateLayou
     return plate.continentalBias + continentalShape * 0.78 + localRelief * 0.55
       + uplift - rift - polarEdge + templateSample.elevation * 0.72;
   });
-  const seaLevel = quantile(raw, 1 - config.landRatio);
-  const maximumLand = Math.max(...raw.filter((value) => value > seaLevel), seaLevel + 0.01);
-  const minimumSea = Math.min(...raw.filter((value) => value <= seaLevel), seaLevel - 0.01);
-  return raw.map((value) => value > seaLevel
-    ? (value - seaLevel) / (maximumLand - seaLevel)
-    : -(seaLevel - value) / (seaLevel - minimumSea));
+  const rounded = roundContinentalField(config, raw);
+  const seaLevel = quantile(rounded, 1 - config.landRatio);
+  const rawSeaLevel = quantile(raw, 1 - config.landRatio);
+  const maximumLand = Math.max(...raw.filter((value) => value > rawSeaLevel), rawSeaLevel + 0.01);
+  const minimumSea = Math.min(...raw.filter((value) => value <= rawSeaLevel), rawSeaLevel - 0.01);
+  return raw.map((value, index) => {
+    const rawElevation = value > rawSeaLevel
+      ? (value - rawSeaLevel) / (maximumLand - rawSeaLevel)
+      : -(rawSeaLevel - value) / (rawSeaLevel - minimumSea);
+    if (rounded[index] > seaLevel) return Math.max(0.00001, rawElevation);
+    return Math.min(-0.00001, rawElevation);
+  });
 }
 
 function calculateClimate(config, elevation, seed, templateLayout) {

@@ -5,8 +5,12 @@ import {
   buildGeneratedWorldAsync,
   generatedWorldSaveSummary,
   getGeneratedExpeditionReachableRegions,
+  getGeneratedShippingDestinations,
+  getGeneratedWorldSiteView,
+  getGeneratedWorldTimeView,
   getGeneratedWorldView,
   moveGeneratedExpeditionToRegion,
+  moveGeneratedExpeditionToSite,
   refreshGeneratedWorldForDate,
   regenerateGeneratedWorld,
   selectGeneratedWorldRegion,
@@ -16,10 +20,21 @@ import { createCareerInitialState, createInitialState, normalizeWarState } from 
 
 test("a new campaign stores a compact reproducible generated-world state", () => {
   const state = createInitialState();
-  assert.equal(state.generatedWorld.version, 7);
+  assert.equal(state.generatedWorld.version, 10);
   assert.equal(state.generatedWorld.width, 160);
   assert.equal(state.generatedWorld.height, 100);
   assert.equal(state.generatedWorld.nationCount, 7);
+  assert.equal(state.generatedWorld.expeditionClockMinutes, 8 * 60);
+  assert.deepEqual(getGeneratedWorldTimeView(state), {
+    period: "317-4",
+    elapsedMinutes: 8 * 60,
+    day: 1,
+    hour: 8,
+    minute: 0,
+    phase: "day",
+    phaseLabel: "昼",
+    timeLabel: "08:00",
+  });
   const saved = JSON.stringify(state.generatedWorld);
   assert.equal(saved.includes("tiles"), false);
   assert.equal(saved.includes("terrain"), false);
@@ -89,7 +104,8 @@ test("new-world generation reports real terrain and nation progress stages", asy
     generatedWorldRuntime: runtime,
   });
   const startedView = getGeneratedWorldView(started);
-  assert.equal(startedView.runtime, runtime);
+  assert.equal(startedView.runtime.terrain, runtime.terrain);
+  assert.equal(startedView.runtime.key.startsWith(runtime.key), true);
   assert.equal(started.generatedWorld.expeditionTileId, startedView.expeditionTile.id);
   assert.equal(startedView.expeditionTile.passable, true);
   assert.equal(startedView.expeditionTile.regionId, startedView.expeditionRegion.id);
@@ -116,7 +132,7 @@ test("legacy default-resolution worlds upgrade to the high-resolution grid witho
     discoveredTileIds: ["tile-17-23"],
   };
   const normalized = normalizeWarState(state);
-  assert.equal(normalized.generatedWorld.version, 7);
+  assert.equal(normalized.generatedWorld.version, 10);
   assert.equal(normalized.generatedWorld.width, 160);
   assert.equal(normalized.generatedWorld.height, 100);
   assert.equal(normalized.generatedWorld.plateCount, 22);
@@ -163,8 +179,7 @@ test("runtime reconstruction joins terrain, rivers, nations, and gameplay onto o
   assert.ok(first.nations.regions.every((region) => first.tiles[region.markerIndex].passable));
   assert.ok(first.tiles.every((tile) => tile.id === `tile-${tile.x}-${tile.y}`));
   assert.ok(first.tiles.filter((tile) => tile.passable).every((tile) => tile.regionId && tile.regionName));
-  assert.ok(first.nations.nations.every((nation) => nation.regionIds.length >= 1));
-  assert.ok(first.nations.regions.some((region) => first.nationById.get(region.nationId).regionCount === 1));
+  assert.ok(first.nations.nations.every((nation) => nation.regionIds.length >= 2));
   assert.ok(first.tiles.every((tile) => Array.isArray(tile.worldObjects) && Array.isArray(tile.worldObjectIds)));
   assert.ok(first.nations.objects.every((object) => first.tiles[object.tileIndex].worldObjectIds.includes(object.id)));
 });
@@ -243,6 +258,7 @@ test("expeditions can move only to directly adjacent regions and never skip acro
   const reachable = getGeneratedExpeditionReachableRegions(state);
   assert.ok(reachable.length > 0);
   assert.ok(reachable.every((entry) => entry.cost > 0 && entry.cost <= state.generatedWorld.expeditionMovement));
+  assert.ok(reachable.every((entry) => entry.travelMinutes === entry.cost * 6 * 60));
   assert.ok(reachable.every((entry) => view.expeditionRegion.neighborIds.includes(entry.regionId)));
   assert.ok(reachable.every((entry) => entry.pathRegionIds.length === 1 && entry.pathRegionIds[0] === entry.regionId));
   const affordableNeighborIds = view.expeditionRegion.neighborIds.filter((regionId) => (
@@ -254,6 +270,7 @@ test("expeditions can move only to directly adjacent regions and never skip acro
   const moved = moveGeneratedExpeditionToRegion(state, destination.regionId);
   assert.equal(moved.generatedWorld.expeditionRegionId, destination.regionId);
   assert.equal(moved.generatedWorld.expeditionMovement, state.generatedWorld.expeditionMovement - destination.cost);
+  assert.equal(moved.generatedWorld.expeditionClockMinutes, state.generatedWorld.expeditionClockMinutes + destination.travelMinutes);
   assert.ok(destination.pathRegionIds.every((regionId) => moved.generatedWorld.discoveredRegionIds.includes(regionId)));
 
   const nonAdjacent = view.runtime.nations.regions.find((region) => (
@@ -265,12 +282,114 @@ test("expeditions can move only to directly adjacent regions and never skip acro
   assert.deepEqual(getGeneratedExpeditionReachableRegions(exhausted), []);
 });
 
+test("map sites expose shared reachability and move the expedition to the exact castle, village, or fort tile", () => {
+  const initial = createInitialState();
+  const runtime = buildGeneratedWorld(initial);
+  const candidate = runtime.nations.nations.map((nation) => {
+    const state = setGeneratedPlayerNation(initial, nation.id);
+    const view = getGeneratedWorldView(state);
+    const local = view.runtime.nations.objects.find((object) => (
+      object.regionId === view.expeditionRegion.id
+      && view.runtime.tiles[object.tileIndex].id !== view.expeditionTile.id
+    ));
+    const adjacent = getGeneratedExpeditionReachableRegions(state)
+      .map((entry) => ({ entry, object: view.runtime.nations.objects.find((object) => object.regionId === entry.regionId) }))
+      .find((entry) => entry.object);
+    return local && adjacent ? { state, view, local, adjacent } : null;
+  }).find(Boolean);
+  assert.ok(candidate, "generated nations should expose both a local site and a reachable neighboring site");
+
+  const localView = getGeneratedWorldSiteView(candidate.state, candidate.local.id);
+  assert.equal(localView.canMove, true);
+  assert.equal(localView.movementCost, 0);
+  assert.ok(localView.travelMinutes >= 90);
+  const localMoved = moveGeneratedExpeditionToSite(candidate.state, candidate.local.id);
+  assert.equal(localMoved.generatedWorld.expeditionTileId, localView.tile.id);
+  assert.equal(localMoved.generatedWorld.expeditionMovement, candidate.state.generatedWorld.expeditionMovement);
+  assert.equal(localMoved.generatedWorld.expeditionClockMinutes, candidate.state.generatedWorld.expeditionClockMinutes + localView.travelMinutes);
+
+  const adjacentView = getGeneratedWorldSiteView(candidate.state, candidate.adjacent.object.id);
+  assert.equal(adjacentView.canMove, true);
+  assert.equal(adjacentView.movementCost, candidate.adjacent.entry.cost);
+  const adjacentMoved = moveGeneratedExpeditionToSite(candidate.state, candidate.adjacent.object.id);
+  assert.equal(adjacentMoved.generatedWorld.expeditionRegionId, adjacentView.region.id);
+  assert.equal(adjacentMoved.generatedWorld.expeditionTileId, adjacentView.tile.id);
+  assert.equal(adjacentMoved.generatedWorld.expeditionMovement, candidate.state.generatedWorld.expeditionMovement - adjacentView.movementCost);
+  assert.equal(adjacentMoved.generatedWorld.expeditionClockMinutes, candidate.state.generatedWorld.expeditionClockMinutes + adjacentView.travelMinutes);
+
+  const remote = candidate.view.runtime.nations.objects.find((object) => (
+    object.regionId !== candidate.view.expeditionRegion.id
+    && !candidate.view.expeditionRegion.neighborIds.includes(object.regionId)
+  ));
+  assert.ok(remote);
+  assert.equal(getGeneratedWorldSiteView(candidate.state, remote.id).canMove, false);
+  assert.throws(() => moveGeneratedExpeditionToSite(candidate.state, remote.id), /陸路は隣接地方まで/);
+});
+
+test("shipping is available only from a port and moves along a generated sea route to a remote coastal city", () => {
+  const initial = createInitialState();
+  const runtime = buildGeneratedWorld(initial);
+  const candidate = runtime.nations.objects.filter((object) => object.maritime).map((port) => {
+    const atPort = {
+      ...initial,
+      generatedWorld: {
+        ...initial.generatedWorld,
+        expeditionRegionId: port.regionId,
+        expeditionTileId: runtime.tiles[port.tileIndex].id,
+        selectedRegionId: port.regionId,
+        expeditionMovement: 8,
+      },
+    };
+    const view = getGeneratedWorldView(atPort);
+    const destination = getGeneratedShippingDestinations(atPort).find((entry) => (
+      entry.region.id !== port.regionId && !view.expeditionRegion.neighborIds.includes(entry.region.id)
+    ));
+    return destination ? { atPort, port, view, destination } : null;
+  }).find(Boolean);
+  assert.ok(candidate, "at least one sea route should connect non-adjacent coastal regions");
+
+  const destinations = getGeneratedShippingDestinations(candidate.atPort);
+  assert.ok(destinations.every((entry) => entry.route.type === "shipping"));
+  for (const destination of destinations) {
+    assert.equal(getGeneratedWorldSiteView(candidate.atPort, destination.siteId).travelMode, "sea", "海運一覧の接続港は同一地方でも海路を使う");
+  }
+  const site = getGeneratedWorldSiteView(candidate.atPort, candidate.destination.siteId);
+  assert.equal(site.travelMode, "sea");
+  assert.equal(site.shippingRoute.id, candidate.destination.routeId);
+  assert.equal(site.canMove, true);
+  const moved = moveGeneratedExpeditionToSite(candidate.atPort, site.id);
+  assert.equal(moved.generatedWorld.expeditionRegionId, site.region.id);
+  assert.equal(moved.generatedWorld.expeditionTileId, site.tile.id);
+  assert.equal(moved.generatedWorld.expeditionMovement, 8 - site.movementCost);
+  assert.equal(moved.generatedWorld.expeditionClockMinutes, candidate.atPort.generatedWorld.expeditionClockMinutes + site.travelMinutes);
+  assert.ok(moved.generatedWorld.discoveredRegionIds.includes(site.region.id));
+
+  const exhausted = {
+    ...candidate.atPort,
+    generatedWorld: { ...candidate.atPort.generatedWorld, expeditionMovement: Math.max(0, site.movementCost - 1) },
+  };
+  assert.equal(getGeneratedWorldSiteView(exhausted, site.id).canMove, false);
+  assert.throws(() => moveGeneratedExpeditionToSite(exhausted, site.id), /海路.*移動力/);
+
+  const inlandTile = candidate.view.expeditionRegion.tileIndices
+    .map((index) => runtime.tiles[index])
+    .find((tile) => tile.index !== candidate.port.tileIndex);
+  const inland = {
+    ...candidate.atPort,
+    generatedWorld: { ...candidate.atPort.generatedWorld, expeditionTileId: inlandTile.id },
+  };
+  assert.equal(getGeneratedWorldSiteView(inland, site.id).canMove, false);
+  assert.throws(() => moveGeneratedExpeditionToSite(inland, site.id), /港に停泊/);
+});
+
 test("expedition movement refreshes after the campaign month changes", () => {
   const state = setGeneratedPlayerNation(createInitialState(), "nation-1");
   state.generatedWorld.expeditionMovement = 0;
+  state.generatedWorld.expeditionClockMinutes = 2 * 24 * 60 + 21 * 60;
   const nextMonth = refreshGeneratedWorldForDate({ ...state, month: state.month + 1 });
   assert.equal(nextMonth.generatedWorld.expeditionMovement, 8);
   assert.equal(nextMonth.generatedWorld.expeditionPeriod, `${state.year}-${state.month + 1}`);
+  assert.equal(nextMonth.generatedWorld.expeditionClockMinutes, 8 * 60);
 });
 
 test("regeneration changes only the compact source state and remains deterministic", () => {

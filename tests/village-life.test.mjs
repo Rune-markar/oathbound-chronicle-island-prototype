@@ -129,3 +129,71 @@ test("the browser UI enters villages and does not expose the old instant contrac
   assert.match(css, /\.village-request-flow/);
   assert.match(css, /\.village-service-routes/);
 });
+
+test("the tavern uses a dedicated transparent human hostess portrait instead of an armored officer", () => {
+  const app = readFileSync(new URL("../src/app.js", import.meta.url), "utf8");
+  const tavernCast = app.match(/tavern: Object\.freeze\([^\n]+/)?.[0] ?? "";
+
+  assert.match(tavernCast, /name: "酒場女将"/);
+  assert.match(tavernCast, /role: "酒場"/);
+  assert.match(tavernCast, /tavern-hostess\.png/);
+  assert.match(tavernCast, /transparent: true/);
+  assert.doesNotMatch(tavernCast, /officer-dario\.webp/);
+  assert.match(app, /counterpart\.transparent \? "has-transparent-art"/);
+});
+
+test("the village opens large vertical facilities and their actions in a second window before conversation", () => {
+  const app = readFileSync(new URL("../src/app.js", import.meta.url), "utf8");
+  const css = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
+  const markup = readFileSync(new URL("../index.html", import.meta.url), "utf8");
+  const actionHandler = app.match(/const villageAction = event\.target\.closest[\s\S]*?const villageExit =/)?.[0] ?? "";
+  const conversationStage = app.match(/function renderVillageConversation\(\)[\s\S]*?function completeVillageConversation/)?.[0] ?? "";
+  const villageWorkspace = app.match(/function renderVillageWorkspace\(\)[\s\S]*?function renderCareerPanel/)?.[0] ?? "";
+
+  assert.match(markup, /class="outliner left-info-drawer"/);
+  assert.match(app, /classList\.toggle\("is-village-focus", villageActive \|\| locationActive\)/);
+  assert.match(app, /village-main-square\.png/);
+  assert.match(app, /class="village-choice-overlay village-facility-window/);
+  assert.match(app, /class="village-overlay-facilities village-facility-menu"/);
+  assert.match(app, /class="village-choice-overlay village-action-window /);
+  assert.match(app, /data-close-village-actions/);
+  assert.match(app, /villageFacilityOpen = true/);
+  assert.match(app, /villageFacilityOpen = false/);
+  assert.match(app, /class="village-choice-action" data-village-action/);
+  assert.match(app, /class="village-central-visual has-top-status /);
+  assert.ok(villageWorkspace.indexOf("village-central-status is-top-status") < villageWorkspace.indexOf("village-facility-window"), "上部ステータスを施設一覧より先に配置する");
+  assert.match(css, /body\.is-village-focus \.left-dock\s*\{[^}]*display: none;/s);
+  assert.match(css, /\.village-choice-overlay\s*\{/);
+  assert.match(css, /\.village-facility-menu\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\);/s);
+  assert.match(css, /\.village-action-window\s*\{/);
+  assert.match(css, /\.village-central-status\.is-top-status\s*\{[^}]*top:\s*20px;[^}]*bottom:\s*auto;/s);
+  assert.match(css, /\.village-central-visual\.has-top-status \.village-choice-overlay\s*\{[^}]*top:\s*112px;[^}]*bottom:\s*20px;/s);
+  assert.match(css, /backdrop-filter:\s*blur/);
+  assert.match(actionHandler, /beginVillageActionConversation/);
+  assert.doesNotMatch(actionHandler, /performVillageAction/);
+  assert.match(app, /kind: "contract"/);
+  assert.match(app, /kind: "party-accept"/);
+  assert.match(app, /kind: "party-invite"/);
+  assert.ok(conversationStage.indexOf("is-player") < conversationStage.indexOf("is-other"), "主人公の立ち絵を相手より先に置き、左側へ配置する");
+  assert.match(css, /body\.is-character-conversation \.left-dock\s*\{[^}]*display: none;/s);
+  assert.match(css, /\.conversation-character\.is-player\s*\{[^}]*grid-column: 1;/s);
+  assert.match(css, /\.conversation-character\.is-other\s*\{[^}]*grid-column: 3;/s);
+});
+
+test("the tavern is entered before its interaction choices are shown", () => {
+  const app = readFileSync(new URL("../src/app.js", import.meta.url), "utf8");
+  const css = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
+  const villageWorkspace = app.match(/function renderVillageWorkspace\(\)[\s\S]*?function renderCareerPanel/)?.[0] ?? "";
+  const facilityHandler = app.match(/const villageFacility = event\.target\.closest[\s\S]*?if \(event\.target\.closest\("\[data-close-village-actions\]"\)\)/)?.[0] ?? "";
+
+  assert.match(villageWorkspace, /const tavernInterior = view\.villageFacilityOpen && selected\.id === "tavern"/);
+  assert.match(villageWorkspace, /const villageInteriorArt = tavernInterior \? villageFacilityArt\(selected\.id\) : VILLAGE_MAIN_ART/);
+  assert.match(villageWorkspace, /data-village-location="\$\{tavernInterior \? "tavern" : "village-square"\}"/);
+  assert.match(villageWorkspace, /\$\{tavernInterior \? "" : `<section class="village-choice-overlay village-facility-window/);
+  assert.match(villageWorkspace, /is-facility-interior-window is-tavern-window/);
+  assert.match(villageWorkspace, /TAVERN \/ ARRIVED/);
+  assert.match(villageWorkspace, /AFTER ARRIVAL \/ AVAILABLE CHOICES/);
+  assert.ok(facilityHandler.indexOf("selectedVillageFacilityId") < facilityHandler.indexOf("villageFacilityOpen = true"), "移動先を確定してから施設内の選択肢を開く");
+  assert.match(css, /\.village-central-visual\.is-tavern-interior\s*\{[^}]*var\(--village-interior-art\) center \/ cover no-repeat,/s);
+  assert.match(css, /\.village-action-window\.is-facility-interior-window\s*\{[^}]*left:\s*clamp\(18px, 2\.2vw, 34px\);/s);
+});
