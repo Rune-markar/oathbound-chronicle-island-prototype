@@ -59,10 +59,18 @@ test("normal play generates the whole world, then zooms to region-level movement
   assert.match(appSource, /隣接地方/);
   assert.match(appSource, /data-generated-region-candidate-id/);
   assert.match(appSource, /data-generated-move-confirm/);
+  assert.match(appSource, /data-generated-map-move-region/);
+  assert.match(appSource, /マウスでクリック／タップすると、その地方へ直接移動/);
+  assert.match(appSource, /positionGeneratedRegionMoveTargets\(copy, runtime, expeditionRegion, expeditionTile, viewport\)/);
+  assert.match(styleSource, /\.generated-region-move-target\s*\{[^}]*touch-action: manipulation;[^}]*pointer-events: auto;/s);
   assert.doesNotMatch(appSource, /data-generated-region-destination-id/);
   assert.match(appSource, /function generatedRegionViewport\(/);
   assert.match(appSource, /generatedRegionViewport\(expeditionRegion, expeditionTile, runtime\)/);
   assert.match(appSource, /copy\.dataset\.cameraTileId = expeditionTile\.id/);
+  assert.match(appSource, /positionGeneratedRegionMarker\(copy, expeditionRegion, expeditionTile, runtime, viewport, personalMap\.currentLocation\.name\)/);
+  assert.match(appSource, /現在地｜\$\{expeditionRegion\.name\}｜\$\{personalMap\.currentLocation\.name\}/);
+  assert.match(appSource, /aria-label="現在地"/);
+  assert.match(styleSource, /@keyframes generated-current-location-pulse/);
   assert.match(appSource, /function generatedMapVisibleObjectIds\(/);
   assert.match(appSource, /illustrated-strategy-map-v8-european-settlement-hierarchy/);
   assert.match(appSource, /copy\.dataset\.visibleObjectCount/);

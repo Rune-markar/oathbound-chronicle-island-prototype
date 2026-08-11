@@ -3,4 +3,5 @@ tmp/
 .codex_tmp/
 .playwright-cli/
 output/
+.codex-remote-attachments/
 *.pptx

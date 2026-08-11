@@ -19,10 +19,43 @@ const facility = (id, name, icon, summary, actions) => Object.freeze({
 
 export const VILLAGE_LIFE_SCHEMA_VERSION = 3;
 
+export const GUILD_PROCESSED_GOODS = Object.freeze([
+  Object.freeze({
+    actionId: "buy_healing_potion",
+    itemId: "healing-potion",
+    name: "治癒ポーション",
+    kind: "回復薬",
+    description: "薬草抽出液を安定化した小瓶。負傷時のHP回復に用いる。",
+    cost: 3,
+    inventoryItem: Object.freeze({ id: "healing-potion", name: "治癒ポーション", category: "consumable", quantity: 1, effect: Object.freeze({ hpRecovery: 30 }) }),
+  }),
+  Object.freeze({
+    actionId: "buy_antidote_potion",
+    itemId: "antidote-potion",
+    name: "解毒ポーション",
+    kind: "解毒薬",
+    description: "毒性を中和する調合液。毒への備えとして携行する。",
+    cost: 2,
+    inventoryItem: Object.freeze({ id: "antidote-potion", name: "解毒ポーション", category: "consumable", quantity: 1, effect: Object.freeze({ removes: Object.freeze(["毒"]) }) }),
+  }),
+  Object.freeze({
+    actionId: "buy_mana_tonic",
+    itemId: "mana-tonic",
+    name: "魔力補給薬",
+    kind: "霊薬",
+    description: "晶塩と香草を調合した小瓶。消耗したMPの補給に用いる。",
+    cost: 4,
+    inventoryItem: Object.freeze({ id: "mana-tonic", name: "魔力補給薬", category: "consumable", quantity: 1, effect: Object.freeze({ mpRecovery: 20 }) }),
+  }),
+]);
+
+const GUILD_PROCESSED_GOOD_ACTION_IDS = new Set(GUILD_PROCESSED_GOODS.map((good) => good.actionId));
+
 const TOWN_SCALE_LEVELS = new Set(["town", "city", "bay_city"]);
 const VILLAGE_SHOP_ACTION_IDS = new Set(["buy_food", "buy_materials", "sell_item"]);
 const VILLAGE_UNAVAILABLE_ACTION_IDS = new Set([
   "buy_weapon", "buy_armor", "buy_tools", "enhance_equipment", "repair_equipment", "appraise_equipment",
+  ...GUILD_PROCESSED_GOOD_ACTION_IDS,
 ]);
 
 export function getSettlementScale(place = {}) {
@@ -55,12 +88,14 @@ export const GUILD_STANDING_TIERS = Object.freeze([
 const MERIT_DISCOUNT_ACTIONS = new Set([
   "restore_hp_mp", "recover_status", "rest", "buy_weapon", "buy_armor", "buy_tools", "buy_food",
   "enhance_equipment", "repair_equipment", "appraise_equipment", "check_dungeon", "restock_supplies",
+  ...GUILD_PROCESSED_GOOD_ACTION_IDS,
 ]);
 const MERCHANT_PASSIVE_ID = "road_market_ledger";
 const MERCHANT_PURCHASE_DISCOUNT_RATE = 0.12;
 const MERCHANT_SALE_GAIN = 1.2;
 const MERCHANT_DISCOUNT_ACTIONS = new Set([
   "buy_weapon", "buy_armor", "buy_tools", "buy_food", "buy_materials", "restock_supplies",
+  ...GUILD_PROCESSED_GOOD_ACTION_IDS,
 ]);
 
 function hasActiveCompanionPassive(life, passiveId) {
@@ -80,7 +115,7 @@ export const SERVICE_ROUTE_DEFINITIONS = Object.freeze({
   guild_recognition: Object.freeze({
     id: "guild_recognition",
     name: "領主の使いの目に留まる",
-    summary: "ギルドで依頼を重ね、土地への功績を使節に認められる。",
+    summary: "集落の依頼窓口で実績を重ね、土地への功績を使節に認められる。",
     progressField: "guildMerit",
     target: 30,
     unit: "功績",
@@ -145,15 +180,18 @@ export const VILLAGE_FACILITIES = Object.freeze([
   ]),
   facility("guild", "冒険者ギルド", "依", "依頼とダンジョン情報を扱う。", [
     action("accept_request", "依頼受注", "現在地で受けられる依頼を引き受ける。"),
-    action("report_request", "依頼報告", "達成した依頼の証拠と経緯をギルドへ報告する。"),
+    action("report_request", "依頼報告", "達成した依頼の証拠と経緯を受注した窓口へ報告する。"),
     action("receive_reward", "報酬受取", "報告済み依頼の報酬を受け取る。"),
     action("check_dungeon", "ダンジョン情報確認", "周辺の探索地を記録する。", 1),
+    ...GUILD_PROCESSED_GOODS.map((good) => action(good.actionId, `${good.name}購入`, good.description, good.cost)),
   ]),
   facility("temple", "神殿・治療所", "癒", "重い負傷や病、呪いを治療する。", [
+    action("emergency_party_recovery", "探索隊一括救護", "主人公の治療と、倒れた仲間の蘇生・療養をまとめて行う。資金不足時は後払いできる。", 5),
     action("treat_injury", "負傷治療", "負傷を治療する。", 2),
     action("treat_poison_disease", "毒・病気の治療", "毒と病気を取り除く。", 2),
     action("remove_curse", "呪い解除", "付与された呪いを解除する。", 3),
-    action("resurrect", "蘇生", "倒れた仲間を蘇生する。", 5),
+    action("resurrect", "蘇生", "倒れた仲間を蘇生する。", 3),
+    action("repay_temple_debt", "治療費の返済", "神殿・治療所への未払金を、現在の財産から返済する。"),
   ]),
   facility("training", "訓練所", "練", "本人と仲間の成長方針を決める。", [
     action("raise_ability", "能力強化", "基礎能力を一段階鍛える。", 2),
@@ -197,7 +235,7 @@ export function getSettlementFacilities(place = {}) {
       if (entry.id === "tavern") return {
         ...entry,
         summary: "仲間や土地の人々と縁を結び、村からの依頼を扱う。",
-        actions: [...entry.actions, ...guild.actions],
+        actions: [...entry.actions, ...guild.actions.filter((item) => !GUILD_PROCESSED_GOOD_ACTION_IDS.has(item.id))],
       };
       return entry;
     });
@@ -215,6 +253,7 @@ function defaultVillageLife() {
     mp: 40,
     maxMp: 40,
     fatigue: 0,
+    templeDebt: 0,
     statusConditions: [],
     injuries: [],
     diseases: [],
@@ -271,7 +310,15 @@ export function createVillageLifeState(source = {}) {
       equipment: arrayCopy(source?.storage?.equipment),
       materials: arrayCopy(source?.storage?.materials),
     },
-    party: arrayCopy(source?.party),
+    party: arrayCopy(source?.party).map((member) => {
+      const maxHp = Math.max(1, Number(member.maxHp) || 42 + Math.max(1, Number(member.level) || 1) * 6);
+      return {
+        ...member,
+        maxHp,
+        hp: Math.max(0, Math.min(maxHp, Number.isFinite(Number(member.hp)) ? Number(member.hp) : maxHp)),
+        battleState: member.battleState ?? "READY",
+      };
+    }),
     quests: arrayCopy(source?.quests),
     rumors: arrayCopy(source?.rumors),
     discoveredDungeons: arrayCopy(source?.discoveredDungeons),
@@ -307,16 +354,18 @@ function unresolvedGuildQuest(life) {
 function requirementReason(life, actionId, villageId = null) {
   if (["organize_party", "prepare_party", "train_companion"].includes(actionId) && !life.party.length) return "先に酒場で仲間を募集してください";
   const acceptedGuildQuest = life.quests.find((quest) => quest.source === "guild" && ["accepted", "active"].includes(quest.status));
-  if (actionId === "complete_request" && !acceptedGuildQuest) return "先にギルドで依頼を受注してください";
+  if (actionId === "complete_request" && !acceptedGuildQuest) return "先に集落の依頼窓口で依頼を受注してください";
   if (actionId === "complete_request" && acceptedGuildQuest?.dungeonId) return "地方地図に戻り、指定されたダンジョンの最奥まで到達してください";
   if (actionId === "complete_request" && !life.party.some((member) => member.active && member.alive !== false)) return "先に酒場で仲間を集め、パーティーへ編成してください";
-  if (actionId === "report_request" && !life.quests.some((quest) => quest.source === "guild" && quest.status === "completed")) return "達成済みの依頼をギルドへ持ち帰ってください";
+  if (actionId === "report_request" && !life.quests.some((quest) => quest.source === "guild" && quest.status === "completed")) return "達成済みの依頼を受注した窓口へ持ち帰ってください";
   if (actionId === "receive_reward" && !life.quests.some((quest) => quest.status === "reported")) return "報酬を受け取れる報告済み依頼がありません";
   if (actionId === "accept_request" && unresolvedGuildQuest(life)) return "受注中の依頼を達成・報告し、報酬を受け取ってください";
   if (actionId === "seek_recommendation" && (life.villageRelations[villageId] ?? 0) < 6) return "この村で関係を6以上築いてください";
   if (actionId === "seek_recommendation" && life.recommendations >= 1) return "すでに仕官用の推薦状を受け取っています";
   if (actionId === "enter_tournament" && life.tournamentWins >= SERVICE_ROUTE_DEFINITIONS.tournament_victory.target) return "武術大会を勝ち上がり、すでに士官候補として認められています";
   if (actionId === "resurrect" && !life.party.some((member) => member.alive === false)) return "蘇生が必要な仲間はいません";
+  if (actionId === "emergency_party_recovery" && life.hp >= life.maxHp && !life.injuries.length && !life.party.some((member) => member.alive === false || member.battleState === "RECOVERING" || (member.hp ?? member.maxHp ?? 1) < (member.maxHp ?? 1))) return "一括救護が必要な負傷者はいません";
+  if (actionId === "repay_temple_debt" && !(life.templeDebt > 0)) return "未払いの治療費はありません";
   if (actionId === "sell_item" && !life.inventory.length) return "売却できる所持品がありません";
   if (actionId === "store_items" && firstInventoryIndex(life, ["item", "food", "supply"]) < 0 && !life.storage.items.length) return "保管または引き出しできる道具がありません";
   if (actionId === "store_equipment" && firstInventoryIndex(life, ["equipment"]) < 0 && !life.storage.equipment.length) return "保管または引き出しできる予備装備がありません";
@@ -328,7 +377,10 @@ function requirementReason(life, actionId, villageId = null) {
 function effectiveCost(life, definition) {
   if (definition.id === "restore_hp_mp" && life.hp >= life.maxHp && life.mp >= life.maxMp) return 0;
   if (definition.id === "recover_status" && !life.statusConditions.length) return 0;
-  if (definition.id === "treat_injury" && !life.injuries.length) return 0;
+  if (definition.id === "treat_injury"
+    && life.hp >= life.maxHp
+    && !life.injuries.length
+    && !life.party.some((member) => member.alive !== false && (member.hp ?? member.maxHp ?? 1) < (member.maxHp ?? 1))) return 0;
   if (definition.id === "treat_poison_disease" && !life.diseases.length && !life.statusConditions.some((item) => /毒|病/.test(item))) return 0;
   if (definition.id === "remove_curse" && !life.curses.length) return 0;
   if (definition.id === "repair_equipment" && Object.values(life.equipment).every((item) => item.durability >= 100)) return 0;
@@ -356,11 +408,17 @@ export function getVillageActionAvailability(state, actionId, villageInput = nul
     ? MERCHANT_PURCHASE_DISCOUNT_RATE
     : 0;
   const discountRate = Math.min(0.3, standingDiscountRate + companionDiscountRate);
-  const cost = Number((baseCost * (1 - discountRate)).toFixed(1));
+  let cost = Number((baseCost * (1 - discountRate)).toFixed(1));
+  if (actionId === "repay_temple_debt") cost = Math.min(life.templeDebt, state.player.metrics?.wealth ?? 0);
   const discountAmount = Number((baseCost - cost).toFixed(1));
   const discount = { discountRate, standingDiscountRate, companionDiscountRate, discountAmount };
   if (reason) return { allowed: false, reason, cost, baseCost, ...discount, standing };
-  if ((state.player.metrics?.wealth ?? 0) < cost) {
+  if (actionId === "repay_temple_debt" && cost <= 0) return { allowed: false, reason: "返済に使える財産がありません", cost, baseCost, ...discount, standing };
+  const wealth = state.player.metrics?.wealth ?? 0;
+  if (["treat_injury", "resurrect", "emergency_party_recovery"].includes(actionId) && wealth < cost) {
+    return { allowed: true, reason: null, cost, chargedCost: wealth, deferredCost: Number((cost - wealth).toFixed(1)), baseCost, ...discount, standing };
+  }
+  if (wealth < cost) {
     return { allowed: false, reason: `財産が${cost}必要です`, cost, baseCost, ...discount, standing };
   }
   return { allowed: true, reason: null, cost, baseCost, ...discount, standing };
@@ -481,7 +539,7 @@ function issueServiceInvitations(state, village) {
   return unlocked;
 }
 
-export function performVillageAction(state, villageInput, actionId) {
+export function performVillageAction(state, villageInput, actionId, options = {}) {
   const definition = getVillageAction(actionId);
   if (!definition) throw new Error("不明な村行動です");
   const village = typeof villageInput === "string"
@@ -495,7 +553,8 @@ export function performVillageAction(state, villageInput, actionId) {
   normalizeVillageLifeState(next);
   const player = next.player;
   const life = player.villageLife;
-  player.metrics.wealth = Math.max(0, (player.metrics.wealth ?? 0) - access.cost);
+  player.metrics.wealth = Math.max(0, (player.metrics.wealth ?? 0) - (access.chargedCost ?? access.cost));
+  if (access.deferredCost) life.templeDebt = Number(((life.templeDebt ?? 0) + access.deferredCost).toFixed(1));
   let message = definition.description;
 
   switch (actionId) {
@@ -525,10 +584,20 @@ export function performVillageAction(state, villageInput, actionId) {
       message = "補強旅装を購入した。";
       break;
     case "buy_tools": addInventory(life, { id: "healing-herb", name: "薬草", category: "item", quantity: 2 }); message = "薬草を2個購入した。"; break;
+    case "buy_healing_potion":
+    case "buy_antidote_potion":
+    case "buy_mana_tonic": {
+      const good = GUILD_PROCESSED_GOODS.find((entry) => entry.actionId === actionId);
+      addInventory(life, good.inventoryItem);
+      message = `補給事務員コレットが封蝋印・ロット番号・使用期限を照合し、${good.name}を1本販売した。`;
+      break;
+    }
     case "buy_food": addInventory(life, { id: "travel-ration", name: "保存食", category: "food", quantity: 2 }); life.supplies.food += 2; message = "保存食を2日分購入した。"; break;
     case "buy_materials": addInventory(life, { id: "local-raw-materials", name: "土地の一次素材", category: "material", quantity: 2 }); message = "薬草・原木・鉱石から選んだ一次素材を2個購入した。"; break;
     case "sell_item": {
-      const sold = removeOneInventoryItem(life, 0);
+      const selectedIndex = options.itemId ? life.inventory.findIndex((item) => item.id === options.itemId) : 0;
+      if (selectedIndex < 0) throw new Error("売却する所持品が見つかりません。");
+      const sold = removeOneInventoryItem(life, selectedIndex);
       const saleGain = hasActiveCompanionPassive(life, MERCHANT_PASSIVE_ID) ? MERCHANT_SALE_GAIN : 1;
       player.metrics.wealth += saleGain;
       message = `${sold.name}を売却し、財産を${saleGain}得た。`;
@@ -549,7 +618,7 @@ export function performVillageAction(state, villageInput, actionId) {
     case "recruit_companion": {
       const name = COMPANION_NAMES[life.party.length] ?? `旅人${life.party.length + 1}`;
       const id = `companion-${life.party.length + 1}`;
-      life.party.push({ id, name, level: 1, alive: true, active: life.party.every((member) => member.active !== true), abilities: normalizeAbilityScores(null, { seed: id, role: "冒険者" }) });
+      life.party.push({ id, name, level: 1, alive: true, active: life.party.every((member) => member.active !== true), maxHp: 48, hp: 48, battleState: "READY", abilities: normalizeAbilityScores(null, { seed: id, role: "冒険者" }) });
       message = `${name}が仲間に加わった。`;
       break;
     }
@@ -598,9 +667,9 @@ export function performVillageAction(state, villageInput, actionId) {
       Object.values(life.equipment).forEach((item) => { item.durability = Math.max(0, item.durability - 5); });
       if (quest.routeEvent === "chance_rescue" && life.heroicRescues < 1) {
         life.heroicRescues += 1;
-        message = `${quest.name}を達成した。救助した旅人は領主の使者であり、命の恩人として名を尋ねられた。ギルドへ報告に戻る。`;
+        message = `${quest.name}を達成した。救助した旅人は領主の使者であり、命の恩人として名を尋ねられた。受注した集落の窓口へ報告に戻る。`;
       } else {
-        message = `${quest.name}を達成した。証拠と経緯を携え、ギルドへ報告に戻る。`;
+        message = `${quest.name}を達成した。証拠と経緯を携え、受注した集落の窓口へ報告に戻る。`;
       }
       break;
     }
@@ -630,16 +699,55 @@ export function performVillageAction(state, villageInput, actionId) {
       message = `受付官マリエルが${quest.name}の証拠と台帳を照合した。報酬として財産${reward.wealth}を得て、この町での評価が${reward.renown}高まった。`;
       break;
     }
-    case "check_dungeon": {
-      const dungeon = `${village.name}近郊・石扉遺跡`;
-      if (!life.discoveredDungeons.includes(dungeon)) life.discoveredDungeons.push(dungeon);
-      message = `${dungeon}の位置と危険情報を確認した。`;
+    case "emergency_party_recovery": {
+      const recoveredMembers = [];
+      life.hp = life.maxHp;
+      life.injuries = [];
+      life.party.forEach((member) => {
+        const wasFallen = member.alive === false;
+        member.alive = true;
+        member.maxHp ??= 48;
+        member.hp = member.maxHp;
+        member.battleState = "READY";
+        member.active = true;
+        if (wasFallen) recoveredMembers.push(`${member.name}を蘇生`);
+      });
+      message = `探索隊を一括救護し、主人公と同行者を全快させた。${recoveredMembers.length ? recoveredMembers.join("・") + "。" : ""}`;
       break;
     }
-    case "treat_injury": message = life.injuries.length ? `${life.injuries.join("・")}を治療した。` : "治療が必要な負傷はなかった。"; life.injuries = []; life.hp = life.maxHp; break;
+    case "repay_temple_debt":
+      life.templeDebt = Number(Math.max(0, (life.templeDebt ?? 0) - access.cost).toFixed(1));
+      message = `治療費を財産${access.cost}返済した。未払金は${life.templeDebt}。`;
+      break;
+    case "check_dungeon": {
+      message = "受注依頼と周辺の探索記録を照合し、地方ダンジョンの位置と危険情報を確認した。";
+      break;
+    }
+    case "treat_injury": {
+      const beforeHp = life.hp;
+      const treatedInjuries = [...life.injuries];
+      const companionRecoveries = [];
+      life.hp = life.maxHp;
+      life.injuries = [];
+      life.party.filter((member) => member.alive !== false).forEach((member) => {
+        const before = member.hp ?? member.maxHp ?? 1;
+        const maximum = member.maxHp ?? before;
+        const returningFromRecovery = member.battleState === "RECOVERING";
+        member.hp = maximum;
+        member.battleState = "READY";
+        if (returningFromRecovery) member.active = true;
+        if (before < maximum) companionRecoveries.push(`${member.name} ${before}→${maximum}`);
+      });
+      const recovered = life.hp - beforeHp;
+      const details = [recovered > 0 ? `HPを${recovered}回復（${beforeHp}→${life.hp}）` : "主人公のHPは満タン", companionRecoveries.length ? `仲間：${companionRecoveries.join("・")}` : "同行者に追加治療なし"].join("。 ");
+      message = recovered > 0 || treatedInjuries.length || companionRecoveries.length
+        ? `${treatedInjuries.length ? `${treatedInjuries.join("・")}を処置し、` : "戦闘後の傷を診察し、"}${details}。`
+        : "診察したが、治療が必要な負傷はなかった。";
+      break;
+    }
     case "treat_poison_disease": message = life.diseases.length ? `${life.diseases.join("・")}を治療した。` : "毒や病気は確認されなかった。"; life.diseases = []; life.statusConditions = life.statusConditions.filter((item) => !/毒|病/.test(item)); break;
     case "remove_curse": message = life.curses.length ? `${life.curses.join("・")}を解除した。` : "解除が必要な呪いはなかった。"; life.curses = []; break;
-    case "resurrect": { const fallen = life.party.find((member) => member.alive === false); fallen.alive = true; fallen.active = false; message = `${fallen.name}が蘇生した。`; break; }
+    case "resurrect": { const fallen = life.party.find((member) => member.alive === false); fallen.alive = true; fallen.active = false; fallen.maxHp ??= 48; fallen.hp = Math.max(1, Math.round(fallen.maxHp / 2)); fallen.battleState = "RECOVERING"; message = `${fallen.name}が蘇生し、HP${fallen.hp}/${fallen.maxHp}で療養に入った。探索隊へ戻す前に負傷治療が必要となる。`; break; }
     case "raise_ability": life.abilityTraining += 1; message = `基礎能力の訓練段階が${life.abilityTraining}になった。`; break;
     case "learn_skill": { const skill = LEARNABLE_SKILLS.find((name) => !life.skills.includes(name)) ?? `熟練${life.skills.length + 1}`; life.skills.push(skill); message = `${skill}を習得した。`; break; }
     case "change_class": { const index = CLASS_ROUTE.indexOf(life.classId); life.classId = CLASS_ROUTE[(index + 1 + CLASS_ROUTE.length) % CLASS_ROUTE.length]; message = `${CLASS_NAMES[life.classId]}へ転職した。`; break; }
@@ -681,6 +789,7 @@ export function performVillageAction(state, villageInput, actionId) {
     case "restock_supplies": life.supplies.food += 2; life.supplies.torches += 2; message = "保存食2日分と松明2本を補給した。"; break;
     default: break;
   }
+  if (access.deferredCost) message += ` 不足分の財産${access.deferredCost}は治療所への未払金として記録された。`;
 
   if (access.standingDiscountRate > 0) message += ` ギルド功績「${access.standing.name}」の割引を受けた。`;
   if (access.companionDiscountRate > 0) message += " カティアの「街道相場帳」により購入費が12%軽減された。";

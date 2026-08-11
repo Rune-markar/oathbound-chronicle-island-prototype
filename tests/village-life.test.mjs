@@ -17,7 +17,7 @@ const EXPECTED_ACTIONS = Object.freeze({
   "商店": ["武器購入", "防具購入", "道具購入", "食料購入", "一次素材購入", "アイテム売却"],
   "鍛冶屋": ["装備強化", "装備修理", "装備鑑定"],
   "酒場": ["仲間募集", "パーティ編成", "噂を聞く", "NPCとの会話", "紹介を頼む"],
-  "冒険者ギルド": ["依頼受注", "依頼報告", "報酬受取", "ダンジョン情報確認"],
+  "冒険者ギルド": ["依頼受注", "依頼報告", "報酬受取", "ダンジョン情報確認", "治癒ポーション購入", "解毒ポーション購入", "魔力補給薬購入"],
   "神殿・治療所": ["負傷治療", "毒・病気の治療", "呪い解除", "蘇生"],
   "訓練所": ["能力強化", "スキル習得", "転職", "仲間育成", "武術大会へ出場"],
   "倉庫": ["アイテム保管", "装備保管", "素材管理"],
@@ -56,6 +56,56 @@ test("village actions are immutable, spend personal wealth, and enter the chroni
   assert.match(next.player.history[0].title, /試験町・武器購入/);
 });
 
+test("injury treatment charges for HP loss and reports the exact recovery for the party", () => {
+  const state = createCareerInitialState();
+  state.player.villageLife.hp = 16;
+  state.player.villageLife.injuries = ["戦闘負傷（重傷）"];
+  state.player.villageLife.party = [{ id: "healer", name: "ミレル", level: 2, alive: true, active: false, maxHp: 54, hp: 11, battleState: "RECOVERING" }];
+  const wealth = state.player.metrics.wealth;
+  const access = getVillageActionAvailability(state, "treat_injury", { id: "clinic", name: "治療村" });
+  assert.equal(access.cost, 2);
+  const next = performVillageAction(state, { id: "clinic", name: "治療村" }, "treat_injury");
+  assert.equal(next.player.metrics.wealth, wealth - 2);
+  assert.equal(next.player.villageLife.hp, 100);
+  assert.equal(next.player.villageLife.party[0].hp, 54);
+  assert.equal(next.player.villageLife.party[0].battleState, "READY");
+  assert.equal(next.player.villageLife.party[0].active, true);
+  assert.match(next.player.villageLife.lastAction.message, /HPを84回復（16→100）/);
+  assert.match(next.player.villageLife.lastAction.message, /ミレル 11→54/);
+  assert.doesNotMatch(next.player.villageLife.lastAction.message, /必要な負傷はなかった/);
+});
+
+test("a defeated party can receive emergency care on credit and repay it later", () => {
+  const state = createCareerInitialState();
+  state.player.metrics.wealth = 1;
+  state.player.villageLife.hp = 4;
+  state.player.villageLife.injuries = ["戦闘負傷（重傷）"];
+  state.player.villageLife.party = [{ id: "healer", name: "ミレル", level: 2, alive: false, active: false, maxHp: 54, hp: 0, battleState: "DESTROYED" }];
+  const village = { id: "clinic", name: "治療村", settlementLevel: "town" };
+  const access = getVillageActionAvailability(state, "emergency_party_recovery", village);
+  assert.equal(access.allowed, true);
+  assert.equal(access.chargedCost, 1);
+  assert.equal(access.deferredCost, 4);
+  const healed = performVillageAction(state, village, "emergency_party_recovery");
+  assert.equal(healed.player.villageLife.hp, healed.player.villageLife.maxHp);
+  assert.equal(healed.player.villageLife.party[0].alive, true);
+  assert.equal(healed.player.villageLife.party[0].active, true);
+  assert.equal(healed.player.villageLife.templeDebt, 4);
+  healed.player.metrics.wealth = 3;
+  const repaid = performVillageAction(healed, village, "repay_temple_debt");
+  assert.equal(repaid.player.villageLife.templeDebt, 1);
+  assert.equal(repaid.player.metrics.wealth, 0);
+});
+
+test("shop sale removes the item selected by the player", () => {
+  const state = createCareerInitialState();
+  const village = { id: "market", name: "市場町", settlementLevel: "town" };
+  const beforeHerbs = state.player.villageLife.inventory.find((item) => item.id === "healing-herb").quantity;
+  const sold = performVillageAction(state, village, "sell_item", { itemId: "iron-fragment" });
+  assert.equal(sold.player.villageLife.inventory.some((item) => item.id === "iron-fragment"), false);
+  assert.equal(sold.player.villageLife.inventory.find((item) => item.id === "healing-herb").quantity, beforeHerbs);
+});
+
 test("villages sell primary goods and route requests through taverns while towns add smithies and guilds", () => {
   const village = { id: "oak-village", name: "樫村", settlementLevel: "village" };
   const town = { id: "river-town", name: "河岸町", settlementLevel: "town" };
@@ -65,6 +115,7 @@ test("villages sell primary goods and route requests through taverns while towns
   assert.equal(villageFacilities.some((entry) => entry.id === "smithy"), false);
   assert.equal(villageFacilities.some((entry) => entry.id === "guild"), false);
   assert.ok(villageFacilities.find((entry) => entry.id === "tavern").actions.some((entry) => entry.id === "accept_request"));
+  assert.equal(villageFacilities.find((entry) => entry.id === "tavern").actions.some((entry) => entry.id === "buy_healing_potion"), false);
   assert.deepEqual(villageFacilities.find((entry) => entry.id === "shop").actions.map((entry) => entry.id), ["buy_food", "buy_materials", "sell_item"]);
   assert.ok(townFacilities.some((entry) => entry.id === "smithy"));
   assert.ok(townFacilities.some((entry) => entry.id === "guild"));
@@ -243,6 +294,11 @@ test("the village opens large vertical facilities and their actions in a second 
   assert.match(css, /body\.is-character-conversation \.left-dock\s*\{[^}]*display: none;/s);
   assert.match(css, /\.conversation-character\.is-player\s*\{[^}]*grid-column: 1;/s);
   assert.match(css, /\.conversation-character\.is-other\s*\{[^}]*grid-column: 3;/s);
+  assert.match(app, /player-conversation-human\.png/);
+  assert.match(app, /is-player \$\{playerPortrait\.transparent \? "has-transparent-art"/);
+  assert.match(css, /\.conversation-character\.is-other\.has-transparent-art img\s*\{[^}]*scale\(1\.58\)/s);
+  assert.match(css, /\.conversation-place\s*\{[^}]*background:\s*rgba\(4, 20, 19, \.88\)/s);
+  assert.match(css, /\.conversation-message p\s*\{[^}]*font:\s*600 17px/s);
 });
 
 test("the tavern is entered before its interaction choices are shown", () => {

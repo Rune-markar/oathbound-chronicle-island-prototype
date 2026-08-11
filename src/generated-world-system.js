@@ -337,7 +337,7 @@ function effectiveExpeditionRegion(runtime, generatedState) {
   const legacyTile = tileById(runtime, generatedState.legacyExpeditionTileId);
   if (legacyTile?.passable && legacyTile.regionId) return regionById(runtime, legacyTile.regionId);
   const nation = effectivePlayerNation(runtime, generatedState);
-  return regionById(runtime, nation.capitalRegionId);
+  return startingLocationForNation(runtime, nation)?.region ?? regionById(runtime, nation.capitalRegionId);
 }
 
 function validTileForRegion(runtime, region, tileId) {
@@ -352,12 +352,63 @@ function playableTileForRegion(runtime, region) {
   return candidates.find((tile) => tile.passable && tile.regionId === region.id) ?? null;
 }
 
+function startingTileForRegion(runtime, region) {
+  const preferredTypes = ["village", "town", "fishing_port", "port", "bay_city", "city", "fort"];
+  const preferredObjects = runtime.nations.objects
+    .filter((object) => object.regionId === region.id && object.type !== "castle")
+    .sort((left, right) => {
+      const leftRank = preferredTypes.indexOf(left.type);
+      const rightRank = preferredTypes.indexOf(right.type);
+      return (leftRank < 0 ? preferredTypes.length : leftRank) - (rightRank < 0 ? preferredTypes.length : rightRank)
+        || left.tileIndex - right.tileIndex;
+    });
+  const preferredTile = preferredObjects
+    .map((object) => runtime.tiles[object.tileIndex])
+    .find((tile) => tile?.passable && tile.regionId === region.id);
+  if (preferredTile) return preferredTile;
+
+  const castleTileIndices = new Set(runtime.nations.objects
+    .filter((object) => object.regionId === region.id && object.type === "castle")
+    .map((object) => object.tileIndex));
+  const candidates = [region.markerIndex, ...region.tileIndices, region.anchorIndex]
+    .map((index) => runtime.tiles[index])
+    .filter((tile, index, tiles) => tile && tiles.indexOf(tile) === index);
+  return candidates.find((tile) => (
+    tile.passable
+    && tile.regionId === region.id
+    && !castleTileIndices.has(tile.index)
+  )) ?? null;
+}
+
+function startingLocationForNation(runtime, nation) {
+  const regionIds = [nation.capitalRegionId, ...nation.regionIds.filter((regionId) => regionId !== nation.capitalRegionId)];
+  for (const regionId of regionIds) {
+    const region = regionById(runtime, regionId);
+    const tile = region ? startingTileForRegion(runtime, region) : null;
+    if (region && tile) return { region, tile };
+  }
+  const capitalTile = runtime.tiles[nation.capitalIndex];
+  const fallbackRegions = runtime.nations.regions
+    .filter((region) => !regionIds.includes(region.id))
+    .map((region) => ({ region, tile: startingTileForRegion(runtime, region) }))
+    .filter((entry) => entry.tile)
+    .sort((left, right) => {
+      const distance = (tile) => {
+        const directX = Math.abs(tile.x - capitalTile.x);
+        const dx = runtime.terrain.config.wrapX ? Math.min(directX, runtime.terrain.width - directX) : directX;
+        return Math.hypot(dx, tile.y - capitalTile.y);
+      };
+      return distance(left.tile) - distance(right.tile) || left.region.id.localeCompare(right.region.id);
+    });
+  return fallbackRegions[0] ?? null;
+}
+
 function effectiveExpeditionTile(runtime, generatedState, expeditionRegion) {
   const stored = validTileForRegion(runtime, expeditionRegion, generatedState.expeditionTileId);
   if (stored) return stored;
   const legacy = validTileForRegion(runtime, expeditionRegion, generatedState.legacyExpeditionTileId);
   if (legacy) return legacy;
-  return playableTileForRegion(runtime, expeditionRegion);
+  return startingTileForRegion(runtime, expeditionRegion) ?? playableTileForRegion(runtime, expeditionRegion);
 }
 
 function effectiveSelectedRegion(runtime, generatedState, expeditionRegion) {
@@ -814,23 +865,23 @@ export function setGeneratedPlayerNation(state, nationId, preparedRuntime = null
   const runtime = effectiveRuntimeFor(baseRuntime, { ...generatedState, regionalDomains }, state);
   const nation = runtime.nationById.get(nationId);
   if (!nation) throw new RangeError("存在しない国家です。");
-  const capitalRegion = regionById(runtime, nation.capitalRegionId);
-  const startingTile = playableTileForRegion(runtime, capitalRegion);
-  if (!startingTile) throw new Error("選択した国家に陸上の開始地点を確保できませんでした。");
+  const startingLocation = startingLocationForNation(runtime, nation);
+  if (!startingLocation) throw new Error("選択した国家に城以外の陸上開始地点を確保できませんでした。");
+  const { region: startingRegion, tile: startingTile } = startingLocation;
   const next = {
     ...state,
     generatedWorld: {
       ...generatedState,
       playerNationId: nation.id,
-      expeditionRegionId: capitalRegion.id,
+      expeditionRegionId: startingRegion.id,
       expeditionTileId: startingTile.id,
-      selectedRegionId: capitalRegion.id,
+      selectedRegionId: startingRegion.id,
       legacyExpeditionTileId: undefined,
       legacySelectedTileId: undefined,
       expeditionMovement: GENERATED_WORLD_DEFAULTS.expeditionMovement,
       expeditionPeriod: periodFor(state),
       expeditionClockMinutes: GENERATED_WORLD_DEFAULTS.expeditionClockMinutes,
-      discoveredRegionIds: discoveredAround(capitalRegion),
+      discoveredRegionIds: discoveredAround(startingRegion),
       regionalDomains,
     },
   };

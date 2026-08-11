@@ -114,10 +114,12 @@ test("every new character creates a fresh generated terrain and nation set", () 
   assert.ok(second.generatedWorld.expeditionTileId);
   for (const state of [first, second]) {
     const view = getGeneratedWorldView(state);
+    const startObjects = view.runtime.nations.objects.filter((object) => object.tileIndex === view.expeditionTile.index);
     assert.equal(view.expeditionTile.id, state.generatedWorld.expeditionTileId);
     assert.equal(view.expeditionTile.regionId, view.expeditionRegion.id);
     assert.equal(view.expeditionTile.passable, true);
     assert.ok(!["ocean", "coast", "lake"].includes(view.expeditionTile.terrain));
+    assert.ok(startObjects.every((object) => object.type !== "castle"), "new characters must not start at a castle");
   }
 
   const replay = createCareerInitialState({ seed: first.generatedWorld.seed });
@@ -221,9 +223,9 @@ test("runtime reconstruction joins terrain, rivers, nations, and gameplay onto o
   assert.equal(first.terrain.gridType, "square");
   assert.equal(first.tiles.length, 160 * 100);
   assert.equal(first.nations.tileNationIds.length, first.tiles.length);
-  assert.equal(view.expeditionRegion.id, view.playerNation.capitalRegionId);
+  assert.ok(view.playerNation.regionIds.includes(view.expeditionRegion.id));
   assert.equal(view.selectedRegion.id, view.expeditionRegion.id);
-  assert.equal(view.expeditionTile.index, view.expeditionRegion.anchorIndex);
+  assert.ok(view.runtime.nations.objects.filter((object) => object.tileIndex === view.expeditionTile.index).every((object) => object.type !== "castle"));
   assert.equal(view.expeditionTile.id, view.generatedState.expeditionTileId ?? view.expeditionTile.id);
   assert.equal(view.expeditionTile.passable, true);
   assert.equal(view.expeditionTile.regionId, view.expeditionRegion.id);
@@ -248,7 +250,7 @@ test("player selection, region selection, and region expedition movement are per
   assert.equal(chosen.generatedWorld.playerNationId, movableNation.id);
   assert.equal(chosen.generatedWorld.expeditionRegionId, chosenView.expeditionRegion.id);
   assert.equal(chosen.generatedWorld.expeditionTileId, chosenView.expeditionTile.id);
-  assert.equal(chosenView.expeditionRegion.id, chosenView.playerNation.capitalRegionId);
+  assert.ok(chosenView.playerNation.regionIds.includes(chosenView.expeditionRegion.id));
 
   const destination = getGeneratedExpeditionReachableRegions(chosen)[0];
   assert.ok(destination, "capital region should have a reachable neighboring region");
@@ -287,7 +289,7 @@ test("an invalid or ocean start is repaired only after generated terrain is avai
   assert.ok(!["ocean", "coast", "lake"].includes(view.expeditionTile.terrain));
 });
 
-test("generated starts remain on playable land across different terrain seeds", () => {
+test("generated starts remain on playable non-castle land across different terrain seeds", () => {
   for (let index = 0; index < 20; index += 1) {
     const state = createCareerInitialState({
       seed: `land-start-contract-${index}`,
@@ -301,6 +303,7 @@ test("generated starts remain on playable land across different terrain seeds", 
     assert.equal(view.expeditionTile.passable, true);
     assert.equal(view.expeditionTile.regionId, view.expeditionRegion.id);
     assert.ok(!["ocean", "coast", "lake"].includes(view.expeditionTile.terrain));
+    assert.ok(view.runtime.nations.objects.filter((object) => object.tileIndex === view.expeditionTile.index).every((object) => object.type !== "castle"));
   }
 });
 

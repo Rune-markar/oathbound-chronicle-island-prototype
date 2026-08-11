@@ -4,6 +4,7 @@ import {
   createBattleState,
   createCombatUnit,
   createCommander,
+  autoResolveBattle,
   setBattleTerrain,
   setBattleTileFeature,
 } from "./tactical-battle.js";
@@ -13,7 +14,12 @@ import { ABILITY_LABELS, normalizeAbilityScores } from "./character-abilities.js
 
 const clone = (value) => structuredClone(value);
 
-export const ADVENTURE_SCHEMA_VERSION = 4;
+export const ADVENTURE_SCHEMA_VERSION = 5;
+
+const OBSOLETE_DUNGEON_GUIDANCE_PATTERN = /近郊・石扉遺跡/;
+const PERSONAL_BATTLE_ROLE_LABELS = Object.freeze({
+  infantry: "近接", spearman: "槍", archer: "遠隔", mage: "術師", light_cavalry: "機動", heavy_infantry: "重装",
+});
 
 export const ADVENTURE_ART = Object.freeze({
   village: "./assets/generated/adventure/village.png",
@@ -85,14 +91,23 @@ const PARTY_ROLES = Object.freeze([
 ]);
 
 export const NPC_GREETING_APPROACHES = Object.freeze([
-  Object.freeze({ id: "gentle", name: "穏やかにふるまう", shortName: "穏やか" }),
-  Object.freeze({ id: "imposing", name: "威圧的にふるまう", shortName: "威圧的" }),
-  Object.freeze({ id: "friendly", name: "気さくにふるまう", shortName: "気さく" }),
+  Object.freeze({ id: "gentle", name: "穏やかに声をかける", shortName: "穏やか" }),
+  Object.freeze({ id: "friendly", name: "気さくに話しかける", shortName: "気さく" }),
+  Object.freeze({ id: "imposing", name: "強気な態度で接する", shortName: "強気" }),
+]);
+
+export const NPC_CONVERSATION_ACTIONS = Object.freeze([
+  Object.freeze({ id: "small_talk", name: "世間話をする", description: "土地や旅の話から人柄を知る。" }),
+  Object.freeze({ id: "ask_history", name: "経歴を聞く", description: "過去の所属や現在の目的を尋ねる。" }),
+  Object.freeze({ id: "ask_skills", name: "腕前について聞く", description: "話し方や身のこなしから力量を推し量る。" }),
+  Object.freeze({ id: "buy_drink", name: "酒を奢る", description: "財産1を使い、杯を交わして距離を縮める。", cost: 1 }),
+  Object.freeze({ id: "discuss_work", name: "仕事の話をする", description: "同行する理由と条件を確かめる。" }),
+  Object.freeze({ id: "invite", name: "仲間に誘う", description: "判明している条件を踏まえて同行を頼む。" }),
 ]);
 
 const NPC_PERSONALITIES = Object.freeze([
   Object.freeze({
-    id: "cautious", name: "慎重", favoredApproachId: "gentle", dislikedApproachId: "imposing",
+    id: "cautious", name: "慎重", value: "安全と約束", favoredApproachId: "gentle", dislikedApproachId: "imposing", smallTalkBonus: 1, drinkBonus: 1,
     reactions: Object.freeze({
       gentle: "警戒を解き、落ち着いた声で名乗り返した。",
       imposing: "椅子を引き、こちらの出方を慎重にうかがっている。",
@@ -100,7 +115,7 @@ const NPC_PERSONALITIES = Object.freeze([
     }),
   }),
   Object.freeze({
-    id: "proud", name: "誇り高い", favoredApproachId: "imposing", dislikedApproachId: "friendly",
+    id: "proud", name: "誇り高い", value: "力量と名誉", favoredApproachId: "imposing", dislikedApproachId: "friendly", smallTalkBonus: 0, drinkBonus: 0,
     reactions: Object.freeze({
       gentle: "礼は返したが、力量を測るような視線は崩さない。",
       imposing: "挑むような笑みを返し、対等な相手として向き直った。",
@@ -108,7 +123,7 @@ const NPC_PERSONALITIES = Object.freeze([
     }),
   }),
   Object.freeze({
-    id: "sociable", name: "社交的", favoredApproachId: "friendly", dislikedApproachId: "imposing",
+    id: "sociable", name: "社交的", value: "人との縁", favoredApproachId: "friendly", dislikedApproachId: "imposing", smallTalkBonus: 3, drinkBonus: 3,
     reactions: Object.freeze({
       gentle: "柔らかく笑い、旅先の話を一つ聞かせてくれた。",
       imposing: "場を和ませようとはしたが、声には距離が残った。",
@@ -116,18 +131,28 @@ const NPC_PERSONALITIES = Object.freeze([
     }),
   }),
   Object.freeze({
-    id: "disciplined", name: "実直", favoredApproachId: "gentle", dislikedApproachId: "friendly",
+    id: "taciturn", name: "寡黙", value: "行動と実績", favoredApproachId: "gentle", dislikedApproachId: "friendly", smallTalkBonus: -1, drinkBonus: 1,
     reactions: Object.freeze({
       gentle: "簡潔だが丁寧に応じ、こちらの話を最後まで聞いた。",
       imposing: "怯まず姿勢を正し、要件を率直に尋ねてきた。",
       friendly: "冗談には乗らず、要件だけを話すよう促した。",
     }),
   }),
+  Object.freeze({
+    id: "practical", name: "現実的", value: "報酬と仕事の確かさ", favoredApproachId: "gentle", dislikedApproachId: "imposing", smallTalkBonus: 0, drinkBonus: 2,
+    reactions: Object.freeze({
+      gentle: "短く名乗り、まず仕事の内容を聞こうと身を乗り出した。",
+      imposing: "条件を曖昧にしたまま威勢だけを示す相手だと見て、眉をひそめた。",
+      friendly: "愛想よく杯を上げたが、話を報酬と役割へ戻した。",
+    }),
+  }),
 ]);
 
-const NPC_DISCOVERY_ORDER = Object.freeze([
-  "personality", "specialty", "level", "ability:strength", "ability:dexterity", "ability:constitution",
-  "ability:intelligence", "ability:wisdom", "ability:charisma",
+const NPC_RECRUITMENT_POLICIES = Object.freeze([
+  Object.freeze({ id: "friendship", name: "親交型" }),
+  Object.freeze({ id: "mercenary", name: "傭兵型" }),
+  Object.freeze({ id: "evaluation", name: "評価型" }),
+  Object.freeze({ id: "purpose", name: "目的型" }),
 ]);
 
 const PERSONAL_MAP_FORAGE = Object.freeze({
@@ -183,6 +208,7 @@ function emptyAdventureState() {
     activeContracts: [],
     completedContracts: [],
     completedDungeonIds: [],
+    recoveredDungeonLootKeys: [],
     dungeonHistory: [],
     activeRun: null,
     personalMap: { regions: {} },
@@ -205,12 +231,39 @@ function normalizePersonalMapState(value) {
   return { regions };
 }
 
+function candidateRecruitmentPolicy(candidateId) {
+  return NPC_RECRUITMENT_POLICIES[hashString(`${candidateId}:recruitment-policy`) % NPC_RECRUITMENT_POLICIES.length];
+}
+
+function normalizeNpcRelation(candidateId, relation) {
+  const interactions = Math.max(0, Math.floor(Number(relation?.interactions) || 0));
+  const legacyFirstMeeting = interactions > 0 || Boolean(relation?.firstApproachId);
+  const affinityFallback = relation?.firstImpressionBonus === true ? 18 : legacyFirstMeeting ? 4 : 0;
+  const policy = candidateRecruitmentPolicy(candidateId);
+  return {
+    interactions,
+    affinity: Math.max(-40, Math.min(100, Number.isFinite(Number(relation?.affinity)) ? Number(relation.affinity) : affinityFallback)),
+    firstMeetingComplete: relation?.firstMeetingComplete === true || legacyFirstMeeting,
+    firstApproachId: relation?.firstApproachId ?? null,
+    firstImpressionBonus: relation?.firstImpressionBonus === true,
+    topics: Object.fromEntries(Object.entries(relation?.topics ?? {}).filter(([, count]) => Number(count) > 0).map(([topicId, count]) => [topicId, Math.max(0, Math.floor(Number(count)))])),
+    discovered: [...new Set((relation?.discovered ?? []).filter((entry) => typeof entry === "string"))],
+    recruitmentPolicyId: NPC_RECRUITMENT_POLICIES.some((entry) => entry.id === relation?.recruitmentPolicyId) ? relation.recruitmentPolicyId : policy.id,
+    recruitmentConditionKnown: relation?.recruitmentConditionKnown === true,
+    recruitmentAttempts: Math.max(0, Math.floor(Number(relation?.recruitmentAttempts) || 0)),
+    drinksBought: Math.max(0, Math.floor(Number(relation?.drinksBought) || 0)),
+    joined: relation?.joined === true,
+    lastResult: relation?.lastResult ? { ...relation.lastResult } : null,
+  };
+}
+
 export function normalizeAdventureState(state) {
   const baseline = emptyAdventureState();
   const current = state?.adventure ?? {};
   const activeRun = current.activeRun
     ? {
         ...current.activeRun,
+        combatScale: current.activeRun.combatScale ?? "personal-units",
         combat: current.activeRun.combat
           ? {
               ...current.activeRun.combat,
@@ -231,24 +284,34 @@ export function normalizeAdventureState(state) {
     activeContracts: [...(current.activeContracts ?? [])],
     completedContracts: [...(current.completedContracts ?? [])],
     completedDungeonIds: [...(current.completedDungeonIds ?? [])],
+    recoveredDungeonLootKeys: [...(current.recoveredDungeonLootKeys ?? [])],
     dungeonHistory: [...(current.dungeonHistory ?? [])],
     activeRun,
     personalMap: normalizePersonalMapState(current.personalMap),
-    npcRelations: Object.fromEntries(Object.entries(current.npcRelations ?? {}).map(([candidateId, relation]) => [candidateId, {
-      interactions: Math.max(0, Math.floor(Number(relation?.interactions) || 0)),
-      firstApproachId: relation?.firstApproachId ?? null,
-      firstImpressionBonus: relation?.firstImpressionBonus === true,
-      discovered: [...new Set((relation?.discovered ?? []).filter((entry) => typeof entry === "string"))],
-      lastResult: relation?.lastResult ? { ...relation.lastResult } : null,
-    }])),
+    npcRelations: Object.fromEntries(Object.entries(current.npcRelations ?? {}).map(([candidateId, relation]) => [candidateId, normalizeNpcRelation(candidateId, relation)])),
   };
   if (state.player) {
     state.player.abilities = normalizeAbilityScores(state.player.abilities, { seed: `player:${state.player.name ?? "主人公"}`, role: state.player.specialty });
     if (Array.isArray(state.player.villageLife?.party)) {
       state.player.villageLife.party = state.player.villageLife.party.map((member) => ({
         ...member,
+        maxHp: Math.max(1, Number(member.maxHp) || 42 + Math.max(1, Number(member.level) || 1) * 6),
+        hp: Math.max(0, Math.min(Number(member.maxHp) || 42 + Math.max(1, Number(member.level) || 1) * 6, Number.isFinite(Number(member.hp)) ? Number(member.hp) : Number(member.maxHp) || 42 + Math.max(1, Number(member.level) || 1) * 6)),
+        battleState: member.battleState ?? "READY",
         abilities: normalizeAbilityScores(member.abilities, { seed: member.id ?? member.name, role: `${member.role ?? ""} ${member.specialty ?? ""}` }),
       }));
+    }
+    const life = state.player.villageLife;
+    const canonicalDungeon = life?.discoveredDungeons?.find((name) => typeof name === "string" && !OBSOLETE_DUNGEON_GUIDANCE_PATTERN.test(name));
+    if (canonicalDungeon) {
+      life.discoveredDungeons = [...new Set(life.discoveredDungeons.filter((name) => !OBSOLETE_DUNGEON_GUIDANCE_PATTERN.test(name)))];
+      const corrected = `${canonicalDungeon}の位置、接続経路、出現する敵の情報を地図へ記録した。`;
+      life.actionHistory?.forEach((entry) => {
+        if (entry.actionId === "check_dungeon" && OBSOLETE_DUNGEON_GUIDANCE_PATTERN.test(entry.message ?? "")) entry.message = corrected;
+      });
+      state.player.history?.forEach((entry) => {
+        if (entry.title?.endsWith("・ダンジョン情報確認") && OBSOLETE_DUNGEON_GUIDANCE_PATTERN.test(entry.detail ?? "")) entry.detail = corrected;
+      });
     }
   }
   return state;
@@ -277,6 +340,10 @@ function inventoryQuantity(inventory, itemId) {
     .reduce((sum, entry) => sum + Math.max(0, Number(entry.quantity) || 0), 0);
 }
 
+function trophyIdForEnemy(enemyId) {
+  return Object.values(DUNGEON_ARCHETYPES).find((entry) => entry.enemy.id === enemyId)?.loot?.[2]?.id ?? null;
+}
+
 function removeInventoryQuantity(inventory, itemId, quantity) {
   let remaining = quantity;
   for (const entry of inventory ?? []) {
@@ -291,7 +358,11 @@ function removeInventoryQuantity(inventory, itemId, quantity) {
   }
 }
 
-function grantLoot(state, run, item) {
+function grantLoot(state, run, item, { oncePerSite = false } = {}) {
+  const recoveryKey = `${run.dungeonId ?? run.regionId ?? "unknown"}:${item.id}`;
+  if (oncePerSite && state.adventure.recoveredDungeonLootKeys.includes(recoveryKey)) {
+    return { ...item, quantity: 0, alreadyRecovered: true };
+  }
   const appraised = hasActiveUniqueCompanion(state, NOELA_ORBIS_ID);
   const quantity = appraised ? 2 : 1;
   addInventoryItem(state.adventure, item, quantity);
@@ -302,6 +373,7 @@ function grantLoot(state, run, item) {
     run.provenanceBonusLoot = (run.provenanceBonusLoot ?? 0) + 1;
   }
   run.loot.push(recovered);
+  if (oncePerSite) state.adventure.recoveredDungeonLootKeys.push(recoveryKey);
   return recovered;
 }
 
@@ -468,6 +540,32 @@ function storePersonalRegion(state, regionId, record) {
   };
 }
 
+function revealRegionDungeonOnDraft(state, context) {
+  const { definitions, record } = personalRegionSnapshot(state, context);
+  const dungeon = definitions.find((location) => location.type === "dungeon");
+  if (!dungeon) throw new Error("この地方のダンジョン情報を特定できません。");
+  if (!record.discoveredLocationIds.includes(dungeon.id)) record.discoveredLocationIds.push(dungeon.id);
+  const knownDungeons = state.player?.villageLife?.discoveredDungeons;
+  if (Array.isArray(knownDungeons) && !knownDungeons.includes(dungeon.name)) knownDungeons.push(dungeon.name);
+  storePersonalRegion(state, context.region.id, record);
+  return dungeon;
+}
+
+export function revealRegionDungeon(state, context) {
+  const next = preparedClone(state);
+  const dungeon = revealRegionDungeonOnDraft(next, context);
+  if (next.player?.villageLife?.lastAction?.actionId === "check_dungeon") {
+    const message = `${dungeon.name}の位置、接続経路、出現する敵の情報を地図へ記録した。`;
+    const actionId = next.player.villageLife.lastAction.id;
+    next.player.villageLife.lastAction.message = message;
+    const historyAction = next.player.villageLife.actionHistory?.find((entry) => entry.id === actionId);
+    if (historyAction) historyAction.message = message;
+    const chronicleEntry = next.player.history?.find((entry) => entry.title?.endsWith("・ダンジョン情報確認"));
+    if (chronicleEntry) chronicleEntry.detail = message;
+  }
+  return next;
+}
+
 function personalMapResult(record, result) {
   record.lastResult = result;
   record.history = [result, ...record.history].slice(0, 12);
@@ -510,12 +608,13 @@ export function movePersonalMap(state, context, destinationId) {
   if (!current.neighborIds.includes(destinationId)) throw new Error("現在地から直接移動できる近くの場所ではありません。");
   const distance = Math.hypot(destination.x - current.x, destination.y - current.y);
   const travelMinutes = Math.min(6 * 60, Math.max(90, Math.ceil(distance / 10) * 30));
+  const fatigueGain = Math.max(2, Math.ceil(travelMinutes / 60) * 2);
   record.currentLocationId = destinationId;
   const result = {
     id: `move:${context.region.id}:${record.explorationCount}:${destinationId}`,
     type: "move",
     title: "移動完了",
-    message: `${destination.name}へ移動した。`,
+    message: `${destination.name}へ移動した。移動疲労が${fatigueGain}増えた。`,
     locationId: destinationId,
     locationName: destination.name,
     travelMinutes,
@@ -531,6 +630,7 @@ export function movePersonalMap(state, context, destinationId) {
     };
   }
   next = advanceGeneratedWorldTime(next, travelMinutes);
+  if (next.player?.villageLife) next.player.villageLife.fatigue = Math.min(100, (next.player.villageLife.fatigue ?? 0) + fatigueGain);
   return next;
 }
 
@@ -575,6 +675,7 @@ function personalEncounterRun(state, context, location, resultId) {
 
 export function explorePersonalMap(state, context, options = {}) {
   const next = preparedClone(state);
+  if ((next.player?.villageLife?.hp ?? 0) < 35) throw new Error("HPが35未満です。村の神殿・治療所で負傷を治してから探索してください。");
   if (next.adventure.activeRun) throw new Error("進行中の探索を完了してから周辺を探索してください。");
   const { definitions, byId, record } = personalRegionSnapshot(next, context);
   const current = byId.get(record.currentLocationId);
@@ -674,9 +775,9 @@ export function getGuildContracts(state, context) {
     },
     {
       suffix: "subjugation", title: `${archetype.enemy.name}の討伐`,
-      detail: `${dungeon.name}または周辺探索で${archetype.enemy.name}と遭遇し、戦闘で1群を退ける。`,
+      detail: `${dungeon.name}または周辺探索で${archetype.enemy.name}の一団と遭遇し、各人物・各敵を1ユニットとする戦闘で討伐対象を退ける。双方のユニット数はパーティー編成と遭遇内容によって変化する。討伐済みなら所持している戦利品が証明になる。`,
       merit: 12, reward: { wealth: 5, renown: 3 },
-      objective: { type: "defeat_enemy", targetId: archetype.enemy.id, targetName: archetype.enemy.name, required: 1, unit: "群" },
+      objective: { type: "defeat_enemy", targetId: archetype.enemy.id, targetName: archetype.enemy.name, required: 1, unit: "体" },
     },
   ];
   const accepted = new Set(state.adventure?.activeContracts?.map((contract) => contract.id));
@@ -692,7 +793,9 @@ export function getGuildContracts(state, context) {
       ? objective.required
       : objective.type === "collect_item"
         ? Math.min(objective.required, inventoryQuantity(state.player?.villageLife?.inventory, objective.targetId))
-        : 0;
+        : objective.type === "defeat_enemy"
+          ? Math.min(objective.required, inventoryQuantity(state.player?.villageLife?.inventory, trophyIdForEnemy(objective.targetId)))
+          : 0;
     return {
       ...definition,
       id,
@@ -717,6 +820,7 @@ export function acceptGuildContract(state, contractId, context) {
     throw new Error("先に受注中の依頼を集落の窓口へ報告し、報酬を受け取ってください。");
   }
   next.adventure.activeContracts.push({ ...contract, acceptedTurn: next.turn ?? 0, status: "active" });
+  if (contract.dungeonId) revealRegionDungeonOnDraft(next, context);
   if (villageLife?.quests) {
     villageLife.guildRequestsAccepted = (villageLife.guildRequestsAccepted ?? 0) + 1;
     villageLife.quests.push({
@@ -732,6 +836,11 @@ export function acceptGuildContract(state, contractId, context) {
       acceptedVillageId: contract.villageId,
       dungeonId: contract.dungeonId,
     });
+  }
+  const trophyId = contract.objective?.type === "defeat_enemy" ? trophyIdForEnemy(contract.objective.targetId) : null;
+  if (trophyId && inventoryQuantity(next.player?.villageLife?.inventory, trophyId) >= contract.objective.required) {
+    const active = next.adventure.activeContracts.find((entry) => entry.id === contract.id);
+    markGuildContractCompleted(next, active ?? contract);
   }
   return next;
 }
@@ -775,13 +884,77 @@ function candidatePersonality(candidateId) {
 }
 
 function npcRelation(state, candidateId) {
-  return state.adventure?.npcRelations?.[candidateId] ?? {
-    interactions: 0,
-    firstApproachId: null,
-    firstImpressionBonus: false,
-    discovered: [],
-    lastResult: null,
+  return state.adventure?.npcRelations?.[candidateId] ?? normalizeNpcRelation(candidateId, null);
+}
+
+function relationshipState(affinity) {
+  if (affinity < 0) return { id: "wary", name: "警戒している" };
+  if (affinity < 15) return { id: "acquainted", name: "面識がある" };
+  if (affinity < 35) return { id: "warming", name: "打ち解けている" };
+  if (affinity < 60) return { id: "trusted", name: "信頼している" };
+  return { id: "close", name: "親しい" };
+}
+
+function candidateAbilityImpression(candidate) {
+  if (candidate.roleId === "scout") return "身のこなしは軽く、周囲を見る目がある。";
+  if (candidate.roleId === "mage") return "魔術の扱いについて何か知っているらしい。";
+  if (candidate.roleId === "healer") return "傷や疲労の見分けに慣れているようだ。";
+  if (candidate.roleId === "vanguard") return "武器を持つ姿に迷いがなく、戦い慣れているように見える。";
+  const best = Object.entries(candidate.abilities ?? {}).sort((left, right) => right[1] - left[1])[0];
+  return best?.[0] === "charisma" ? "人を動かす話し方に慣れている。" : "旅装の扱いから、実地経験があると分かる。";
+}
+
+function candidateHistory(candidate, personality) {
+  const origins = ["街道警備の臨時隊", "地方領主の従士団", "交易隊の護衛", "辺境集落の自警団", "巡礼者の護送隊"];
+  const goals = ["次の遠征に備えて経験を積むこと", "腕を認める雇い主を見つけること", "失った仲間の手掛かりを探すこと", "危険な土地の記録を残すこと", "自分の役割を生かせる隊を探すこと"];
+  const value = hashString(`${candidate.id}:history`);
+  return {
+    origin: `${origins[value % origins.length]}で${candidate.role}を務めていた。`,
+    goal: `今は${goals[(value >>> 4) % goals.length]}を目的にしている。`,
+    value: `${personality.name}らしく、${personality.value}を重んじる。`,
   };
+}
+
+function recruitmentCondition(state, candidate, relation) {
+  const policy = NPC_RECRUITMENT_POLICIES.find((entry) => entry.id === relation.recruitmentPolicyId) ?? candidateRecruitmentPolicy(candidate.id);
+  const affinity = relation.affinity;
+  if (policy.id === "friendship") {
+    const requiredAffinity = 40;
+    return { ...policy, met: affinity >= requiredAffinity, cost: 0, summary: "十分な信頼を築けば、友情を理由に同行する。", hint: affinity >= requiredAffinity ? "互いを信頼できると感じている。" : "会話や共に杯を交わすことで、もう少し信頼を築く必要がある。" };
+  }
+  if (policy.id === "mercenary") {
+    const cost = 2 + hashString(`${candidate.id}:contract-cost`) % 4;
+    const wealth = Math.max(0, Number(state.player?.metrics?.wealth) || 0);
+    return { ...policy, met: wealth >= cost, cost, summary: `契約金として財産${cost}を求めている。`, hint: wealth >= cost ? `契約金${cost}を払えば同行する。` : `契約には財産${cost}が必要で、現在は${wealth}しかない。` };
+  }
+  if (policy.id === "evaluation") {
+    const requiredScore = 5 + hashString(`${candidate.id}:evaluation-score`) % 6;
+    const currentScore = Math.max(0, Number(state.player?.metrics?.renown) || 0, Number(state.player?.metrics?.martialMerit) || 0);
+    const met = affinity >= 10 && currentScore >= requiredScore;
+    return { ...policy, met, cost: 0, summary: `名声または武勲${requiredScore}以上と、最低限の信頼を求めている。`, hint: currentScore < requiredScore ? `まず仕事や戦いで実績を示す必要がある（現在の最高実績${currentScore}）。` : affinity < 10 ? "実績は認めているが、まだ人柄を見極めようとしている。" : "実績と人柄の双方を認めている。" };
+  }
+  const completedContracts = Math.max(0, Number(state.player?.progress?.contracts) || 0);
+  const met = affinity >= 10 && completedContracts >= 1;
+  return { ...policy, met, cost: 0, summary: "本人の目的に関わる依頼を一件以上成し遂げた人物を求めている。", hint: completedContracts < 1 ? "まず集落の依頼を最後まで成し遂げ、行動で協力できることを示す必要がある。" : affinity < 10 ? "目的は一致しそうだが、任せられる相手かもう少し確かめたいようだ。" : "目的に協力できる相手だと判断している。" };
+}
+
+function conversationActionsFor(state, candidate, relation) {
+  if (!relation.firstMeetingComplete) return NPC_GREETING_APPROACHES.map((entry) => ({ ...entry, type: "greeting", allowed: true, cost: 0 }));
+  const topicCount = (topicId) => relation.topics?.[topicId] ?? 0;
+  const actions = NPC_CONVERSATION_ACTIONS.filter((action) => {
+    if (action.id === "ask_history") return topicCount("ask_history") < 2;
+    if (action.id === "ask_skills") return topicCount("ask_skills") < 4;
+    if (action.id === "buy_drink") return topicCount("buy_drink") < 3;
+    if (action.id === "discuss_work") return relation.interactions >= 2 || topicCount("ask_history") > 0;
+    if (action.id === "invite") return relation.recruitmentConditionKnown;
+    return true;
+  });
+  return actions.map((action) => {
+    const wealth = Math.max(0, Number(state.player?.metrics?.wealth) || 0);
+    const cost = action.id === "invite" && relation.recruitmentConditionKnown ? recruitmentCondition(state, candidate, relation).cost : action.cost ?? 0;
+    const allowed = action.id !== "buy_drink" || wealth >= action.cost;
+    return { ...action, cost, type: "conversation", allowed, reason: allowed ? null : `酒代として財産${action.cost}が必要です。` };
+  });
 }
 
 function isDiningWithLocalRenown(state, context, villageId) {
@@ -793,15 +966,35 @@ function isDiningWithLocalRenown(state, context, villageId) {
 function socialCandidateView(state, candidate, personality) {
   const relation = npcRelation(state, candidate.id);
   const discovered = new Set(relation.discovered);
+  const history = candidateHistory(candidate, personality);
+  const recruitment = recruitmentCondition(state, candidate, relation);
+  const knownHistory = [];
+  if (discovered.has("history:origin")) knownHistory.push(history.origin);
+  if (discovered.has("history:goal")) knownHistory.push(history.goal);
+  const abilityInsights = [];
+  if (discovered.has("ability:impression")) abilityInsights.push(candidateAbilityImpression(candidate));
+  if (discovered.has("specialty")) abilityInsights.push(`得意分野：${candidate.specialty}`);
+  if (discovered.has("level")) abilityInsights.push(`力量の目安：Lv.${candidate.level}`);
   return {
     interactions: relation.interactions,
+    affinity: relation.affinity,
+    relationship: relationshipState(relation.affinity),
+    firstMeetingComplete: relation.firstMeetingComplete,
     firstImpressionBonus: relation.firstImpressionBonus,
-    canInvite: relation.firstImpressionBonus,
+    canInvite: relation.recruitmentConditionKnown,
     personality: discovered.has("personality") ? { id: personality.id, name: personality.name } : null,
+    value: discovered.has("value") ? history.value : null,
+    history: knownHistory,
+    abilityInsights,
     specialtyKnown: discovered.has("specialty"),
     levelKnown: discovered.has("level"),
     knownAbilities: Object.fromEntries(Object.entries(candidate.abilities ?? {}).filter(([abilityId]) => discovered.has(`ability:${abilityId}`))),
     discoveryCount: discovered.size,
+    recruitment: relation.recruitmentConditionKnown ? { id: recruitment.id, name: recruitment.name, summary: recruitment.summary, hint: recruitment.hint, cost: recruitment.cost, met: recruitment.met } : null,
+    availableActions: conversationActionsFor(state, candidate, relation),
+    recruitmentAttempts: relation.recruitmentAttempts,
+    drinksBought: relation.drinksBought,
+    joined: relation.joined || candidate.joined,
     lastResult: relation.lastResult,
   };
 }
@@ -874,57 +1067,28 @@ function insightChance(wisdom, interactions) {
   return clampProbability(0.26 + (Number(wisdom) - 10) * 0.04 + Math.min(0.28, interactions * 0.07));
 }
 
-export function interactWithNpcCandidate(state, candidateId, approachId, context, options = {}) {
-  if (!NPC_GREETING_APPROACHES.some((approach) => approach.id === approachId)) throw new RangeError("選べない振る舞いです。");
-  const next = preparedClone(state);
-  const candidate = getTavernCandidates(next, context).find((entry) => entry.id === candidateId);
-  if (!candidate || candidate.joined) throw new RangeError("その人物とは今ここで会話できません。");
-  const personality = candidatePersonality(candidate.id);
-  const relation = next.adventure.npcRelations[candidate.id] ??= {
-    interactions: 0, firstApproachId: null, firstImpressionBonus: false, discovered: [], lastResult: null,
-  };
-  const firstMeeting = relation.interactions === 0;
-  const charisma = next.player?.abilities?.charisma ?? 10;
-  const wisdom = next.player?.abilities?.wisdom ?? 10;
-  const impressionChance = firstMeeting ? firstImpressionChance(charisma, personality, approachId) : 0;
-  const impressionRoll = Number.isFinite(options.firstImpressionRoll) ? options.firstImpressionRoll : Number.isFinite(options.roll) ? options.roll : Math.random();
-  const gainedFirstImpressionBonus = firstMeeting && impressionRoll < impressionChance;
-  relation.interactions += 1;
-  relation.firstApproachId ??= approachId;
-  relation.firstImpressionBonus ||= gainedFirstImpressionBonus;
-
-  const discoveryChance = insightChance(wisdom, relation.interactions);
-  const insightRoll = Number.isFinite(options.insightRoll) ? options.insightRoll : Number.isFinite(options.roll) ? options.roll : Math.random();
-  const discoveryId = NPC_DISCOVERY_ORDER.find((entry) => !relation.discovered.includes(entry)) ?? null;
-  const discovered = Boolean(discoveryId && insightRoll < discoveryChance);
-  if (discovered) relation.discovered.push(discoveryId);
-  const discoveryLabel = discoveryId === "personality" ? `性格「${personality.name}」`
-    : discoveryId === "specialty" ? `得意分野「${candidate.specialty}」`
-      : discoveryId === "level" ? `力量 Lv.${candidate.level}`
-        : discoveryId?.startsWith("ability:") ? `能力値 ${ABILITY_LABELS[discoveryId.slice(8)]} ${candidate.abilities[discoveryId.slice(8)]}` : null;
-  relation.lastResult = {
-    approachId,
-    firstMeeting,
-    gainedFirstImpressionBonus,
-    impressionChance,
-    discoveryChance,
-    discovered: discovered ? discoveryId : null,
-    discoveryLabel: discovered ? discoveryLabel : null,
-    reaction: personality.reactions[approachId],
-    venue: options.venue === "guild" ? "guild" : "tavern",
-  };
-  return next;
+function addDiscovery(relation, discoveryId) {
+  if (!discoveryId || relation.discovered.includes(discoveryId)) return false;
+  relation.discovered.push(discoveryId);
+  return true;
 }
 
-function recruitCandidate(state, candidateId, context, expectedIncoming) {
-  const next = preparedClone(state);
+function personalityConversationReaction(personality, actionId, repeated = false) {
+  if (repeated) return personality.id === "taciturn" ? "同じ話には答えず、静かに杯へ視線を戻した。" : "その話はもうしたはずだ、と短く返した。";
+  const reactions = {
+    sociable: { small_talk: "身振りを交え、最近の旅と酒場の噂を楽しそうに語った。", ask_history: "昔の仲間の名まで挙げながら、歩んできた道を話した。", ask_skills: "得意な場面をいくつも例に挙げ、自分の腕を率直に説明した。", buy_drink: "杯を掲げ、次の話を自分から切り出した。", discuss_work: "互いの役割を確かめようと、前向きに条件を話した。" },
+    taciturn: { small_talk: "短く相槌を打つだけだが、席を立つ様子はない。", ask_history: "必要な部分だけを選び、途切れ途切れに過去を話した。", ask_skills: "言葉より装備の手入れを見せ、できることだけを答えた。", buy_drink: "無言で杯を合わせ、わずかに表情を緩めた。", discuss_work: "曖昧な約束を避け、必要な条件だけを告げた。" },
+    practical: { small_talk: "話を土地の相場と次の仕事へ手際よく結びつけた。", ask_history: "どこで何を任されていたか、実務に沿って説明した。", ask_skills: "できる仕事とできない仕事を明確に分けて答えた。", buy_drink: "礼を言い、酒代に見合うだけの情報を返した。", discuss_work: "危険、役割、報酬の順で条件を確認した。" },
+    proud: { small_talk: "こちらの話を聞きながらも、腕を見せる機会をうかがっている。", ask_history: "誇るべき戦いや任務を選び、自信を隠さず語った。", ask_skills: "実力を疑うのかと笑い、得意な戦い方を語った。", buy_drink: "対等な相手からの一杯として受け取り、満足げに頷いた。", discuss_work: "同行に値する実績があるか、逆にこちらへ問い返した。" },
+    cautious: { small_talk: "危険の少ない話題から、少しずつ言葉を返した。", ask_history: "話してよい範囲を見極めながら、過去を慎重に明かした。", ask_skills: "誇張を避け、確実にできることだけを答えた。", buy_drink: "杯の中身を確かめてから受け取り、警戒を少し解いた。", discuss_work: "退路と分配まで確認し、条件を慎重に示した。" },
+  };
+  return reactions[personality.id]?.[actionId] ?? "こちらの言葉を聞き、少し考えてから答えた。";
+}
+
+function addCandidateToParty(next, candidate, source) {
   const villageParty = next.player?.villageLife?.party;
   if (Math.max(next.adventure.party.length, villageParty?.length ?? 0) >= 3) throw new Error("パーティーはプレイヤーを含め4人までです。");
-  const candidate = getTavernCandidates(next, context).find((entry) => entry.id === candidateId);
-  if (!candidate || candidate.incoming !== expectedIncoming) throw new RangeError("その冒険者は今、酒場にいません。");
   if (candidate.joined) throw new Error("すでにパーティーへ参加しています。");
-  if (!expectedIncoming && !candidate.social.firstImpressionBonus) throw new Error("初対面で好印象を得るまで、確実な勧誘はできません。");
-  const source = candidate.unique ? "unique-recruit" : expectedIncoming ? "invitation" : "player-invite";
   next.adventure.party.push({ ...candidate, joinedTurn: next.turn ?? 0, source });
   if (Array.isArray(villageParty)) {
     villageParty.push({
@@ -943,6 +1107,9 @@ function recruitCandidate(state, candidateId, context, expectedIncoming) {
       passiveId: candidate.passiveId ?? null,
       passiveName: candidate.passiveName ?? null,
       transparent: candidate.transparent === true,
+      maxHp: 42 + Math.max(1, candidate.level ?? 1) * 6,
+      hp: 42 + Math.max(1, candidate.level ?? 1) * 6,
+      battleState: "READY",
     });
   }
   if (candidate.unique && next.player) {
@@ -956,6 +1123,136 @@ function recruitCandidate(state, candidateId, context, expectedIncoming) {
     });
     next.player.history = next.player.history.slice(0, 60);
   }
+  const relation = next.adventure.npcRelations[candidate.id] ??= normalizeNpcRelation(candidate.id, null);
+  relation.joined = true;
+  return next;
+}
+
+function attemptRecruitmentOnDraft(next, candidate, relation) {
+  relation.recruitmentAttempts += 1;
+  const condition = recruitmentCondition(next, candidate, relation);
+  if (!relation.firstMeetingComplete) {
+    return { joined: false, affinityDelta: 0, reaction: "初対面の相手です。まず声をかけ、人柄を知る必要があります。", condition };
+  }
+  if (!relation.recruitmentConditionKnown) {
+    relation.affinity = Math.max(-40, relation.affinity - 1);
+    return { joined: false, affinityDelta: -1, reaction: "まず互いの仕事と目的を話してからだ、と勧誘を断った。", condition };
+  }
+  if (!condition.met) {
+    const affinityDelta = relation.recruitmentAttempts > 1 ? -2 : -1;
+    relation.affinity = Math.max(-40, relation.affinity + affinityDelta);
+    const prefix = relation.recruitmentAttempts > 1 ? "同じ条件を繰り返すつもりはない、と念を押した。" : "今は同行できないと答えた。";
+    return { joined: false, affinityDelta, reaction: `${prefix} ${condition.hint}`, condition };
+  }
+  if (condition.cost > 0) next.player.metrics.wealth -= condition.cost;
+  addCandidateToParty(next, candidate, candidate.unique ? "unique-recruit" : "player-invite");
+  return { joined: true, affinityDelta: 0, reaction: condition.cost > 0 ? `契約金${condition.cost}を受け取り、同行契約に署名した。` : "条件は満たされた、と頷き、旅支度を手に取った。", condition };
+}
+
+export function interactWithNpcCandidate(state, candidateId, actionId, context, options = {}) {
+  const next = preparedClone(state);
+  const candidate = getTavernCandidates(next, context).find((entry) => entry.id === candidateId);
+  if (!candidate || candidate.joined) throw new RangeError("その人物とは今ここで会話できません。");
+  const personality = candidatePersonality(candidate.id);
+  const relation = next.adventure.npcRelations[candidate.id] ??= normalizeNpcRelation(candidate.id, null);
+  const greeting = NPC_GREETING_APPROACHES.find((entry) => entry.id === actionId);
+  const normalAction = NPC_CONVERSATION_ACTIONS.find((entry) => entry.id === actionId);
+  if (!relation.firstMeetingComplete) {
+    if (!greeting) throw new Error("初対面では、まず声のかけ方を選んでください。");
+    const charisma = next.player?.abilities?.charisma ?? 10;
+    const impressionChance = firstImpressionChance(charisma, personality, actionId);
+    const roll = Number.isFinite(options.firstImpressionRoll) ? options.firstImpressionRoll : Number.isFinite(options.roll) ? options.roll : Math.random();
+    const success = roll < impressionChance;
+    const affinityDelta = actionId === personality.favoredApproachId ? 10 + (success ? 6 : 0)
+      : actionId === personality.dislikedApproachId ? -8 + (success ? 4 : 0)
+        : 4 + (success ? 4 : 0);
+    relation.interactions += 1;
+    relation.affinity = Math.max(-40, Math.min(100, relation.affinity + affinityDelta));
+    relation.firstMeetingComplete = true;
+    relation.firstApproachId = actionId;
+    relation.firstImpressionBonus = success;
+    relation.topics.greeting = 1;
+    addDiscovery(relation, "personality");
+    relation.lastResult = { actionId, firstMeeting: true, success, gainedFirstImpressionBonus: success, impressionChance, affinityDelta, discovered: "personality", discoveryLabel: `人柄「${personality.name}」`, reaction: personality.reactions[actionId], venue: options.venue === "guild" ? "guild" : "tavern" };
+    return next;
+  }
+  if (greeting) throw new Error("初対面の挨拶はすでに終わっています。");
+  if (!normalAction) throw new RangeError("選べない会話行動です。");
+  const availability = conversationActionsFor(next, candidate, relation).find((entry) => entry.id === actionId);
+  if (!availability) throw new Error("今はその話題を選ぶ意味がありません。");
+  if (!availability.allowed) throw new Error(availability.reason);
+
+  const previousCount = relation.topics[actionId] ?? 0;
+  relation.topics[actionId] = previousCount + 1;
+  relation.interactions += 1;
+  let affinityDelta = 0;
+  let discoveryId = null;
+  let discoveryLabel = null;
+  let reaction = personalityConversationReaction(personality, actionId, previousCount >= 2);
+  let joined = false;
+
+  if (actionId === "small_talk") {
+    const chance = clampProbability(0.46 + ((next.player?.abilities?.charisma ?? 10) - 10) * 0.03 + personality.smallTalkBonus * 0.06);
+    const roll = Number.isFinite(options.roll) ? options.roll : Math.random();
+    affinityDelta = previousCount === 0 ? (roll < chance ? 4 + personality.smallTalkBonus : 1) : previousCount === 1 ? 1 : -1;
+    if (previousCount === 0) { discoveryId = "value"; discoveryLabel = `価値観「${personality.value}」`; }
+  } else if (actionId === "ask_history") {
+    const requiredAffinity = personality.id === "taciturn" ? (previousCount === 0 ? 10 : 25) : previousCount === 0 ? 0 : 12;
+    if (relation.affinity >= requiredAffinity) {
+      discoveryId = previousCount === 0 ? "history:origin" : "history:goal";
+      discoveryLabel = previousCount === 0 ? candidateHistory(candidate, personality).origin : candidateHistory(candidate, personality).goal;
+      affinityDelta = 1;
+    } else {
+      reaction = personality.id === "taciturn" ? "まだ話すほどの間柄ではない、と短く答えた。" : "過去を話すには、まだ少し早いようだ。";
+      affinityDelta = previousCount > 0 ? -1 : 0;
+    }
+  } else if (actionId === "ask_skills") {
+    const wisdom = next.player?.abilities?.wisdom ?? 10;
+    const roll = Number.isFinite(options.insightRoll) ? options.insightRoll : Number.isFinite(options.roll) ? options.roll : Math.random();
+    const canRead = roll < insightChance(wisdom, relation.interactions) || personality.id === "proud";
+    if (previousCount === 0) { discoveryId = "ability:impression"; discoveryLabel = candidateAbilityImpression(candidate); }
+    else if (previousCount === 1 && canRead) { discoveryId = "specialty"; discoveryLabel = `得意分野「${candidate.specialty}」`; }
+    else if (previousCount === 2 && canRead && relation.affinity >= 15) { discoveryId = "level"; discoveryLabel = `力量の目安 Lv.${candidate.level}`; }
+    else if (previousCount === 3 && canRead && relation.affinity >= 30) {
+      const best = Object.entries(candidate.abilities ?? {}).sort((left, right) => right[1] - left[1])[0];
+      discoveryId = best ? `ability:${best[0]}` : null;
+      discoveryLabel = best ? `特に優れた能力：${ABILITY_LABELS[best[0]]} ${best[1]}` : null;
+    }
+    affinityDelta = previousCount < 2 ? 1 : 0;
+  } else if (actionId === "buy_drink") {
+    next.player.metrics.wealth -= normalAction.cost;
+    relation.drinksBought += 1;
+    affinityDelta = previousCount < 2 ? 3 + personality.drinkBonus : -1;
+    if (previousCount === 0 && !relation.discovered.includes("value")) { discoveryId = "value"; discoveryLabel = `価値観「${personality.value}」`; }
+  } else if (actionId === "discuss_work") {
+    relation.recruitmentConditionKnown = true;
+    discoveryId = "recruitment";
+    const condition = recruitmentCondition(next, candidate, relation);
+    discoveryLabel = `${condition.name}：${condition.summary}`;
+    affinityDelta = previousCount === 0 ? (personality.id === "practical" || personality.id === "proud" ? 2 : 1) : previousCount === 1 ? 0 : -1;
+    if (previousCount >= 1) reaction = previousCount === 1 ? "条件は先ほど伝えた通りだ、と要点だけを確認した。" : personalityConversationReaction(personality, actionId, true);
+  } else if (actionId === "invite") {
+    const outcome = attemptRecruitmentOnDraft(next, candidate, relation);
+    affinityDelta = outcome.affinityDelta;
+    reaction = outcome.reaction;
+    joined = outcome.joined;
+    discoveryLabel = outcome.condition.hint;
+  }
+  if (actionId !== "invite") relation.affinity = Math.max(-40, Math.min(100, relation.affinity + affinityDelta));
+  const discovered = addDiscovery(relation, discoveryId);
+  relation.lastResult = { actionId, firstMeeting: false, affinityDelta, discovered: discovered ? discoveryId : null, discoveryLabel: discovered || actionId === "invite" ? discoveryLabel : null, reaction, joined, venue: options.venue === "guild" ? "guild" : "tavern" };
+  return next;
+}
+
+function recruitCandidate(state, candidateId, context, expectedIncoming) {
+  const next = preparedClone(state);
+  const candidate = getTavernCandidates(next, context).find((entry) => entry.id === candidateId);
+  if (!candidate || candidate.incoming !== expectedIncoming) throw new RangeError("その冒険者は今、酒場にいません。");
+  if (expectedIncoming) return addCandidateToParty(next, candidate, "invitation");
+  const relation = next.adventure.npcRelations[candidate.id] ??= normalizeNpcRelation(candidate.id, null);
+  const outcome = attemptRecruitmentOnDraft(next, candidate, relation);
+  relation.lastResult = { actionId: "invite", firstMeeting: false, affinityDelta: outcome.affinityDelta, discovered: null, discoveryLabel: outcome.condition.hint, reaction: outcome.reaction, joined: outcome.joined, venue: "tavern" };
+  if (!outcome.joined) throw new Error(outcome.reaction);
   return next;
 }
 
@@ -1047,6 +1344,8 @@ export function getDungeonTacticalRoster(state) {
     stamina: Math.max(20, 100 - (player?.villageLife?.fatigue ?? 0)),
     assignment: null,
     available: (player?.villageLife?.hp ?? 1) > 0,
+    level: 1,
+    uniqueCharacterId: null,
   };
   const roleBonuses = {
     前衛: { leadership: 6, war: 15, intelligence: 0, charisma: 2 },
@@ -1080,6 +1379,9 @@ export function getDungeonTacticalRoster(state) {
         stamina: 100,
         assignment: null,
         available: true,
+        level,
+        uniqueCharacterId: member.uniqueCharacterId ?? null,
+        passiveId: member.passiveId ?? uniqueCharacter?.adventure?.passiveId ?? null,
       };
     });
   return [playerEntry, ...companions];
@@ -1093,6 +1395,84 @@ export function createDungeonTacticalBattle(state) {
   const map = prepareDungeonBattleTerrain(createBattleMap({ width: 14, height: 10, terrainType: profile.baseTerrain }), run.dungeonType);
   const playerCommanderId = `cmd:${run.id}:player`;
   const enemyCommanderId = `cmd:${run.id}:enemy`;
+  if (run.mode === "personal-map" || run.combatScale === "personal-units") {
+    const roster = getDungeonTacticalRoster(state);
+    const enemyUnitCount = Math.min(profile.enemyUnits.length, Math.max(1, roster.length + hashString(`${run.id}:enemy-count`) % 2));
+    const unitClassForRole = (role = "") => (
+      /治療|僧侶|神官/.test(role) ? "mage"
+        : /術|魔/.test(role) ? "mage"
+        : /弓|斥候|射/.test(role) ? "archer"
+          : /騎/.test(role) ? "light_cavalry"
+            : /槍/.test(role) ? "spearman"
+              : "infantry"
+    );
+    const playerPositions = [{ x: 4, y: 5 }, { x: 3, y: 3 }, { x: 3, y: 7 }, { x: 5, y: 2 }, { x: 5, y: 8 }];
+    const enemyPositions = [{ x: 10, y: 5 }, { x: 11, y: 3 }, { x: 11, y: 7 }];
+    const commanders = [
+      createCommander({ id: playerCommanderId, name: state.player?.name ?? "探索隊長", side: "player", position: { x: 2, y: 5 }, leadership: 62, tactics: 62, bravery: 72, commandRange: 12, traits: ["探索パーティー"] }),
+      createCommander({ id: enemyCommanderId, name: run.combat.enemyName, side: "enemy", position: { x: 12, y: 5 }, leadership: 58, tactics: 54, bravery: 76, commandRange: 12, traits: ["遭遇集団"] }),
+    ];
+    const playerUnits = roster.map((participant, index) => {
+      const maxHp = index === 0 ? run.playerMaxHp : 42 + Math.max(1, participant.level ?? 1) * 6;
+      const astralCalibration = participant.passiveId === "astral_calibration";
+      const healingRole = /治療|僧侶|神官/.test(participant.role ?? "");
+      return createCombatUnit({
+        id: `unit:${run.id}:player:${participant.id}`,
+        name: participant.name,
+        iconUrl: participant.portraitImage ?? null,
+        side: "player",
+        unitClassId: unitClassForRole(participant.role),
+        commanderId: playerCommanderId,
+        soldierCount: 1,
+        maxSoldierCount: 1,
+        hp: index === 0 ? run.playerHp : maxHp,
+        maxHp,
+        position: playerPositions[index] ?? { x: 2 + index % 4, y: 1 + index % 8 },
+        order: UNIT_ORDERS.ATTACK,
+        activeSkill: astralCalibration ? "lightning" : healingRole ? "heal" : undefined,
+        tags: ["PERSONAL_COMBATANT", index === 0 ? "PLAYER_CHARACTER" : "PARTY_MEMBER", ...(index === 0 ? [] : [`PARTY_ID:${participant.id}`]), ...(healingRole ? ["HEALER"] : []), ...(astralCalibration ? ["ASTRAL_CALIBRATION"] : [])],
+        statusEffects: astralCalibration ? [{
+          id: "astral_calibration",
+          name: "星環定礎",
+          duration: null,
+          modifiers: { magicPower: 1.22 },
+          sourceCharacterId: participant.uniqueCharacterId,
+        }] : [],
+      });
+    });
+    const enemyUnits = profile.enemyUnits.slice(0, enemyUnitCount).map((definition, index) => {
+      const maxHp = Math.max(20, run.combat.enemyMaxHp + index * 4);
+      return createCombatUnit({
+        id: `unit:${run.id}:enemy:${index}`,
+        name: definition.name.replace(/群$/, ""),
+        side: "enemy",
+        raceId: run.dungeonType === "forest" ? "elf" : run.dungeonType === "cave" ? "dwarf" : "human",
+        unitClassId: definition.classId,
+        commanderId: enemyCommanderId,
+        soldierCount: 1,
+        maxSoldierCount: 1,
+        hp: maxHp,
+        maxHp,
+        position: enemyPositions[index],
+        facing: FACING.WEST,
+        order: UNIT_ORDERS.ATTACK,
+        tags: ["PERSONAL_COMBATANT", "ENCOUNTER_ENEMY"],
+      });
+    });
+    const battle = createBattleState({
+      id: run.combat.tacticalBattleId,
+      name: `${run.locationName ?? run.dungeonName}・個人ユニット戦`,
+      map,
+      units: [...playerUnits, ...enemyUnits],
+      commanders,
+      supplyNodes: [],
+      seed: hashString(run.id),
+    });
+    battle.combatScale = "personal-units";
+    battle.sideLabels = { player: "探索パーティー", enemy: `${run.combat.enemyName}側` };
+    battle.log = [{ turn: 0, phase: "command", message: `自軍${playerUnits.length}ユニットと敵軍${enemyUnits.length}ユニットが接触。各人物・敵を1ユニットとして戦闘を開始する。` }];
+    return battle;
+  }
   const starRingMage = Object.values(UNIQUE_CHARACTERS).find((character) => (
     character.adventure?.passiveId === "astral_calibration" && hasActiveUniqueCompanion(state, character.id)
   ));
@@ -1160,6 +1540,7 @@ export function startDungeonRun(state, dungeon, region) {
   const matchingContract = next.adventure.activeContracts.some((contract) => contract.dungeonId === dungeon.id);
   if (matchingContract && partySize < 1) throw new Error("受注依頼へ出発する前に、村の酒場で仲間を集めてください。");
   const villageLife = next.player?.villageLife;
+  if ((villageLife?.hp ?? 0) < 35) throw new Error("HPが35未満です。村の神殿・治療所で負傷を治してから出発してください。");
   const playerMaxHp = villageLife?.maxHp ?? 42 + partySize * 8;
   const playerHp = villageLife?.hp ?? playerMaxHp;
   next.adventure.activeRun = {
@@ -1167,6 +1548,7 @@ export function startDungeonRun(state, dungeon, region) {
     dungeonId: dungeon.id,
     dungeonName: dungeon.name,
     dungeonType: dungeon.dungeonType,
+    combatScale: "personal-units",
     regionId: region.id,
     phase: "exploring",
     step: 0,
@@ -1237,10 +1619,12 @@ export function advanceDungeonRun(state) {
   const archetype = DUNGEON_ARCHETYPES[run.dungeonType];
   if (run.step === 0) {
     const item = archetype.loot[0];
-    const recovered = grantLoot(next, run, item);
+    const recovered = grantLoot(next, run, item, { oncePerSite: true });
     run.step = 1;
     const appraisalNote = recovered.provenanceAppraiserId ? ` ノエラの「来歴封緘」で同系資料を${recovered.quantity}点確保した。` : "";
-    runLog(run, `${item.name}を発見。戦利品へ自動収納した。${appraisalNote}`, "loot");
+    runLog(run, recovered.alreadyRecovered
+      ? `${item.name}の採取場所は以前に回収済みだった。新たな戦利品はない。`
+      : `${item.name}を発見。戦利品へ自動収納した。${appraisalNote}`, recovered.alreadyRecovered ? "info" : "loot");
   } else if (run.step === 1) {
     const enemy = archetype.enemy;
     run.step = 2;
@@ -1259,10 +1643,12 @@ export function advanceDungeonRun(state) {
     runLog(run, `${enemy.name}が道を塞いだ。戦闘システムを起動する。`, "danger");
   } else {
     const item = archetype.loot[1];
-    const recovered = grantLoot(next, run, item);
+    const recovered = grantLoot(next, run, item, { oncePerSite: true });
     run.step = 3;
     const appraisalNote = recovered.provenanceAppraiserId ? ` ノエラの「来歴封緘」で同系資料を${recovered.quantity}点確保した。` : "";
-    runLog(run, `${item.name}を回収し、帰還経路を確保した。${appraisalNote}`, "loot");
+    runLog(run, recovered.alreadyRecovered
+      ? `${item.name}の保管場所は以前に回収済みだった。帰還経路だけを確保した。`
+      : `${item.name}を回収し、帰還経路を確保した。${appraisalNote}`, recovered.alreadyRecovered ? "info" : "loot");
     finishRun(next, run);
   }
   return next;
@@ -1274,15 +1660,43 @@ export function resolveDungeonTacticalBattle(state, battleResult) {
   if (!run || run.phase !== "battle" || !run.combat) throw new Error("戦闘中ではありません。");
   if (!battleResult?.winner || battleResult.battleId !== run.combat.tacticalBattleId) throw new Error("探索中の戦闘結果ではありません。");
   const casualtyRate = (battleResult.player?.casualties ?? 0) / Math.max(1, battleResult.player?.initialSoldiers ?? 1);
-  const hpLoss = battleResult.winner === "player" ? Math.min(28, Math.round(casualtyRate * 34)) : Math.max(1, run.playerHp - 1);
-  run.playerHp = Math.max(battleResult.winner === "player" ? 1 : 0, run.playerHp - hpLoss);
+  const personalUnitBattle = run.mode === "personal-map" || run.combatScale === "personal-units";
+  const protagonistResult = personalUnitBattle
+    ? battleResult.player?.members?.find((member) => member.tags?.includes("PLAYER_CHARACTER"))
+    : null;
+  const hpLoss = personalUnitBattle && protagonistResult
+    ? Math.max(0, protagonistResult.maxHp - protagonistResult.remainingHp)
+    : battleResult.winner === "player" ? Math.min(28, Math.round(casualtyRate * 34)) : Math.max(1, run.playerHp - 1);
+  run.playerHp = personalUnitBattle && protagonistResult
+    ? Math.max(0, Math.min(run.playerMaxHp, protagonistResult.remainingHp))
+    : Math.max(battleResult.winner === "player" ? 1 : 0, run.playerHp - hpLoss);
   run.combat.turn = battleResult.turn ?? run.combat.turn;
   run.combat.tacticalResult = {
     winner: battleResult.winner,
     turn: battleResult.turn ?? null,
+    autoResolved: Boolean(battleResult.autoResolved),
     playerCasualties: battleResult.player?.casualties ?? 0,
     enemyCasualties: battleResult.enemy?.casualties ?? 0,
+    members: (battleResult.player?.members ?? []).map((member) => ({ ...member, tags: [...(member.tags ?? [])] })),
   };
+  if (personalUnitBattle && next.player?.villageLife) {
+    const life = next.player.villageLife;
+    if (run.playerHp < run.playerMaxHp && !life.injuries.some((entry) => String(entry).startsWith("戦闘負傷"))) {
+      life.injuries.push(`戦闘負傷（${run.playerHp <= 0 ? "瀕死" : run.playerHp < 35 ? "重傷" : "軽傷"}）`);
+    }
+    (battleResult.player?.members ?? []).filter((member) => member.tags?.includes("PARTY_MEMBER")).forEach((memberResult) => {
+      const partyId = memberResult.tags.find((tag) => tag.startsWith("PARTY_ID:"))?.slice("PARTY_ID:".length);
+      const companion = life.party.find((member) => member.id === partyId) ?? life.party.find((member) => member.name === memberResult.name);
+      if (!companion) return;
+      companion.maxHp = memberResult.maxHp;
+      companion.hp = memberResult.remainingHp;
+      companion.battleState = memberResult.state;
+      companion.lastBattleOutcome = battleResult.winner;
+      companion.alive = memberResult.state !== "DESTROYED" && memberResult.remainingHp > 0;
+      if (!companion.alive) companion.active = false;
+    });
+  }
+  if (battleResult.autoResolved) run.skippedBattles = (run.skippedBattles ?? 0) + 1;
   if (battleResult.winner === "player") {
     run.combat.outcome = "victory";
     grantBattleTrophy(next, run);
@@ -1294,7 +1708,7 @@ export function resolveDungeonTacticalBattle(state, battleResult) {
   } else {
     run.combat.outcome = battleResult.winner === "draw" ? "draw" : "defeat";
     run.phase = "failed";
-    runLog(run, battleResult.winner === "draw" ? "双方が戦闘継続能力を失い、探索隊は撤退した。" : "戦術戦闘に敗れ、探索隊は撤退した。獲得済みの戦利品は失わない。", "danger");
+    runLog(run, battleResult.winner === "draw" ? "双方が戦闘継続能力を失い、探索隊は撤退した。入口までの帰還路と収納袋を確保していたため、獲得済みの戦利品は持ち帰れる。" : "戦術戦闘に敗れ、探索隊は撤退した。入口までの帰還路と収納袋を確保していたため、獲得済みの戦利品は失わない。", "danger");
   }
   if (run.mode === "personal-map") {
     const region = next.adventure.personalMap.regions[run.regionId];
@@ -1339,6 +1753,16 @@ export function skipDungeonBattle(state) {
   return next;
 }
 
+export function withdrawDungeonBattle(state) {
+  const next = preparedClone(state);
+  const run = next.adventure.activeRun;
+  if (!run || run.phase !== "battle" || !run.combat) throw new Error("撤退できる戦闘遭遇がありません。");
+  run.combat.outcome = "withdrawn";
+  run.phase = "failed";
+  runLog(run, `${run.combat.enemyName}の編成を確認し、交戦前に入口へ撤退した。獲得済みの戦利品は収納袋へ封じて持ち帰る。`, "info");
+  return next;
+}
+
 export function closeDungeonRun(state) {
   const next = preparedClone(state);
   if (next.adventure.activeRun && !["complete", "failed"].includes(next.adventure.activeRun.phase)) {
@@ -1346,4 +1770,84 @@ export function closeDungeonRun(state) {
   }
   next.adventure.activeRun = null;
   return next;
+}
+
+export function getDungeonBattlePreview(state) {
+  const run = state.adventure?.activeRun;
+  if (!run || run.phase !== "battle") return null;
+  const battle = createDungeonTacticalBattle(state);
+  const describe = (side) => battle.units.filter((unit) => unit.side === side).map((unit) => ({
+    id: unit.id,
+    name: unit.name,
+    role: unit.tags?.includes("HEALER") ? "治療支援" : PERSONAL_BATTLE_ROLE_LABELS[unit.unitClassId] ?? unit.unitClassId,
+    hp: unit.hp,
+    maxHp: unit.maxHp,
+  }));
+  const playerUnits = describe("player");
+  const enemyUnits = describe("enemy");
+  const power = (units) => units.reduce((sum, unit) => {
+    const source = battle.units.find((entry) => entry.id === unit.id);
+    return sum + unit.hp * (source.attack + source.defense + source.rangedAttack * 0.6);
+  }, 0);
+  const ownPower = power(playerUnits);
+  const enemyPower = power(enemyUnits);
+  const baseWinRate = Math.round(ownPower / Math.max(1, ownPower + enemyPower) * 100);
+  let forecast = { winner: null, turn: null };
+  try { forecast = autoResolveBattle(battle); } catch { /* 膠着時も準備画面は表示する */ }
+  const expectedWinRate = Math.max(5, Math.min(95, baseWinRate + (forecast.winner === "player" ? 22 : forecast.winner === "enemy" ? -25 : 0)));
+  const danger = expectedWinRate >= 65 ? { id: "favorable", label: "優勢" }
+    : expectedWinRate >= 48 ? { id: "even", label: "互角" }
+      : expectedWinRate >= 32 ? { id: "dangerous", label: "危険" } : { id: "severe", label: "極めて危険" };
+  return {
+    playerUnits,
+    enemyUnits,
+    expectedWinRate,
+    forecastWinner: forecast.winner,
+    forecastTurns: forecast.turn,
+    danger,
+    informationKnown: state.player?.villageLife?.discoveredDungeons?.includes(run.dungeonName) ?? false,
+    canRetreat: true,
+  };
+}
+
+export function returnToVillageForRecovery(state, context) {
+  const next = preparedClone(state);
+  const run = next.adventure.activeRun;
+  if (run && run.phase !== "failed") throw new Error("撤退が確定してから治療所へ帰還してください。");
+  next.adventure.activeRun = null;
+  const { definitions, byId, record } = personalRegionSnapshot(next, context);
+  const village = definitions.find((location) => location.type === "village");
+  const start = byId.get(record.currentLocationId);
+  if (!village || !start) throw new Error("帰還できる村を特定できません。");
+  const distances = new Map([[start.id, 0]]);
+  const pending = [{ id: start.id, minutes: 0 }];
+  while (pending.length) {
+    pending.sort((left, right) => left.minutes - right.minutes);
+    const current = pending.shift();
+    if (current.id === village.id) break;
+    const location = byId.get(current.id);
+    location.neighborIds.forEach((neighborId) => {
+      const neighbor = byId.get(neighborId);
+      if (!neighbor || !record.discoveredLocationIds.includes(neighborId)) return;
+      const minutes = current.minutes + Math.min(6 * 60, Math.max(90, Math.ceil(Math.hypot(neighbor.x - location.x, neighbor.y - location.y) / 10) * 30));
+      if (minutes >= (distances.get(neighborId) ?? Infinity)) return;
+      distances.set(neighborId, minutes);
+      pending.push({ id: neighborId, minutes });
+    });
+  }
+  const travelMinutes = distances.get(village.id);
+  if (!Number.isFinite(travelMinutes)) throw new Error("発見済みの道だけでは村へ帰還できません。");
+  record.currentLocationId = village.id;
+  const result = {
+    id: `recovery:${context.region.id}:${record.explorationCount}`,
+    type: "move",
+    title: "治療所へ帰還",
+    message: `${village.name}へ帰還した。神殿・治療所で負傷者を診てもらえる。`,
+    locationId: village.id,
+    locationName: village.name,
+    travelMinutes,
+  };
+  personalMapResult(record, result);
+  storePersonalRegion(next, context.region.id, record);
+  return advanceGeneratedWorldTime(next, travelMinutes);
 }

@@ -25,7 +25,15 @@ function fixture(seed = "unique-merchant-test") {
   return { state, context, sites: getRegionAdventureSites(state, context) };
 }
 
-const impress = (state, candidateId, context) => interactWithNpcCandidate(state, candidateId, "gentle", context, { roll: 0 });
+function impress(state, candidateId, context) {
+  let next = interactWithNpcCandidate(state, candidateId, "gentle", context, { roll: 0 });
+  next = interactWithNpcCandidate(next, candidateId, "small_talk", context, { roll: 0 });
+  next.adventure.npcRelations[candidateId].affinity = 60;
+  next.player.metrics.wealth = 50;
+  next.player.metrics.renown = 50;
+  next.player.progress.contracts = 2;
+  return interactWithNpcCandidate(next, candidateId, "discuss_work", context);
+}
 
 test("カティアは汎用商人と分離した完全なユニーク商人として登録される", () => {
   const merchant = UNIQUE_CHARACTERS[KATIA_KANDEL_ID];

@@ -30,10 +30,12 @@ import {
   REVENUE_CATEGORIES,
   REFORM_CONCESSIONS,
   SPENDING_CATEGORIES,
+  GUILD_PROCESSED_GOODS,
   VILLAGE_FACILITIES,
   WAR_OBJECTIVES,
   WAR_PLANS,
   WORLD,
+  COLETTE_LINDE_ID,
   MARIELLE_CROIX_ID,
   UNIQUE_CHARACTERS,
   acknowledgeMonthReport,
@@ -181,7 +183,6 @@ import {
 import {
   ADVENTURE_ART,
   DUNGEON_ARCHETYPES,
-  NPC_GREETING_APPROACHES,
   acceptGuildContract,
   acceptPartyInvitation,
   advanceDungeonRun,
@@ -190,6 +191,7 @@ import {
   createDungeonTacticalBattle,
   explorePersonalMap,
   getDungeonTacticalRoster,
+  getDungeonBattlePreview,
   getGuildContracts,
   getPersonalMapView,
   getRegionAdventureSites,
@@ -198,9 +200,11 @@ import {
   inviteTavernCandidate,
   movePersonalMap,
   normalizeAdventureState,
+  revealRegionDungeon,
+  returnToVillageForRecovery,
   resolveDungeonTacticalBattle,
-  skipDungeonBattle,
   startDungeonRun,
+  withdrawDungeonBattle,
 } from "./adventure-system.js";
 import { GEOPOLITICAL_MODEL_REFERENCES, GEOPOLITICAL_PULL_SET } from "./geopolitical-world.js";
 import { terrainSvgDataUrl } from "./terrain-renderer.js";
@@ -219,7 +223,11 @@ import {
   applyBattleFormation,
   createEncirclementCaptureDemo,
   createFortificationSiegeDemo,
+  createImperialPrincessBattle,
   createSampleBattle,
+  createSeniorGeneralBattle,
+  createSeniorGeneralBattleRoster,
+  autoResolveBattle,
   executeBattleTurn,
   getBattleCommander,
   getBattleFortification,
@@ -406,6 +414,7 @@ const view = {
   selectedVillageId: null,
   selectedVillageFacilityId: "inn",
   villageFacilityOpen: false,
+  tavernSection: "requests",
   villageConversation: null,
   locationScene: null,
   selectedLocationZoneId: null,
@@ -791,7 +800,24 @@ function renderCampaignBar() {
   if (state.player) {
     const player = state.player;
     const stage = getCareerStage(state);
-    const next = {
+    const activeQuest = player.villageLife?.quests?.find((quest) => quest.source === "guild" && ["accepted", "active", "completed", "reported"].includes(quest.status));
+    const activeRun = state.adventure?.activeRun;
+    const fallenCompanion = player.villageLife?.party?.find((member) => member.alive === false);
+    const next = player.stage === "individual" && activeRun?.phase === "battle"
+      ? `${activeRun.combat.enemyName}との戦闘方法を選ぶ`
+      : player.stage === "individual" && activeRun?.phase === "failed"
+        ? "探索隊を村の治療所へ帰還させる"
+        : player.stage === "individual" && fallenCompanion
+          ? `${fallenCompanion.name}を神殿で蘇生する`
+        : player.stage === "individual" && (player.villageLife?.hp ?? 100) < 35
+          ? `重傷を治療する（HP ${player.villageLife.hp}/${player.villageLife.maxHp}）`
+          : player.stage === "individual" && activeQuest?.status === "completed"
+            ? `${activeQuest.name}を受注窓口へ報告する`
+            : player.stage === "individual" && activeQuest?.status === "reported"
+              ? `${activeQuest.name}の報酬を受け取る`
+              : player.stage === "individual" && activeQuest
+                ? `${activeQuest.name}を達成する`
+                : {
       individual: "村へ入り、依頼・救命・大会・紹介から仕官の縁を得る",
       retainer: "主君の命令で功績と信用を得る",
       commander: "委任された部隊を率い、辺境を救援する",
@@ -1021,7 +1047,7 @@ async function resetChronicle(options = {}) {
       battlePreparation: null, tacticalBattle: null, tacticalOrigin: null, tacticalResult: null, tacticalResultOpen: false, commanderDisposition: null, commanderDispositionOpen: false, selectedTacticalUnitId: null, selectedTacticalCommanderId: null, selectedTacticalFortificationId: null, tacticalInspectorDismissed: false,
       panel: "world", spendingCategoryId: "social_security", spendingCityId: "selene", mapMode: "political", scale: "world",
       selectedType: null, selectedId: null, selectedTileName: null, selectedTerrain: null, selectedTerrainType: null, tileWindowOpen: false,
-      selectedCityId: "selene", cityTab: "overview", selectedTownId: "mugiwano", townTab: "overview", selectedVillageId: null, selectedVillageFacilityId: "inn", villageFacilityOpen: false, villageConversation: null, locationScene: null, selectedLocationZoneId: null, locationSceneResult: null, adventureOpen: false, selectedAuthorityDomain: "justice", selectedNationalReformSystem: "population_land_knowledge",
+      selectedCityId: "selene", cityTab: "overview", selectedTownId: "mugiwano", townTab: "overview", selectedVillageId: null, selectedVillageFacilityId: "inn", villageFacilityOpen: false, tavernSection: "requests", villageConversation: null, locationScene: null, selectedLocationZoneId: null, locationSceneResult: null, adventureOpen: false, selectedAuthorityDomain: "justice", selectedNationalReformSystem: "population_land_knowledge",
       selectedFacilityId: "farmland", selectedCountryId: "valka", objectiveId: "transit", warMapView: "atlas", warRegionId: null, selectedWarHexId: null, warCouncilOpen: false, assignmentOpen: false,
       pendingTownId: null, guideOpen: false, endingOpen: false, resetOpen: false, expertMode: false, atlasMode: "generated", generatedMapScale: "region", pendingGeneratedDestinationId: null,
       selectedGeneratedNationId: nextState.generatedWorld.playerNationId, worldNationFilter: "all", focusedTownCommandId: null,
@@ -2154,6 +2180,7 @@ function enterVillage(villageId) {
   view.selectedVillageId = context.id;
   view.selectedVillageFacilityId = "inn";
   view.villageFacilityOpen = false;
+  view.tavernSection = "requests";
   view.villageConversation = null;
   view.locationScene = null;
   view.selectedLocationZoneId = null;
@@ -2189,8 +2216,11 @@ function renderPersonalMapEntryActions(personalMap) {
   if (personalMap.currentLocation.type === "dungeon") {
     const { dungeon } = currentAdventureSites();
     const archetype = DUNGEON_ARCHETYPES[dungeon.dungeonType];
+    const life = state.player.villageLife;
+    const lowHp = life.hp < 35;
     return `<div class="personal-map-entry-actions">
-      <button type="button" data-enter-dungeon="${dungeon.id}"><i aria-hidden="true">${archetype.symbol}</i><span><small>${dungeon.cleared ? "踏破済み" : "未踏"}</small><strong>${escapeHtml(dungeon.name)}へ入る</strong></span><b>準備確認 →</b></button>
+      <button type="button" data-enter-dungeon="${dungeon.id}" ${lowHp ? "disabled" : ""}><i aria-hidden="true">${archetype.symbol}</i><span><small>${dungeon.cleared ? "踏破済み" : "未踏"}</small><strong>${escapeHtml(dungeon.name)}へ入る</strong>${lowHp ? `<em>HP ${life.hp}/${life.maxHp} · 出発には35以上必要</em>` : ""}</span><b>${lowHp ? "治療が必要" : "準備確認 →"}</b></button>
+      ${lowHp ? '<button type="button" class="is-recovery" data-return-recovery><i aria-hidden="true">癒</i><span><small>安全な既知経路を自動移動</small><strong>村の治療所へ帰還</strong></span><b>帰還 →</b></button>' : ""}
     </div>`;
   }
   if (personalMap.currentLocation.type !== "village") return "";
@@ -2213,11 +2243,13 @@ function renderPersonalMapOverlay(personalMap = getPersonalMapView(state, curren
     <button type="button" data-personal-map-move="${location.id}">
       <i aria-hidden="true">${escapeHtml(location.symbol)}</i><span><small>近くの発見済み地点 · 約${formatGeneratedTravelDuration(personalMapTravelMinutes(personalMap.currentLocation, location))}</small><strong>${escapeHtml(location.name)}</strong></span><b>移動</b>
     </button>`).join("");
+  const life = state.player.villageLife;
   return `<section class="personal-map-overlay-card" aria-label="${escapeHtml(personalMap.regionName)}の地方内行動">
     <header><div><small>LOCAL ACTIONS · ${escapeHtml(personalMap.regionName)}</small><h2><i aria-hidden="true">${escapeHtml(personalMap.currentLocation.symbol)}</i>${escapeHtml(personalMap.currentLocation.name)}</h2></div><strong>${personalMap.locations.filter((location) => location.discovered).length} / ${personalMap.locations.length}地点</strong></header>
+    <div class="personal-map-vitals ${life.hp < 35 ? "is-danger" : ""}"><strong>HP ${life.hp} / ${life.maxHp}</strong><span>${life.hp < 35 ? "重傷：探索・ダンジョン進入は危険" : escapeHtml(villageConditionSummary(life))}</span></div>
     <p class="personal-map-current-copy">${escapeHtml(personalMap.currentLocation.description)}</p>
     <div class="personal-map-actions">
-      <button type="button" class="personal-map-explore" data-personal-map-explore><i aria-hidden="true">探</i><span><strong>探索</strong><small>新たな場所・戦闘・アイテム・空振り</small></span></button>
+      <button type="button" class="personal-map-explore" data-personal-map-explore ${life.hp < 35 ? "disabled" : ""}><i aria-hidden="true">探</i><span><strong>探索</strong><small>${life.hp < 35 ? "HP35以上まで治療が必要" : "新たな場所・戦闘・アイテム・空振り"}</small></span></button>
       <div class="personal-map-destinations"><header><strong>移動</strong><small>発見済みの近くの場所だけ</small></header>${destinations || "<p>移動できる発見済み地点がありません。</p>"}</div>
     </div>
     ${renderPersonalMapEntryActions(personalMap)}
@@ -2289,7 +2321,7 @@ function renderGeneratedWorldPanel() {
   return `
     <section class="generated-move-command">
       <header><div><small>COMMAND</small><h2>地方へ移動</h2></div><strong>${reachableRegions.length}候補</strong></header>
-      <p>現在地に隣接する地方を一つ選び、内容を確認してから移動を実行します。地図をタップしただけでは移動しません。</p>
+      <p>地図上の「進む」をマウスでクリック／タップすると、その地方へ直接移動します。左の候補一覧では内容を確認してから移動できます。</p>
       <div class="generated-region-choices">${moveButtons || "<p>今月の移動力で進める隣接地方はありません。</p>"}</div>
       <div class="generated-move-selection">
         ${pendingRegion ? `<span><small>選択中</small><strong>${escapeHtml(pendingRegion.name)}</strong></span><span><small>${escapeHtml(pendingNation.name)} · ${escapeHtml(generatedRegionTerrainLabel(pendingRegion))}</small><strong>消費 ${pendingEntry.cost} · 約${formatGeneratedTravelDuration(pendingEntry.travelMinutes)}</strong></span>` : "<small>移動先を選択してください。</small>"}
@@ -3258,7 +3290,7 @@ function governmentTitleCatalog() {
 
 function careerActionButtons(player) {
   if (player.stage === "individual" && !player.invitations.length) {
-    return `<button class="career-primary-action career-village-route" type="button" data-panel="world"><strong>地方地図で村を探す</strong><small>村へ入り、ギルドで依頼を受け、酒場で仲間を集めてから出発する</small></button>`;
+    return `<button class="career-primary-action career-village-route" type="button" data-panel="world"><strong>地方地図で村を探す</strong><small>村の酒場で依頼を受け、仲間を集めてから出発する</small></button>`;
   }
   if (player.stage === "individual") return "";
   if (player.stage === "retainer") return `<button class="career-primary-action" type="button" data-career-action="fulfill_order"><strong>主君の討伐命令を果たす</strong><small>命令への服従、成果、損耗が信頼と昇進へ影響する</small></button>`;
@@ -3302,12 +3334,32 @@ function villageConditionSummary(life) {
   return conditions.length ? conditions.join("・") : "健康";
 }
 
+function partyConditionSummary(life) {
+  return life.party.map((member) => {
+    if (member.alive === false) return `${member.name}：戦闘不能`;
+    return `${member.name}：HP ${member.hp ?? member.maxHp ?? "?"}/${member.maxHp ?? "?"}${member.battleState && member.battleState !== "READY" ? `・${tacticalStateLabel(member.battleState)}` : ""}`;
+  }).join(" / ") || "単独行動";
+}
+
+const GUILD_PROCESSED_GOOD_ACTION_IDS = new Set(GUILD_PROCESSED_GOODS.map((good) => good.actionId));
+
+const HUMAN_CONVERSATION_PORTRAIT = "./assets/generated/player-conversation-human.png";
+
+function playerConversationPortrait() {
+  if (state.player.raceId === "human") return { image: HUMAN_CONVERSATION_PORTRAIT, transparent: true };
+  return {
+    image: PEOPLE_REPRESENTATIVES[state.player.raceId]?.image ?? PEOPLE_REPRESENTATIVES.human.image,
+    transparent: false,
+  };
+}
+
 const VILLAGE_DIALOGUE_CAST = Object.freeze({
   inn: Object.freeze({ name: "宿の女将", role: "宿屋", image: "./assets/generated/race-basics/race-human-female.webp", prompt: "旅の埃を落としていきな。必要な支度は整えておくよ。", reply: "助かる。次の旅に響かないよう、きちんと整えたい。" }),
   shop: Object.freeze({ name: "旅商人ミレル", role: "商店", image: "./assets/generated/officer-mirel.webp", prompt: "品は街道向けに選んである。必要なものを言ってくれ。", reply: "手持ちと旅程を見て決めよう。これを頼む。" }),
   smithy: Object.freeze({ name: "村鍛冶グラム", role: "鍛冶屋", image: "./assets/generated/race-basics/race-dwarf-male.webp", prompt: "刃も鎧も、壊れる前なら手を入れられる。見せてみな。", reply: "頼む。道中で命を預ける装備だ。" }),
   tavern: Object.freeze({ name: "酒場女将", role: "酒場", image: "./assets/generated/tavern-hostess.png", transparent: true, prompt: "人も噂も今夜は集まっている。どの縁を探す？", reply: "まずは話を聞こう。旅を共にできる相手を見極めたい。" }),
   guild: Object.freeze({ name: UNIQUE_CHARACTERS[MARIELLE_CROIX_ID].name, role: "冒険者ギルド主任受付官", image: `./${UNIQUE_CHARACTERS[MARIELLE_CROIX_ID].portraitImage}`, transparent: true, prompt: "赤札は危険、青札は期限、金札は達成証拠です。三枚とも確認しますか？", reply: "確認する。仲間の役割も整え、最後まで報告を返そう。" }),
+  guild_shop: Object.freeze({ name: UNIQUE_CHARACTERS[COLETTE_LINDE_ID].name, role: "冒険者ギルド補給事務員", image: `./${UNIQUE_CHARACTERS[COLETTE_LINDE_ID].portraitImage}`, transparent: true, prompt: "用途を伺ってから、封蝋印・ロット番号・使用期限を照合します。どの加工品が必要ですか？", reply: "旅程と用途に合う品を選びたい。番号まで確認して、それを頼む。" }),
   temple: Object.freeze({ name: "巡礼医リネア", role: "神殿・治療所", image: "./assets/generated/race-basics/race-angel-female.webp", prompt: "傷も病も、隠せば旅先で重くなります。こちらへ。", reply: "診てほしい。仲間も含め、万全にしておきたい。" }),
   training: Object.freeze({ name: "教官ガイウス", role: "訓練所", image: "./assets/generated/officer-gaius.webp", prompt: "望む強さを言葉にしろ。鍛え方は目的で変わる。", reply: "先へ進むために必要な力を鍛えたい。付き合ってくれ。" }),
   warehouse: Object.freeze({ name: "倉番エドラス", role: "倉庫", image: "./assets/generated/officer-edras.webp", prompt: "預かり札と荷を照合する。出し入れする品はどれだ？", reply: "携行品を軽くしたい。これを整理してくれ。" }),
@@ -3485,7 +3537,7 @@ function locationSceneActionResult(context, action) {
     fort_route: `${context.name}は${context.nationName}の補給を受け、${context.regionName}の通行と守備を支えている。`,
     dungeon_risk: `${context.description} 現在地へ到着済みで、探索開始の条件を満たしている。`,
     dungeon_history: context.cleared ? `この探索地は踏破済みである。再探索して戦利品や依頼対象を探せる。` : `この探索地は未踏である。深部まで三段階の自動探索が必要になる。`,
-    dungeon_contract: contract ? `受注中の依頼「${contract.title}」がこの洞窟を指定している。踏破後は村のギルドへ報告する。` : `この洞窟を指定する受注中の依頼はない。任意探索として進入できる。`,
+    dungeon_contract: contract ? `受注中の依頼「${contract.title}」がこの洞窟を指定している。踏破後は受注した集落の窓口へ報告する。` : `この洞窟を指定する受注中の依頼はない。任意探索として進入できる。`,
     dungeon_objective: contract ? `優先目的は依頼達成である。戦闘と戦利品回収を経て最奥へ到達する。` : `優先目的は踏破と戦利品回収である。危険なら探索画面から撤退できる。`,
     dungeon_party: activeParty.length ? `主人公と同行者${activeParty.length}人で進む。同行者：${activeParty.map((member) => member.name).join("・")}。` : `現在は主人公一人である。依頼指定の探索では、村の酒場で同行者を集める必要がある。`,
     dungeon_supplies: `HP ${life.hp}/${life.maxHp}、MP ${life.mp}/${life.maxMp}、食料${life.supplies.food}、松明${life.supplies.torches}。`,
@@ -3559,8 +3611,17 @@ function villageFacilityActions(village, facility) {
   return facility.actions.filter((item) => {
     if (facility.id === "tavern" && ["recruit_companion", "talk_npc"].includes(item.id)) return false;
     if (village.source === "generated" && facility.id === "guild" && item.id === "accept_request") return false;
+    if (facility.id === "guild" && GUILD_PROCESSED_GOOD_ACTION_IDS.has(item.id)) return false;
+    if (facility.id === "shop" && item.id === "sell_item") return false;
+    if (facility.id === "preparation" && item.id === "complete_request" && state.player?.villageLife?.quests?.some((quest) => ["accepted", "active"].includes(quest.status) && quest.dungeonId)) return false;
     return true;
   });
+}
+
+function villageActionCostLabel(availability) {
+  if (availability.deferredCost) return `財産 ${availability.chargedCost}＋後払 ${availability.deferredCost}`;
+  if (!availability.cost) return "費用なし";
+  return availability.discountAmount > 0 ? `財産 ${availability.baseCost} → ${availability.cost}` : `財産 ${availability.cost}`;
 }
 
 function villageActionDefinition(actionId, village = activeVillageContext()) {
@@ -3568,9 +3629,9 @@ function villageActionDefinition(actionId, village = activeVillageContext()) {
     .find((entry) => entry.id === actionId) ?? null;
 }
 
-function beginVillageConversation({ kind, id, facilityId, title, counterpartName = null, counterpart = null, otherLine = null, playerLine = null }) {
+function beginVillageConversation({ kind, id, facilityId, castId = facilityId, title, counterpartName = null, counterpart = null, otherLine = null, playerLine = null, closingLine = null }) {
   const village = activeVillageContext();
-  const cast = VILLAGE_DIALOGUE_CAST[facilityId] ?? VILLAGE_DIALOGUE_CAST.villagers;
+  const cast = VILLAGE_DIALOGUE_CAST[castId] ?? VILLAGE_DIALOGUE_CAST.villagers;
   if (!village) throw new Error("会話する村が選択されていません。");
   const counterpartCast = { ...cast, ...(counterpart ?? {}), name: counterpart?.name ?? counterpartName ?? cast.name };
   view.villageConversation = {
@@ -3584,6 +3645,7 @@ function beginVillageConversation({ kind, id, facilityId, title, counterpartName
     lines: [
       { side: "other", speaker: counterpartCast.name, text: otherLine ?? counterpartCast.prompt },
       { side: "player", speaker: state.player.name, text: playerLine ?? cast.reply },
+      { side: "other", speaker: counterpartCast.name, text: closingLine ?? "分かった。内容をもう一度確かめておこう。準備ができたら、この場で手続きを進める。" },
     ],
   };
   renderPanelFromTop();
@@ -3593,12 +3655,35 @@ function beginVillageActionConversation(actionId) {
   const definition = villageActionDefinition(actionId);
   if (!definition) throw new Error("この村行動の会話を開始できません。");
   const standing = getGuildStanding(state);
+  const castId = GUILD_PROCESSED_GOOD_ACTION_IDS.has(actionId) ? "guild_shop" : definition.facility.id;
+  const cast = VILLAGE_DIALOGUE_CAST[castId];
+  const dungeon = actionId === "check_dungeon" ? getRegionAdventureSites(state, currentAdventureContext()).dungeon : null;
+  const life = state.player.villageLife;
+  const treatment = actionId === "treat_injury";
+  const resurrection = actionId === "resurrect";
+  const fallenCompanion = life.party.find((member) => member.alive === false);
+  const woundedCompanions = life.party.filter((member) => member.alive !== false && (member.hp ?? member.maxHp ?? 1) < (member.maxHp ?? 1));
   beginVillageConversation({
     kind: "action",
     id: actionId,
     facilityId: definition.facility.id,
+    castId,
     title: definition.name,
-    otherLine: `${standing.greeting} ${VILLAGE_DIALOGUE_CAST[definition.facility.id]?.prompt ?? "用件を聞こう。"} 「${definition.name}」でいいかい？`,
+    otherLine: dungeon
+      ? `${standing.greeting} 受注票と探索者の報告を照合すると、目標は「${dungeon.name}」です。入口までの経路と敵の情報を地図へ記録しますか？`
+      : treatment
+        ? `HPは${life.hp}/${life.maxHp}です。${life.injuries.length ? `確認できる負傷は「${life.injuries.join("・")}」。` : "戦闘後の衰弱も含めて診察します。"}${woundedCompanions.length ? ` 同行者では${woundedCompanions.map((member) => `${member.name}（HP ${member.hp}/${member.maxHp}）`).join("・")}にも治療が必要です。` : ""}`
+      : resurrection && fallenCompanion
+        ? `${fallenCompanion.name}は戦場でHPを失い、通常の治療では意識を戻せません。蘇生後はHP ${Math.max(1, Math.round((fallenCompanion.maxHp ?? 48) / 2))}/${fallenCompanion.maxHp ?? 48}で療養状態になります。処置を始めますか？`
+      : `${standing.greeting} ${cast?.prompt ?? "用件を聞こう。"} 「${definition.name}」でよろしいですか？`,
+    playerLine: dungeon
+      ? "頼む。現在地から入口までの道筋と、遭遇しうる敵の構成を確認したい。"
+      : treatment ? "頼む。戦闘で受けた傷を確認し、再出発できる状態まで治してほしい。"
+        : resurrection && fallenCompanion ? `${fallenCompanion.name}を連れ帰るために退路を確保した。代価は払う。どうか意識を戻してほしい。` : null,
+    closingLine: dungeon
+      ? `${dungeon.name}を地図へ記します。まず隣接する野外地点へ移動し、そこから入口へ向かってください。`
+      : treatment ? `治療費は財産${getVillageActionAvailability(state, actionId, activeVillageContext()).cost}です。主人公と生存している同行者のHPを回復し、処置内容を記録します。`
+        : resurrection && fallenCompanion ? `蘇生費は財産${getVillageActionAvailability(state, actionId, activeVillageContext()).cost}です。処置後も負傷治療を受けるまで探索隊には戻せません。` : null,
   });
 }
 
@@ -3620,19 +3705,29 @@ function renderNpcSocialConversation(conversation, village) {
   const candidate = getTavernCandidates(state, currentAdventureContext()).find((entry) => entry.id === conversation.id);
   if (!candidate) return "";
   const counterpart = conversation.counterpart;
-  const playerPortrait = PEOPLE_REPRESENTATIVES[state.player.raceId]?.image ?? PEOPLE_REPRESENTATIVES.human.image;
+  const playerPortrait = playerConversationPortrait();
   const result = candidate.social.lastResult;
-  const resultText = result
-    ? `${result.reaction}${result.gainedFirstImpressionBonus ? " 第一印象で心をつかんだ。今なら確実に同行を頼める。" : result.firstMeeting ? " まだ確かな信頼には届かなかった。" : ""}${result.discoveryLabel ? ` ${result.discoveryLabel}が分かった。` : " 今回は新しい情報を読み取れなかった。"}`
-    : "最初の挨拶で、どのように振る舞うかを選ぶ。相手の性格との相性と主人公の魅力が第一印象を左右する。";
+  const resultDetail = result?.discoveryLabel && !result.reaction.includes(result.discoveryLabel) ? ` ${result.discoveryLabel}` : "";
+  const resultText = result ? `${result.reaction}${resultDetail}`
+    : "最初の一度だけ、どのように声をかけるかを選ぶ。第一印象は関係の始まりであり、その後の会話で取り戻すこともできる。";
+  const knownPersonality = candidate.social.personality ? `性格：${candidate.social.personality.name}` : "人柄はまだ分からない";
+  const knownDetails = [candidate.social.value, ...candidate.social.history, ...candidate.social.abilityInsights].filter(Boolean);
+  const recruitment = candidate.social.recruitment;
+  const actionButtons = candidate.joined
+    ? `<button type="button" data-village-dialogue-cancel>会話を終える<span>→</span></button>`
+    : `${candidate.social.availableActions.map((action) => `<button type="button" data-npc-conversation-action="${action.id}" ${action.allowed ? "" : "disabled"} title="${escapeHtml(action.reason ?? action.description ?? "")}">${escapeHtml(action.name)}${action.cost ? `<small>財産${action.cost}</small>` : ""}<span>→</span></button>`).join("")}<button type="button" data-village-dialogue-cancel>会話を終える<span>×</span></button>`;
   return `<section class="village-conversation npc-social-conversation" role="dialog" aria-modal="true" aria-labelledby="villageConversationTitle" style="--conversation-art:url('${villageFacilityArt(conversation.facilityId)}')">
     <header><div><small>${escapeHtml(village.name)} / ${conversation.facilityId === "guild" ? "冒険者ギルド" : "酒場"}</small><h1 id="villageConversationTitle">${escapeHtml(conversation.title)}</h1></div><button type="button" data-village-dialogue-cancel aria-label="会話をやめる">×</button></header>
     <div class="village-conversation-stage">
-      <figure class="conversation-character is-player"><img src="${escapeHtml(playerPortrait)}" alt="${escapeHtml(state.player.name)}"><figcaption><small>主人公</small><strong>${escapeHtml(state.player.name)}</strong></figcaption></figure>
-      <div class="conversation-place"><span>${candidate.social.personality ? `判明した性格：${escapeHtml(candidate.social.personality.name)}` : "性格：未判明"}</span><strong>${result ? escapeHtml(result.reaction) : "挨拶の仕方を選ぶ"}</strong></div>
+      <figure class="conversation-character is-player ${playerPortrait.transparent ? "has-transparent-art" : ""}"><img src="${escapeHtml(playerPortrait.image)}" alt="${escapeHtml(state.player.name)}"><figcaption><small>主人公</small><strong>${escapeHtml(state.player.name)}</strong></figcaption></figure>
+      <div class="conversation-place"><span>${escapeHtml(knownPersonality)}</span><strong>${escapeHtml(candidate.social.relationship.name)}</strong></div>
       <figure class="conversation-character is-other ${counterpart.transparent ? "has-transparent-art" : ""}"><img src="${escapeHtml(counterpart.image)}" alt="${escapeHtml(counterpart.name)}"><figcaption><small>${escapeHtml(counterpart.role)}</small><strong>${escapeHtml(counterpart.name)}</strong></figcaption></figure>
     </div>
-    <footer class="conversation-message npc-social-message"><div><small>${result ? "REACTION" : "FIRST CONTACT"}</small><strong>${escapeHtml(candidate.name)}</strong><p>${escapeHtml(resultText)}</p><span>魅力 ${state.player.abilities?.charisma ?? 10}で第一印象を判定 · 判断力 ${state.player.abilities?.wisdom ?? 10}で情報を見抜く</span></div><nav aria-label="挨拶時の振る舞い">${NPC_GREETING_APPROACHES.map((approach) => `<button type="button" data-npc-greeting-approach="${approach.id}">${escapeHtml(approach.name)}<span>→</span></button>`).join("")}</nav></footer>
+    <footer class="conversation-message npc-social-message">
+      <div class="npc-conversation-result"><small>${result ? result.joined ? "PARTY JOINED" : "REACTION" : "FIRST CONTACT"}</small><strong>${escapeHtml(candidate.name)}</strong><p>${escapeHtml(resultText)}</p><span>${candidate.social.firstMeetingComplete ? `関係：${escapeHtml(candidate.social.relationship.name)} · 会話${candidate.social.interactions}回` : `魅力 ${state.player.abilities?.charisma ?? 10}で第一印象を判定`}</span></div>
+      <section class="npc-known-profile" aria-label="判明した人物情報"><h2>分かったこと</h2><p><b>人柄</b>${escapeHtml(knownPersonality)}</p>${knownDetails.length ? `<ul>${knownDetails.map((detail) => `<li>${escapeHtml(detail)}</li>`).join("")}</ul>` : "<p>経歴や腕前は、まだ推し量れない。</p>"}${recruitment ? `<aside><b>加入条件 · ${escapeHtml(recruitment.name)}</b><span>${escapeHtml(recruitment.summary)}</span><small>${escapeHtml(recruitment.hint)}</small></aside>` : "<aside><b>加入条件</b><span>仕事の話をすれば、同行する理由を確かめられる。</span></aside>"}</section>
+      <nav aria-label="会話行動">${actionButtons}</nav>
+    </footer>
   </section>`;
 }
 
@@ -3643,12 +3738,12 @@ function renderVillageConversation() {
   if (conversation.kind === "npc-social") return renderNpcSocialConversation(conversation, village);
   const line = conversation.lines[conversation.lineIndex] ?? conversation.lines[0];
   const counterpart = conversation.counterpart;
-  const playerPortrait = PEOPLE_REPRESENTATIVES[state.player.raceId]?.image ?? PEOPLE_REPRESENTATIVES.human.image;
+  const playerPortrait = playerConversationPortrait();
   const finalLine = conversation.lineIndex >= conversation.lines.length - 1;
   return `<section class="village-conversation" role="dialog" aria-modal="true" aria-labelledby="villageConversationTitle" style="--conversation-art:url('${villageFacilityArt(conversation.facilityId)}')">
     <header><div><small>${escapeHtml(village.name)} / ${escapeHtml(counterpart.role)}</small><h1 id="villageConversationTitle">${escapeHtml(conversation.title)}</h1></div><button type="button" data-village-dialogue-cancel aria-label="会話をやめる">×</button></header>
     <div class="village-conversation-stage">
-      <figure class="conversation-character is-player ${line.side === "player" ? "is-speaking" : ""}"><img src="${escapeHtml(playerPortrait)}" alt="${escapeHtml(state.player.name)}"><figcaption><small>主人公</small><strong>${escapeHtml(state.player.name)}</strong></figcaption></figure>
+      <figure class="conversation-character is-player ${playerPortrait.transparent ? "has-transparent-art" : ""} ${line.side === "player" ? "is-speaking" : ""}"><img src="${escapeHtml(playerPortrait.image)}" alt="${escapeHtml(state.player.name)}"><figcaption><small>主人公</small><strong>${escapeHtml(state.player.name)}</strong></figcaption></figure>
       <div class="conversation-place"><span>${escapeHtml(village.name)}</span><strong>${escapeHtml(conversation.title)}</strong></div>
       <figure class="conversation-character is-other ${counterpart.transparent ? "has-transparent-art" : ""} ${line.side === "other" ? "is-speaking" : ""}"><img src="${escapeHtml(counterpart.image)}" alt="${escapeHtml(counterpart.name)}"><figcaption><small>${escapeHtml(counterpart.role)}</small><strong>${escapeHtml(counterpart.name)}</strong></figcaption></figure>
     </div>
@@ -3663,13 +3758,19 @@ function completeVillageConversation() {
   try {
     if (conversation.kind === "action") {
       const village = activeVillageContext();
-      const next = performVillageAction(state, village, conversation.id);
+      let next = performVillageAction(state, village, conversation.id);
+      if (conversation.id === "check_dungeon") next = revealRegionDungeon(next, currentAdventureContext());
       commit(next, next.player.villageLife.lastAction.message, conversation.id === "save" ? "confirm" : "ui");
       return;
     }
     if (conversation.kind === "contract") {
       const next = acceptGuildContract(state, conversation.id, currentAdventureContext());
-      commit(next, "ギルドの依頼を受注しました。地方地図のダンジョンから出発できます。", "confirm");
+      const village = activeVillageContext();
+      const venueName = village?.settlementLevel === "village" || village?.type === "village" ? "酒場" : "冒険者ギルド";
+      const quest = next.player?.villageLife?.quests?.find((entry) => entry.id === conversation.id);
+      commit(next, quest?.status === "completed"
+        ? `所持していた討伐戦利品が証明として認められました。${venueName}で達成報告できます。`
+        : `${venueName}の依頼を受注し、指定ダンジョンを個人マップへ記録しました。隣接地点を経由して入口へ向かえます。`, "confirm");
       return;
     }
     if (conversation.kind === "party-accept") {
@@ -3700,7 +3801,7 @@ function renderVillagePanel() {
   const selected = facilities.find((facility) => facility.id === view.selectedVillageFacilityId) ?? facilities[0];
   const actions = villageFacilityActions(village, selected).map((item) => {
     const availability = getVillageActionAvailability(state, item.id, village);
-    const cost = availability.cost ? availability.discountAmount > 0 ? `財産 ${availability.baseCost} → ${availability.cost}` : `財産 ${availability.cost}` : "費用なし";
+    const cost = villageActionCostLabel(availability);
     return `<button type="button" class="village-choice-action" data-village-action="${item.id}" ${availability.allowed ? "" : "disabled"} title="${escapeHtml(availability.reason ?? item.description)}"><span><small>${cost}</small><strong>${escapeHtml(item.name)}</strong><p>${escapeHtml(item.description)}</p></span><b>${availability.allowed ? "会話 →" : "不可"}</b></button>`;
   }).join("");
   elements.leftPanel.innerHTML = `
@@ -3729,6 +3830,9 @@ function activeGuildRequest(life) {
 
 function renderVillageQuestFlow(life, village) {
   const quest = activeGuildRequest(life);
+  const currentContract = quest
+    ? getGuildContracts(state, currentAdventureContext()).find((contract) => contract.id === quest.id)
+    : null;
   const hasParty = life.party.some((member) => member.active && member.alive !== false);
   const dungeonBound = Boolean(quest?.dungeonId && ["accepted", "active"].includes(quest.status));
   const requestVenue = village?.settlementLevel === "village" || village?.type === "village" ? "tavern" : "guild";
@@ -3749,10 +3853,28 @@ function renderVillageQuestFlow(life, village) {
     <header><div><small>REQUEST LOOP / LOCAL MERIT</small><h2>${venueName}の依頼</h2></div><strong>地域功績 ${life.guildMerit}</strong></header>
     <ol>${steps.map((label, index) => `<li class="${index < current ? "is-complete" : index === current ? "is-current" : ""}"><i>${index < current ? "✓" : index + 1}</i><span>${label}</span></li>`).join("")}</ol>
     <article class="village-current-request">
-      <div><small>${quest ? `受注中 · ${quest.status === "completed" ? "達成済み" : quest.status === "reported" ? "報告済み" : "進行中"}` : "依頼なし"}</small><strong>${escapeHtml(quest?.name ?? `${venueName}の依頼掲示を確認する`)}</strong><p>${escapeHtml(quest?.objective ?? `依頼はこの集落の${venueName}で受注できます。`)}</p></div>
+      <div><small>${quest ? `受注中 · ${quest.status === "completed" ? "達成済み" : quest.status === "reported" ? "報告済み" : "進行中"}` : "依頼なし"}</small><strong>${escapeHtml(quest?.name ?? `${venueName}の依頼掲示を確認する`)}</strong><p>${escapeHtml(currentContract?.detail ?? quest?.objective ?? `依頼はこの集落の${venueName}で受注できます。`)}</p></div>
       <button type="button" ${dungeonBound && hasParty ? 'data-leave-village="world"' : `data-village-facility="${destination}"`}>${nextLabel} →</button>
     </article>
   </section>`;
+}
+
+function renderGuildProcessedGoodsDesk(village) {
+  const clerk = UNIQUE_CHARACTERS[COLETTE_LINDE_ID];
+  const goods = GUILD_PROCESSED_GOODS.map((good) => {
+    const availability = getVillageActionAvailability(state, good.actionId, village);
+    const discounted = availability.baseCost > availability.cost;
+    return `<article class="guild-processed-good">
+      <i aria-hidden="true">${good.kind === "回復薬" ? "治" : good.kind === "解毒薬" ? "解" : "魔"}</i>
+      <span><small>${escapeHtml(good.kind)} · LOT SEALED</small><strong>${escapeHtml(good.name)}</strong><p>${escapeHtml(good.description)}</p></span>
+      <button type="button" data-village-action="${good.actionId}" ${availability.allowed ? "" : "disabled"} title="${escapeHtml(availability.reason ?? `${good.name}を購入する`)}"><b>財産 ${availability.cost}</b>${discounted ? `<small>通常 ${availability.baseCost}</small>` : ""}<em>${availability.allowed ? "購入 →" : "購入不可"}</em></button>
+    </article>`;
+  }).join("");
+  return `<aside class="guild-processed-goods-desk">
+    <figure><img src="./${escapeHtml(clerk.portraitImage)}" alt="${escapeHtml(clerk.name)}"><figcaption>UNIQUE SUPPLY CLERK</figcaption></figure>
+    <div class="guild-processed-goods-copy"><small>PROCESSED GOODS · LOT &amp; EXPIRY CHECK</small><h4>${escapeHtml(clerk.name)}</h4><p>一次素材を調合・安定化したポーション類を、封蝋印・ロット番号・使用期限まで照合して販売します。</p><ul>${clerk.guildService.duties.map((duty) => `<li>${escapeHtml(duty)}</li>`).join("")}</ul></div>
+    <section class="guild-processed-goods-list" aria-label="ギルド加工品販売">${goods}</section>
+  </aside>`;
 }
 
 function renderGuildAdventureBoard() {
@@ -3772,9 +3894,11 @@ function renderGuildAdventureBoard() {
       <section><span><small>PARTY REFERRAL</small><strong>${referralCandidates.length ? `${referralCandidates.length}名を紹介可能` : "新しい候補者を照会中"}</strong><p>${escapeHtml(referralNames || "現在の隊と依頼内容を確認し、役割の合う候補者を探します。")}</p></span><button type="button" data-village-facility="tavern">マリエルの紹介で候補者に会う →</button></section>
     </div>
   </aside>` : "";
+  const processedGoodsDesk = venueName === "ギルド" ? renderGuildProcessedGoodsDesk(village) : "";
   return `<section class="adventure-facility-board guild-contract-board">
     <header><div><small>LIVE CONTRACTS · ${escapeHtml(standing.name)}</small><h3>${venueName}の依頼</h3></div><p>地域功績 ${standing.merit} · 集落の商取引 ${standing.discountPercent}%割引。受注後は探索・採集・戦闘を実行します。</p></header>
     ${receptionistDesk}
+    ${processedGoodsDesk}
     <div>${contracts.map((contract) => `<article class="is-${contract.status}">
       <span><small>${statusLabel[contract.status] ?? contract.status}</small><strong>${escapeHtml(contract.title)}</strong><p>${escapeHtml(contract.detail)}</p><em>進捗 ${contract.objective.progress} / ${contract.objective.required}${escapeHtml(contract.objective.unit)} · ${escapeHtml(contract.objective.targetName)}</em></span>
       <footer><b>報酬 財産${contract.reward.wealth}・名声${contract.reward.renown} · 功績${contract.merit}</b>${contract.objective.type === "collect_item" && contract.status === "accepted"
@@ -3784,27 +3908,48 @@ function renderGuildAdventureBoard() {
   </section>`;
 }
 
-function renderTavernAdventureBoard(venue = "tavern") {
+function renderTavernAdventureBoard(venue = "tavern", section = "all") {
   const context = currentAdventureContext();
   const candidates = getTavernCandidates(state, context);
   const genericCandidates = candidates.filter((candidate) => !candidate.unique);
   const uniqueCandidates = candidates.filter((candidate) => candidate.unique);
   const incomingCandidates = genericCandidates.filter((candidate) => candidate.incoming);
   const candidateCard = (candidate) => `<article class="${candidate.joined ? "is-joined" : ""} ${candidate.unique ? "is-unique" : ""}">
-    ${candidate.portraitImage ? `<figure><img src="${escapeHtml(candidate.portraitImage)}" alt=""><figcaption>${candidate.unique ? "UNIQUE" : "NPC"}</figcaption></figure>` : `<i aria-hidden="true">${escapeHtml(candidate.name.slice(0, 1))}</i>`}<span><small>${candidate.unique ? "固有人物 · " : ""}${candidate.social.levelKnown ? `Lv.${candidate.level}` : "Lv.?"} ${escapeHtml(candidate.role)}</small><strong>${escapeHtml(candidate.name)}</strong><p>${candidate.social.specialtyKnown ? escapeHtml(candidate.specialty) : "得意分野はまだ分からない"}</p><mark>${candidate.social.personality ? `性格：${escapeHtml(candidate.social.personality.name)}` : "性格：未判明"} · 会話 ${candidate.social.interactions}回</mark>${Object.keys(candidate.social.knownAbilities).length ? `<dl>${Object.entries(candidate.social.knownAbilities).map(([abilityId, value]) => `<div><dt>${escapeHtml(ABILITY_LABELS[abilityId])}</dt><dd>${value}</dd></div>`).join("")}</dl>` : ""}${candidate.passiveName && candidate.social.specialtyKnown ? `<em><b>${escapeHtml(candidate.passiveName)}</b>${escapeHtml(candidate.passiveDescription)}</em>` : ""}</span>
-    <div class="tavern-candidate-actions"><button type="button" data-talk-npc-candidate="${candidate.id}" data-npc-venue="${venue}" ${candidate.joined ? "disabled" : ""}>会話する</button>${candidate.incoming ? `<button type="button" data-accept-party-invitation="${candidate.id}" ${candidate.joined ? "disabled" : ""}>誘いを受ける</button>` : `<button type="button" data-invite-party-candidate="${candidate.id}" ${candidate.joined || !candidate.social.canInvite ? "disabled" : ""}>${candidate.joined ? "加入済み" : candidate.social.canInvite ? "同行を頼む" : "好印象が必要"}</button>`}</div>
+    ${candidate.portraitImage ? `<figure><img src="${escapeHtml(candidate.portraitImage)}" alt=""><figcaption>${candidate.unique ? "UNIQUE" : "NPC"}</figcaption></figure>` : `<i aria-hidden="true">${escapeHtml(candidate.name.slice(0, 1))}</i>`}<span><small>${candidate.unique ? "固有人物 · " : ""}${candidate.social.levelKnown ? `Lv.${candidate.level}` : "Lv.?"} ${escapeHtml(candidate.role)}</small><strong>${escapeHtml(candidate.name)}</strong><p>${escapeHtml(candidate.social.specialtyKnown ? candidate.specialty : candidate.social.abilityInsights[0] ?? "得意分野はまだ分からない")}</p><mark>${escapeHtml(candidate.social.relationship.name)} · ${candidate.social.personality ? `性格：${escapeHtml(candidate.social.personality.name)}` : "性格：未判明"}</mark>${candidate.social.recruitment ? `<em><b>${escapeHtml(candidate.social.recruitment.name)}</b>${escapeHtml(candidate.social.recruitment.summary)}</em>` : ""}${candidate.passiveName && candidate.social.specialtyKnown ? `<em><b>${escapeHtml(candidate.passiveName)}</b>${escapeHtml(candidate.passiveDescription)}</em>` : ""}</span>
+    <div class="tavern-candidate-actions"><button type="button" data-talk-npc-candidate="${candidate.id}" data-npc-venue="${venue}" ${candidate.joined ? "disabled" : ""}>${candidate.joined ? "加入済み" : candidate.social.firstMeetingComplete ? "話を続ける" : "会話する"}</button>${candidate.incoming ? `<button type="button" data-accept-party-invitation="${candidate.id}" ${candidate.joined ? "disabled" : ""}>誘いを受ける</button>` : ""}</div>
   </article>`;
-  return `<section class="adventure-facility-board tavern-party-board">
-    <header><div><small>NPC CONVERSATION · ${venue === "guild" ? "GUILD" : "TAVERN"}</small><h3>${venue === "guild" ? "ギルド" : "酒場"}の冒険者</h3></div><p>挨拶時の振る舞いを選び、会話から性格や能力を見抜きます。初対面ボーナスを得ると勧誘は必ず成功します。</p></header>
-    ${incomingCandidates.length ? `<section class="tavern-incoming-invitations"><h4>食事中に届いた誘い</h4>${incomingCandidates.map(candidateCard).join("")}</section>` : ""}
-    <div class="tavern-party-columns"><section><h4>話しかける</h4>${genericCandidates.filter((candidate) => !candidate.incoming).map(candidateCard).join("")}</section></div>
-    <section class="tavern-unique-companion"><header><div><small>UNIQUE CHARACTER</small><h4>固有人物</h4></div><p>地域シードから生成される冒険者とは別に、固有の経歴・会話・能力を持つ人物です。</p></header>${uniqueCandidates.map(candidateCard).join("")}</section>
+  const tabs = venue === "tavern" ? `<nav class="tavern-section-tabs" aria-label="酒場の掲示分類">
+    ${[
+      ["requests", "依頼掲示"],
+      ["adventurers", "一般冒険者"],
+      ["unique", "固有人物"],
+    ].map(([id, label]) => `<button type="button" data-tavern-section="${id}" class="${section === id ? "is-active" : ""}" aria-pressed="${section === id}">${label}</button>`).join("")}
+  </nav>` : "";
+  if (venue === "tavern" && section === "requests") return tabs;
+  const genericMarkup = `${incomingCandidates.length ? `<section class="tavern-incoming-invitations"><h4>食事中に届いた誘い</h4>${incomingCandidates.map(candidateCard).join("")}</section>` : ""}
+    <div class="tavern-party-columns"><section><h4>話しかける</h4>${genericCandidates.filter((candidate) => !candidate.incoming).map(candidateCard).join("")}</section></div>`;
+  const uniqueMarkup = `<section class="tavern-unique-companion"><header><div><small>UNIQUE CHARACTER</small><h4>固有人物</h4></div><p>地域シードから生成される冒険者とは別に、固有の経歴・会話・能力を持つ人物です。</p></header>${uniqueCandidates.map(candidateCard).join("")}</section>`;
+  const content = venue !== "tavern" || section === "all" ? `${genericMarkup}${uniqueMarkup}`
+    : section === "adventurers" ? genericMarkup
+      : section === "unique" ? uniqueMarkup
+        : "";
+  return `${tabs}<section class="adventure-facility-board tavern-party-board">
+    <header><div><small>NPC CONVERSATION · ${venue === "guild" ? "GUILD" : "TAVERN"}</small><h3>${venue === "guild" ? "ギルド" : "酒場"}の冒険者</h3></div><p>初対面の後は、会話で人柄・経歴・腕前・同行条件を段階的に確かめます。</p></header>
+    ${content || "<p class=\"adviser-note\">上の「依頼掲示」から受注内容を確認できます。</p>"}
   </section>`;
 }
 
 function villageFacilityAdventureContent(facilityId, village = activeVillageContext()) {
   if (facilityId === "guild") return `${renderGuildAdventureBoard()}${renderTavernAdventureBoard("guild")}`;
-  if (facilityId === "tavern") return `${village?.settlementLevel === "village" || village?.type === "village" ? renderGuildAdventureBoard() : ""}${renderTavernAdventureBoard("tavern")}`;
+  if (facilityId === "tavern") {
+    const villageRequests = village?.settlementLevel === "village" || village?.type === "village";
+    const requests = view.tavernSection === "requests" && villageRequests ? renderGuildAdventureBoard() : "";
+    return `${renderTavernAdventureBoard("tavern", view.tavernSection)}${requests}`;
+  }
+  if (facilityId === "shop") {
+    const inventory = state.player?.villageLife?.inventory ?? [];
+    return `<section class="adventure-facility-board village-shop-inventory"><header><div><small>SELECT ITEM TO SELL</small><h3>所持品を選んで売却</h3></div><p>売却前に品名と数量を確認します。</p></header><div>${inventory.length ? inventory.map((item) => `<article><span><strong>${escapeHtml(item.name)}</strong><small>所持 ${item.quantity ?? 1}</small></span><button type="button" data-sell-village-item="${escapeHtml(item.id)}">1個売却 →</button></article>`).join("") : "<p>売却できる所持品はありません。</p>"}</div></section>`;
+  }
   return "";
 }
 
@@ -3837,7 +3982,7 @@ function renderVillageWorkspace() {
   const activeParty = life.party.filter((member) => member.active && member.alive !== false);
   const actions = villageFacilityActions(village, selected).map((item) => {
     const availability = getVillageActionAvailability(state, item.id, village);
-    const cost = availability.cost ? availability.discountAmount > 0 ? `財産 ${availability.baseCost} → ${availability.cost}` : `財産 ${availability.cost}` : "費用なし";
+    const cost = villageActionCostLabel(availability);
     return `<button type="button" class="village-choice-action" data-village-action="${item.id}" ${availability.allowed ? "" : "disabled"} title="${escapeHtml(availability.reason ?? item.description)}"><span><small>${cost}</small><strong>${escapeHtml(item.name)}</strong><p>${escapeHtml(item.description)}</p></span><b>${availability.allowed ? "会話 →" : "不可"}</b></button>`;
   }).join("");
   const records = life.actionHistory.filter((record) => record.villageId === village.id).slice(0, 6).map((record) => `
@@ -3857,7 +4002,7 @@ function renderVillageWorkspace() {
         <div class="village-central-status is-top-status" aria-label="人物と探索物資の状態">
           <article><small>HP / MP</small><strong>${life.hp} / ${life.mp}</strong><span>${escapeHtml(villageConditionSummary(life))}</span></article>
           <article><small>財産</small><strong>${player.metrics.wealth}</strong><span>村内の支払い</span></article>
-          <article><small>同行</small><strong>${activeParty.length}<i> / ${life.party.length}</i></strong><span>${activeParty.map((member) => escapeHtml(member.name)).join("・") || "単独行動"}</span></article>
+          <article><small>同行</small><strong>${activeParty.length}<i> / ${life.party.length}</i></strong><span>${escapeHtml(partyConditionSummary(life))}</span></article>
           <article><small>探索物資</small><strong>${life.supplies.food}<i>食</i> ${life.supplies.torches}<i>灯</i></strong><span>所持品 ${life.inventory.reduce((sum, item) => sum + (item.quantity ?? 1), 0)}</span></article>
         </div>
         ${tavernInterior ? "" : `<section class="village-choice-overlay village-facility-window ${view.villageFacilityOpen ? "has-action-window" : ""}" aria-label="${escapeHtml(village.name)}の施設">
@@ -4281,7 +4426,7 @@ function generatedMapVisibleObjectIds(runtime, expeditionRegion, expeditionTile,
   return new Set(accepted.map((entry) => entry.object.id));
 }
 
-function positionGeneratedRegionMarker(copy, expeditionRegion, expeditionTile, runtime, viewport) {
+function positionGeneratedRegionMarker(copy, expeditionRegion, expeditionTile, runtime, viewport, currentLocationName) {
   const expedition = copy.querySelector(".generated-expedition-marker");
   const tile = expeditionTile;
   const x = visibleUnwrappedTileX(tile.x, viewport, runtime.terrain.width);
@@ -4289,7 +4434,44 @@ function positionGeneratedRegionMarker(copy, expeditionRegion, expeditionTile, r
   expedition.style.top = `${(tile.y + 0.5 - viewport.y) / viewport.height * 100}%`;
   expedition.dataset.generatedRegionId = expeditionRegion.id;
   expedition.dataset.generatedTileId = tile.id;
-  expedition.title = `探索隊 · ${expeditionRegion.name}`;
+  expedition.querySelector("small").textContent = currentLocationName;
+  expedition.setAttribute("aria-label", `現在地 · ${expeditionRegion.name} · ${currentLocationName}`);
+  expedition.title = `現在地 · ${expeditionRegion.name} · ${currentLocationName}`;
+}
+
+function positionGeneratedRegionMoveTargets(copy, runtime, expeditionRegion, expeditionTile, viewport) {
+  const layer = copy.querySelector(".generated-region-move-layer");
+  if (!layer) return;
+  if (view.generatedMapScale !== "region") {
+    layer.innerHTML = "";
+    return;
+  }
+  const expeditionX = visibleUnwrappedTileX(expeditionTile.x, viewport, runtime.terrain.width);
+  const reachableById = new Map(getGeneratedExpeditionReachableRegions(state).map((entry) => [entry.regionId, entry]));
+  layer.innerHTML = expeditionRegion.neighborIds.map((regionId) => {
+    const region = runtime.regionById.get(regionId);
+    if (!region) return "";
+    const visibleTiles = region.tileIndices.map((index) => runtime.tiles[index]).map((tile) => {
+      const x = visibleUnwrappedTileX(tile.x, viewport, runtime.terrain.width);
+      return {
+        tile,
+        x,
+        left: (x + 0.5 - viewport.x) / viewport.width * 100,
+        top: (tile.y + 0.5 - viewport.y) / viewport.height * 100,
+      };
+    }).filter((entry) => entry.left >= 2 && entry.left <= 98 && entry.top >= 4 && entry.top <= 96)
+      .sort((left, right) => (
+        Math.hypot(left.x - expeditionX, left.tile.y - expeditionTile.y)
+        - Math.hypot(right.x - expeditionX, right.tile.y - expeditionTile.y)
+      ));
+    const target = visibleTiles[0];
+    if (!target) return "";
+    const reachable = reachableById.get(region.id);
+    const cost = Math.max(1, Math.ceil(region.movementCost));
+    const disabled = !reachable;
+    const label = disabled ? `${region.name}（移動力 ${cost} 必要）` : `${region.name}へ移動（移動力 ${reachable.cost}）`;
+    return `<button type="button" class="generated-region-move-target${disabled ? " is-disabled" : ""}" style="left:${target.left}%;top:${target.top}%" data-generated-map-move-region="${region.id}" ${disabled ? "disabled" : ""} aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}"><span>${escapeHtml(region.name)}</span><small>${disabled ? `移動力 ${cost} 必要` : `進む · ${reachable.cost}`}</small></button>`;
+  }).join("");
 }
 
 function generatedSiteSelectionContext() {
@@ -4573,7 +4755,8 @@ function renderGeneratedWorldMapLayer() {
         </div>
         <div class="generated-world-fog" aria-hidden="true"></div>
         <svg class="generated-travel-route" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><path></path></svg>
-        <button type="button" class="generated-expedition-marker" aria-label="探索隊">◆</button>
+        <button type="button" class="generated-expedition-marker" aria-label="現在地"><span><b>現在地</b><small></small></span><i aria-hidden="true">◆</i></button>
+        <div class="generated-region-move-layer" aria-label="隣接地方への地図移動"></div>
         <div class="generated-site-marker-layer"></div>
         <div class="generated-site-action-layer"></div>
       </div>
@@ -4601,7 +4784,8 @@ function renderGeneratedWorldMapLayer() {
     fog.style.setProperty("--recognition-y", `${recognitionTop}%`);
     fog.style.setProperty("--recognition-radius-x", `${recognition.radius / viewport.width * 100}%`);
     fog.style.setProperty("--recognition-radius-y", `${recognition.radius / viewport.height * 100}%`);
-    positionGeneratedRegionMarker(copy, expeditionRegion, expeditionTile, runtime, viewport);
+    positionGeneratedRegionMarker(copy, expeditionRegion, expeditionTile, runtime, viewport, personalMap.currentLocation.name);
+    positionGeneratedRegionMoveTargets(copy, runtime, expeditionRegion, expeditionTile, viewport);
     positionGeneratedSiteMarkers(copy, runtime, viewport, dungeon, personalMap, selectedSite, colonyCandidate, recognition.recognizedTileIds, barbarianFrontier.sites, visibleObjectIds);
   });
   elements.generatedWorldMap.querySelectorAll("[data-generated-map-scale]").forEach((button) => button.classList.toggle("is-active", button.dataset.generatedMapScale === view.generatedMapScale));
@@ -4609,7 +4793,7 @@ function renderGeneratedWorldMapLayer() {
   elements.mapModeEyebrow.textContent = focusedNation ? "GENERATED NATION MAP" : view.generatedMapScale === "region" ? "REGIONAL PLAY MAP" : "GENERATED WORLD OVERVIEW";
   elements.mapCaptionTitle.textContent = focusedNation
     ? `${focusedNation.name} · 世界全図`
-    : view.generatedMapScale === "region" ? `${expeditionRegion.name} · ${currentNation.name} · 認識範囲 ${recognition.radius}マス` : `${playerNation.name} · 世界全図`;
+    : view.generatedMapScale === "region" ? `現在地｜${expeditionRegion.name}｜${personalMap.currentLocation.name} · ${currentNation.name} · 認識範囲 ${recognition.radius}マス` : `${playerNation.name} · 世界全図`;
 }
 
 function nextAnimationFrame() {
@@ -5155,6 +5339,15 @@ function battlePreparationDefaults(roster) {
 }
 
 function tacticalOriginLabels() {
+  if (view.tacticalOrigin?.type === "personal-map") {
+    return {
+      player: "探索パーティー",
+      enemy: `${view.tacticalOrigin.enemyName}側`,
+      playerVictory: "探索パーティー勝利",
+      enemyVictory: `${view.tacticalOrigin.enemyName}側勝利`,
+      exit: "個人マップへ戻る",
+    };
+  }
   if (view.tacticalOrigin?.type === "dungeon") {
     return {
       player: "探索隊",
@@ -5162,6 +5355,24 @@ function tacticalOriginLabels() {
       playerVictory: "探索隊勝利",
       enemyVictory: `${view.tacticalOrigin.enemyName}優勢`,
       exit: "ダンジョンへ戻る",
+    };
+  }
+  if (view.tacticalOrigin?.type === "imperial-princess") {
+    return {
+      player: "セレナ王国軍",
+      enemy: view.tacticalOrigin.enemyName ?? "グレート帝国親征軍",
+      playerVictory: "王国軍勝利",
+      enemyVictory: "グレート帝国親征軍勝利",
+      exit: "開発メニュー",
+    };
+  }
+  if (view.tacticalOrigin?.type === "senior-general") {
+    return {
+      player: "セレナ王国北方軍集団",
+      enemy: view.tacticalOrigin.enemyName ?? "ヴァルカ公国強襲軍",
+      playerVictory: "北方軍集団勝利",
+      enemyVictory: "ヴァルカ公国強襲軍勝利",
+      exit: "開発メニュー",
     };
   }
   return { player: "セレナ王国軍", enemy: "ヴァルカ公国軍", playerVictory: "王国軍勝利", enemyVictory: "公国軍勝利", exit: "開発メニュー" };
@@ -5288,12 +5499,33 @@ function openTacticalBattle({ battle = createSampleBattle(), roster = null, defa
 function openDungeonTacticalBattle() {
   const run = state.adventure?.activeRun;
   if (!run || run.phase !== "battle" || !run.combat) throw new Error("戦術戦闘を開始できる遭遇がありません。");
+  const battle = createDungeonTacticalBattle(state);
+  const personalUnitBattle = battle.combatScale === "personal-units";
+  const origin = { type: run.mode === "personal-map" ? "personal-map" : "dungeon", personalUnitBattle, runId: run.id, enemyName: run.combat.enemyName, dungeonName: run.dungeonName };
+  if (personalUnitBattle) {
+    stopTacticalBattleEffects();
+    view.launchOpen = false;
+    view.guideOpen = false;
+    view.tacticalOrigin = origin;
+    view.battlePreparation = null;
+    view.tacticalBattle = battle;
+    view.tacticalResult = null;
+    view.tacticalResultOpen = false;
+    view.commanderDisposition = null;
+    view.commanderDispositionOpen = false;
+    view.selectedTacticalUnitId = null;
+    view.selectedTacticalCommanderId = null;
+    view.selectedTacticalFortificationId = null;
+    view.tacticalInspectorDismissed = false;
+    render();
+    return;
+  }
   const roster = getDungeonTacticalRoster(state);
   openTacticalBattle({
-    battle: createDungeonTacticalBattle(state),
+    battle,
     roster,
     defaultParticipantIds: roster.filter((entry) => entry.available).slice(0, 3).map((entry) => entry.id),
-    origin: { type: run.mode === "personal-map" ? "personal-map" : "dungeon", runId: run.id, enemyName: run.combat.enemyName, dungeonName: run.dungeonName },
+    origin,
   });
 }
 
@@ -5312,7 +5544,12 @@ function prepareTacticalResult({ open = true } = {}) {
   const battle = view.tacticalBattle;
   if (!battle?.winner) return;
   view.tacticalResult = createBattleResult(battle);
-  if (["dungeon", "personal-map"].includes(view.tacticalOrigin?.type)) {
+  view.tacticalResult.autoResolved = Boolean(view.tacticalOrigin?.autoResolved);
+  if (view.tacticalOrigin?.type === "personal-map") {
+    view.tacticalResult.title = view.tacticalResult.winner === "player"
+      ? "探索パーティー勝利"
+      : view.tacticalResult.winner === "enemy" ? `${view.tacticalOrigin.enemyName}側勝利` : "双方戦闘不能";
+  } else if (view.tacticalOrigin?.type === "dungeon") {
     view.tacticalResult.title = view.tacticalResult.winner === "player" ? "探索隊勝利" : view.tacticalResult.winner === "enemy" ? "探索隊撤退" : "相討ち・探索中断";
   }
   view.tacticalResultOpen = open;
@@ -5363,21 +5600,85 @@ function exitTacticalBattle({ applyDungeonResult = false } = {}) {
   render();
 }
 
-function skipActiveDungeonBattle() {
-  if (state.adventure?.activeRun?.phase !== "battle") throw new Error("スキップできる戦闘がありません。");
+function routePartyToRecovery({ applyBattleResult = false } = {}) {
+  const context = currentAdventureContext();
+  let next = state;
+  if (applyBattleResult) {
+    if (!view.tacticalResult) throw new Error("帰還に反映できる戦闘結果がありません。");
+    next = resolveDungeonTacticalBattle(next, view.tacticalResult);
+  }
+  next = returnToVillageForRecovery(next, context);
+  const travelMinutes = next.adventure.personalMap.regions[context.region.id]?.lastResult?.travelMinutes ?? 0;
   clearTacticalBattleView();
   view.tacticalOrigin = null;
+  view.adventureOpen = false;
+  const village = generatedVillageContexts(context.region.id).find((entry) => entry.type === "village") ?? generatedVillageContexts(context.region.id)[0];
+  if (!village) throw new Error("帰還先の村が見つかりません。");
+  const recoveryMessage = `${village.name}へ敗走者を搬送し、神殿・治療所で診察を受けられる状態にした。`;
+  const recoveryRecord = {
+    id: `village-${next.turn ?? 0}-${next.player.villageLife.actionHistory.length + 1}`,
+    villageId: village.id,
+    villageName: village.name,
+    facilityId: "temple",
+    facilityName: "神殿・治療所",
+    actionId: "battle_recovery",
+    actionName: "戦闘後帰還",
+    year: next.year,
+    month: next.month,
+    message: recoveryMessage,
+  };
+  next.player.villageLife.lastAction = recoveryRecord;
+  next.player.villageLife.actionHistory.unshift(recoveryRecord);
+  next.player.villageLife.actionHistory = next.player.villageLife.actionHistory.slice(0, 40);
+  next.player.history ??= [];
+  next.player.history.unshift({ turn: next.turn ?? 0, year: next.year, month: next.month, title: `${village.name}・戦闘後帰還`, detail: recoveryMessage });
+  next.player.history = next.player.history.slice(0, 60);
+  enterVillage(village.id);
+  view.selectedVillageFacilityId = "temple";
+  view.villageFacilityOpen = true;
+  commit(next, `${village.name}の神殿・治療所へ帰還しました。（${formatGeneratedTravelDuration(travelMinutes)}経過）`, "confirm");
+}
+
+function skipActiveDungeonBattle() {
+  if (state.adventure?.activeRun?.phase !== "battle") throw new Error("スキップできる戦闘がありません。");
+  const run = state.adventure.activeRun;
+  const personalEncounter = run.mode === "personal-map" || run.combatScale === "personal-units";
+  const continuingBattle = Boolean(view.tacticalBattle && !view.tacticalBattle.winner && ["dungeon", "personal-map"].includes(view.tacticalOrigin?.type));
+  const manualTurns = continuingBattle ? view.tacticalBattle.turn : 0;
+  let battle = continuingBattle ? structuredClone(view.tacticalBattle) : createDungeonTacticalBattle(state);
+  if (!personalEncounter) {
+    const roster = getDungeonTacticalRoster(state);
+    battle = finalizeBattlePreparation(createBattlePreparation({
+      battle,
+      roster,
+      defaultParticipantIds: roster.filter((entry) => entry.available).slice(0, 3).map((entry) => entry.id),
+    }));
+  }
+  battle = autoResolveBattle(battle);
+  clearTacticalBattleView();
+  view.tacticalOrigin = { type: run.mode === "personal-map" ? "personal-map" : "dungeon", personalUnitBattle: personalEncounter, runId: run.id, enemyName: run.combat.enemyName, dungeonName: run.dungeonName, autoResolved: true, continuedFromManual: continuingBattle, manualTurns };
   view.launchOpen = false;
   view.adventureOpen = true;
-  const personalEncounter = state.adventure.activeRun.mode === "personal-map";
-  commit(skipDungeonBattle(state), personalEncounter ? "遭遇戦を自動解決しました。" : "戦闘をスキップし、自動探索を再開しました。", "confirm");
+  view.tacticalBattle = battle;
+  prepareTacticalResult();
+  render();
+}
+
+function confirmAndSkipActiveDungeonBattle() {
+  const continuingBattle = Boolean(view.tacticalBattle && !view.tacticalBattle.winner && ["dungeon", "personal-map"].includes(view.tacticalOrigin?.type));
+  const prompt = continuingBattle
+    ? `第${view.tacticalBattle.turn}ターンまでのHP・撃破状況を保持し、残りの戦闘を自動進行しますか？`
+    : "この戦闘を同じ戦闘処理で自動進行し、結果画面を表示しますか？";
+  if (!window.confirm(prompt)) return;
+  skipActiveDungeonBattle();
 }
 
 function tacticalStateLabel(unit) {
+  const stateValue = typeof unit === "string" ? unit : unit?.state;
   return {
     STABLE: "安定", SHAKEN: "動揺", WAVERING: "不安定", BROKEN: "崩壊寸前",
-    ROUTED: "潰走", DESTROYED: "壊滅", ESCAPED: "戦場離脱",
-  }[unit.state] ?? unit.state;
+    ROUTED: "潰走", DESTROYED: "壊滅", ESCAPED: "戦場離脱", RECOVERING: "療養中", READY: "行動可能",
+  }[stateValue] ?? stateValue ?? "状態不明";
 }
 
 function tacticalVisualOrder(unit) {
@@ -5510,13 +5811,16 @@ function playTacticalBattleEffects(effects, battle, onComplete) {
 function renderTacticalSummary(battle) {
   const summary = getBattleSummary(battle);
   const labels = tacticalOriginLabels();
-  const side = (data, id, label) => `
+  const personalUnitsBattle = battle.combatScale === "personal-units";
+  const side = (data, id, label) => {
+    return `
     <section class="tactical-side-summary is-${id}">
       <strong>${label}</strong>
-      <span><small>兵力</small><b>${formatValue(data.soldiers)}</b></span>
+      <span><small>${personalUnitsBattle ? "ユニット" : "兵力"}</small><b>${personalUnitsBattle ? `${data.standing} / ${data.units}` : formatValue(data.soldiers)}</b></span>
       <span><small>士気</small><b>${data.morale}</b></span>
       ${data.cutOff ? `<em title="補給線接続 ${data.supplied}/${data.units}部隊">${data.cutOff}隊 補給断</em>` : ""}
     </section>`;
+  };
   elements.tacticalBattleSummary.innerHTML = `
     ${side(summary.player, "player", labels.player)}
     <div class="tactical-turn-counter"><small>${summary.winner ? "決着" : "指示フェーズ"}</small><strong>${summary.winner ? summary.winner === "player" ? labels.playerVictory : summary.winner === "enemy" ? labels.enemyVictory : "引き分け" : `第${summary.turn + 1}ターン`}</strong></div>
@@ -5532,11 +5836,16 @@ function renderTacticalDeployment(battle) {
     ? `${BATTLE_LOGISTICS_PLANS[preparation.logisticsPlanId]?.name ?? "兵站計画"} · 約${preparation.sustainableDays}日`
     : "補給路は敵支配圏で遮断";
   if (locked) {
+    const combatants = battle.units.filter((unit) => !["DESTROYED", "ESCAPED"].includes(unit.state));
+    const noDamageYet = combatants.every((unit) => unit.hp >= unit.maxHp);
+    const stallGuidance = battle.combatScale === "personal-units" && battle.turn >= 4 && noDamageYet
+      ? "膠着中です。防御命令だけでは接敵しないため、前進か攻撃へ切り替えてください。"
+      : "駒を選択すると、命令と詳しい状態を確認できます。";
     elements.tacticalDeploymentBar.innerHTML = `
       <div class="tactical-battle-brief">
         <span><small>陣形</small><strong>${formation.name}</strong></span>
         <span><small>兵站</small><strong>${logistics}</strong></span>
-        <p>駒を選択すると、命令と詳しい状態を確認できます。</p>
+        <p>${stallGuidance}</p>
       </div>`;
     return;
   }
@@ -5751,15 +6060,16 @@ function renderTacticalResult() {
     return;
   }
   const dungeonBattle = view.tacticalOrigin?.type === "dungeon";
+  const personalBattle = view.tacticalOrigin?.type === "personal-map" || view.tacticalOrigin?.personalUnitBattle === true;
   const labels = tacticalOriginLabels();
   const sideCard = (side, label, tone) => {
-    const symbol = dungeonBattle ? tone === "player" ? "探" : "敵" : tone === "player" ? "王" : "公";
-    const code = dungeonBattle ? tone === "player" ? "EXPEDITION PARTY" : "DUNGEON ENCOUNTER" : tone === "player" ? "SELENE KINGDOM" : "VALKA DUCHY";
+    const symbol = personalBattle ? tone === "player" ? "隊" : "敵" : dungeonBattle ? tone === "player" ? "探" : "敵" : tone === "player" ? "王" : "公";
+    const code = personalBattle ? tone === "player" ? "PLAYER UNIT" : "ENEMY UNIT" : dungeonBattle ? tone === "player" ? "EXPEDITION PARTY" : "DUNGEON ENCOUNTER" : tone === "player" ? "SELENE KINGDOM" : "VALKA DUCHY";
     return `
     <article class="tactical-result-army is-${tone}">
-      <header><span>${symbol}</span><div><small>${code}</small><h3>${escapeHtml(label)}</h3></div><b>${side.standing} / ${side.units}部隊</b></header>
-      <div><span><small>初期兵力</small><strong>${formatValue(side.initialSoldiers)}</strong></span><span><small>残存兵</small><strong>${formatValue(side.remainingSoldiers)}</strong></span><span><small>損耗</small><strong>${formatValue(side.casualties)}</strong></span><span><small>平均補給</small><strong>${side.supply}%</strong></span></div>
-      <footer><span>壊滅 ${side.destroyed}</span><span>潰走 ${side.routed}</span><span>離脱 ${side.escaped}</span></footer>
+      <header><span>${symbol}</span><div><small>${code}</small><h3>${escapeHtml(label)}</h3></div><b>${side.standing} / ${side.units}${personalBattle ? "ユニット" : "部隊"}</b></header>
+      <div>${personalBattle ? `<span><small>初期ユニット</small><strong>${side.units}</strong></span><span><small>戦闘継続</small><strong>${side.standing}</strong></span><span><small>戦闘不能・離脱</small><strong>${side.units - side.standing}</strong></span><span><small>合計残HP</small><strong>${side.remainingHp}</strong></span>` : `<span><small>初期兵力</small><strong>${formatValue(side.initialSoldiers)}</strong></span><span><small>残存兵</small><strong>${formatValue(side.remainingSoldiers)}</strong></span><span><small>損耗</small><strong>${formatValue(side.casualties)}</strong></span><span><small>平均補給</small><strong>${side.supply}%</strong></span>`}</div>
+      <footer><span>壊滅 ${side.destroyed}</span><span>潰走 ${side.routed}</span><span>離脱 ${side.escaped}</span>${personalBattle ? `<span>${view.tacticalOrigin?.autoResolved ? "自動解決" : "手動戦闘"}</span>` : ""}</footer>
     </article>`;
   };
   const captureStatus = view.commanderDisposition ? getDispositionLabel(view.commanderDisposition) : null;
@@ -5767,17 +6077,18 @@ function renderTacticalResult() {
     <article class="tactical-result-card is-${result.winner}">
       <header class="tactical-result-hero">
         <div><span>AFTER ACTION REPORT / 戦闘結果</span><h1 id="tacticalResultHeading">${escapeHtml(result.title)}</h1><p>${escapeHtml(result.battleName)} · 第${result.turn}ターン決着</p></div>
-        <b>${result.resultType === "encirclement_annihilation" ? "ENCIRCLEMENT" : result.winner === "draw" ? "DRAW" : "VICTORY"}</b>
+        <b>${personalBattle ? result.winner === "player" ? "VICTORY" : result.winner === "enemy" ? "DEFEAT" : "DRAW" : result.resultType === "encirclement_annihilation" ? "ENCIRCLEMENT" : result.winner === "draw" ? "DRAW" : "VICTORY"}</b>
       </header>
       <section class="tactical-result-overview">
         ${sideCard(result.player, labels.player, "player")}
-        <div class="tactical-result-versus"><small>RESULT</small><strong>${result.winner === "player" ? "勝" : result.winner === "enemy" ? "敗" : "分"}</strong><span>渡河 ${result.crossings}回</span></div>
+        <div class="tactical-result-versus"><small>RESULT</small><strong>${result.winner === "player" ? "勝" : result.winner === "enemy" ? "敗" : "分"}</strong><span>${personalBattle ? `${result.turn}ターン` : `渡河 ${result.crossings}回`}</span></div>
         ${sideCard(result.enemy, labels.enemy, "enemy")}
       </section>
-      ${dungeonBattle ? `<section class="tactical-encirclement-report"><header><div><small>DUNGEON EXPEDITION</small><h2>${result.winner === "player" ? "探索を再開できます" : "探索隊は撤退します"}</h2></div><b>${escapeHtml(view.tacticalOrigin.dungeonName)}</b></header><div><span>戦術戦闘の損耗をHPへ反映</span><span>勝利時は戦利品を自動回収</span><span>敗北・引き分け時は獲得済み戦利品を保持</span></div></section>` : `<section class="tactical-encirclement-report ${result.encirclement.complete ? "is-complete" : ""}"><header><div><small>ENCIRCLEMENT ASSESSMENT</small><h2>${result.encirclement.complete ? "完全包囲を確認" : "通常戦果"}</h2></div><b>${result.encirclement.complete ? "全退路遮断" : "捕縛条件未達"}</b></header><div>${result.encirclement.reasons.map((reason) => `<span>${escapeHtml(reason)}</span>`).join("")}</div></section><section class="tactical-capture-result ${result.capture.eligible ? "is-captured" : ""}">${result.capture.commanderIconUrl ? `<img src="${escapeHtml(result.capture.commanderIconUrl)}" alt="${escapeHtml(result.capture.commanderName)}">` : `<i>${result.capture.eligible ? "縛" : "退"}</i>`}<div><small>ENEMY COMMANDER</small><h2>${result.capture.eligible ? `${escapeHtml(result.capture.commanderName)}を捕縛` : "敵将捕縛なし"}</h2><p>${escapeHtml(result.capture.reason)}</p>${captureStatus ? `<b>現在の処遇：${escapeHtml(captureStatus)}</b>` : ""}</div>${result.capture.eligible ? '<button type="button" data-result-action="disposition">戦後処遇局へ</button>' : ""}</section>`}
+      ${personalBattle ? `<section class="tactical-encirclement-report"><header><div><small>PERSONAL UNIT BATTLE</small><h2>${result.winner === "player" ? "敵ユニット群を退けました" : result.winner === "enemy" ? "探索パーティーが撤退します" : "双方が戦闘を中断しました"}</h2></div><b>${result.player.units} UNIT : ${result.enemy.units} UNIT</b></header><div><span>主人公と同行者は各1ユニット</span><span>敵ユニット数は遭遇内容によって変化</span><span>${view.tacticalOrigin?.continuedFromManual ? `第${view.tacticalOrigin.manualTurns}ターンまでの手動成果から自動継続` : view.tacticalOrigin?.autoResolved ? "同じ戦闘処理による自動解決" : "手動で進行した戦闘"}</span></div><div class="personal-result-members">${result.player.members.map((member) => `<article><strong>${escapeHtml(member.name)}</strong><span>HP ${member.remainingHp}/${member.maxHp}</span><b>${escapeHtml(tacticalStateLabel(member.state))}</b></article>`).join("")}</div></section>` : dungeonBattle ? `<section class="tactical-encirclement-report"><header><div><small>DUNGEON EXPEDITION</small><h2>${result.winner === "player" ? "探索を再開できます" : "探索隊は撤退します"}</h2></div><b>${escapeHtml(view.tacticalOrigin.dungeonName)}</b></header><div><span>戦術戦闘の損耗をHPへ反映</span><span>勝利時は戦利品を自動回収</span><span>敗北・引き分け時は獲得済み戦利品を保持</span></div></section>` : `<section class="tactical-encirclement-report ${result.encirclement.complete ? "is-complete" : ""}"><header><div><small>ENCIRCLEMENT ASSESSMENT</small><h2>${result.encirclement.complete ? "完全包囲を確認" : "通常戦果"}</h2></div><b>${result.encirclement.complete ? "全退路遮断" : "捕縛条件未達"}</b></header><div>${result.encirclement.reasons.map((reason) => `<span>${escapeHtml(reason)}</span>`).join("")}</div></section><section class="tactical-capture-result ${result.capture.eligible ? "is-captured" : ""}">${result.capture.commanderIconUrl ? `<img src="${escapeHtml(result.capture.commanderIconUrl)}" alt="${escapeHtml(result.capture.commanderName)}">` : `<i>${result.capture.eligible ? "縛" : "退"}</i>`}<div><small>ENEMY COMMANDER</small><h2>${result.capture.eligible ? `${escapeHtml(result.capture.commanderName)}を捕縛` : "敵将捕縛なし"}</h2><p>${escapeHtml(result.capture.reason)}</p>${captureStatus ? `<b>現在の処遇：${escapeHtml(captureStatus)}</b>` : ""}</div>${result.capture.eligible ? '<button type="button" data-result-action="disposition">戦後処遇局へ</button>' : ""}</section>`}
       <footer class="tactical-result-actions">
         <button type="button" data-result-action="battlefield">戦場を確認</button>
-        <button type="button" data-result-action="exit">${dungeonBattle ? result.winner === "player" ? "探索を再開" : "ダンジョンから撤退" : "開発メニューへ"}</button>
+        ${["dungeon", "personal-map"].includes(view.tacticalOrigin?.type) && result.winner !== "player" ? '<button type="button" class="is-primary" data-result-action="recover">村の治療所へ帰還</button>' : ""}
+        <button type="button" data-result-action="exit">${view.tacticalOrigin?.type === "personal-map" ? "個人マップへ戻る" : dungeonBattle ? result.winner === "player" ? "探索を再開" : "ダンジョンから撤退" : "開発メニューへ"}</button>
       </footer>
     </article>`;
 }
@@ -5870,12 +6181,13 @@ function renderTacticalBattle() {
     return;
   }
   const dungeonBattle = view.tacticalOrigin?.type === "dungeon";
+  const adventureBattle = ["dungeon", "personal-map"].includes(view.tacticalOrigin?.type);
   const labels = tacticalOriginLabels();
   elements.tacticalBattleTitle.textContent = battle.name;
-  elements.tacticalBattleReset.textContent = dungeonBattle ? "探索隊を再編成" : "再編成";
-  elements.tacticalBattleSkip.hidden = !dungeonBattle;
-  elements.tacticalMoreActions.hidden = dungeonBattle;
-  elements.tacticalBattleExit.textContent = dungeonBattle ? "遭遇地点へ戻る" : "開発メニュー";
+  elements.tacticalBattleReset.textContent = dungeonBattle ? "探索隊を再編成" : view.tacticalOrigin?.type === "personal-map" ? "個人戦をやり直す" : "再編成";
+  elements.tacticalBattleSkip.hidden = !adventureBattle;
+  elements.tacticalMoreActions.hidden = adventureBattle;
+  elements.tacticalBattleExit.textContent = adventureBattle ? "遭遇地点へ戻る" : "開発メニュー";
   elements.tacticalPlayerLegend.textContent = labels.player;
   elements.tacticalEnemyLegend.textContent = labels.enemy;
   renderTacticalSummary(battle);
@@ -5982,7 +6294,7 @@ function renderAdventureScreen() {
   clearTimeout(adventureAdvanceTimer);
   adventureAdvanceTimer = null;
   const run = state.adventure.activeRun;
-  const visible = Boolean(view.adventureOpen && run && !view.battlePreparation && !view.tacticalBattle && !view.tacticalResultOpen && !view.commanderDispositionOpen);
+  const visible = Boolean(!view.launchOpen && view.adventureOpen && run && !view.battlePreparation && !view.tacticalBattle && !view.tacticalResultOpen && !view.commanderDispositionOpen);
   elements.adventureScreen.classList.toggle("is-hidden", !visible);
   elements.adventureScreen.setAttribute("aria-hidden", String(!visible));
   if (!visible) {
@@ -5990,29 +6302,38 @@ function renderAdventureScreen() {
     return;
   }
   const archetype = DUNGEON_ARCHETYPES[run.dungeonType];
-  const personalEncounter = run.mode === "personal-map";
+  const personalMapEncounter = run.mode === "personal-map";
+  const personalUnitBattle = personalMapEncounter || run.combatScale === "personal-units";
   const progress = Math.min(100, run.step / run.totalSteps * 100);
   const party = state.player?.villageLife?.party?.filter((member) => member.active !== false && member.alive !== false) ?? [];
   const loot = run.loot.map((item) => `<li><i>${escapeHtml(item.icon)}</i><span><strong>${escapeHtml(item.name)}</strong><small>自動取得済み</small></span><b>×${item.quantity}</b></li>`).join("");
   const battle = run.combat;
+  const battlePreview = run.phase === "battle" ? getDungeonBattlePreview(state) : null;
   let phaseMarkup = "";
   if (run.phase === "exploring") {
     phaseMarkup = `<section class="adventure-auto-state"><span class="adventure-compass" aria-hidden="true"><i></i></span><small>AUTO EXPLORATION</small><h2>探索隊が自動で進行中</h2><p>安全確認、採取、戦利品の収納を自動で行っています。敵と遭遇した場合だけ戦闘操作へ切り替わります。</p></section>`;
   } else if (run.phase === "battle" && battle) {
+    const previewMarkup = battlePreview ? `<section class="adventure-battle-preview is-${battlePreview.danger.id}">
+      <header><div><small>${battlePreview.informationKnown ? "PURCHASED INTELLIGENCE / 情報確認済み" : "FIELD ESTIMATE / 現地推定"}</small><strong>${battlePreview.danger.label}</strong></div><b>${battlePreview.forecastWinner ? `自動進行予測：${battlePreview.forecastWinner === "player" ? "自軍勝利" : battlePreview.forecastWinner === "enemy" ? "敵軍勝利" : "決着なし"}${battlePreview.forecastTurns ? `・約${battlePreview.forecastTurns}ターン` : ""}` : `戦力評価 約${battlePreview.expectedWinRate}%`}</b></header>
+      <div><article><small>自軍 ${battlePreview.playerUnits.length} UNIT</small><p>${battlePreview.playerUnits.map((unit) => `${escapeHtml(unit.name)}［${escapeHtml(unit.role)}・HP ${unit.hp}/${unit.maxHp}］`).join("<br>")}</p></article><article><small>敵軍 ${battlePreview.enemyUnits.length} UNIT</small><p>${battlePreview.enemyUnits.map((unit) => `${escapeHtml(unit.name)}［${escapeHtml(unit.role)}・HP ${unit.hp}/${unit.maxHp}］`).join("<br>")}</p></article></div>
+      <footer>${battlePreview.canRetreat ? "戦闘を選ばず入口へ撤退できます。自動解決でも同じ戦闘ターンを処理します。" : "退路なし"}</footer>
+    </section>` : "";
     phaseMarkup = `<section class="adventure-battle-state">
       <div class="adventure-enemy"><i>${escapeHtml(battle.enemySymbol)}</i><small>ENCOUNTER</small><h2>${escapeHtml(battle.enemyName)}</h2><div><span style="width:${battle.enemyHp / battle.enemyMaxHp * 100}%"></span></div><b>HP ${battle.enemyHp} / ${battle.enemyMaxHp}</b></div>
-      <div class="adventure-battle-actions adventure-tactical-handoff"><p><small>TACTICAL ENGINE</small><strong>既存の戦闘準備・戦術戦闘システムを使用します</strong><span>参陣者、陣形、初期配置、兵站を確定して戦闘へ進みます。</span></p><button type="button" data-open-dungeon-tactical><b>戦術戦闘を起動</b><small>正式な戦闘前編成へ</small></button><button type="button" class="is-skip" data-skip-adventure-battle><b>戦闘をスキップ</b><small>自動解決して探索を続行</small></button></div>
+      ${previewMarkup}
+      <div class="adventure-battle-actions adventure-tactical-handoff"><p><small>${personalUnitBattle ? "PERSONAL UNIT BATTLE" : "TACTICAL ENGINE"}</small><strong>${personalUnitBattle ? "各人物・各敵を1ユニットとして戦います" : "既存の戦闘準備・戦術戦闘システムを使用します"}</strong><span>${personalUnitBattle ? "主人公と同行中の仲間はそれぞれ自軍1ユニットになります。敵側も遭遇内容に応じて複数ユニットになる場合があります。戦場・移動・攻撃・士気・退却は国家戦闘と共通です。" : "参陣者、陣形、初期配置、兵站を確定して戦闘へ進みます。手動戦闘を行わない場合も、同じターン処理で勝敗を計算します。"}</span></p><button type="button" data-open-dungeon-tactical><b>${personalUnitBattle ? "自分で戦う" : "戦術戦闘を起動"}</b><small>${personalUnitBattle ? "パーティー対遭遇敵の戦場へ" : "正式な戦闘前編成へ"}</small></button><button type="button" class="is-skip" data-skip-adventure-battle><b>戦闘を自動解決</b><small>裏で戦闘を実行し、結果を表示</small></button></div>
+      <button type="button" class="adventure-withdraw-button" data-withdraw-adventure-battle>戦わず入口へ撤退</button>
     </section>`;
   } else if (run.phase === "complete") {
-    phaseMarkup = personalEncounter
+    phaseMarkup = personalMapEncounter
       ? `<section class="adventure-finish-state"><i>勝利</i><small>ENCOUNTER CLEARED</small><h2>周辺の安全を確保</h2><p>${escapeHtml(battle.enemyName)}を退け、${run.loot.length}種の戦利品を回収しました。</p><button type="button" data-close-adventure>個人マップへ戻る</button></section>`
       : `<section class="adventure-finish-state"><i>踏破</i><small>DUNGEON CLEARED</small><h2>探索完了</h2><p>${run.skippedBattles ? `戦闘${run.skippedBattles}回をスキップし、` : "戦闘を突破し、"}${run.loot.length}種の戦利品を持ち帰りました。</p><button type="button" data-close-adventure>地方地図へ戻る</button></section>`;
   } else {
-    phaseMarkup = `<section class="adventure-finish-state is-failed"><i>撤退</i><small>${personalEncounter ? "ENCOUNTER WITHDRAWN" : "EXPEDITION WITHDRAWN"}</small><h2>探索隊は撤退した</h2><p>獲得済みの戦利品は保持されています。村で回復と準備を行い、再挑戦できます。</p><button type="button" data-close-adventure>${personalEncounter ? "個人マップ" : "地方地図"}へ戻る</button></section>`;
+    phaseMarkup = `<section class="adventure-finish-state is-failed"><i>撤退</i><small>${personalMapEncounter ? "ENCOUNTER WITHDRAWN" : "EXPEDITION WITHDRAWN"}</small><h2>探索隊は撤退した</h2><p>入口までの帰還路と収納袋を確保していたため、獲得済みの戦利品は保持されています。治療後に再挑戦できます。</p><button type="button" class="is-primary" data-return-recovery>村の治療所へ帰還</button><button type="button" data-close-adventure>${personalMapEncounter ? "個人マップ" : "地方地図"}へ戻る</button></section>`;
   }
   elements.adventureScreen.style.setProperty("--adventure-art", `url('${ADVENTURE_ART[run.dungeonType]}')`);
   elements.adventureContent.innerHTML = `<main class="adventure-shell">
-    <header><div><small>${personalEncounter ? "PERSONAL MAP ENCOUNTER" : `${escapeHtml(archetype.name)}型ダンジョン`} / ${escapeHtml(run.regionId)}</small><h1 id="adventureTitle">${escapeHtml(run.dungeonName)}</h1></div><span>${run.phase === "battle" ? `戦闘 ${battle.turn}` : run.phase === "complete" ? (personalEncounter ? "安全確保" : "踏破済み") : run.phase === "failed" ? "撤退" : `深度 ${run.step + 1} / ${run.totalSteps}`}</span></header>
+    <header><div><small>${personalMapEncounter ? "PERSONAL MAP ENCOUNTER" : `${escapeHtml(archetype.name)}型ダンジョン`} / ${escapeHtml(run.regionId)}</small><h1 id="adventureTitle">${escapeHtml(run.dungeonName)}</h1></div><span>${run.phase === "battle" ? `戦闘 ${battle.turn}` : run.phase === "complete" ? (personalMapEncounter ? "安全確保" : "踏破済み") : run.phase === "failed" ? "撤退" : `深度 ${run.step + 1} / ${run.totalSteps}`}</span></header>
     <div class="adventure-progress"><i style="width:${progress}%"></i></div>
     <div class="adventure-layout">
       <section class="adventure-stage">${phaseMarkup}<ol class="adventure-log">${run.log.map((entry) => `<li class="is-${entry.tone}"><i></i><span>${escapeHtml(entry.message)}</span></li>`).join("")}</ol></section>
@@ -6023,9 +6344,7 @@ function renderAdventureScreen() {
     adventureAdvanceTimer = setTimeout(() => {
       try {
         const next = advanceDungeonRun(state);
-        const opensTacticalBattle = next.adventure.activeRun?.phase === "battle";
         commit(next, "", null);
-        if (opensTacticalBattle) openDungeonTacticalBattle();
       } catch (error) {
         showToast(error.message, "danger");
       }
@@ -6236,6 +6555,7 @@ function playNavigationCue(event) {
     "[data-spending-city]",
     "[data-world-mode]",
     "[data-generated-region-candidate-id]",
+    "[data-generated-map-move-region]",
     "[data-generated-move-confirm]",
     "[data-generated-region-id]",
     "[data-generated-map-scale]",
@@ -6296,15 +6616,18 @@ document.addEventListener("click", async (event) => {
     }
     return;
   }
-  const npcGreeting = event.target.closest("[data-npc-greeting-approach]");
-  if (npcGreeting) {
+  const npcConversationAction = event.target.closest("[data-npc-conversation-action]");
+  if (npcConversationAction) {
     const conversation = view.villageConversation;
     if (conversation?.kind !== "npc-social") return;
     try {
-      const next = interactWithNpcCandidate(state, conversation.id, npcGreeting.dataset.npcGreetingApproach, currentAdventureContext(), { venue: conversation.facilityId });
+      const next = interactWithNpcCandidate(state, conversation.id, npcConversationAction.dataset.npcConversationAction, currentAdventureContext(), { venue: conversation.facilityId });
       const candidate = getTavernCandidates(next, currentAdventureContext()).find((entry) => entry.id === conversation.id);
       const result = candidate?.social.lastResult;
-      commit(next, result?.gainedFirstImpressionBonus ? "初対面ボーナスを得ました。パーティーへ確実に誘えます。" : result?.discoveryLabel ? `${result.discoveryLabel}が判明しました。` : "会話を重ねました。", result?.gainedFirstImpressionBonus ? "confirm" : "ui");
+      const notice = result?.joined ? `${candidate.name}がパーティーに加わりました。`
+        : result?.discoveryLabel ? `${result.discoveryLabel}`
+          : result?.affinityDelta < 0 ? "相手の反応が少し冷たくなりました。" : "会話を重ねました。";
+      commit(next, notice, result?.joined ? "confirm" : "ui");
     } catch (error) { showToast(error.message, "danger"); }
     return;
   }
@@ -6362,6 +6685,23 @@ document.addEventListener("click", async (event) => {
     const action = developerAction.dataset.developerAction;
     if (action === "battle") {
       openTacticalBattle();
+      return;
+    }
+    if (action === "senior-general-battle") {
+      const roster = createSeniorGeneralBattleRoster();
+      openTacticalBattle({
+        battle: createSeniorGeneralBattle(),
+        roster,
+        defaultParticipantIds: roster.map((participant) => participant.id),
+        origin: { type: "senior-general", enemyName: "ヴァルカ公国強襲軍" },
+      });
+      return;
+    }
+    if (action === "imperial-princess-battle") {
+      openTacticalBattle({
+        battle: createImperialPrincessBattle(),
+        origin: { type: "imperial-princess", enemyName: "グレート帝国親征軍" },
+      });
       return;
     }
     view.launchOpen = false;
@@ -6477,7 +6817,6 @@ document.addEventListener("click", async (event) => {
       const result = next.adventure.personalMap.regions[context.region.id].lastResult;
       view.adventureOpen = result.type === "monster";
       commit(next, result.message, result.type === "monster" ? "danger" : result.type === "item" || result.type === "location" ? "confirm" : "ui");
-      if (result.type === "monster") openDungeonTacticalBattle();
     } catch (error) { showToast(error.message, "danger"); }
     return;
   }
@@ -6565,7 +6904,18 @@ document.addEventListener("click", async (event) => {
     return;
   }
   if (event.target.closest("[data-skip-adventure-battle]")) {
-    try { skipActiveDungeonBattle(); }
+    try { confirmAndSkipActiveDungeonBattle(); }
+    catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
+  if (event.target.closest("[data-withdraw-adventure-battle]")) {
+    try {
+      commit(withdrawDungeonBattle(state), "敵編成を確認し、交戦前に入口へ撤退しました。", "ui");
+    } catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
+  if (event.target.closest("[data-return-recovery]")) {
+    try { routePartyToRecovery(); }
     catch (error) { showToast(error.message, "danger"); }
     return;
   }
@@ -6632,13 +6982,33 @@ document.addEventListener("click", async (event) => {
   const villageFacility = event.target.closest("[data-village-facility]");
   if (villageFacility) {
     view.selectedVillageFacilityId = villageFacility.dataset.villageFacility;
+    if (view.selectedVillageFacilityId === "tavern") view.tavernSection = "requests";
     view.villageFacilityOpen = true;
+    renderPanelFromTop();
+    return;
+  }
+  const tavernSection = event.target.closest("[data-tavern-section]");
+  if (tavernSection && ["requests", "adventurers", "unique"].includes(tavernSection.dataset.tavernSection)) {
+    view.tavernSection = tavernSection.dataset.tavernSection;
     renderPanelFromTop();
     return;
   }
   if (event.target.closest("[data-close-village-actions]")) {
     view.villageFacilityOpen = false;
     renderPanelFromTop();
+    return;
+  }
+  const saleButton = event.target.closest("[data-sell-village-item]");
+  if (saleButton) {
+    const village = activeVillageContext();
+    const itemId = saleButton.dataset.sellVillageItem;
+    const item = state.player?.villageLife?.inventory?.find((entry) => entry.id === itemId);
+    if (!village || !item) { showToast("売却する所持品が見つかりません。", "danger"); return; }
+    if (!window.confirm(`${item.name}を1個売却しますか？`)) return;
+    try {
+      const next = performVillageAction(state, village, "sell_item", { itemId });
+      commit(next, next.player.villageLife.lastAction.message, "confirm");
+    } catch (error) { showToast(error.message, "danger"); }
     return;
   }
   const villageAction = event.target.closest("[data-village-action]");
@@ -6738,7 +7108,7 @@ document.addEventListener("click", async (event) => {
     if (preparationAction.dataset.preparationAction === "exit") {
       exitTacticalBattle();
     } else if (preparationAction.dataset.preparationAction === "skip") {
-      try { skipActiveDungeonBattle(); }
+      try { confirmAndSkipActiveDungeonBattle(); }
       catch (error) { showToast(error.message, "danger"); }
     } else if (preparationAction.dataset.preparationAction === "start") {
       try { startTacticalBattle(); }
@@ -6811,10 +7181,10 @@ document.addEventListener("click", async (event) => {
     if (action === "exit") {
       exitTacticalBattle();
     } else if (action === "reset") {
-      if (view.tacticalOrigin?.type === "dungeon") openDungeonTacticalBattle();
+      if (["dungeon", "personal-map"].includes(view.tacticalOrigin?.type)) openDungeonTacticalBattle();
       else openTacticalBattle();
     } else if (action === "skip-dungeon") {
-      try { skipActiveDungeonBattle(); }
+      try { confirmAndSkipActiveDungeonBattle(); }
       catch (error) { showToast(error.message, "danger"); }
     } else if (action === "encirclement-demo") {
       view.tacticalBattle = createEncirclementCaptureDemo();
@@ -6848,6 +7218,11 @@ document.addEventListener("click", async (event) => {
   const resultAction = event.target.closest("[data-result-action]");
   if (resultAction) {
     const action = resultAction.dataset.resultAction;
+    if (action === "recover") {
+      try { routePartyToRecovery({ applyBattleResult: true }); }
+      catch (error) { showToast(error.message, "danger"); }
+      return;
+    }
     if (action === "exit") {
       exitTacticalBattle({ applyDungeonResult: ["dungeon", "personal-map"].includes(view.tacticalOrigin?.type) });
       return;
@@ -6961,6 +7336,16 @@ document.addEventListener("click", async (event) => {
   if (generatedMapScaleButton) {
     view.generatedMapScale = generatedMapScaleButton.dataset.generatedMapScale;
     renderMap();
+    return;
+  }
+  const generatedMapMoveRegion = event.target.closest("[data-generated-map-move-region]");
+  if (generatedMapMoveRegion) {
+    try {
+      const next = moveGeneratedExpeditionToRegion(state, generatedMapMoveRegion.dataset.generatedMapMoveRegion);
+      const destination = getGeneratedWorldView(next).expeditionRegion;
+      view.pendingGeneratedDestinationId = null;
+      await playGeneratedTravel(next, destination.name, `${destination.name}へ移動しました。`);
+    } catch (error) { showToast(error.message, "danger"); }
     return;
   }
   const generatedRegionCandidate = event.target.closest("[data-generated-region-candidate-id]");

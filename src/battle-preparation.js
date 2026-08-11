@@ -101,7 +101,7 @@ export function createBattlePreparation({ battle, roster = [], defaultParticipan
     battle: structuredClone(battle),
     roster: normalizedRoster,
     selectedCharacterIds,
-    formationId: "line",
+    formationId: TACTICAL_FORMATIONS[battle.formations?.player] ? battle.formations.player : "line",
     placementMode: "auto",
     logisticsPlanId: "standard",
     selectedUnitId: null,

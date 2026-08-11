@@ -1,5 +1,8 @@
 import { createCharacterDefinition } from "./character-template.js";
 import {
+  AURELIA_ZAFIR_ID,
+  BERTHA_ARNFELD_ID,
+  COLETTE_LINDE_ID,
   KATIA_COMPANION_ID,
   KATIA_KANDEL_ID,
   LISETTE_VALENNE_ID,
@@ -178,6 +181,7 @@ import {
   submitPetition,
 } from "./player-career.js";
 import {
+  GUILD_PROCESSED_GOODS,
   VILLAGE_FACILITIES,
   VILLAGE_LIFE_SCHEMA_VERSION,
   SERVICE_ROUTE_DEFINITIONS,
@@ -249,6 +253,9 @@ export {
 };
 export { TOWN_COMMAND_IDS, isTownCommand };
 export {
+  AURELIA_ZAFIR_ID,
+  BERTHA_ARNFELD_ID,
+  COLETTE_LINDE_ID,
   KATIA_COMPANION_ID,
   KATIA_KANDEL_ID,
   LISETTE_VALENNE_ID,
@@ -295,6 +302,7 @@ export {
   imposeProhibition,
   normalizeCareerState,
   submitPetition,
+  GUILD_PROCESSED_GOODS,
   VILLAGE_FACILITIES,
   VILLAGE_LIFE_SCHEMA_VERSION,
   SERVICE_ROUTE_DEFINITIONS,
@@ -417,6 +425,7 @@ export const ENEMY_COMMANDERS = Object.freeze({
     gameplay: { role: "灰冠峠総司令", doctrine: "城砦防衛と局地反撃", commander: true, recruitable: false },
     stats: Object.freeze({ leadership: 79, war: 75, intelligence: 72 }),
   }, "ENEMY_COMMANDERS")),
+  great_empire: UNIQUE_CHARACTERS[AURELIA_ZAFIR_ID],
 });
 
 export const GREAT_POWER_FOUNDATIONS = Object.freeze({

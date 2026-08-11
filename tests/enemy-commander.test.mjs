@@ -5,7 +5,7 @@ import { ENEMY_COMMANDERS, createInitialState, getEnemyCommander } from "../src/
 
 test("主敵ヴァルカに固有の女性司令官グラフィックを接続する", () => {
   const commander = getEnemyCommander(createInitialState(), "valka");
-  assert.equal(Object.keys(ENEMY_COMMANDERS).length, 1);
+  assert.deepEqual(Object.keys(ENEMY_COMMANDERS).sort(), ["great_empire", "valka"]);
   assert.equal(commander.name, "アデルハイト・クレーエ");
   assert.equal(commander.role, "灰冠峠総司令");
   assert.equal(commander.country.name, "ヴァルカ公国");

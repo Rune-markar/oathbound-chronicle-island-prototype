@@ -29,7 +29,15 @@ function fixture(seed = "unique-mage-test") {
   return { state, context, sites };
 }
 
-const impress = (state, candidateId, context) => interactWithNpcCandidate(state, candidateId, "gentle", context, { roll: 0 });
+function impress(state, candidateId, context) {
+  let next = interactWithNpcCandidate(state, candidateId, "gentle", context, { roll: 0 });
+  next = interactWithNpcCandidate(next, candidateId, "small_talk", context, { roll: 0 });
+  next.adventure.npcRelations[candidateId].affinity = 60;
+  next.player.metrics.wealth = 50;
+  next.player.metrics.renown = 50;
+  next.player.progress.contracts = 2;
+  return interactWithNpcCandidate(next, candidateId, "discuss_work", context);
+}
 
 test("ルネアは汎用術師と分離した完全なユニーク魔術師として登録される", () => {
   const mage = UNIQUE_CHARACTERS[RUNEA_VESPER_ID];
@@ -74,23 +82,21 @@ test("酒場でルネアを一度だけ登用し、固有能力を探索隊へ�
   assert.match(rosterEntry.rank, /固有人物/);
 });
 
-test("星環定礎は共有ダンジョン戦APIの術師班を実際に強化する", () => {
+test("星環定礎は共有ダンジョン戦API上の本人ユニットを実際に強化する", () => {
   const { state, context, sites } = fixture("unique-mage-tactical-test");
   let ordinary = advanceDungeonRun(startDungeonRun(state, sites.dungeon, context.region));
   ordinary = advanceDungeonRun(ordinary);
-  const ordinarySupport = createDungeonTacticalBattle(ordinary).units.find((unit) => unit.id.endsWith(":support"));
-  assert.equal(ordinarySupport.name, "探索隊支援班");
-  assert.equal(ordinarySupport.soldierCount, 38);
-  assert.equal(ordinarySupport.activeSkill, "fire");
+  const ordinaryBattle = createDungeonTacticalBattle(ordinary);
+  assert.equal(ordinaryBattle.units.filter((unit) => unit.side === "player").length, 1);
+  assert.equal(ordinaryBattle.units.some((unit) => unit.tags.includes("ASTRAL_CALIBRATION")), false);
 
   const mage = getTavernCandidates(state, context).find((candidate) => candidate.uniqueCharacterId === RUNEA_VESPER_ID);
   let assisted = inviteTavernCandidate(impress(state, mage.id, context), mage.id, context);
   assisted = advanceDungeonRun(startDungeonRun(assisted, sites.dungeon, context.region));
   assisted = advanceDungeonRun(assisted);
-  const support = createDungeonTacticalBattle(assisted).units.find((unit) => unit.id.endsWith(":support"));
+  const support = createDungeonTacticalBattle(assisted).units.find((unit) => unit.name === "ルネア・ヴェスパー");
   const calibration = support.statusEffects.find((effect) => effect.id === "astral_calibration");
-  assert.equal(support.name, "ルネア・ヴェスパーの星環術班");
-  assert.equal(support.soldierCount, 44);
+  assert.equal(support.soldierCount, 1);
   assert.equal(support.activeSkill, "lightning");
   assert.ok(support.tags.includes("ASTRAL_CALIBRATION"));
   assert.equal(calibration.modifiers.magicPower, 1.22);

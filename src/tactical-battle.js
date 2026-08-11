@@ -14,6 +14,7 @@ import {
   UNIT_CLASSES,
   UNIT_ORDERS,
 } from "./tactical-data.js";
+import { AURELIA_ZAFIR_ID, BERTHA_ARNFELD_ID, UNIQUE_CHARACTERS } from "./unique-characters.js";
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const positionKey = ({ x, y }) => `${x},${y}`;
@@ -116,14 +117,14 @@ export function createCommander({
 
 export function createCombatUnit({
   id, name, iconUrl = null, side = "player", raceId = "human", unitClassId = "infantry", equipmentIds,
-  commanderId, soldierCount = 120, maxSoldierCount = soldierCount, hp, morale, fatigue = 0,
+  commanderId, soldierCount = 120, maxSoldierCount = soldierCount, hp, maxHp: requestedMaxHp = null, morale, fatigue = 0,
   cohesion, experience = 35, supply = 100, maxSupply = 100, position, facing = FACING.EAST, statusEffects = [], tags = [],
   order = UNIT_ORDERS.HOLD, activeSkill = null,
 } = {}) {
   const unitClass = assertDefinition(UNIT_CLASSES, unitClassId, "兵種");
   const race = assertDefinition(RACES, raceId, "種族");
   if (!id || !name || !commanderId || !isFinitePosition(position)) throw new Error("部隊にはid・name・commanderId・positionが必要です");
-  const maxHp = Math.round(unitClass.stats.hp * (race.modifiers.hp ?? 1));
+  const maxHp = Math.max(1, Math.round(requestedMaxHp ?? unitClass.stats.hp * (race.modifiers.hp ?? 1)));
   return {
     id, name, iconUrl, side, raceId, unitClassId,
     equipmentIds: [...(equipmentIds ?? DEFAULT_EQUIPMENT[unitClassId] ?? [])], commanderId,
@@ -297,6 +298,119 @@ export function createSampleBattle() {
   return createBattleState({ id: "dev-field-battle", name: "灰冠平原・部隊戦闘試験", map, units, commanders, fortifications, seed: 317 });
 }
 
+export const AURELIA_BATTLE_COMMANDER_ID = `cmd-character-${AURELIA_ZAFIR_ID}`;
+
+export function createImperialPrincessBattle() {
+  const battle = createSampleBattle();
+  const aurelia = UNIQUE_CHARACTERS[AURELIA_ZAFIR_ID];
+  const enemyCommander = createCommander({
+    id: AURELIA_BATTLE_COMMANDER_ID,
+    name: aurelia.name,
+    iconUrl: aurelia.portraitImage,
+    side: "enemy",
+    position: { x: 18, y: 6 },
+    leadership: aurelia.stats.leadership,
+    tactics: Math.round((aurelia.stats.war + aurelia.stats.intelligence) / 2),
+    bravery: aurelia.stats.war,
+    magic: Math.round(aurelia.stats.intelligence * 0.65),
+    commandRange: 11,
+    commandSpeed: 4,
+    traits: ["皇女親征", "渡河作戦", "舟橋兵站", "歩騎連携"],
+    postBattleProfile: {
+      captureResponse: "persuasion",
+      resolve: 94,
+      loyalty: 96,
+      preferredApproach: "honor",
+      persuasionTarget: 180,
+      reason: "皇統と白雷河界軍団の将兵へ自ら責任を負っており、個人の安全や地位を条件に帝国を離れることはない。",
+      recruitmentRole: "帝国軍事使節",
+    },
+  });
+  const enemyUnits = [
+    createCombatUnit({ id: "e-imperial-infantry", name: "白雷第一歩兵隊", iconUrl: `${TACTICAL_ICON_BASE}/e-infantry-1.png`, side: "enemy", unitClassId: "infantry", commanderId: AURELIA_BATTLE_COMMANDER_ID, soldierCount: 170, position: { x: 15, y: 4 }, facing: FACING.WEST, order: "advance" }),
+    createCombatUnit({ id: "e-imperial-engineer", name: "帝国舟橋工兵隊", iconUrl: `${TACTICAL_ICON_BASE}/e-infantry-2.png`, side: "enemy", unitClassId: "engineer", commanderId: AURELIA_BATTLE_COMMANDER_ID, soldierCount: 110, position: { x: 15, y: 6 }, facing: FACING.WEST, order: "defend" }),
+    createCombatUnit({ id: "e-imperial-spearman", name: "河界槍兵隊", iconUrl: `${TACTICAL_ICON_BASE}/e-infantry-3.png`, side: "enemy", unitClassId: "spearman", commanderId: AURELIA_BATTLE_COMMANDER_ID, soldierCount: 155, position: { x: 15, y: 9 }, facing: FACING.WEST, order: "defend" }),
+    createCombatUnit({ id: "e-imperial-archer", name: "白雷弩兵隊", iconUrl: `${TACTICAL_ICON_BASE}/e-archer.png`, side: "enemy", unitClassId: "archer", commanderId: AURELIA_BATTLE_COMMANDER_ID, soldierCount: 120, position: { x: 17, y: 6 }, facing: FACING.WEST, order: "attack" }),
+    createCombatUnit({ id: "e-imperial-cavalry", name: "皇女旗軽騎兵", iconUrl: `${TACTICAL_ICON_BASE}/e-light-cavalry.png`, side: "enemy", unitClassId: "light_cavalry", commanderId: AURELIA_BATTLE_COMMANDER_ID, soldierCount: 95, position: { x: 16, y: 1 }, facing: FACING.WEST, order: "attack" }),
+  ];
+  battle.id = "dev-imperial-princess-battle";
+  battle.name = "白雷河畔・皇女親征";
+  battle.commanders = [...battle.commanders.filter((commander) => commander.side === "player"), enemyCommander];
+  battle.units = [...battle.units.filter((unit) => unit.side === "player"), ...enemyUnits];
+  battle.formations.enemy = "guarded";
+  const enemyFort = battle.fortifications.find((fortification) => fortification.side === "enemy");
+  if (enemyFort) enemyFort.name = "帝国河岸砦";
+  const enemySupplyNode = battle.supplyNodes.find((node) => node.side === "enemy");
+  if (enemySupplyNode) enemySupplyNode.name = "白雷軍団舟運補給所";
+  battle.log = [{
+    turn: 0,
+    phase: "command",
+    message: `${aurelia.name}が白雷旗の下で自ら軍団を指揮。舟橋工兵を中核に河岸の防御陣を整えました。`,
+  }];
+  return battle;
+}
+
+export const BERTHA_BATTLE_COMMANDER_ID = `cmd-character-${BERTHA_ARNFELD_ID}`;
+
+export function createSeniorGeneralBattleRoster() {
+  const bertha = UNIQUE_CHARACTERS[BERTHA_ARNFELD_ID];
+  return [{
+    id: bertha.id,
+    name: bertha.name,
+    portrait: bertha.portrait,
+    portraitImage: bertha.portraitImage,
+    role: bertha.role,
+    rank: bertha.military.rank,
+    policy: bertha.policy,
+    traits: [...bertha.traits],
+    stats: { ...bertha.stats },
+    stamina: 100,
+    assignment: null,
+    available: true,
+  }];
+}
+
+export function createSeniorGeneralBattle() {
+  const battle = createSampleBattle();
+  const bertha = UNIQUE_CHARACTERS[BERTHA_ARNFELD_ID];
+  const playerCommander = createCommander({
+    id: BERTHA_BATTLE_COMMANDER_ID,
+    name: bertha.name,
+    iconUrl: bertha.portraitImage,
+    side: "player",
+    position: { x: 2, y: 7 },
+    leadership: bertha.stats.leadership,
+    tactics: Math.round((bertha.stats.war + bertha.stats.intelligence) / 2),
+    bravery: bertha.stats.war,
+    magic: Math.round(bertha.stats.intelligence * 0.65),
+    commandRange: 11,
+    commandSpeed: 4,
+    traits: ["上級将官", "段列交代", "峠道兵站", "機動予備"],
+  });
+  const playerUnits = [
+    createCombatUnit({ id: "p-northern-heavy", name: "鉄梯子第一重装隊", iconUrl: `${TACTICAL_ICON_BASE}/p-infantry-1.png`, side: "player", unitClassId: "heavy_infantry", commanderId: BERTHA_BATTLE_COMMANDER_ID, soldierCount: 150, position: { x: 4, y: 4 }, order: "defend" }),
+    createCombatUnit({ id: "p-northern-infantry", name: "北方第二歩兵隊", iconUrl: `${TACTICAL_ICON_BASE}/p-infantry-2.png`, side: "player", unitClassId: "infantry", commanderId: BERTHA_BATTLE_COMMANDER_ID, soldierCount: 150, position: { x: 4, y: 9 }, order: "advance" }),
+    createCombatUnit({ id: "p-northern-spearman", name: "鎖門長槍隊", iconUrl: `${TACTICAL_ICON_BASE}/p-spearman.png`, side: "player", unitClassId: "spearman", commanderId: BERTHA_BATTLE_COMMANDER_ID, soldierCount: 145, position: { x: 5, y: 6 }, order: "defend" }),
+    createCombatUnit({ id: "p-northern-archer", name: "鐘坂弩兵隊", iconUrl: `${TACTICAL_ICON_BASE}/p-archer.png`, side: "player", unitClassId: "archer", commanderId: BERTHA_BATTLE_COMMANDER_ID, soldierCount: 120, position: { x: 2, y: 6 }, order: "attack" }),
+    createCombatUnit({ id: "p-northern-reserve", name: "北方機動予備騎兵", iconUrl: `${TACTICAL_ICON_BASE}/p-cavalry.png`, side: "player", unitClassId: "cavalry", commanderId: BERTHA_BATTLE_COMMANDER_ID, soldierCount: 85, position: { x: 3, y: 12 }, order: "hold" }),
+  ];
+  battle.id = "dev-senior-general-battle";
+  battle.name = "鎖門丘陵・北方軍迎撃戦";
+  battle.commanders = [playerCommander, ...battle.commanders.filter((commander) => commander.side === "enemy")];
+  battle.units = [...playerUnits, ...battle.units.filter((unit) => unit.side === "enemy")];
+  battle.formations.player = "guarded";
+  const playerFort = battle.fortifications.find((fortification) => fortification.side === "player");
+  if (playerFort) playerFort.name = "鎖門丘陵陣城";
+  const playerSupplyNode = battle.supplyNodes.find((node) => node.side === "player");
+  if (playerSupplyNode) playerSupplyNode.name = "北方軍集団段列補給所";
+  battle.log = [{
+    turn: 0,
+    phase: "command",
+    message: `${bertha.name}が自ら北方軍集団を率いて出陣。重装隊を交代させながら、機動予備を後方に保持しています。`,
+  }];
+  return battle;
+}
+
 export function createEncirclementCaptureDemo() {
   const battle = createSampleBattle();
   battle.id = "dev-encirclement-result";
@@ -383,11 +497,15 @@ export function applyBattleFormation(battle, side, formationId) {
   if (battle.turn > 0 || battle.preparation?.finalized) throw new Error("陣形変更は戦闘開始前の編成でのみ可能です");
   const next = structuredClone(battle);
   const units = next.units.filter((unit) => unit.side === side && activeForCombat(unit));
+  const personalUnitBattle = next.combatScale === "personal-units";
   const direction = side === "player" ? 1 : -1;
   const anchor = { x: side === "player" ? 4 : next.map.width - 5, y: Math.floor(next.map.height / 2) - 1 };
   const occupied = new Set(next.units.filter((unit) => unit.side !== side && onField(unit)).map((unit) => positionKey(unit.position)));
   units.forEach((unit, index) => {
-    const slot = formation.slots[index] ?? { forward: Math.floor(index / 3), lateral: index % 3 - 1 };
+    const sourceSlot = formation.slots[index] ?? { forward: Math.floor(index / 3), lateral: index % 3 - 1 };
+    const slot = personalUnitBattle
+      ? { forward: clamp(sourceSlot.forward, -1, 1), lateral: clamp(sourceSlot.lateral, -1, 1) }
+      : sourceSlot;
     const desired = {
       x: clamp(anchor.x + direction * slot.forward, 0, next.map.width - 1),
       y: clamp(anchor.y + slot.lateral, 0, next.map.height - 1),
@@ -644,6 +762,27 @@ function getUnitSupplyConsumption(unit) {
 export function getLogisticsState(battle, unitOrId) {
   const unit = typeof unitOrId === "string" ? getBattleUnit(battle, unitOrId) : unitOrId;
   if (!unit) throw new Error("部隊が存在しません");
+  if (unit.tags.includes("PERSONAL_COMBATANT")) {
+    return {
+      ...LOGISTICS_STATES.supplied,
+      ratio: 100,
+      connected: true,
+      node: null,
+      distance: null,
+      relayConnected: false,
+      fortification: null,
+      replenishment: 0,
+      route: [],
+      routeLength: 0,
+      source: null,
+      sourceType: null,
+      sourceStockpile: 0,
+      sourceMaxStockpile: 0,
+      throughput: 0,
+      reason: "個人ユニット戦では軍団兵站を使用しません。",
+      projectedConsumption: 0,
+    };
+  }
   const ratio = unit.supply / Math.max(1, unit.maxSupply) * 100;
   const state = Object.values(LOGISTICS_STATES).sort((a, b) => b.minimum - a.minimum).find((candidate) => ratio >= candidate.minimum)
     ?? LOGISTICS_STATES.critical;
@@ -1152,16 +1291,23 @@ function applyDamage(battle, target, power, moraleDamage, sourceName, phase, cas
   const stats = getEffectiveStats(battle, target);
   const variance = 0.88 + nextRandom(battle) * 0.24;
   const damage = Math.max(0, power * variance);
-  const casualties = Math.min(target.soldierCount, Math.max(1, Math.round(damage / Math.max(0.5, stats.durabilityPerSoldier) * casualtyMultiplier)));
+  const hpDamage = damage * 0.58;
+  const remainingHp = clamp(target.hp - hpDamage, 0, target.maxHp);
+  const personalCombatant = target.tags.includes("PERSONAL_COMBATANT");
+  const casualties = personalCombatant
+    ? (remainingHp <= 0 ? target.soldierCount : 0)
+    : Math.min(target.soldierCount, Math.max(1, Math.round(damage / Math.max(0.5, stats.durabilityPerSoldier) * casualtyMultiplier)));
   target.soldierCount -= casualties;
-  target.hp = clamp(target.hp - damage * 0.58, 0, target.maxHp);
+  target.hp = remainingHp;
   target.morale = clamp(target.morale - moraleDamage * variance, 0, 100);
   target.cohesion = clamp(target.cohesion - damage * 0.42, 0, 100);
   if (target.soldierCount <= 0 || target.hp <= 0) {
     target.state = "DESTROYED";
     target.engagedWith = [];
   }
-  addLog(battle, phase, `${sourceName} → ${target.name}：${casualties}名損耗、士気${Math.round(target.morale)}。`);
+  addLog(battle, phase, personalCombatant
+    ? `${sourceName} → ${target.name}：HP${Math.max(1, Math.round(hpDamage))}損耗、残りHP${Math.round(target.hp)}。`
+    : `${sourceName} → ${target.name}：${casualties}名損耗、士気${Math.round(target.morale)}。`);
   return { casualties, damage };
 }
 
@@ -1611,13 +1757,17 @@ function resolveVictory(battle) {
   const playerStanding = battle.units.some((unit) => unit.side === "player" && activeForCombat(unit));
   const enemyStanding = battle.units.some((unit) => unit.side === "enemy" && activeForCombat(unit));
   if (playerStanding && enemyStanding) return;
+  const isPersonalUnitBattle = battle.combatScale === "personal-units";
   battle.winner = playerStanding ? "player" : enemyStanding ? "enemy" : "draw";
   battle.outcome = {
     turn: battle.turn,
     playerRemaining: battle.units.filter((unit) => unit.side === "player").reduce((sum, unit) => sum + unit.soldierCount, 0),
     enemyRemaining: battle.units.filter((unit) => unit.side === "enemy").reduce((sum, unit) => sum + unit.soldierCount, 0),
   };
-  addLog(battle, "fatigue_status", battle.winner === "draw" ? "両軍とも戦闘継続能力を失いました。" : `${battle.winner === "player" ? "王国軍" : "公国軍"}が戦場を制圧しました。`);
+  const labels = battle.sideLabels ?? { player: "王国軍", enemy: "公国軍" };
+  addLog(battle, "fatigue_status", battle.winner === "draw"
+    ? (isPersonalUnitBattle ? "双方の全ユニットが戦闘継続能力を失いました。" : "両軍とも戦闘継続能力を失いました。")
+    : `${labels[battle.winner]}が${isPersonalUnitBattle ? "個人ユニット戦に勝利しました" : "戦場を制圧しました"}。`);
 }
 
 const PHASE_SYSTEMS = Object.freeze({
@@ -1644,6 +1794,13 @@ export function executeBattleTurn(battle) {
   refreshEngagements(next);
   resolveVictory(next);
   next.phase = next.winner ? "complete" : "command";
+  return next;
+}
+
+export function autoResolveBattle(battle, { maxTurns = 80 } = {}) {
+  let next = structuredClone(battle);
+  for (let index = 0; index < maxTurns && !next.winner; index += 1) next = executeBattleTurn(next);
+  if (!next.winner) throw new Error(`${maxTurns}ターン以内に戦闘が決着しませんでした`);
   return next;
 }
 

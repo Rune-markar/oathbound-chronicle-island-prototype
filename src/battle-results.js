@@ -7,6 +7,8 @@ function sideResult(battle, side, summary) {
   const units = battle.units.filter((unit) => unit.side === side);
   const initialSoldiers = units.reduce((sum, unit) => sum + unit.maxSoldierCount, 0);
   const remainingSoldiers = units.reduce((sum, unit) => sum + unit.soldierCount, 0);
+  const initialHp = units.reduce((sum, unit) => sum + unit.maxHp, 0);
+  const remainingHp = units.reduce((sum, unit) => sum + unit.hp, 0);
   return {
     side,
     units: units.length,
@@ -14,6 +16,17 @@ function sideResult(battle, side, summary) {
     initialSoldiers,
     remainingSoldiers,
     casualties: Math.max(0, initialSoldiers - remainingSoldiers),
+    initialHp: Math.round(initialHp),
+    remainingHp: Math.max(0, Math.round(remainingHp)),
+    hpLoss: Math.max(0, Math.round(initialHp - remainingHp)),
+    members: units.map((unit) => ({
+      id: unit.id,
+      name: unit.name,
+      tags: [...unit.tags],
+      maxHp: Math.round(unit.maxHp),
+      remainingHp: Math.max(0, Math.round(unit.hp)),
+      state: unit.state,
+    })),
     destroyed: units.filter((unit) => unit.state === "DESTROYED").length,
     routed: units.filter((unit) => unit.state === "ROUTED").length,
     escaped: units.filter((unit) => unit.state === "ESCAPED").length,

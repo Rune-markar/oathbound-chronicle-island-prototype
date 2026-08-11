@@ -2329,18 +2329,60 @@ a:focus-visible,
 }
 
 .generated-expedition-marker {
-  z-index: 5;
-  width: 24px;
-  height: 24px;
-  border: 2px solid #fff3c2;
+  z-index: 10;
+  width: 34px;
+  height: 34px;
+  border: 3px solid #fff3c2;
   border-radius: 50%;
   color: #fff5ca;
   background: #9e3e35;
-  box-shadow: 0 3px 12px rgba(5, 17, 19, 0.8);
-  font-size: 11px;
-  line-height: 19px;
+  box-shadow: 0 0 0 6px rgba(255, 225, 132, .22), 0 4px 18px rgba(5, 17, 19, .92);
   transform: translate(-50%, -50%);
   pointer-events: none;
+  animation: generated-current-location-pulse 1.8s ease-in-out infinite;
+}
+
+.generated-expedition-marker > i {
+  display: block;
+  font: normal 900 14px/27px Georgia, serif;
+}
+
+.generated-expedition-marker > span {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 9px);
+  min-width: 92px;
+  padding: 6px 8px;
+  color: #fff1bd;
+  border: 1px solid rgba(255, 227, 148, .88);
+  border-radius: 5px;
+  background: rgba(92, 34, 30, .94);
+  box-shadow: 0 5px 16px rgba(2, 13, 16, .72);
+  transform: translateX(-50%);
+}
+
+.generated-expedition-marker > span::after {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  border: 5px solid transparent;
+  border-top-color: rgba(255, 227, 148, .88);
+  content: "";
+  transform: translateX(-50%);
+}
+
+.generated-expedition-marker > span b,
+.generated-expedition-marker > span small { display: block; white-space: nowrap; }
+.generated-expedition-marker > span b { font: 900 9px/1 system-ui, sans-serif; letter-spacing: .12em; }
+.generated-expedition-marker > span small { margin-top: 3px; overflow: hidden; max-width: 150px; font: 700 8px/1.2 system-ui, sans-serif; text-overflow: ellipsis; }
+
+@keyframes generated-current-location-pulse {
+  0%, 100% { box-shadow: 0 0 0 5px rgba(255, 225, 132, .16), 0 4px 18px rgba(5, 17, 19, .92); }
+  50% { box-shadow: 0 0 0 11px rgba(255, 225, 132, .3), 0 4px 24px rgba(255, 213, 105, .42); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .generated-expedition-marker { animation: none; }
 }
 
 .generated-site-marker-layer,
@@ -2350,6 +2392,37 @@ a:focus-visible,
   inset: 0;
   pointer-events: none;
 }
+
+.generated-region-move-layer {
+  position: absolute;
+  z-index: 6;
+  inset: 0;
+  pointer-events: none;
+}
+
+.generated-region-move-target {
+  position: absolute;
+  min-width: 74px;
+  min-height: 48px;
+  padding: 7px 9px;
+  color: #fff0bc;
+  border: 1px solid rgba(255, 226, 143, .9);
+  border-radius: 9px;
+  background: rgba(24, 69, 62, .9);
+  box-shadow: 0 5px 18px rgba(2, 15, 18, .62), 0 0 0 4px rgba(255, 226, 143, .12);
+  cursor: pointer;
+  transform: translate(-50%, -50%);
+  touch-action: manipulation;
+  pointer-events: auto;
+}
+
+.generated-region-move-target span,
+.generated-region-move-target small { display: block; white-space: nowrap; }
+.generated-region-move-target span { font: 800 10px/1.2 Georgia, "Yu Mincho", serif; }
+.generated-region-move-target small { margin-top: 3px; color: #d9cda9; font: 700 8px/1 system-ui, sans-serif; }
+.generated-region-move-target:hover,
+.generated-region-move-target:focus-visible { background: rgba(48, 104, 83, .96); transform: translate(-50%, -50%) scale(1.05); }
+.generated-region-move-target.is-disabled { opacity: .5; cursor: not-allowed; }
 
 .generated-site-action-layer { z-index: 12; }
 
@@ -11695,6 +11768,29 @@ body.is-battle-preparation-open { overflow: hidden; }
 .guild-receptionist-desk > div > section strong { margin-top: 2px; color: #315b66; font-size: 9px; }
 .guild-receptionist-desk > div > section p { margin: 2px 0 0; overflow: hidden; color: #787062; font-size: 7px; text-overflow: ellipsis; white-space: nowrap; }
 .guild-receptionist-desk > div > section button { width: 100%; padding: 7px 9px; color: #fff1be; border: 1px solid rgba(224, 186, 89, .45); background: #315f73; font-size: 7px; font-weight: 900; }
+.guild-processed-goods-desk { position: relative; min-width: 0; display: grid; grid-template-columns: 132px minmax(0, 1fr); gap: 14px; padding: 13px; overflow: hidden; border: 1px solid rgba(123, 65, 81, .42); background: linear-gradient(135deg, rgba(249, 239, 224, .97), rgba(229, 215, 222, .92)); box-shadow: inset 4px 0 #6b2948, 0 8px 20px rgba(61, 39, 46, .13); }
+.guild-processed-goods-desk::after { position: absolute; left: -42px; bottom: -64px; width: 160px; height: 160px; content: ""; border: 1px solid rgba(143, 91, 62, .12); border-radius: 50%; box-shadow: 0 0 0 17px rgba(112, 43, 70, .045), 0 0 0 36px rgba(166, 113, 59, .04); pointer-events: none; }
+.guild-processed-goods-desk > figure { position: relative; z-index: 1; height: 198px; margin: 0; overflow: clip; border: 1px solid rgba(130, 73, 82, .4); background: linear-gradient(180deg, #fff8ec, #eadce0); box-shadow: 0 6px 15px rgba(57, 38, 44, .18); }
+.guild-processed-goods-desk > figure img { width: 100%; height: 100%; display: block; object-fit: contain; object-position: center top; transform: scale(1.62); transform-origin: 50% 16%; }
+.guild-processed-goods-desk > figure figcaption { position: absolute; right: 5px; bottom: 5px; padding: 4px 5px; color: #ffeab8; background: rgba(91, 35, 61, .94); font: 900 6px/1 system-ui, sans-serif; letter-spacing: .09em; }
+.guild-processed-goods-copy { position: relative; z-index: 1; min-width: 0; display: grid; align-content: center; gap: 7px; }
+.guild-processed-goods-copy > small { color: #9a733a; font: 900 7px/1 system-ui, sans-serif; letter-spacing: .11em; }
+.guild-processed-goods-copy h4 { margin: 0; color: #6b2948; font: 800 19px/1.1 Georgia, "Yu Mincho", serif; }
+.guild-processed-goods-copy > p { margin: 0; color: #71635f; font-size: 9px; line-height: 1.55; }
+.guild-processed-goods-copy ul { display: flex; flex-wrap: wrap; gap: 5px; margin: 2px 0 0; padding: 0; list-style: none; }
+.guild-processed-goods-copy li { padding: 4px 6px; color: #713650; border: 1px solid rgba(107, 41, 72, .24); background: rgba(255, 255, 255, .58); font-size: 7px; font-weight: 800; }
+.guild-processed-goods-list { position: relative; z-index: 1; min-width: 0; display: grid; grid-column: 1 / -1; grid-template-columns: repeat(3, minmax(0, 1fr)); align-content: center; gap: 6px; }
+.guild-contract-board .guild-processed-good { min-width: 0; display: grid; grid-template-columns: 28px minmax(0, 1fr); align-items: center; gap: 8px; padding: 8px; border: 1px solid rgba(112, 62, 76, .2); background: rgba(255, 253, 246, .72); }
+.guild-processed-good > i { width: 28px; height: 36px; display: grid; place-items: center; color: #ffe2a0; border: 1px solid rgba(177, 124, 58, .46); border-radius: 45% 45% 38% 38%; background: linear-gradient(180deg, #8d435c, #5d2944); font: 900 8px/1 Georgia, serif; font-style: normal; box-shadow: inset 0 3px rgba(255, 255, 255, .12); }
+.guild-processed-good span { min-width: 0; }
+.guild-contract-board .guild-processed-good small { color: #9a753f; font-size: 6px; font-weight: 900; letter-spacing: .06em; }
+.guild-contract-board .guild-processed-good strong { margin-top: 2px; color: #663047; font-size: 10px; }
+.guild-contract-board .guild-processed-good p { min-height: 0; margin: 2px 0 0; color: #756863; font-size: 7px; line-height: 1.35; }
+.guild-contract-board .guild-processed-good > button { width: 100%; min-width: 0; display: grid; grid-column: 1 / -1; gap: 2px; box-sizing: border-box; padding: 7px 8px; color: #ffe8b1; border: 1px solid rgba(197, 146, 70, .46); background: #6b2948; cursor: pointer; text-align: center; }
+.guild-contract-board .guild-processed-good > button b { font-size: 8px; }
+.guild-contract-board .guild-processed-good > button small { color: rgba(255, 235, 186, .65); font-size: 6px; text-decoration: line-through; }
+.guild-contract-board .guild-processed-good > button em { font: normal 800 7px/1.2 system-ui, sans-serif; }
+.guild-contract-board .guild-processed-good > button:disabled { color: #8f817a; border-color: rgba(97, 78, 78, .16); background: #ddd2ce; cursor: not-allowed; }
 .guild-contract-board > div { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .guild-contract-board article { min-width: 0; display: grid; gap: 12px; padding: 12px; border: 1px solid rgba(80, 102, 84, .23); background: rgba(255, 253, 246, .86); }
 .guild-contract-board article.is-active { border-color: #ae8032; background: #fff5d9; }
@@ -11835,6 +11931,7 @@ body.is-battle-preparation-open { overflow: hidden; }
 
 @media (max-width: 900px) {
   .guild-receptionist-desk { grid-template-columns: 112px minmax(0, 1fr); }
+  .guild-processed-goods-desk { grid-template-columns: 118px minmax(0, 1fr); }
   .guild-contract-board > div { grid-template-columns: 1fr; }
   .tavern-party-columns { grid-template-columns: 1fr; }
   .adventure-layout { grid-template-columns: 1fr; }
@@ -11847,6 +11944,12 @@ body.is-battle-preparation-open { overflow: hidden; }
   .guild-receptionist-desk > figure img { transform: scale(1.75); }
   .guild-receptionist-desk h4 { font-size: 15px; }
   .guild-receptionist-desk > div > p { font-size: 8px; }
+  .guild-processed-goods-desk { grid-template-columns: 94px minmax(0, 1fr); gap: 9px; padding: 10px; }
+  .guild-processed-goods-desk > figure { height: 158px; }
+  .guild-processed-goods-desk > figure img { transform: scale(1.72); }
+  .guild-processed-goods-copy h4 { font-size: 15px; }
+  .guild-processed-goods-copy > p { font-size: 8px; }
+  .guild-processed-goods-list { grid-template-columns: 1fr; }
   .village-interior-scene { height: 155px; }
   .dungeon-entry-section > button { grid-template-columns: 48px minmax(0, 1fr); }
   .dungeon-entry-section > button > b { grid-column: 2; }
@@ -13495,8 +13598,8 @@ body.is-character-conversation .map-stage {
   box-shadow: 0 8px 22px rgba(2, 10, 10, .35);
 }
 
-.village-conversation > header small { color: #d8b862; font: 800 8px/1 system-ui, sans-serif; letter-spacing: .12em; }
-.village-conversation > header h1 { margin: 3px 0 0; color: #ffe8a8; font: 800 18px/1.1 Georgia, "Yu Mincho", serif; }
+.village-conversation > header small { color: #efd582; font: 800 11px/1.2 system-ui, sans-serif; letter-spacing: .1em; }
+.village-conversation > header h1 { margin: 4px 0 0; color: #fff0bd; font: 800 21px/1.15 Georgia, "Yu Mincho", serif; }
 .village-conversation > header button { width: 34px; height: 34px; color: #ecd89f; border: 1px solid rgba(229, 198, 117, .35); background: rgba(7, 25, 24, .72); cursor: pointer; font-size: 18px; }
 
 .village-conversation-stage {
@@ -13576,8 +13679,8 @@ body.is-character-conversation .map-stage {
 
 .conversation-character figcaption small,
 .conversation-character figcaption strong { display: block; }
-.conversation-character figcaption small { color: #d3b467; font: 800 7px/1 system-ui, sans-serif; letter-spacing: .1em; }
-.conversation-character figcaption strong { margin-top: 4px; color: #fff0bd; font: 800 17px/1.1 Georgia, "Yu Mincho", serif; }
+.conversation-character figcaption small { color: #f0cf72; font: 800 11px/1.15 system-ui, sans-serif; letter-spacing: .08em; }
+.conversation-character figcaption strong { margin-top: 5px; color: #fff4cf; font: 800 20px/1.15 Georgia, "Yu Mincho", serif; }
 .conversation-character.is-player { grid-column: 1; }
 .conversation-character.is-other { grid-column: 3; }
 
@@ -13586,15 +13689,20 @@ body.is-character-conversation .map-stage {
   grid-column: 2;
   align-self: center;
   display: grid;
-  gap: 5px;
+  gap: 8px;
   justify-items: center;
-  color: rgba(248, 231, 184, .72);
+  max-width: 240px;
+  padding: 12px 16px;
+  color: #fff0bd;
+  border: 1px solid rgba(229, 198, 117, .58);
+  background: rgba(4, 20, 19, .88);
+  box-shadow: 0 8px 24px rgba(2, 10, 10, .64);
   text-align: center;
-  text-shadow: 0 3px 15px #020d0c;
+  text-shadow: 0 2px 6px #020d0c;
 }
 
-.conversation-place span { font: 800 8px/1 system-ui, sans-serif; letter-spacing: .16em; }
-.conversation-place strong { font: 800 15px/1.3 Georgia, "Yu Mincho", serif; }
+.conversation-place span { font: 800 11px/1.35 system-ui, sans-serif; letter-spacing: .08em; }
+.conversation-place strong { font: 800 18px/1.45 Georgia, "Yu Mincho", serif; }
 
 .conversation-message {
   position: relative;
@@ -13612,17 +13720,28 @@ body.is-character-conversation .map-stage {
 
 .conversation-message small,
 .conversation-message strong { display: block; }
-.conversation-message small { color: #c9a951; font: 900 8px/1 system-ui, sans-serif; letter-spacing: .16em; }
-.conversation-message strong { margin-top: 5px; color: #ffe39a; font: 800 16px/1.1 Georgia, "Yu Mincho", serif; }
-.conversation-message p { margin: 8px 0 0; color: #f0e8d1; font: 500 15px/1.75 "Yu Mincho", serif; }
-.conversation-message button { min-height: 54px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; color: #fff0ba; border: 1px solid #c49b42; background: linear-gradient(135deg, #47776c, #27574f); cursor: pointer; font-weight: 800; }
+.conversation-message small { color: #e6c665; font: 900 11px/1.2 system-ui, sans-serif; letter-spacing: .12em; }
+.conversation-message strong { margin-top: 6px; color: #ffeba9; font: 800 19px/1.15 Georgia, "Yu Mincho", serif; }
+.conversation-message p { margin: 9px 0 0; color: #fff8e8; font: 600 17px/1.72 "Yu Mincho", serif; }
+.conversation-message button { min-height: 56px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 13px 17px; color: #fff5d2; border: 1px solid #d9b24f; background: linear-gradient(135deg, #47776c, #27574f); cursor: pointer; font-size: 15px; font-weight: 800; }
 .conversation-message button:hover { border-color: #ffe092; filter: brightness(1.1); }
 .conversation-message button span { color: #edca70; font-size: 18px; }
 
-.npc-social-message { grid-template-columns: minmax(0, 1fr) minmax(240px, 360px); }
-.npc-social-message > div > span { display: block; margin-top: 7px; color: #9fb8ae; font: 700 8px/1.4 system-ui, sans-serif; }
+.npc-social-message { grid-template-columns: minmax(260px, 1fr) minmax(230px, 320px) minmax(210px, 280px); gap: 14px; }
+.npc-social-message > div > span { display: block; margin-top: 8px; color: #c3d5cf; font: 700 11px/1.45 system-ui, sans-serif; }
+.npc-known-profile { align-self: stretch; max-height: 190px; overflow: auto; padding: 10px 12px; color: #e7eee8; border: 1px solid rgba(211, 184, 108, .3); background: rgba(2, 16, 16, .52); }
+.npc-known-profile h2 { margin: 0 0 7px; color: #e6c665; font: 900 10px/1.2 system-ui, sans-serif; letter-spacing: .1em; }
+.npc-known-profile p { margin: 4px 0; color: #dce8e2; font: 700 10px/1.45 system-ui, sans-serif; }
+.npc-known-profile p b { margin-right: 7px; color: #ffeba9; }
+.npc-known-profile ul { display: grid; gap: 3px; margin: 7px 0; padding-left: 16px; color: #dce8e2; font: 600 10px/1.45 system-ui, sans-serif; }
+.npc-known-profile aside { display: grid; gap: 3px; margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(211, 184, 108, .24); }
+.npc-known-profile aside b { color: #ffdb79; font: 800 10px/1.35 system-ui, sans-serif; }
+.npc-known-profile aside span,
+.npc-known-profile aside small { color: #cadbd4; font: 600 9px/1.45 system-ui, sans-serif; }
 .npc-social-message nav { display: grid; gap: 6px; }
-.npc-social-message nav button { min-height: 38px; padding: 8px 13px; font-family: Georgia, "Yu Mincho", serif; font-size: 13px; }
+.npc-social-message nav button { min-height: 42px; padding: 9px 14px; font-family: Georgia, "Yu Mincho", serif; font-size: 15px; }
+.npc-social-message nav button small { margin: 0 0 0 auto; color: #ffe39a; font: 800 9px/1 system-ui, sans-serif; letter-spacing: 0; }
+.npc-social-message nav button:disabled { color: #81908b; border-color: rgba(180, 180, 160, .24); background: #203b37; cursor: not-allowed; filter: none; }
 .npc-social-conversation .conversation-character { filter: saturate(.86) brightness(.82); opacity: .94; transform: translateY(8px) scale(.98); }
 .npc-social-conversation .conversation-character.is-other { border-color: rgba(255, 222, 135, .64); filter: saturate(1) brightness(1); transform: translateY(0) scale(1); }
 
@@ -13660,7 +13779,8 @@ body.is-character-conversation .map-stage {
   .conversation-message p { margin-top: 5px; font-size: 12px; line-height: 1.55; }
   .conversation-message button { min-height: 42px; }
   .npc-social-message { grid-template-columns: 1fr; }
-  .npc-social-message nav { grid-template-columns: 1fr; }
+  .npc-social-message nav { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .npc-known-profile { max-height: 130px; }
 }
 
 /* Location focus: the place image owns the screen and commands float over it. */
@@ -14169,6 +14289,16 @@ body.is-location-focus .village-central-status article > strong { font-size: cla
   filter: drop-shadow(0 18px 20px rgba(2, 9, 9, .72));
 }
 
+.conversation-character.is-player.has-transparent-art img {
+  transform: scale(1.08);
+  transform-origin: center 24%;
+}
+
+.conversation-character.is-other.has-transparent-art img {
+  transform: scale(1.58);
+  transform-origin: center top;
+}
+
 .conversation-character.has-transparent-art::after {
   box-shadow: none;
 }
@@ -14181,3 +14311,94 @@ body.is-location-focus .village-central-status article > strong { font-size: cla
   .character-creation > footer { align-items: stretch; flex-direction: column; }
   .career-ability-sheet > header { flex-direction: column; gap: 6px; }
 }
+.tavern-section-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0 0 12px;
+}
+
+.tavern-section-tabs button {
+  border: 1px solid rgba(203, 174, 112, 0.34);
+  background: rgba(18, 15, 15, 0.82);
+  color: #d9ccb6;
+  padding: 10px 8px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.tavern-section-tabs button.is-active {
+  border-color: #d9b56d;
+  background: rgba(111, 73, 35, 0.72);
+  color: #fff1cf;
+  box-shadow: inset 0 -2px 0 #e7c47d;
+}
+.personal-map-vitals {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 8px 0 12px;
+  padding: 8px 10px;
+  border: 1px solid rgba(206, 176, 101, .35);
+  background: rgba(5, 22, 22, .72);
+  color: #d9d1b8;
+}
+
+.personal-map-vitals.is-danger {
+  border-color: rgba(190, 75, 65, .75);
+  background: rgba(72, 20, 18, .78);
+  color: #f0c8ba;
+}
+
+.personal-map-entry-actions button span em {
+  display: block;
+  margin-top: 4px;
+  color: #e3a58f;
+  font-style: normal;
+  font-size: .72rem;
+}
+
+.adventure-battle-preview {
+  margin: 14px 0;
+  border: 1px solid rgba(205, 176, 99, .45);
+  background: rgba(4, 19, 20, .88);
+}
+
+.adventure-battle-preview > header,
+.adventure-battle-preview > footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+}
+
+.adventure-battle-preview > div {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-block: 1px solid rgba(205, 176, 99, .2);
+}
+
+.adventure-battle-preview article { padding: 10px 12px; }
+.adventure-battle-preview article + article { border-left: 1px solid rgba(205, 176, 99, .2); }
+.adventure-battle-preview p { margin: 6px 0 0; line-height: 1.7; }
+.adventure-battle-preview.is-dangerous,
+.adventure-battle-preview.is-severe { border-color: rgba(192, 72, 62, .75); }
+.adventure-withdraw-button { margin-top: 10px; width: 100%; }
+
+.personal-result-members {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.personal-result-members article {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 3px 10px;
+  padding: 9px 11px;
+  border: 1px solid rgba(205, 176, 99, .28);
+  background: rgba(4, 19, 20, .68);
+}
+
+.personal-result-members article b { grid-row: 1 / span 2; grid-column: 2; align-self: center; }
