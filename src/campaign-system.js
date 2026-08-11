@@ -1,4 +1,5 @@
 import { evaluateCreed, evaluateCreedRelationship } from "./creed-system.js";
+import { LISETTE_VALENNE_ID, UNIQUE_CHARACTER_POLITICS } from "./unique-characters.js";
 
 const clamp = (value, minimum, maximum) => Math.min(maximum, Math.max(minimum, value));
 
@@ -97,6 +98,7 @@ export const OFFICER_POLITICS = Object.freeze({
   ilva: Object.freeze({ faction: "技術派", origin: "峠の在野測量士", ambition: "地図と現地知を公的制度に残す", agenda: "測量・道路・現地自治", supports: ["navy.soundings", "admin.", "city.repair"], opposes: [] }),
   dario: Object.freeze({ faction: "武勲派", origin: "放浪軍", ambition: "国境戦で正規軍の席を得る", agenda: "機動防衛と軍功", supports: ["military.", "city.drill", "diplomacy.pressure"], opposes: ["diplomacy.concession"] }),
   mirel: Object.freeze({ faction: "越境商人派", origin: "ヴァルカ系商人", ambition: "国境を越える商会の発言権を得る", agenda: "相互通行・仲介・商業", supports: ["diplomacy.", "city.commerce"], opposes: ["diplomacy.pressure", "diplomacy.justify"] }),
+  ...UNIQUE_CHARACTER_POLITICS,
 });
 
 export const FOREIGN_AGENDAS = Object.freeze({
@@ -533,8 +535,8 @@ export function advanceOfficerPromises(world, state) {
 export function applyDoctrinePolitics(world, state, doctrineId) {
   normalizeStrategicState(world, state);
   const preferences = {
-    balanced: ["edras", "mara"], prosperity: ["edras", "mara", "mirel"],
-    sea_guard: ["gaius", "sera", "dario"], concord: ["mara", "sera", "mirel"],
+    balanced: ["edras", "mara"], prosperity: ["edras", "mara", "mirel", LISETTE_VALENNE_ID],
+    sea_guard: ["gaius", "sera", "dario"], concord: ["mara", "sera", "mirel", LISETTE_VALENNE_ID],
   }[doctrineId] ?? [];
   const reactions = [];
   Object.entries(state.officers).forEach(([officerId, officer]) => {

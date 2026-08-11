@@ -5,6 +5,7 @@ import {
   acceptPartyInvitation,
   advanceDungeonRun,
   closeDungeonRun,
+  completeGuildContractObjective,
   createDungeonTacticalBattle,
   explorePersonalMap,
   getDungeonTacticalRoster,
@@ -12,6 +13,7 @@ import {
   getPersonalMapView,
   getRegionAdventureSites,
   getTavernCandidates,
+  interactWithNpcCandidate,
   inviteTavernCandidate,
   movePersonalMap,
   normalizeAdventureState,
@@ -48,8 +50,9 @@ test("guild contracts are accepted and completed by the matching dungeon clear",
   let next = acceptGuildContract(state, contract.id, context);
   assert.equal(next.adventure.activeContracts.length, 1);
   assert.throws(() => startDungeonRun(next, sites.dungeon, context.region), /酒場/);
-  const companion = getTavernCandidates(next, context).find((candidate) => candidate.incoming);
-  next = acceptPartyInvitation(next, companion.id, context);
+  const companion = getTavernCandidates(next, context).find((candidate) => !candidate.unique);
+  next = interactWithNpcCandidate(next, companion.id, "gentle", context, { roll: 0 });
+  next = inviteTavernCandidate(next, companion.id, context);
   next = startDungeonRun(next, sites.dungeon, context.region);
   next = advanceDungeonRun(next);
   next = advanceDungeonRun(next);
@@ -128,16 +131,47 @@ test("legacy dungeon encounters are normalized for the tactical battle handoff",
   assert.equal(createDungeonTacticalBattle(next).id, next.adventure.activeRun.combat.tacticalBattleId);
 });
 
-test("tavern supports both incoming invitations and player invitations", () => {
+test("NPC greetings use charisma and personality for a first-impression bonus, then wisdom reveals details", () => {
   const { state, context } = fixture("tavern-party-test");
-  const candidates = getTavernCandidates(state, context);
-  const incoming = candidates.find((candidate) => candidate.incoming);
-  const recruitable = candidates.find((candidate) => !candidate.incoming);
-  let next = acceptPartyInvitation(state, incoming.id, context);
-  next = inviteTavernCandidate(next, recruitable.id, context);
-  assert.equal(next.adventure.party.length, 2);
-  assert.equal(next.adventure.party[0].source, "invitation");
-  assert.equal(next.adventure.party[1].source, "player-invite");
+  const candidate = getTavernCandidates(state, context).find((entry) => !entry.unique);
+  assert.throws(() => inviteTavernCandidate(state, candidate.id, context), /初対面/);
+  let next = interactWithNpcCandidate(state, candidate.id, "gentle", context, { firstImpressionRoll: 0, insightRoll: 0 });
+  let social = getTavernCandidates(next, context).find((entry) => entry.id === candidate.id).social;
+  assert.equal(social.firstImpressionBonus, true);
+  assert.equal(social.personality !== null, true);
+  assert.equal(social.lastResult.firstMeeting, true);
+  next = interactWithNpcCandidate(next, candidate.id, "friendly", context, { insightRoll: 0 });
+  social = getTavernCandidates(next, context).find((entry) => entry.id === candidate.id).social;
+  assert.equal(social.specialtyKnown, true);
+  next = inviteTavernCandidate(next, candidate.id, context);
+  assert.equal(next.adventure.party[0].source, "player-invite");
+});
+
+test("charisma changes first-impression probability and wisdom changes information discovery probability", () => {
+  const low = fixture("npc-ability-probability-test");
+  const high = fixture("npc-ability-probability-test");
+  low.state.player.abilities.charisma = 3;
+  low.state.player.abilities.wisdom = 3;
+  high.state.player.abilities.charisma = 18;
+  high.state.player.abilities.wisdom = 18;
+  const candidateId = getTavernCandidates(low.state, low.context).find((candidate) => !candidate.unique).id;
+  const lowResult = interactWithNpcCandidate(low.state, candidateId, "friendly", low.context, { roll: 1 }).adventure.npcRelations[candidateId].lastResult;
+  const highResult = interactWithNpcCandidate(high.state, candidateId, "friendly", high.context, { roll: 1 }).adventure.npcRelations[candidateId].lastResult;
+  assert.ok(highResult.impressionChance > lowResult.impressionChance);
+  assert.ok(highResult.discoveryChance > lowResult.discoveryChance);
+});
+
+test("a locally known player can receive an invitation while eating and chooses whether to accept it", () => {
+  const { state, context, sites } = fixture("tavern-incoming-test");
+  const dining = performVillageAction(state, { id: sites.village.id, name: sites.village.name }, "eat_meal");
+  assert.equal(dining.player.villageLife.lastAction.actionId, "eat_meal");
+  const socialContext = { ...context, villageId: sites.village.id, localRenown: 18 };
+  const incoming = getTavernCandidates(dining, socialContext).find((candidate) => candidate.incoming);
+  assert.ok(incoming);
+  const declinedState = structuredClone(dining);
+  assert.equal(declinedState.adventure.party.length, 0, "showing an invitation never auto-accepts it");
+  const accepted = acceptPartyInvitation(dining, incoming.id, socialContext);
+  assert.equal(accepted.adventure.party[0].source, "invitation");
 });
 
 test("personal map movement is limited to discovered nearby locations", () => {
@@ -177,6 +211,22 @@ test("personal exploration can discover locations, find nothing, and collect for
   assert.ok(next.player.villageLife.inventory.some((item) => item.id === map.lastResult.itemId && item.quantity === 1));
 });
 
+test("forage contracts require three concrete exploration finds and an explicit guild delivery", () => {
+  const { state, context, sites } = fixture("forage-delivery-test");
+  const contract = getGuildContracts(state, context).find((entry) => entry.objective.type === "collect_item");
+  let next = acceptGuildContract(state, contract.id, context);
+  for (let count = 0; count < 3; count += 1) next = explorePersonalMap(next, context, { roll: 0.9 });
+  const active = getGuildContracts(next, context).find((entry) => entry.id === contract.id);
+  assert.equal(active.objective.progress, 3);
+  assert.equal(active.readyToSubmit, true);
+  next = completeGuildContractObjective(next, contract.id, context);
+  assert.equal(next.player.villageLife.quests.find((quest) => quest.id === contract.id).status, "completed");
+  assert.equal(next.player.villageLife.inventory.some((item) => item.id === contract.objective.targetId), false);
+  next = performVillageAction(next, { id: sites.village.id, name: sites.village.name }, "report_request");
+  next = performVillageAction(next, { id: sites.village.id, name: sites.village.name }, "receive_reward");
+  assert.notEqual(getGuildContracts(next, context)[0].id, getGuildContracts(state, context)[0].id, "report and reward rotate the board for repeatable merit");
+});
+
 test("personal exploration monster encounters hand off to the shared tactical battle", () => {
   const { state, context } = fixture("personal-map-battle-test");
   let next = explorePersonalMap(state, context, { roll: 0.65 });
@@ -205,6 +255,6 @@ test("legacy adventure saves gain an empty versioned personal map", () => {
   delete state.adventure.personalMap;
   state.adventure.schemaVersion = 1;
   const next = normalizeAdventureState(state);
-  assert.equal(next.adventure.schemaVersion, 2);
+  assert.equal(next.adventure.schemaVersion, 4);
   assert.deepEqual(next.adventure.personalMap, { regions: {} });
 });

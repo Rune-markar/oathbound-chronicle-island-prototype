@@ -3,6 +3,13 @@ const clamp = (value, minimum, maximum) => Math.min(maximum, Math.max(minimum, v
 
 export const REGIONAL_REPUTATION_SCHEMA_VERSION = 1;
 
+export const REGIONAL_REPUTATION_GAINS = Object.freeze({
+  goodDeed: 1,
+  completedRequest: 2,
+  liegeRequest: 10,
+  majorLiegeRequest: 18,
+});
+
 function finiteNonNegative(value, fallback = 0) {
   const numeric = Number(value);
   return Number.isFinite(numeric) ? Math.max(0, numeric) : fallback;

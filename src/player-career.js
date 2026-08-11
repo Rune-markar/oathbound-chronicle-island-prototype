@@ -1,10 +1,15 @@
 import { createVillageLifeState, normalizeVillageLifeState } from "./village-life.js";
-import { createRegionalReputationState, recordRegionalAchievement } from "./regional-reputation.js";
+import { normalizeAbilityScores } from "./character-abilities.js";
+import {
+  REGIONAL_REPUTATION_GAINS,
+  createRegionalReputationState,
+  recordRegionalAchievement,
+} from "./regional-reputation.js";
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const clone = (value) => structuredClone(value);
 
-export const CAREER_SCHEMA_VERSION = 3;
+export const CAREER_SCHEMA_VERSION = 4;
 
 const titleSystem = (id, name, highest, offices) => Object.freeze({
   id,
@@ -125,13 +130,16 @@ export const CAREER_ACTIONS = Object.freeze({
 });
 
 function defaultPlayer(options = {}) {
+  const name = options.name ?? "アレク";
+  const specialty = options.specialty ?? "武勇と交渉";
   return {
     schemaVersion: CAREER_SCHEMA_VERSION,
     id: "player",
-    name: options.name ?? "アレク",
+    name,
     raceId: options.raceId ?? "human",
     origin: options.origin ?? "没落貴族",
-    specialty: options.specialty ?? "武勇と交渉",
+    specialty,
+    abilities: normalizeAbilityScores(options.abilities ?? options.abilityScores, { seed: `player:${name}`, role: specialty }),
     stage: "individual",
     title: getTitleForCareerStage("individual"),
     governmentFormId: null,
@@ -186,6 +194,7 @@ export function normalizeCareerState(state) {
   state.player = {
     ...baseline,
     ...state.player,
+    abilities: normalizeAbilityScores(state.player.abilities, { seed: `player:${state.player.name ?? "アレク"}`, role: state.player.specialty }),
     affiliation: { ...baseline.affiliation, ...(state.player.affiliation ?? {}) },
     metrics: { ...baseline.metrics, ...(state.player.metrics ?? {}) },
     progress: { ...baseline.progress, ...(state.player.progress ?? {}) },
@@ -429,13 +438,13 @@ export function performCareerAction(state, actionId, options = {}) {
   };
   if (actionId === "fulfill_order") {
     player.progress.orders += 1; metrics.martialMerit += 28; metrics.liegeTrust = clamp(metrics.liegeTrust + 18, 0, 100);
-    recordRegionalAchievement(next, reputationOrigin, { label: "主君の討伐命令を達成", merit: 28, renown: 10 });
+    recordRegionalAchievement(next, reputationOrigin, { label: "主君である領主の討伐依頼を達成", merit: 28, renown: REGIONAL_REPUTATION_GAINS.liegeRequest });
     player.stage = "commander"; player.title = getTitleForCareerStage("commander");
     player.authorityGrants.push({ id: "commander-logistics", issuerId: player.affiliation.liegeId, territoryIds: ["orta"], authorities: ["local_logistics", "local_military_organization", "local_budget"], expiresTurn: null, reason: "国境隊の軍需委任" });
-    careerLog(player, next, "部隊長へ昇進", "武勲と主君の信頼により、小部隊と軍需予算を委ねられた。");
+    careerLog(player, next, "部隊長へ昇進", `領主の依頼を果たして地方名声${REGIONAL_REPUTATION_GAINS.liegeRequest}を得た。武勲と主君の信頼により、小部隊と軍需予算を委ねられた。`);
   } else if (actionId === "command_campaign") {
     player.progress.campaigns += 1; metrics.martialMerit += 45; metrics.liegeTrust = clamp(metrics.liegeTrust + 20, 0, 100); metrics.legitimacy += 18;
-    recordRegionalAchievement(next, reputationOrigin, { label: "辺境救援軍を指揮", merit: 45, renown: 18 });
+    recordRegionalAchievement(next, reputationOrigin, { label: "領主の辺境救援依頼を達成", merit: 45, renown: REGIONAL_REPUTATION_GAINS.majorLiegeRequest });
     player.stage = "lord"; player.title = getTitleForCareerStage("lord");
     player.holdings.push({ id: "fief-orta", territoryId: "orta", grantedBy: player.affiliation.liegeId, tenure: "feudal", rights: [...LOCAL_AUTHORITIES] });
     player.authorityGrants = player.authorityGrants.filter((grant) => grant.id !== "commander-logistics");
@@ -446,7 +455,7 @@ export function performCareerAction(state, actionId, options = {}) {
       next.officers.dario.rankLevel = Math.max(2, next.officers.dario.rankLevel ?? 0);
     }
     metrics.householdSupport = 42; metrics.popularSupport = 38;
-    careerLog(player, next, "東境州の城主となる", "救援戦の功績により、危険な辺境の城と直属家臣を与えられた。統治画面が自領限定で解放された。");
+    careerLog(player, next, "東境州の城主となる", `領主の大規模な救援依頼を果たして地方名声${REGIONAL_REPUTATION_GAINS.majorLiegeRequest}を得た。危険な辺境の城と直属家臣を与えられ、統治画面が自領限定で解放された。`);
   } else if (actionId === "consolidate_power") {
     metrics.civilMerit += 12; metrics.householdSupport = clamp(metrics.householdSupport + 9, 0, 100); metrics.popularSupport = clamp(metrics.popularSupport + 8, 0, 100); metrics.legitimacy = clamp(metrics.legitimacy + 6, 0, 100); metrics.ambition = clamp(metrics.ambition + 4, 0, 100);
     careerLog(player, next, "領内基盤を強化", "家臣、領民、地方豪族との関係を固めた。中央は自立性の上昇を警戒している。");

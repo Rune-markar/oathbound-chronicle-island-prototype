@@ -1,26 +1,53 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  GENERATED_COLONY_REQUIRED_REPUTATION,
+  GENERATED_WORLD_DEFAULTS,
   buildGeneratedWorld,
   buildGeneratedWorldAsync,
+  foundGeneratedVillage,
   generatedWorldSaveSummary,
+  getGeneratedColonizationView,
   getGeneratedExpeditionReachableRegions,
   getGeneratedShippingDestinations,
+  GENERATED_RECOGNITION_RADIUS,
+  getGeneratedRecognitionView,
   getGeneratedWorldSiteView,
   getGeneratedWorldTimeView,
   getGeneratedWorldView,
   moveGeneratedExpeditionToRegion,
+  moveGeneratedExpeditionToColonizationSite,
   moveGeneratedExpeditionToSite,
   refreshGeneratedWorldForDate,
   regenerateGeneratedWorld,
   selectGeneratedWorldRegion,
   setGeneratedPlayerNation,
 } from "../src/generated-world-system.js";
-import { createCareerInitialState, createInitialState, normalizeWarState } from "../src/simulation.js";
+import {
+  createCareerInitialState,
+  createInitialState,
+  normalizeWarState,
+  recordRegionalAchievement,
+} from "../src/simulation.js";
+
+function establishColonizationReputation(state) {
+  const view = getGeneratedWorldView(state);
+  recordRegionalAchievement(state, {
+    id: view.expeditionRegion.roadHubObjectId ?? view.expeditionRegion.id,
+    name: view.expeditionRegion.name,
+    regionId: view.expeditionRegion.id,
+    nationId: view.playerNation.id,
+  }, {
+    label: "開拓団を率いるに足る地域功績",
+    merit: 100,
+    renown: GENERATED_COLONY_REQUIRED_REPUTATION,
+  });
+  return state;
+}
 
 test("a new campaign stores a compact reproducible generated-world state", () => {
   const state = createInitialState();
-  assert.equal(state.generatedWorld.version, 10);
+  assert.equal(state.generatedWorld.version, GENERATED_WORLD_DEFAULTS.version);
   assert.equal(state.generatedWorld.width, 160);
   assert.equal(state.generatedWorld.height, 100);
   assert.equal(state.generatedWorld.nationCount, 7);
@@ -46,7 +73,32 @@ test("a new campaign stores a compact reproducible generated-world state", () =>
     expeditionRegionId: null,
     expeditionTileId: null,
     discoveredRegionCount: 0,
+    colonyCount: 0,
+    barbarianSiteCount: 0,
   });
+});
+
+test("the player recognizes a wrapped circular area of about twenty tiles around the current position", () => {
+  const state = createCareerInitialState({ seed: "recognition-radius-test" });
+  const world = getGeneratedWorldView(state);
+  const recognition = getGeneratedRecognitionView(state);
+  assert.equal(recognition.radius, GENERATED_RECOGNITION_RADIUS);
+  assert.equal(recognition.isRecognized(world.expeditionTile), true);
+  assert.ok(recognition.recognizedCount > 400);
+  for (const tileId of recognition.recognizedTileIds) {
+    const tile = world.runtime.tiles.find((entry) => entry.id === tileId);
+    const directX = Math.abs(tile.x - world.expeditionTile.x);
+    const dx = Math.min(directX, world.runtime.terrain.width - directX);
+    const dy = Math.abs(tile.y - world.expeditionTile.y);
+    assert.ok(dx * dx + dy * dy <= GENERATED_RECOGNITION_RADIUS ** 2);
+  }
+  const distant = world.runtime.tiles.find((tile) => {
+    const directX = Math.abs(tile.x - world.expeditionTile.x);
+    const dx = Math.min(directX, world.runtime.terrain.width - directX);
+    return dx * dx + (tile.y - world.expeditionTile.y) ** 2 > (GENERATED_RECOGNITION_RADIUS + 2) ** 2;
+  });
+  assert.equal(recognition.isRecognized(distant), false);
+  assert.equal(JSON.stringify(state.generatedWorld).includes("recognizedTileIds"), false, "derived vision does not bloat the save");
 });
 
 test("every new character creates a fresh generated terrain and nation set", () => {
@@ -132,7 +184,7 @@ test("legacy default-resolution worlds upgrade to the high-resolution grid witho
     discoveredTileIds: ["tile-17-23"],
   };
   const normalized = normalizeWarState(state);
-  assert.equal(normalized.generatedWorld.version, 10);
+  assert.equal(normalized.generatedWorld.version, GENERATED_WORLD_DEFAULTS.version);
   assert.equal(normalized.generatedWorld.width, 160);
   assert.equal(normalized.generatedWorld.height, 100);
   assert.equal(normalized.generatedWorld.plateCount, 22);
@@ -380,6 +432,86 @@ test("shipping is available only from a port and moves along a generated sea rou
   };
   assert.equal(getGeneratedWorldSiteView(inland, site.id).canMove, false);
   assert.throws(() => moveGeneratedExpeditionToSite(inland, site.id), /港に停泊/);
+});
+
+test("colonization extends a player region one roadside village at a time and persists only compact colony records", () => {
+  const initial = establishColonizationReputation(createCareerInitialState({ seed: "roadside-colony-contract" }));
+  const planning = getGeneratedColonizationView(initial);
+  assert.equal(planning.owned, true);
+  assert.equal(planning.canAfford, true);
+  assert.equal(planning.hasRequiredReputation, true);
+  assert.ok(planning.reputation.value >= GENERATED_COLONY_REQUIRED_REPUTATION);
+  assert.ok(planning.bestCandidate);
+  assert.ok(planning.candidates.every((candidate) => candidate.roadsideDistance <= 1));
+  assert.ok(planning.candidates.every((candidate) => candidate.urbanDistance <= planning.maximumExpansionRadius));
+
+  const candidate = planning.bestCandidate;
+  const arrived = moveGeneratedExpeditionToColonizationSite(initial, candidate.tileId);
+  assert.equal(arrived.generatedWorld.expeditionTileId, candidate.tileId);
+  assert.equal(arrived.generatedWorld.expeditionMovement, initial.generatedWorld.expeditionMovement);
+  assert.ok(arrived.generatedWorld.expeditionClockMinutes > initial.generatedWorld.expeditionClockMinutes);
+  const atSite = getGeneratedColonizationView(arrived).candidates.find((entry) => entry.tileId === candidate.tileId);
+  assert.equal(atSite.current, true);
+  assert.equal(atSite.canFound, true);
+
+  const founded = foundGeneratedVillage(arrived, candidate.tileId, { name: "黎明村" });
+  const colony = founded.generatedWorld.colonies[0];
+  assert.equal(colony.baseName, "黎明");
+  assert.equal(colony.tileId, candidate.tileId);
+  assert.equal(founded.player.metrics.wealth, initial.player.metrics.wealth - 6);
+  assert.equal(founded.player.villageLife.supplies.food, initial.player.villageLife.supplies.food - 2);
+  assert.equal(founded.generatedWorld.expeditionClockMinutes, arrived.generatedWorld.expeditionClockMinutes + 7 * 24 * 60);
+  assert.equal(JSON.stringify(founded.generatedWorld).includes("tiles"), false);
+  assert.equal(generatedWorldSaveSummary(founded).colonyCount, 1);
+
+  const view = getGeneratedWorldView(founded);
+  const object = view.runtime.nations.objects.find((entry) => entry.id === colony.id);
+  assert.equal(object.name, "黎明村");
+  assert.equal(object.placement, "player-colony");
+  assert.ok(view.runtime.regionById.get(colony.regionId).settlementIds.includes(colony.id));
+  assert.ok(view.runtime.nations.roads.some((road) => road.colonyRoad && road.toObjectId === colony.id));
+  assert.equal(getGeneratedWorldSiteView(founded, colony.id).current, true);
+  assert.throws(() => foundGeneratedVillage(founded, candidate.tileId), /空き地|候補地|街道沿い/);
+});
+
+test("colonization rejects foreign territory, off-road tiles, and insufficient supplies through the shared API", () => {
+  const initial = createCareerInitialState({ seed: "colony-boundary-contract" });
+  const planning = getGeneratedColonizationView(initial);
+  assert.ok(planning.bestCandidate);
+  assert.equal(planning.hasRequiredReputation, false);
+  assert.match(planning.reason, /名声25.*現在0/);
+  const unreputableArrival = moveGeneratedExpeditionToColonizationSite(initial, planning.bestCandidate.tileId);
+  assert.throws(() => foundGeneratedVillage(unreputableArrival, planning.bestCandidate.tileId), /名声25.*現在0/);
+
+  const reputable = establishColonizationReputation(structuredClone(initial));
+  const reputablePlanning = getGeneratedColonizationView(reputable);
+  const offRoad = reputablePlanning.expeditionRegion.tileIndices
+    .map((index) => reputablePlanning.runtime.tiles[index])
+    .find((tile) => !reputablePlanning.candidates.some((candidate) => candidate.tileId === tile.id));
+  assert.ok(offRoad);
+  assert.throws(() => moveGeneratedExpeditionToColonizationSite(reputable, offRoad.id), /空き地|候補地|街道沿い/);
+
+  const poor = structuredClone(reputable);
+  poor.player.metrics.wealth = 0;
+  poor.player.villageLife.supplies.food = 0;
+  const candidate = getGeneratedColonizationView(poor).bestCandidate;
+  const arrived = moveGeneratedExpeditionToColonizationSite(poor, candidate.tileId);
+  assert.equal(getGeneratedColonizationView(arrived).canAfford, false);
+  assert.throws(() => foundGeneratedVillage(arrived, candidate.tileId), /財産6.*保存食2/);
+
+  const foreignRegion = reputablePlanning.runtime.nations.regions.find((region) => region.nationId !== reputablePlanning.playerNation.id);
+  const foreignTile = reputablePlanning.runtime.tiles[foreignRegion.anchorIndex];
+  const foreign = {
+    ...reputable,
+    generatedWorld: {
+      ...reputable.generatedWorld,
+      expeditionRegionId: foreignRegion.id,
+      expeditionTileId: foreignTile.id,
+      selectedRegionId: foreignRegion.id,
+    },
+  };
+  assert.equal(getGeneratedColonizationView(foreign).owned, false);
+  assert.throws(() => foundGeneratedVillage(foreign, foreignTile.id), /自国が支配/);
 });
 
 test("expedition movement refreshes after the campaign month changes", () => {

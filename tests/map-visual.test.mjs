@@ -61,6 +61,12 @@ test("normal play generates the whole world, then zooms to region-level movement
   assert.match(appSource, /data-generated-move-confirm/);
   assert.doesNotMatch(appSource, /data-generated-region-destination-id/);
   assert.match(appSource, /function generatedRegionViewport\(/);
+  assert.match(appSource, /generatedRegionViewport\(expeditionRegion, expeditionTile, runtime\)/);
+  assert.match(appSource, /copy\.dataset\.cameraTileId = expeditionTile\.id/);
+  assert.match(appSource, /function generatedMapVisibleObjectIds\(/);
+  assert.match(appSource, /illustrated-strategy-map-v8-european-settlement-hierarchy/);
+  assert.match(appSource, /copy\.dataset\.visibleObjectCount/);
+  assert.match(markup, /実在欧州の都市網を参考に/);
   assert.match(generatedWorldSource, /tile\.regionId/);
   assert.doesNotMatch(appSource, /function renderGeneratedRegionCells/);
   assert.doesNotMatch(appSource, /generated-region-layer/);
@@ -69,7 +75,7 @@ test("normal play generates the whole world, then zooms to region-level movement
   assert.match(generatedWorldSource, /expeditionRegionId/);
   assert.match(generatedWorldSource, /pathRegionIds/);
   assert.match(appSource, /pixelsPerTile: 12/);
-  assert.match(appSource, /illustrated-strategy-map-v6-regional-hd/);
+  assert.match(appSource, /illustrated-strategy-map-v8-european-settlement-hierarchy/);
   assert.match(styleSource, /\.generated-world-copy\s*\{[^}]*width: 100%;[^}]*height: 100%;/s);
   assert.match(appSource, /x \+ 0\.5 - viewport\.x/);
   assert.match(appSource, /tile\.y \+ 0\.5 - viewport\.y/);
@@ -122,6 +128,40 @@ test("generated maps expose coastal settlement hierarchy, sea lanes, and port-ga
   assert.match(styleSource, /\.generated-site-marker\.is-fishing_port/);
   assert.match(styleSource, /\.generated-site-marker\.is-port/);
   assert.match(styleSource, /\.generated-site-marker\.is-bay_city/);
+});
+
+test("roadside expansion leaves blank land and exposes an arrival-gated colonization action", () => {
+  assert.match(markup, /街道外には集落のない空白地帯/);
+  assert.match(markup, /地方名声25/);
+  assert.match(markup, /<i class="is-colony">旗<\/i>植民候補/);
+  assert.match(generatedWorldSource, /GENERATED_OBJECT_MIN_DISTANCE/);
+  assert.match(generatedWorldSource, /getGeneratedColonizationView/);
+  assert.match(generatedWorldSource, /moveGeneratedExpeditionToColonizationSite/);
+  assert.match(generatedWorldSource, /foundGeneratedVillage/);
+  assert.match(generatedWorldSource, /roadsideDistance > ROADSIDE_SETTLEMENT_MAX_OFFSET/);
+  assert.match(generatedWorldSource, /urbanDistance > maximumExpansionRadius/);
+  assert.match(generatedWorldSource, /GENERATED_COLONY_REQUIRED_REPUTATION = 25/);
+  assert.match(generatedWorldSource, /getRegionalReputationReport/);
+  assert.match(generatedWorldSource, /hasRequiredReputation/);
+  assert.match(appSource, /data-generated-site-kind="colony"/);
+  assert.match(appSource, /data-found-generated-village/);
+  assert.match(appSource, /村を建設する/);
+  assert.match(appSource, /必要な信用/);
+  assert.match(appSource, /仕官後に領主の依頼/);
+  assert.match(styleSource, /\.generated-site-marker\.is-colony/);
+});
+
+test("monster nests and intelligent barbarian settlements are visible as managed frontier threats", () => {
+  assert.match(markup, /<i class="is-monster_nest">巣<\/i>魔物の巣/);
+  assert.match(markup, /<i class="is-barbarian">蛮<\/i>蛮族・都市国家/);
+  assert.match(appSource, /getGeneratedBarbarianView\(state\)/);
+  assert.match(appSource, /data-generated-site-kind="barbarian"/);
+  assert.match(appSource, /蛮族・都市国家/);
+  assert.match(appSource, /村落→町・都市→国家命令/);
+  assert.match(appSource, /取引による例外/);
+  assert.match(styleSource, /\.generated-site-marker\.is-monster_nest/);
+  assert.match(styleSource, /\.generated-site-marker\.is-barbarian_city_state/);
+  assert.match(styleSource, /\.barbarian-frontier-grid/);
 });
 
 test("map landmarks and translucent local actions share the world map without allowing a dungeon bypass", () => {

@@ -1,9 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  REGIONAL_REPUTATION_GAINS,
   createCareerInitialState,
   getRegionalReputationReport,
   getReputationSpreadRadius,
+  performCareerAction,
+  performVillageAction,
   recordRegionalAchievement,
 } from "../src/simulation.js";
 
@@ -59,4 +62,32 @@ test("more merit in the same town expands propagation and attenuates with distan
   assert.ok(neighbor.value > secondNeighbor.value);
   assert.ok(secondNeighbor.value > 0);
   assert.equal(secondNeighbor.sources[0].distance, 2);
+});
+
+test("good deeds, completed requests, and a liege's requests grant increasingly larger renown", () => {
+  const villageFor = (state) => ({
+    id: "oak-village",
+    name: "樫の村",
+    regionId: state.generatedWorld.expeditionRegionId,
+  });
+
+  const goodDeedStart = createCareerInitialState({ seed: "reputation-good-deed" });
+  const goodDeed = performVillageAction(goodDeedStart, villageFor(goodDeedStart), "trigger_event");
+  assert.equal(goodDeed.player.regionalReputation.achievements[0].renown, REGIONAL_REPUTATION_GAINS.goodDeed);
+
+  let request = createCareerInitialState({ seed: "reputation-request" });
+  const requestVillage = villageFor(request);
+  request = performVillageAction(request, requestVillage, "accept_request");
+  request = performVillageAction(request, requestVillage, "recruit_companion");
+  request = performVillageAction(request, requestVillage, "complete_request");
+  request = performVillageAction(request, requestVillage, "report_request");
+  assert.equal(request.player.regionalReputation.achievements[0].renown, REGIONAL_REPUTATION_GAINS.completedRequest);
+
+  let vassal = createCareerInitialState({ seed: "reputation-liege-request" });
+  vassal.player.stage = "retainer";
+  vassal.player.affiliation = { nationId: "nation-1", liegeId: "test-lord", liegeName: "試験領主" };
+  vassal = performCareerAction(vassal, "fulfill_order");
+  assert.equal(vassal.player.regionalReputation.achievements[0].renown, REGIONAL_REPUTATION_GAINS.liegeRequest);
+  assert.ok(REGIONAL_REPUTATION_GAINS.goodDeed < REGIONAL_REPUTATION_GAINS.completedRequest);
+  assert.ok(REGIONAL_REPUTATION_GAINS.completedRequest < REGIONAL_REPUTATION_GAINS.liegeRequest);
 });

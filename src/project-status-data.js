@@ -1,0 +1,56 @@
+export const STATUS_LEDGER_META = Object.freeze({
+  schemaVersion: 1,
+  projectGeneration: "ver2",
+  lastAuditedAt: "2026-08-11",
+  auditScope: Object.freeze({
+    codexPrimaryTasks: 76,
+    codexRange: "2026-08-02 — 2026-08-11",
+    gitCommits: 14,
+    gitRange: "5cec0f2 — f92bbb7",
+    workingTreeIncluded: true,
+  }),
+  maintenanceRule: "仕様・導入状態・廃止方針を変更する際は、実装と同じ変更でこの台帳を更新し、一次出典を最低1件付ける。",
+});
+
+export const STATUS_CATEGORIES = Object.freeze({
+  implemented: Object.freeze({ label: "実装・導入済", tone: "complete", description: "通常導線または共有APIへ接続され、テストまたは現行資料で確認できる。" }),
+  configured: Object.freeze({ label: "設定・資料のみ／部分導入", tone: "configured", description: "定義・画像・資料は存在するが、利用範囲が限定される。" }),
+  unintroduced: Object.freeze({ label: "システムは存在・未接続", tone: "unintroduced", description: "独立システムとして動くが、正規の生成世界や通常ループをまだ置換していない。" }),
+  planned: Object.freeze({ label: "未実装・計画", tone: "planned", description: "設計資料に記載されているが、現行ソースへ実装された根拠がない。" }),
+  conflict: Object.freeze({ label: "矛盾・要確認", tone: "conflict", description: "資料・表示・現行実装の間に食い違いがあり、正本の整理が必要。" }),
+  reference: Object.freeze({ label: "実装済み資料・正本", tone: "reference", description: "現状判断や仕様変更時に参照する正本・技術資料。" }),
+});
+
+const source = (label, href, ref, kind = "source") => Object.freeze({ label, href, ref, kind });
+const entry = (value) => Object.freeze({ updatedAt: "2026-08-11", ...value, sources: Object.freeze(value.sources) });
+
+export const STATUS_ENTRIES = Object.freeze([
+  entry({ id: "generated-world-start", category: "implemented", area: "世界生成", title: "新規人物ごとの生成世界", summary: "新規開始の正規経路。人物ごとに固有シードから地形・河川・地方・国家・首都を生成し、コンパクト条件からセーブを再構築する。", evidence: "開始画面の新規作成、createCharacterWorldSeed、buildGeneratedWorldAsync、保存移行、生成世界回帰テストを確認。", sources: [source("生成世界システム", "./src/generated-world-system.js", "createCharacterWorldSeed / buildGeneratedWorldAsync"), source("ゲーム開始仕様", "./MANUAL.md", "第2章・ゲームの始め方"), source("回帰テスト", "./tests/generated-world-system.test.mjs", "新規生成・保存再構築"), source("Codex一次履歴", null, "thread 019feb05-7e37-7dd2-a18f-b792e46640b9", "history")] }),
+  entry({ id: "regional-travel", category: "implemented", area: "移動", title: "隣接地方・移動力制限付きの遠征", summary: "地形コストと残り移動力を共有APIで検証し、範囲外移動をUIと処理の両方で拒否する。", evidence: "到達範囲API、tile-x-y識別子、世界時刻と月次回復にテストがある。", sources: [source("生成世界移動API", "./src/generated-world-system.js", "getGeneratedExpeditionReachableTiles / moveGeneratedExpeditionTo"), source("移動回帰テスト", "./tests/generated-world-system.test.mjs", "reachable movement"), source("Codex一次履歴", null, "thread 019feb05-7e37-7dd2-a18f-b792e46640b9", "history")] }),
+  entry({ id: "personal-map", category: "implemented", area: "冒険", title: "地方内探索HUD・地点移動・戦術戦闘接続", summary: "発見済み隣接地点だけを移動でき、探索の4結果とモンスター遭遇を既存戦術戦闘へ接続する。", evidence: "旧左ペイン個人マップは廃止され、世界地図上HUDへ統合済み。ダンジョン入場にも発見・隣接・到着ゲートがある。", sources: [source("冒険システム", "./src/adventure-system.js", "getPersonalMapView / movePersonalMap / explorePersonalMap"), source("冒険回帰テスト", "./tests/adventure-system.test.mjs", "個人マップ・4分岐・戦闘・保存移行"), source("更新履歴", "./CHANGELOG.md", "Unreleased・個人マップHUD統合"), source("Codex一次履歴", null, "thread 019fec9f-5de0-7a51-8535-1110db8165ac", "history")] }),
+  entry({ id: "career-delegation", category: "implemented", area: "人物・出世", title: "10段階出世・国家称号・旧職務委任", summary: "昇進は単純強化ではなく管轄を変え、旧部隊・城・地方を後任AIへ方針・裁量・重大事項上申つきで委任する。", evidence: "称号と委任の正本定義、昇進公開API、月次委任解決、独立後回帰テストを確認。", sources: [source("人物キャリア", "./src/player-career.js", "CAREER_STAGE_ROUTE / GOVERNMENT_TITLE_SYSTEMS / performCareerAction"), source("役職委任", "./src/role-delegation.js", "DELEGATABLE_ROLES / handoffPreviousRole / escalation"), source("委任テスト", "./tests/role-delegation.test.mjs", "昇進・独立後の委任"), source("Codex一次履歴", null, "thread 019feca3-aa53-7bc1-aec5-3fe46658eb4e", "history")] }),
+  entry({ id: "regional-domain", category: "implemented", area: "生成世界", title: "行政地域・集落成長・支配勢力変更", summary: "生成国家を行政地域へ分割し、人口・領主・中心集落・移譲・独立と村から町、町から都市への成長を保存する。", evidence: "地域ドメインAPIと専用回帰テスト、Unreleased履歴に現行導入記録がある。", sources: [source("地域ドメイン", "./src/regional-domain-system.js", "地域・集落・支配勢力API"), source("地域回帰テスト", "./tests/regional-domain-system.test.mjs", "移譲・独立・集落成長"), source("更新履歴", "./CHANGELOG.md", "Unreleased・行政地域と集落網")] }),
+  entry({ id: "world-autonomy", category: "implemented", area: "世界情勢", title: "生成国家の自律月次判断", summary: "在野人物やプレイヤー国家選択から独立した決定的入力で、統合・交易・外交・動員・戦争・停戦を月次選択する。", evidence: "月次シミュレーションと国家生成テストで再現性・国家判断を検証する。", sources: [source("月次シミュレーション", "./src/monthly-simulation.js", "generated world monthly progression"), source("国家生成", "./src/nation-generation.js", "国家・地域・資源評価"), source("国家生成テスト", "./tests/nation-generation.test.mjs", "再現性・国家状態"), source("実装範囲", "./README.md", "生成国家の自律世界情勢")] }),
+  entry({ id: "tactical-battle", category: "implemented", area: "戦闘", title: "戦闘準備・20×14戦術戦闘・戦果処遇", summary: "参陣者、陣形、配置、兵站、地形、補給、指揮、追撃、勝敗、捕縛後処遇までを一連の状態として実装する。", evidence: "開発メニューだけでなく個人探索の遭遇からも接続済み。", sources: [source("戦闘本体", "./src/tactical-battle.js", "戦術状態・命令解決"), source("戦闘準備", "./src/battle-preparation.js", "参加者・陣形・兵站"), source("戦果処理", "./src/battle-results.js", "勝敗・捕縛"), source("戦術回帰テスト", "./tests/tactical-battle.test.mjs", "戦術戦闘") ] }),
+  entry({ id: "causal-history", category: "implemented", area: "歴史", title: "因果履歴・歴史認識・制度的負債", summary: "世界状態から圧力、事件、因果DAG、制度的遺産を生成し、World Truth・公的記録・公共認識を分離する。", evidence: "履歴イベント、圧力、認識と回帰テストが現行ソースに存在する。", sources: [source("履歴モデル", "./src/history-model.js", "Event Store / Causal DAG / Historical Record"), source("履歴テスト", "./tests/history-model.test.mjs", "圧力・因果・歴史認識"), source("ゲームマニュアル", "./MANUAL.md", "因果年代記と蓄積圧力")] }),
+
+  entry({ id: "race-catalog", category: "configured", area: "種族", title: "種族カタログと画像の利用範囲", summary: "多数の種族定義・基本画像・戦術参照は存在するが、通常の人物作成で選べる種族は人間・エルフ・ドワーフ・オークの4種に限定される。", evidence: "RACE_LISTとINITIAL_IMPLEMENTATION_RACE_IDSに対し、開始フォームの選択肢は4件。全種族を主人公作成へ導入した状態ではない。", sources: [source("種族カタログ", "./src/race-list.js", "RACE_LIST / INITIAL_IMPLEMENTATION_RACE_IDS"), source("人物作成フォーム", "./index.html", "characterCreationRace"), source("種族テスト", "./tests/race-list.test.mjs", "定義と初期実装種族")] }),
+  entry({ id: "leviathan", category: "configured", area: "敵性存在", title: "リヴァイアサンは戦略災害として部分導入", summary: "観測記録、回遊状況、航路・避難・国家政策への影響は実装済みだが、討伐・捕獲・誘導を行う戦闘対象ではない。", evidence: "敵辞典のbattleStatusは非戦闘対象で、UIもNON-COMBAT HAZARDとして明示する。", sources: [source("世界カタログ", "./src/world-catalog.js", "EXTREME_CREATURES.leviathan.enemyCodex.battleStatus"), source("戦略災害UI", "./src/app.js", "leviathan-centralization / NON-COMBAT HAZARD"), source("敵辞典テスト", "./tests/enemy-codex.test.mjs", "非戦闘区分") ] }),
+
+  entry({ id: "generated-economy-bridge", category: "unintroduced", area: "生成世界 × 内政", title: "生成地方と既存都市経済の自動置換", summary: "生成世界と地方プレイは導入済みだが、生成された都市・町・村を既存の都市経済・徴税・施設・派閥へ全面的に自動接続していない。", evidence: "地形生成資料が現時点の限界として明記。既存内政は固定シナリオのstate.citiesを中心に残る。", sources: [source("地形生成モデル", "./TERRAIN_GENERATION_MODEL.md", "第7章・現時点の限界"), source("都市・国家モデル", "./src/realm-model.js", "既存都市派生計算"), source("月次都市処理", "./src/monthly-simulation.js", "cities / pendingOrders")] }),
+  entry({ id: "generated-war-bridge", category: "unintroduced", area: "生成世界 × 戦争", title: "生成国家領域と既存戦争盤の全面接続", summary: "生成国家は外交・自律判断を持つ一方、既存の戦域盤、占領都市、講和移管、複数戦線兵站を生成地方から全面構築する段階には未到達。", evidence: "地形生成資料は既存戦争盤の未置換を明記し、行政設計は講和都市移管と複数戦線兵站を今後の接続順に置く。", sources: [source("地形生成モデル", "./TERRAIN_GENERATION_MODEL.md", "第7章・既存戦争盤を自動置換していない"), source("行政設計", "./ADMINISTRATION_DESIGN.md", "今後の接続順 1・5"), source("既存戦争盤", "./src/war-map.js", "固定戦域モデル")] }),
+
+  entry({ id: "geological-resources", category: "planned", area: "地形・資源", title: "火山・地熱・化石資源の個別配置", summary: "地質ポテンシャルまでは算出するが、火山・地熱・石油・石炭をゲーム資源として配置する処理は未実装。", evidence: "技術資料の現時点の限界に明記され、配置APIの出典がない。", sources: [source("地形生成モデル", "./TERRAIN_GENERATION_MODEL.md", "第7章・火山等の配置処理は未実装"), source("地形生成本体", "./src/terrain-generation.js", "geology potential") ] }),
+  entry({ id: "administrative-roadmap", category: "planned", area: "内政", title: "広域監察・年末上計・地方反乱戦力・複数戦線兵站", summary: "刺史・監察区、危機だけを上げる年末上計、地方有力者依存と自治・反乱戦力、軍団別兵站起点は設計段階。", evidence: "ADMINISTRATION_DESIGNの今後の接続順2〜5に列挙される。現行実装済みの州郡統治とは分けて扱う。", sources: [source("行政設計", "./ADMINISTRATION_DESIGN.md", "今後の接続順 2—5"), source("現行行政モデル", "./src/administration-model.js", "実装済み州郡統治との境界") ] }),
+  entry({ id: "phase3-institutions", category: "planned", area: "国家機構", title: "省庁・軍・情報機関の内部権力化", summary: "吸収済み勢力のbureaucraticAutonomyを、省庁・軍・情報機関という中央内部権力へ昇格させるPhase 3は未実装。", evidence: "設計資料がPhase 3として将来接続を明記する。", sources: [source("行政設計", "./ADMINISTRATION_DESIGN.md", "Phase 3・省庁／軍／情報機関"), source("中央集権モデル", "./src/centralization-campaign.js", "現行Phase 1相当の実装") ] }),
+
+  entry({ id: "phase2-doc-conflict", category: "conflict", area: "設計資料", title: "Phase 2を将来扱いする記述が現行実装と不一致", summary: "ADMINISTRATION_DESIGNは仮想歴史生成・歴史認識・勢力AIをPhase 2の将来接続として記すが、現行README・CHANGELOG・history-modelには歴史認識と因果履歴、地方反応の実装がある。", evidence: "設計文書のPhase区分が実装後に更新されていない可能性が高い。残る未実装要素を分解して文書を改訂する必要がある。", sources: [source("旧Phase表記", "./ADMINISTRATION_DESIGN.md", "因果的歴史シミュレーション Phase 1末尾"), source("現行履歴実装", "./src/history-model.js", "Historical Record / Public Belief"), source("現行実装範囲", "./README.md", "因果履歴・歴史認識・地方反応"), source("履歴テスト", "./tests/history-model.test.mjs", "歴史認識回帰") ] }),
+  entry({ id: "version-label-conflict", category: "conflict", area: "リリース", title: "バージョン表記が0.4.0・BUILD 0.5・ver2で併存", summary: "package.jsonは0.4.0、開始画面はBUILD 0.5、READMEは開発世代ver2、CHANGELOGはUnreleasedを表示する。用途は異なるが、利用者向けの現在版が一意でない。", evidence: "プロダクト版・開発ビルド・設計世代を別フィールドとして定義するか、表示を統一する判断が必要。", sources: [source("パッケージ版", "./package.json", "version: 0.4.0"), source("開始画面", "./index.html", "BUILD 0.5 · LOCAL"), source("開発世代", "./VER2_DIRECTION.md", "ver1 / ver2"), source("更新履歴", "./CHANGELOG.md", "Unreleased — 2026-08-11") ] }),
+
+  entry({ id: "canonical-documents", category: "reference", area: "資料", title: "現行仕様を追う正本セット", summary: "変更履歴、ver2判断基準、操作仕様、実装範囲、行政設計、地形生成論理、信条仕様を現行資料セットとして扱う。", evidence: "台帳項目はこれらの資料だけでなく、対応するソース記号と回帰テストへ必ず接続する。", sources: [source("更新履歴", "./CHANGELOG.md", "更新履歴の正本"), source("ver2移行方針", "./VER2_DIRECTION.md", "開発対象と判断基準"), source("ゲームマニュアル", "./MANUAL.md", "通常操作"), source("実装範囲", "./README.md", "現行機能一覧"), source("行政設計", "./ADMINISTRATION_DESIGN.md", "州郡統治・将来接続"), source("地形生成モデル", "./TERRAIN_GENERATION_MODEL.md", "論理・API・限界"), source("信条システム", "./CREED_SYSTEM.md", "信条データモデル") ] }),
+  entry({ id: "history-audit", category: "reference", area: "履歴監査", title: "過去履歴の監査範囲", summary: "Codexのユーザー起点タスク76件、Git全14コミット、CHANGELOG全版、現行のソース・テスト・設計資料を照合対象とした。", evidence: "履歴は結論の根拠候補として使い、最終状態の判定は現行ファイルとテストを優先する。代表的な仕様転換は各項目のthread IDとGitコミット範囲から追跡できる。", sources: [source("Codex履歴範囲", null, "76 primary tasks / 2026-08-02—2026-08-11", "history"), source("Git履歴範囲", "https://github.com/Rune-markar/oathbound-chronicle-island-prototype/compare/5cec0f2...f92bbb7", "14 commits / 5cec0f2—f92bbb7", "git"), source("更新履歴", "./CHANGELOG.md", "0.1.0—Unreleased") ] }),
+]);
+
+export function summarizeStatusEntries(entries = STATUS_ENTRIES) {
+  return Object.freeze(Object.fromEntries(Object.keys(STATUS_CATEGORIES).map((category) => [category, entries.filter((item) => item.category === category).length])));
+}

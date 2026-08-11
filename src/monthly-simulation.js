@@ -1,5 +1,18 @@
 import { createCharacterDefinition } from "./character-template.js";
 import {
+  KATIA_COMPANION_ID,
+  KATIA_KANDEL_ID,
+  LISETTE_VALENNE_ID,
+  MARIELLE_CROIX_ID,
+  NOELA_COMPANION_ID,
+  NOELA_ORBIS_ID,
+  RUNEA_COMPANION_ID,
+  RUNEA_VESPER_ID,
+  UNIQUE_CHARACTERS,
+  UNIQUE_CHARACTER_CREED_SEEDS,
+  UNIQUE_CHARACTER_STATE_SEEDS,
+} from "./unique-characters.js";
+import {
   CREED_AXIS_DEFINITIONS,
   CREED_AXIS_IDS,
   CREED_SCHEMA_VERSION,
@@ -75,6 +88,7 @@ import {
 } from "./war-system.js";
 import { advanceWarTheater, createWarTheater, normalizeWarTheater } from "./war-map.js";
 import {
+  advanceGeneratedWorldBarbarians,
   advanceGeneratedWorldGeopolitics,
   advanceGeneratedWorldRegions,
   appointGeneratedRegionalLord,
@@ -169,12 +183,17 @@ import {
   SERVICE_ROUTE_DEFINITIONS,
   createVillageLifeState,
   getServiceRouteProgress,
+  getGuildStanding,
+  getSettlementFacilities,
+  getSettlementMeritGain,
+  getSettlementScale,
   getVillageAction,
   getVillageActionAvailability,
   normalizeVillageLifeState,
   performVillageAction,
 } from "./village-life.js";
 import {
+  REGIONAL_REPUTATION_GAINS,
   REGIONAL_REPUTATION_SCHEMA_VERSION,
   createRegionalReputationState,
   getRegionalReputationReport,
@@ -229,6 +248,19 @@ export {
   generateCreedIdentity,
 };
 export { TOWN_COMMAND_IDS, isTownCommand };
+export {
+  KATIA_COMPANION_ID,
+  KATIA_KANDEL_ID,
+  LISETTE_VALENNE_ID,
+  MARIELLE_CROIX_ID,
+  NOELA_COMPANION_ID,
+  NOELA_ORBIS_ID,
+  RUNEA_COMPANION_ID,
+  RUNEA_VESPER_ID,
+  UNIQUE_CHARACTERS,
+  UNIQUE_CHARACTER_CREED_SEEDS,
+  UNIQUE_CHARACTER_STATE_SEEDS,
+};
 export { AFTERMATH_DECISIONS, AFTERMATH_POLICIES, BORDER_SETTLEMENTS, CAMPAIGN_ACTS, FOREIGN_AGENDAS, OFFICER_DEMAND_RESPONSES, OFFICER_POLITICS };
 export {
   CENTRALIZATION_STAGES,
@@ -268,10 +300,15 @@ export {
   SERVICE_ROUTE_DEFINITIONS,
   createVillageLifeState,
   getServiceRouteProgress,
+  getGuildStanding,
+  getSettlementFacilities,
+  getSettlementMeritGain,
+  getSettlementScale,
   getVillageAction,
   getVillageActionAvailability,
   normalizeVillageLifeState,
   performVillageAction,
+  REGIONAL_REPUTATION_GAINS,
   REGIONAL_REPUTATION_SCHEMA_VERSION,
   createRegionalReputationState,
   getRegionalReputationReport,
@@ -362,6 +399,7 @@ export const WORLD = {
     ilva: humanCharacter({ id: "ilva", name: "イルヴァ・ロウ", portrait: "イ", portraitImage: "assets/generated/officer-ilva.webp", role: "無所属の測量士", policy: "峠測量", archetypeId: "human_strategist", stats: { leadership: 55, war: 39, intelligence: 78, politics: 64, charisma: 51 }, traits: ["scouting", "repair"] }),
     dario: humanCharacter({ id: "dario", name: "ダリオ・フェン", portrait: "ダ", portraitImage: "assets/generated/officer-dario.webp", role: "放浪軍の隊長", policy: "機動防衛", archetypeId: "human_honor", stats: { leadership: 81, war: 77, intelligence: 54, politics: 42, charisma: 69 }, traits: ["drill", "mobilize"] }),
     mirel: humanCharacter({ id: "mirel", name: "ミレル・サーン", portrait: "ミ", portraitImage: "assets/generated/officer-mirel.webp", role: "ヴァルカ系商人", policy: "縦横術", archetypeId: "human_strategist", stats: { leadership: 38, war: 29, intelligence: 73, politics: 81, charisma: 84 }, traits: ["diplomacy", "commerce", "recruitment"] }),
+    ...UNIQUE_CHARACTERS,
   },
 };
 
@@ -506,6 +544,7 @@ export const COMMANDS = {
   "diplomacy.aid": command("diplomacy.aid", "diplomacy", "foreign_aid", "国境商会を支援", "diplomacy", { money: 14 }, "ヴァルカの国境商会へ資金を供与する。", { defaultCityId: "selene", governanceCost: 2 }),
   "diplomacy.justify": command("diplomacy.justify", "diplomacy", "foreign_aid", "国境侵犯を対外公示", "justification", { money: 4 }, "差押え記録と条約違反を周辺諸国へ公開する。", { defaultCityId: "selene", governanceCost: 2 }),
   "court.recruit": command("court.recruit", "people", "foreign_aid", "外交顧問を登用", "recruitment", { money: 10 }, "ミレルを外交官として登用する。", { defaultCityId: "nereia", targetOfficerId: "mirel" }),
+  "court.recruit_lisette": command("court.recruit_lisette", "people", "foreign_aid", "銀梢伯家と宮廷協約を結ぶ", "recruitment", { money: 8 }, "銀梢伯家の義務と発言権を文書化し、リゼットを宮廷折衝人として迎える。", { defaultCityId: "selene", targetOfficerId: LISETTE_VALENNE_ID, governanceCost: 2 }),
   "debt.principal": command("debt.principal", "fiscal", "debt_repayment", "国債元本を返済", "commerce", { money: 8 }, "王都金庫から国債元本を返済し、国家債務を8減らす。", { defaultCityId: "selene", repeatable: true, debtPayment: 8 }),
   "city.cultivate": command("city.cultivate", "city", "economic_investment", "開墾", "cultivate", { money: 4 }, "水路と共同地を整え、生産力と食料収支を改善する。", { repeatable: true }),
   "city.commerce": command("city.commerce", "city", "economic_investment", "商業振興", "commerce", { money: 5 }, "市場・倉札・信用を整え、月次収入を伸ばす。", { repeatable: true }),
@@ -563,6 +602,7 @@ const OFFICER_CREED_SEEDS = Object.freeze({
     { raceView: -80, orthodoxy: -70, clericalAuthority: -60, theocracy: -75, ritualism: -45, asceticism: -70, missionary: 20 },
     { raceView: 0.85, orthodoxy: 0.7, clericalAuthority: 0.6, theocracy: 0.8, ritualism: 0.35, asceticism: 0.85, missionary: 0.25 }, 0.7,
   ),
+  ...UNIQUE_CHARACTER_CREED_SEEDS,
 });
 
 const CITY_CREED_SEEDS = Object.freeze({
@@ -658,6 +698,10 @@ export function normalizeWarState(state) {
   state.version = state.player ? 10 : 9;
   if (state.player) state.scenarioMode = "generated";
   normalizeGeneratedWorldState(state);
+  state.officers ??= {};
+  Object.entries(UNIQUE_CHARACTER_STATE_SEEDS).forEach(([characterId, seed]) => {
+    state.officers[characterId] ??= clone(seed);
+  });
   state.occupations ??= [];
   state.warHistory ??= [];
   Object.values(state.foreignStates ?? {}).forEach((country) => {
@@ -750,6 +794,7 @@ export function createInitialState(options = {}) {
       ilva: { allegiance: "free", loyalty: 45, merit: 20, stamina: 90, rank: "在野", rankLevel: 0, location: "selene", assignment: null, bonds: {} },
       dario: { allegiance: "free", loyalty: 51, merit: 80, stamina: 86, rank: "放浪隊長", rankLevel: 1, location: "orta", assignment: null, bonds: {} },
       mirel: { allegiance: "foreign", loyalty: 42, merit: 65, stamina: 93, rank: "商人", rankLevel: 1, location: "nereia", assignment: null, bonds: {} },
+      ...clone(UNIQUE_CHARACTER_STATE_SEEDS),
     },
     council: { pending: true, doctrine: "balanced", seasonKey: "317-4", history: [] },
     commandQueue: [], completedCommands: [], agreements: { trade: false, transit: false, aid: false },
@@ -859,6 +904,20 @@ export function advanceCareerMonth(state) {
   if (next.scenarioMode === "generated") {
     next = advanceGeneratedWorldRegions(next);
     next = advanceGeneratedWorldGeopolitics(next);
+    const previousBarbarianPeriod = next.generatedWorld?.barbarians?.lastAdvancedPeriod ?? null;
+    next = advanceGeneratedWorldBarbarians(next);
+    const barbarianPeriod = next.generatedWorld?.barbarians?.lastAdvancedPeriod ?? null;
+    if (barbarianPeriod && barbarianPeriod !== previousBarbarianPeriod) {
+      next.generatedWorld.barbarians.events
+        .filter((event) => event.period === barbarianPeriod)
+        .forEach((event) => logEntry(
+          next,
+          "辺境",
+          event.title,
+          event.summary,
+          event.tone === "positive" ? "success" : event.tone === "danger" ? "danger" : "info",
+        ));
+    }
   }
   return next;
 }
@@ -1426,6 +1485,17 @@ function completeCommand(state, task) {
     case "court.serve": state.officers.ilva.allegiance = "serving"; state.officers.ilva.rank = "国境測量官"; state.officers.ilva.rankLevel = 2; break;
     case "court.invite": state.officers.dario.allegiance = "retinue"; break;
     case "court.recruit": state.officers.mirel.allegiance = "serving"; state.officers.mirel.rank = "外交顧問"; state.officers.mirel.rankLevel = 2; break;
+    case "court.recruit_lisette": {
+      const lisette = state.officers[LISETTE_VALENNE_ID];
+      lisette.allegiance = state.player ? "retinue" : "serving";
+      lisette.rank = "宮廷折衝人";
+      lisette.rankLevel = 3;
+      lisette.bonds[task.officerId] = Math.max(lisette.bonds[task.officerId] ?? 0, 28);
+      state.legitimacy = clamp(state.legitimacy + 1, 0, 100);
+      state.cities.selene.factions.landowners.support = clamp(state.cities.selene.factions.landowners.support + 3, 0, 100);
+      if (state.player && !state.player.householdRetainers.includes(LISETTE_VALENNE_ID)) state.player.householdRetainers.push(LISETTE_VALENNE_ID);
+      break;
+    }
     default: break;
   }
   if (item.group === "diplomacy") applyDiplomacyCommand(WORLD, state, task, outcome);

@@ -12,13 +12,15 @@ import {
 import { ENEMY_COMMANDERS, WORLD, createInitialState, getOfficerReport } from "../src/simulation.js";
 
 test("character template exposes a stable, categorized field inventory", () => {
-  assert.equal(CHARACTER_TEMPLATE_SCHEMA_VERSION, 1);
+  assert.equal(CHARACTER_TEMPLATE_SCHEMA_VERSION, 2);
   assert.ok(CHARACTER_TEMPLATE_SECTIONS.length >= 8);
   assert.ok(CHARACTER_TEMPLATE_FIELD_COUNT >= 60);
   const paths = CHARACTER_TEMPLATE_SECTIONS.flatMap((section) => section.fields.map((field) => field.path));
   assert.equal(new Set(paths).size, paths.length);
   assert.ok(paths.includes("identity.name"));
   assert.ok(paths.includes("visuals.portraitImage"));
+  assert.ok(paths.includes("capabilities.abilities.strength"));
+  assert.ok(paths.includes("capabilities.abilities.wisdom"));
   assert.ok(paths.includes("current.assignment"));
   assert.ok(paths.includes("scenes.defeatRetreat"));
 });

@@ -4,14 +4,17 @@ import { readFileSync } from "node:fs";
 import {
   VILLAGE_FACILITIES,
   createCareerInitialState,
+  getSettlementFacilities,
+  getSettlementMeritGain,
   getServiceRouteProgress,
+  getGuildStanding,
   getVillageActionAvailability,
   performVillageAction,
 } from "../src/simulation.js";
 
 const EXPECTED_ACTIONS = Object.freeze({
   "宿屋": ["HP・MP回復", "状態異常回復", "休息", "セーブ"],
-  "商店": ["武器購入", "防具購入", "道具購入", "食料購入", "アイテム売却"],
+  "商店": ["武器購入", "防具購入", "道具購入", "食料購入", "一次素材購入", "アイテム売却"],
   "鍛冶屋": ["装備強化", "装備修理", "装備鑑定"],
   "酒場": ["仲間募集", "パーティ編成", "噂を聞く", "NPCとの会話", "紹介を頼む"],
   "冒険者ギルド": ["依頼受注", "依頼報告", "報酬受取", "ダンジョン情報確認"],
@@ -45,12 +48,74 @@ test("a new personal career receives save-compatible village life state", () => 
 test("village actions are immutable, spend personal wealth, and enter the chronicle", () => {
   const state = createCareerInitialState();
   const beforeWealth = state.player.metrics.wealth;
-  const next = performVillageAction(state, { id: "test-village", name: "試験村" }, "buy_weapon");
+  const next = performVillageAction(state, { id: "test-town", name: "試験町", settlementLevel: "town" }, "buy_weapon");
   assert.equal(state.player.metrics.wealth, beforeWealth);
   assert.equal(next.player.metrics.wealth, beforeWealth - 2);
   assert.ok(next.player.villageLife.inventory.some((item) => item.name === "村鍛冶の鋼剣"));
-  assert.equal(next.player.villageLife.lastAction.villageName, "試験村");
-  assert.match(next.player.history[0].title, /試験村・武器購入/);
+  assert.equal(next.player.villageLife.lastAction.villageName, "試験町");
+  assert.match(next.player.history[0].title, /試験町・武器購入/);
+});
+
+test("villages sell primary goods and route requests through taverns while towns add smithies and guilds", () => {
+  const village = { id: "oak-village", name: "樫村", settlementLevel: "village" };
+  const town = { id: "river-town", name: "河岸町", settlementLevel: "town" };
+  const villageFacilities = getSettlementFacilities(village);
+  const townFacilities = getSettlementFacilities(town);
+
+  assert.equal(villageFacilities.some((entry) => entry.id === "smithy"), false);
+  assert.equal(villageFacilities.some((entry) => entry.id === "guild"), false);
+  assert.ok(villageFacilities.find((entry) => entry.id === "tavern").actions.some((entry) => entry.id === "accept_request"));
+  assert.deepEqual(villageFacilities.find((entry) => entry.id === "shop").actions.map((entry) => entry.id), ["buy_food", "buy_materials", "sell_item"]);
+  assert.ok(townFacilities.some((entry) => entry.id === "smithy"));
+  assert.ok(townFacilities.some((entry) => entry.id === "guild"));
+
+  const state = createCareerInitialState();
+  assert.equal(getVillageActionAvailability(state, "buy_weapon", village).allowed, false);
+  assert.equal(getVillageActionAvailability(state, "buy_weapon", town).allowed, true);
+  const bought = performVillageAction(state, village, "buy_materials");
+  assert.ok(bought.player.villageLife.inventory.some((item) => item.id === "local-raw-materials"));
+});
+
+test("town merit starts slower than village merit and rises with the character's base renown", () => {
+  const village = getSettlementMeritGain(10, { settlementLevel: "village" }, 0);
+  const unknownTown = getSettlementMeritGain(10, { settlementLevel: "town" }, 0);
+  const famousTown = getSettlementMeritGain(10, { settlementLevel: "town" }, 80);
+  assert.equal(village.merit, 10);
+  assert.equal(unknownTown.merit, 5);
+  assert.ok(famousTown.merit > unknownTown.merit);
+  assert.ok(famousTown.merit <= village.merit);
+});
+
+test("request reports apply settlement merit to the local achievement record", () => {
+  const completeAt = (place) => {
+    let state = createCareerInitialState();
+    state = performVillageAction(state, place, "recruit_companion");
+    state = performVillageAction(state, place, "accept_request");
+    state = performVillageAction(state, place, "complete_request");
+    return performVillageAction(state, place, "report_request");
+  };
+  const village = completeAt({ id: "oak-village", name: "樫村", settlementLevel: "village" });
+  const town = completeAt({ id: "river-town", name: "河岸町", settlementLevel: "town" });
+  assert.equal(village.player.villageLife.guildMerit, 10);
+  assert.equal(town.player.villageLife.guildMerit, 5);
+  assert.equal(village.player.regionalReputation.achievements[0].merit, 10);
+  assert.equal(town.player.regionalReputation.achievements[0].merit, 5);
+  assert.match(town.player.villageLife.lastAction.message, /基本名声0・町内係数0\.50/);
+});
+
+test("guild merit changes local standing, dialogue, and the shared purchase price", () => {
+  const state = createCareerInitialState();
+  state.player.villageLife.guildMerit = 30;
+  const standing = getGuildStanding(state);
+  assert.equal(standing.name, "信頼される冒険者");
+  assert.equal(standing.discountPercent, 10);
+  const access = getVillageActionAvailability(state, "buy_food", { id: "test-village", name: "試験村", settlementLevel: "village" });
+  assert.equal(access.baseCost, 1);
+  assert.equal(access.cost, 0.9);
+  const wealth = state.player.metrics.wealth;
+  const next = performVillageAction(state, { id: "test-village", name: "試験村", settlementLevel: "village" }, "buy_food");
+  assert.equal(next.player.metrics.wealth, wealth - 0.9);
+  assert.match(next.player.villageLife.lastAction.message, /信頼される冒険者/);
 });
 
 test("quest reporting and rewards follow an explicit lifecycle", () => {

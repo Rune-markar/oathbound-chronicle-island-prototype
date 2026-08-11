@@ -1,4 +1,6 @@
-export const CHARACTER_TEMPLATE_SCHEMA_VERSION = 1;
+import { ABILITY_LABELS, ABILITY_KEYS, normalizeAbilityScores } from "./character-abilities.js";
+
+export const CHARACTER_TEMPLATE_SCHEMA_VERSION = 2;
 
 const STAT_KEYS = ["leadership", "war", "intelligence", "politics", "charisma"];
 
@@ -128,6 +130,8 @@ export const CHARACTER_TEMPLATE_SECTIONS = Object.freeze([
     { path: "visuals.expressions", label: "表情差分" }, { path: "visuals.themeColor", label: "テーマ色" },
     { path: "visuals.height", label: "身長" }, { path: "visuals.build", label: "体格" },
     { path: "visuals.hair", label: "髪" }, { path: "visuals.eyes", label: "瞳" },
+    { path: "visuals.faceShape", label: "顔型・骨格" }, { path: "visuals.facialFeatures", label: "目鼻・眉・口" },
+    { path: "visuals.skinTone", label: "肌の色調・特徴" }, { path: "visuals.signatureExpression", label: "固有の通常表情" },
     { path: "visuals.clothing", label: "服装" }, { path: "visuals.distinguishingFeatures", label: "外見上の特徴" },
   ]) }),
   Object.freeze({ id: "personality", label: "性格・口調", description: "判断基準と会話表現", fields: Object.freeze([
@@ -138,6 +142,7 @@ export const CHARACTER_TEMPLATE_SECTIONS = Object.freeze([
     { path: "personality.secondPerson", label: "二人称" }, { path: "personality.traits", label: "特性", format: "traits" },
   ]) }),
   Object.freeze({ id: "capabilities", label: "能力・技能", description: "ゲーム計算に使う能力", fields: Object.freeze([
+    ...ABILITY_KEYS.map((abilityId) => ({ path: `capabilities.abilities.${abilityId}`, label: ABILITY_LABELS[abilityId] })),
     { path: "capabilities.stats.leadership", label: "統率" }, { path: "capabilities.stats.war", label: "武力" },
     { path: "capabilities.stats.intelligence", label: "知力" }, { path: "capabilities.stats.politics", label: "政治" },
     { path: "capabilities.stats.charisma", label: "魅力" }, { path: "capabilities.skills", label: "技能" },
@@ -164,7 +169,7 @@ export const CHARACTER_TEMPLATE_SECTIONS = Object.freeze([
   ]) }),
   Object.freeze({ id: "metadata", label: "管理情報", description: "追加・移行・検証に使う情報", fields: Object.freeze([
     { path: "schemaVersion", label: "テンプレート版" }, { path: "metadata.tags", label: "検索タグ" },
-    { path: "metadata.source", label: "データ出典" },
+    { path: "metadata.characterKind", label: "人物区分", format: "characterKind" }, { path: "metadata.source", label: "データ出典" },
   ]) }),
 ]);
 
@@ -186,6 +191,8 @@ export function createCharacterDefinition(source = {}) {
   const sourceStats = { ...asRecord(source.stats), ...asRecord(source.capabilities?.stats) };
   const stats = Object.fromEntries(STAT_KEYS.map((statId) => [statId, optionalNumber(sourceStats[statId])]));
   const role = optionalText(source.gameplay?.role ?? source.role);
+  const specialty = optionalText(source.biography?.specialty ?? source.specialty);
+  const abilities = normalizeAbilityScores(source, { seed: id, role: `${role ?? ""} ${specialty ?? ""}` });
   const policy = optionalText(source.gameplay?.policy ?? source.policy);
   const portrait = optionalText(source.visuals?.portrait ?? source.portrait ?? name.slice(0, 1));
   const portraitImage = optionalText(source.visuals?.portraitImage ?? source.portraitImage);
@@ -202,6 +209,7 @@ export function createCharacterDefinition(source = {}) {
     role,
     policy,
     stats,
+    abilities,
     traits,
     identity: {
       id,
@@ -218,7 +226,7 @@ export function createCharacterDefinition(source = {}) {
       nationality: optionalText(source.biography?.nationality),
       affiliation: optionalText(source.biography?.affiliation),
       occupation: optionalText(source.biography?.occupation ?? role),
-      specialty: optionalText(source.biography?.specialty ?? source.specialty),
+      specialty,
       summary: optionalText(source.biography?.summary),
       background: optionalText(source.biography?.background),
       goal: optionalText(source.biography?.goal),
@@ -233,6 +241,10 @@ export function createCharacterDefinition(source = {}) {
       build: optionalText(source.visuals?.build),
       hair: optionalText(source.visuals?.hair),
       eyes: optionalText(source.visuals?.eyes),
+      faceShape: optionalText(source.visuals?.faceShape),
+      facialFeatures: optionalText(source.visuals?.facialFeatures),
+      skinTone: optionalText(source.visuals?.skinTone),
+      signatureExpression: optionalText(source.visuals?.signatureExpression),
       clothing: optionalText(source.visuals?.clothing),
       distinguishingFeatures: optionalText(source.visuals?.distinguishingFeatures),
     },
@@ -250,6 +262,7 @@ export function createCharacterDefinition(source = {}) {
     },
     capabilities: {
       stats,
+      abilities,
       skills: asList(source.capabilities?.skills),
       magic: asList(source.capabilities?.magic),
       equipment: asList(source.capabilities?.equipment),
@@ -299,6 +312,7 @@ function displayValue(value, field, options) {
   if (!isConfigured(value)) return empty;
   if (field.format === "race") return RACE_LABELS[value] ?? value;
   if (field.format === "archetype") return HUMAN_CHARACTER_ARCHETYPES[value]?.name ?? value;
+  if (field.format === "characterKind") return value === "unique" ? "ユニークキャラクター" : value === "generic" ? "汎用キャラクター" : value;
   if (field.format === "boolean") return value ? "可" : "不可";
   if (Array.isArray(value)) return displayList(value, field.format);
   if (typeof value === "object") {

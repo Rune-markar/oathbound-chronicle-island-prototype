@@ -148,17 +148,17 @@ function effectiveNationMap(runtime, domains) {
     const region = regionById.get(object.regionId);
     const settlement = domains.settlementStates[object.id];
     if (!settlement) return { ...object, nationId: region?.nationId ?? object.nationId };
-    const preservesMaritimeRole = Boolean(object.maritime);
+    const preservesSpecialRole = Boolean(object.maritime) || ["castle", "fort"].includes(object.type);
     return {
       ...object,
       nationId: region?.nationId ?? object.nationId,
-      type: preservesMaritimeRole ? object.type : settlement.level,
-      typeName: preservesMaritimeRole ? object.typeName : GENERATED_WORLD_OBJECT_TYPES[settlement.level].name,
+      type: preservesSpecialRole ? object.type : settlement.level,
+      typeName: preservesSpecialRole ? object.typeName : GENERATED_WORLD_OBJECT_TYPES[settlement.level].name,
       settlementLevel: settlement.level,
       population: settlement.population,
       growthRate: settlement.growthRate,
-      name: preservesMaritimeRole ? object.name : settlementName(object.baseName, settlement.level),
-      importance: preservesMaritimeRole ? object.importance : settlement.level === "city" ? 3 : settlement.level === "town" ? 2 : 1,
+      name: preservesSpecialRole ? object.name : settlementName(object.baseName, settlement.level),
+      importance: preservesSpecialRole ? object.importance : settlement.level === "city" ? 3 : settlement.level === "town" ? 2 : 1,
     };
   });
   const objectById = new Map(objects.map((object) => [object.id, object]));

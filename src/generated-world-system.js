@@ -1,6 +1,12 @@
 import { generateTerrain } from "./terrain-generation.js";
-import { generateNations } from "./nation-generation.js";
-import { SQUARE_CARDINAL_DIRECTIONS, squareTileIndex } from "./square-grid.js";
+import {
+  GENERATED_OBJECT_MIN_DISTANCE,
+  GENERATED_WORLD_OBJECT_TYPES,
+  ROADSIDE_SETTLEMENT_MAX_OFFSET,
+  SETTLEMENT_EXPANSION_WAVE_TILES,
+  generateNations,
+} from "./nation-generation.js";
+import { SQUARE_CARDINAL_DIRECTIONS, squareTileIndex, squareWrappedDeltaX } from "./square-grid.js";
 import {
   advanceGeopoliticalWorld,
   createGeopoliticalWorldState,
@@ -16,9 +22,17 @@ import {
   preserveRegionalDomainState,
   transferRegionControl,
 } from "./regional-domain-system.js";
+import { getRegionalReputationReport } from "./regional-reputation.js";
+import {
+  advanceBarbarianWorld,
+  createBarbarianWorldState,
+  establishBarbarianAgreement,
+  getBarbarianWorldView,
+  preserveBarbarianState,
+} from "./barbarian-system.js";
 
 export const GENERATED_WORLD_DEFAULTS = Object.freeze({
-  version: 10,
+  version: 12,
   seed: "eldoria-317",
   width: 160,
   height: 100,
@@ -32,9 +46,21 @@ export const GENERATED_WORLD_DEFAULTS = Object.freeze({
   expeditionPeriod: "317-4",
   expeditionClockMinutes: 8 * 60,
   discoveredRegionIds: [],
+  colonies: [],
   geopolitics: null,
   regionalDomains: null,
+  barbarians: null,
 });
+
+export const GENERATED_COLONY_COST = Object.freeze({
+  wealth: 6,
+  food: 2,
+  foundingMinutes: 7 * 24 * 60,
+  initialPopulation: 360,
+});
+
+export const GENERATED_COLONY_REQUIRED_REPUTATION = 25;
+export const GENERATED_RECOGNITION_RADIUS = 20;
 
 const DIRECTION_BY_NAME = new Map(SQUARE_CARDINAL_DIRECTIONS.map((direction) => [direction.name, direction]));
 let runtimeCache = { key: null, value: null };
@@ -42,15 +68,17 @@ let characterWorldSequence = 0;
 const GENERATED_WORLD_CLOCK_LIMIT = 999 * 24 * 60 - 1;
 
 function generatedWorldRuntimeKey(generatedState) {
-  return ["regional-hd-v6-maritime", generatedState.seed, generatedState.width, generatedState.height, generatedState.plateCount, generatedState.nationCount].join("|");
+  return ["regional-hd-v8-barbarian-frontier", generatedState.seed, generatedState.width, generatedState.height, generatedState.plateCount, generatedState.nationCount].join("|");
 }
 
 function cloneGeneratedWorldState(value) {
   return {
     ...value,
     discoveredRegionIds: [...(value.discoveredRegionIds ?? [])],
+    colonies: (value.colonies ?? []).map((colony) => ({ ...colony })),
     geopolitics: preserveGeopoliticalState(value.geopolitics),
     regionalDomains: preserveRegionalDomainState(value.regionalDomains),
+    barbarians: preserveBarbarianState(value.barbarians),
   };
 }
 
@@ -65,6 +93,31 @@ function periodFor(state) {
 
 function clockMinutes(value) {
   return clampInteger(value, GENERATED_WORLD_DEFAULTS.expeditionClockMinutes, 0, GENERATED_WORLD_CLOCK_LIMIT);
+}
+
+function normalizedColonies(source) {
+  const seenIds = new Set();
+  const seenTiles = new Set();
+  return (Array.isArray(source) ? source : []).flatMap((entry, index) => {
+    if (!entry || typeof entry !== "object" || typeof entry.tileId !== "string") return [];
+    const id = typeof entry.id === "string" && entry.id ? entry.id.slice(0, 96) : `colony-${index + 1}`;
+    if (seenIds.has(id) || seenTiles.has(entry.tileId)) return [];
+    seenIds.add(id);
+    seenTiles.add(entry.tileId);
+    const baseName = String(entry.baseName ?? entry.name ?? `開拓${index + 1}`).replace(/[村町市]$/, "").slice(0, 32) || `開拓${index + 1}`;
+    return [{
+      id,
+      tileId: entry.tileId,
+      regionId: typeof entry.regionId === "string" ? entry.regionId : null,
+      nationId: typeof entry.nationId === "string" ? entry.nationId : null,
+      baseName,
+      population: clampInteger(entry.population, GENERATED_COLONY_COST.initialPopulation, 1, 2499),
+      growthRate: Math.min(0.05, Math.max(-0.05, Number(entry.growthRate) || 0.004)),
+      foundedPeriod: typeof entry.foundedPeriod === "string" ? entry.foundedPeriod : null,
+      founderId: typeof entry.founderId === "string" ? entry.founderId : null,
+      expansionWave: clampInteger(entry.expansionWave, 1, 1, 99),
+    }];
+  }).slice(0, 256);
 }
 
 function advancedClockMinutes(current, elapsedMinutes) {
@@ -120,11 +173,155 @@ function revisionHash(value) {
   return (hash >>> 0).toString(36);
 }
 
-function effectiveRuntimeFor(baseRuntime, generatedState, dateState = null) {
-  const regional = getRegionalDomainView(baseRuntime, generatedState.regionalDomains, dateState);
+function generatedTileDistance(runtime, left, right) {
+  const dx = squareWrappedDeltaX(left.x, right.x, runtime.terrain.width, runtime.terrain.config.wrapX);
+  return Math.abs(dx) + Math.abs(right.y - left.y);
+}
+
+function generatedVisualDistance(runtime, left, right) {
+  const dx = squareWrappedDeltaX(left.x, right.x, runtime.terrain.width, runtime.terrain.config.wrapX);
+  return Math.hypot(dx, right.y - left.y);
+}
+
+function colonyRoadConnection(runtime, nationMap, colony, roadIndex) {
+  const region = nationMap.regions.find((entry) => entry.id === colony.regionId);
+  const hubId = region?.roadHubObjectId;
+  const hub = nationMap.objects.find((object) => object.id === hubId);
+  if (!region || !hub) return null;
+  let best = null;
+  for (const road of nationMap.roads ?? []) {
+    if (!road.regionIds?.includes(region.id) || (road.fromObjectId !== hubId && road.toObjectId !== hubId)) continue;
+    const path = road.toObjectId === hubId ? [...road.tileIndices].reverse() : [...road.tileIndices];
+    for (let index = 0; index < path.length; index += 1) {
+      const roadTile = runtime.tiles[path[index]];
+      if (roadTile?.regionId !== region.id) continue;
+      const distance = generatedTileDistance(runtime, colony.tile, roadTile);
+      if (distance > ROADSIDE_SETTLEMENT_MAX_OFFSET) continue;
+      if (!best || distance < best.distance || (distance === best.distance && index > best.index)) best = { path, index, distance };
+    }
+  }
+  if (!best) return null;
+  const tileIndices = best.path.slice(0, best.index + 1);
+  if (tileIndices.at(-1) !== colony.tile.index) tileIndices.push(colony.tile.index);
+  return {
+    id: `colony-road-${roadIndex + 1}-${colony.id}`,
+    fromObjectId: hub.id,
+    toObjectId: colony.id,
+    fromTileIndex: hub.tileIndex,
+    toTileIndex: colony.tile.index,
+    regionIds: [region.id],
+    nationIds: [region.nationId],
+    scope: "local",
+    importance: 1,
+    tileIndices,
+    crossingKinds: [],
+    strategicCrossings: [],
+    colonyRoad: true,
+  };
+}
+
+function runtimeWithColonies(baseRuntime, generatedState) {
+  if (!generatedState.colonies?.length) return baseRuntime;
+  const colonyObjects = generatedState.colonies.flatMap((entry) => {
+    const tile = tileById(baseRuntime, entry.tileId);
+    const region = tile ? baseRuntime.regionById.get(tile.regionId) : null;
+    if (!tile?.passable || !region || (entry.regionId && entry.regionId !== region.id)) return [];
+    return [{
+      id: entry.id,
+      type: "village",
+      typeName: GENERATED_WORLD_OBJECT_TYPES.village.name,
+      settlementLevel: "village",
+      baseName: entry.baseName,
+      population: entry.population,
+      growthRate: entry.growthRate,
+      regionSeat: false,
+      capitalCity: false,
+      placement: "player-colony",
+      colonized: true,
+      foundedPeriod: entry.foundedPeriod,
+      founderId: entry.founderId,
+      expansionWave: entry.expansionWave,
+      nationId: region.nationId,
+      regionId: region.id,
+      tileIndex: tile.index,
+      x: tile.x,
+      y: tile.y,
+      name: `${entry.baseName}村`,
+      importance: 1,
+      tile,
+    }];
+  });
+  if (!colonyObjects.length) return baseRuntime;
+  const objects = [...baseRuntime.nations.objects, ...colonyObjects.map(({ tile: _tile, ...object }) => object)];
+  const colonyIdsByRegion = colonyObjects.reduce((groups, object) => {
+    if (!groups.has(object.regionId)) groups.set(object.regionId, []);
+    groups.get(object.regionId).push(object.id);
+    return groups;
+  }, new Map());
+  const regions = baseRuntime.nations.regions.map((region) => {
+    const colonyIds = colonyIdsByRegion.get(region.id) ?? [];
+    const population = colonyObjects.filter((object) => object.regionId === region.id).reduce((sum, object) => sum + object.population, 0);
+    return colonyIds.length ? {
+      ...region,
+      uninhabited: false,
+      settlementIds: [...region.settlementIds, ...colonyIds],
+      population: region.population + population,
+    } : region;
+  });
+  const partialNationMap = { ...baseRuntime.nations, regions, objects, roads: [...(baseRuntime.nations.roads ?? [])] };
+  for (const colony of colonyObjects) {
+    const road = colonyRoadConnection(baseRuntime, partialNationMap, colony, partialNationMap.roads.length - baseRuntime.nations.roads.length);
+    if (road) partialNationMap.roads.push(road);
+  }
+  const nations = baseRuntime.nations.nations.map((nation) => {
+    const localColonies = colonyObjects.filter((object) => object.nationId === nation.id);
+    if (!localColonies.length) return nation;
+    return {
+      ...nation,
+      objectIds: [...nation.objectIds, ...localColonies.map((object) => object.id)],
+      objectCounts: { ...nation.objectCounts, village: (nation.objectCounts.village ?? 0) + localColonies.length },
+      roadIds: [...nation.roadIds, ...partialNationMap.roads.filter((road) => road.colonyRoad && road.nationIds.includes(nation.id)).map((road) => road.id)],
+      settlementPopulation: nation.settlementPopulation + localColonies.reduce((sum, object) => sum + object.population, 0),
+    };
+  });
+  const tiles = baseRuntime.tiles.slice();
+  for (const colony of colonyObjects) {
+    const object = objects.find((entry) => entry.id === colony.id);
+    const tile = tiles[colony.tile.index];
+    tiles[colony.tile.index] = {
+      ...tile,
+      worldObjects: [...tile.worldObjects, { ...object }],
+      worldObjectIds: [...tile.worldObjectIds, object.id],
+    };
+  }
+  const nationsMap = {
+    ...partialNationMap,
+    nations,
+    tiles,
+    summary: {
+      ...baseRuntime.nations.summary,
+      objectCount: baseRuntime.nations.summary.objectCount + colonyObjects.length,
+      objectCounts: { ...baseRuntime.nations.summary.objectCounts, village: (baseRuntime.nations.summary.objectCounts.village ?? 0) + colonyObjects.length },
+      roadCount: partialNationMap.roads.length,
+      settlementPopulation: baseRuntime.nations.summary.settlementPopulation + colonyObjects.reduce((sum, object) => sum + object.population, 0),
+    },
+  };
   return {
     ...baseRuntime,
-    key: `${baseRuntime.key}|domains-${revisionHash(regional.visualRevision)}`,
+    key: `${baseRuntime.key}|colonies-${revisionHash(generatedState.colonies.map((colony) => `${colony.id}:${colony.tileId}`).join("|"))}`,
+    nations: nationsMap,
+    tiles,
+    nationById: new Map(nations.map((nation) => [nation.id, nation])),
+    regionById: new Map(regions.map((region) => [region.id, region])),
+  };
+}
+
+function effectiveRuntimeFor(baseRuntime, generatedState, dateState = null) {
+  const colonyRuntime = runtimeWithColonies(baseRuntime, generatedState);
+  const regional = getRegionalDomainView(colonyRuntime, generatedState.regionalDomains, dateState);
+  return {
+    ...colonyRuntime,
+    key: `${colonyRuntime.key}|domains-${revisionHash(regional.visualRevision)}`,
     nations: regional.nationMap,
     nationById: regional.nationById,
     regionById: regional.regionById,
@@ -227,8 +424,10 @@ export function createGeneratedWorldState(options = {}, dateState = null) {
     expeditionPeriod: options.expeditionPeriod ?? periodFor(dateState),
     expeditionClockMinutes: clockMinutes(options.expeditionClockMinutes),
     discoveredRegionIds: [...new Set((options.discoveredRegionIds ?? []).filter((id) => typeof id === "string"))].slice(0, 512),
+    colonies: normalizedColonies(options.colonies),
     geopolitics: preserveGeopoliticalState(options.geopolitics),
     regionalDomains: preserveRegionalDomainState(options.regionalDomains),
+    barbarians: preserveBarbarianState(options.barbarians),
   };
 }
 
@@ -399,6 +598,26 @@ export function getGeneratedWorldView(state) {
   return { runtime, generatedState, playerNation, expeditionRegion, selectedRegion, expeditionTile, selectedTile };
 }
 
+export function getGeneratedRecognitionView(state, radius = GENERATED_RECOGNITION_RADIUS) {
+  const world = getGeneratedWorldView(state);
+  const recognitionRadius = clampInteger(radius, GENERATED_RECOGNITION_RADIUS, 1, 40);
+  const recognizedTileIds = new Set(world.runtime.tiles.filter((tile) => {
+    const directX = Math.abs(tile.x - world.expeditionTile.x);
+    const dx = world.runtime.terrain.config.wrapX
+      ? Math.min(directX, world.runtime.terrain.width - directX)
+      : directX;
+    const dy = Math.abs(tile.y - world.expeditionTile.y);
+    return dx * dx + dy * dy <= recognitionRadius * recognitionRadius;
+  }).map((tile) => tile.id));
+  return {
+    radius: recognitionRadius,
+    centerTile: world.expeditionTile,
+    recognizedTileIds,
+    recognizedCount: recognizedTileIds.size,
+    isRecognized: (tileOrId) => recognizedTileIds.has(typeof tileOrId === "string" ? tileOrId : tileOrId?.id),
+  };
+}
+
 export function getGeneratedGeopoliticalView(state) {
   const generatedState = createGeneratedWorldState(state.generatedWorld ?? {}, state);
   const runtime = effectiveRuntimeFor(buildGeneratedWorld(state), generatedState, state);
@@ -407,20 +626,30 @@ export function getGeneratedGeopoliticalView(state) {
 
 export function getGeneratedRegionalDomainView(state) {
   const generatedState = createGeneratedWorldState(state.generatedWorld ?? {}, state);
-  return getRegionalDomainView(buildGeneratedWorld(state), generatedState.regionalDomains, state);
+  return getRegionalDomainView(runtimeWithColonies(buildGeneratedWorld(state), generatedState), generatedState.regionalDomains, state);
+}
+
+export function getGeneratedBarbarianView(state) {
+  const generatedState = createGeneratedWorldState(state.generatedWorld ?? {}, state);
+  const baseRuntime = buildGeneratedWorld(state);
+  const regionalDomains = createRegionalDomainState(runtimeWithColonies(baseRuntime, generatedState), generatedState.regionalDomains, state);
+  const runtime = effectiveRuntimeFor(baseRuntime, { ...generatedState, regionalDomains }, state);
+  return getBarbarianWorldView(runtime, generatedState.barbarians, state);
 }
 
 export function initializeGeneratedWorldGeopolitics(state) {
   const generatedState = createGeneratedWorldState(state.generatedWorld ?? {}, state);
   const baseRuntime = buildGeneratedWorld(state);
-  const regionalDomains = createRegionalDomainState(baseRuntime, generatedState.regionalDomains, state);
+  const regionalDomains = createRegionalDomainState(runtimeWithColonies(baseRuntime, generatedState), generatedState.regionalDomains, state);
   const runtime = effectiveRuntimeFor(baseRuntime, { ...generatedState, regionalDomains }, state);
-  if (generatedState.geopolitics) return { ...state, generatedWorld: { ...generatedState, regionalDomains } };
+  const barbarians = createBarbarianWorldState(runtime, generatedState.barbarians, state);
+  if (generatedState.geopolitics) return { ...state, generatedWorld: { ...generatedState, regionalDomains, barbarians } };
   return {
     ...state,
     generatedWorld: {
       ...generatedState,
       regionalDomains,
+      barbarians,
       geopolitics: createGeopoliticalWorldState(runtime, null, state),
     },
   };
@@ -435,7 +664,7 @@ function previousPeriodDate(state) {
 export function advanceGeneratedWorldGeopolitics(state) {
   const generatedState = createGeneratedWorldState(state.generatedWorld ?? {}, state);
   const baseRuntime = buildGeneratedWorld(state);
-  const regionalDomains = createRegionalDomainState(baseRuntime, generatedState.regionalDomains, state);
+  const regionalDomains = createRegionalDomainState(runtimeWithColonies(baseRuntime, generatedState), generatedState.regionalDomains, state);
   const runtime = effectiveRuntimeFor(baseRuntime, { ...generatedState, regionalDomains }, state);
   const baseline = generatedState.geopolitics
     ?? createGeopoliticalWorldState(runtime, null, previousPeriodDate(state));
@@ -451,7 +680,7 @@ export function advanceGeneratedWorldGeopolitics(state) {
 
 export function advanceGeneratedWorldRegions(state) {
   const generatedState = createGeneratedWorldState(state.generatedWorld ?? {}, state);
-  const runtime = buildGeneratedWorld(state);
+  const runtime = runtimeWithColonies(buildGeneratedWorld(state), generatedState);
   return {
     ...state,
     generatedWorld: {
@@ -461,9 +690,57 @@ export function advanceGeneratedWorldRegions(state) {
   };
 }
 
+export function advanceGeneratedWorldBarbarians(state) {
+  const generatedState = createGeneratedWorldState(state.generatedWorld ?? {}, state);
+  const baseRuntime = buildGeneratedWorld(state);
+  const colonyRuntime = runtimeWithColonies(baseRuntime, generatedState);
+  const regionalDomains = createRegionalDomainState(colonyRuntime, generatedState.regionalDomains, state);
+  const runtime = effectiveRuntimeFor(baseRuntime, { ...generatedState, regionalDomains }, state);
+  const geopolitics = createGeopoliticalWorldState(runtime, generatedState.geopolitics, state);
+  const previousAdvancedPeriod = generatedState.barbarians?.lastAdvancedPeriod ?? null;
+  const barbarians = advanceBarbarianWorld(runtime, generatedState.barbarians, state, { geopolitics });
+  const currentEvents = previousAdvancedPeriod === barbarians.lastAdvancedPeriod
+    ? []
+    : barbarians.events.filter((event) => event.period === barbarians.lastAdvancedPeriod);
+  for (const event of currentEvents.filter((entry) => entry.type === "monster_damage")) {
+    for (const impact of event.impacts ?? []) {
+      const settlement = regionalDomains.settlementStates[impact.settlementId];
+      if (settlement) settlement.population = Math.max(1, settlement.population - impact.populationLoss);
+    }
+  }
+  for (const event of currentEvents.filter((entry) => entry.type === "barbarian_tribute")) {
+    const nationState = geopolitics.nationStates[event.nationId];
+    if (nationState) nationState.reserves = Math.min(100, Math.max(0, nationState.reserves + event.reserveDelta));
+  }
+  return {
+    ...state,
+    generatedWorld: {
+      ...generatedState,
+      regionalDomains,
+      geopolitics,
+      barbarians,
+    },
+  };
+}
+
+export function setGeneratedBarbarianAgreement(state, siteId, agreementType, nationId = null) {
+  const generatedState = createGeneratedWorldState(state.generatedWorld ?? {}, state);
+  const baseRuntime = buildGeneratedWorld(state);
+  const regionalDomains = createRegionalDomainState(runtimeWithColonies(baseRuntime, generatedState), generatedState.regionalDomains, state);
+  const runtime = effectiveRuntimeFor(baseRuntime, { ...generatedState, regionalDomains }, state);
+  return {
+    ...state,
+    generatedWorld: {
+      ...generatedState,
+      regionalDomains,
+      barbarians: establishBarbarianAgreement(runtime, generatedState.barbarians, siteId, agreementType, nationId, state),
+    },
+  };
+}
+
 export function transferGeneratedRegionControl(state, regionId, nationId, options = {}) {
   const generatedState = createGeneratedWorldState(state.generatedWorld ?? {}, state);
-  const runtime = buildGeneratedWorld(state);
+  const runtime = runtimeWithColonies(buildGeneratedWorld(state), generatedState);
   return {
     ...state,
     generatedWorld: {
@@ -475,7 +752,7 @@ export function transferGeneratedRegionControl(state, regionId, nationId, option
 
 export function declareGeneratedRegionIndependence(state, regionId, options = {}) {
   const generatedState = createGeneratedWorldState(state.generatedWorld ?? {}, state);
-  const runtime = buildGeneratedWorld(state);
+  const runtime = runtimeWithColonies(buildGeneratedWorld(state), generatedState);
   const regionalDomains = declareRegionIndependence(runtime, generatedState.regionalDomains, regionId, options, state);
   const polityId = regionalDomains.regionStates[regionId].nationId;
   return {
@@ -490,7 +767,7 @@ export function declareGeneratedRegionIndependence(state, regionId, options = {}
 
 export function appointGeneratedRegionalLord(state, regionId, appointment = {}) {
   const generatedState = createGeneratedWorldState(state.generatedWorld ?? {}, state);
-  const runtime = buildGeneratedWorld(state);
+  const runtime = runtimeWithColonies(buildGeneratedWorld(state), generatedState);
   const next = {
     ...state,
     generatedWorld: {
@@ -533,7 +810,7 @@ export function selectGeneratedWorldTile(state, tileId) {
 export function setGeneratedPlayerNation(state, nationId, preparedRuntime = null) {
   const generatedState = createGeneratedWorldState(state.generatedWorld ?? {}, state);
   const baseRuntime = preparedRuntime?.key === generatedWorldRuntimeKey(generatedState) ? preparedRuntime : buildGeneratedWorld(state);
-  const regionalDomains = createRegionalDomainState(baseRuntime, generatedState.regionalDomains, state);
+  const regionalDomains = createRegionalDomainState(runtimeWithColonies(baseRuntime, generatedState), generatedState.regionalDomains, state);
   const runtime = effectiveRuntimeFor(baseRuntime, { ...generatedState, regionalDomains }, state);
   const nation = runtime.nationById.get(nationId);
   if (!nation) throw new RangeError("存在しない国家です。");
@@ -635,6 +912,193 @@ export function getGeneratedShippingDestinations(state) {
   const generatedState = createGeneratedWorldState(refreshed.generatedWorld ?? {}, refreshed);
   const runtime = effectiveRuntimeFor(buildGeneratedWorld(refreshed), generatedState, refreshed);
   return shippingDestinationsFor(runtime, generatedState);
+}
+
+function generatedRoadDistance(runtime, regionId, tile, knownRoadTiles = null) {
+  let best = Number.POSITIVE_INFINITY;
+  if (knownRoadTiles) {
+    for (const tileIndex of knownRoadTiles) {
+      best = Math.min(best, generatedTileDistance(runtime, tile, runtime.tiles[tileIndex]));
+      if (best === 0) break;
+    }
+    return best;
+  }
+  for (const road of runtime.nations.roads ?? []) {
+    if (!road.regionIds?.includes(regionId)) continue;
+    for (const tileIndex of road.tileIndices ?? []) {
+      const roadTile = runtime.tiles[tileIndex];
+      if (roadTile?.regionId !== regionId) continue;
+      best = Math.min(best, generatedTileDistance(runtime, tile, roadTile));
+      if (best === 0) return best;
+    }
+  }
+  return best;
+}
+
+function colonizationSuitability(tile, terrainTile, nation) {
+  const mountainAdapted = ["dwarf", "giant"].includes(nation.peopleId);
+  const wetlandAdapted = nation.peopleId === "lizardman";
+  if (tile.relief === "mountains" && !mountainAdapted) return null;
+  if (tile.feature === "marsh" && !wetlandAdapted) return null;
+  const score = tile.fertility / 8 + tile.freshwater * 20
+    + tile.yields.food * 10 + tile.yields.production * 3 + tile.yields.commerce * 4
+    - tile.movementCost * 2 - (terrainTile?.floodRisk ?? 0) * (wetlandAdapted ? 3 : 12);
+  return score >= 8 ? Number(score.toFixed(1)) : null;
+}
+
+export function getGeneratedColonizationView(state) {
+  const refreshed = refreshGeneratedWorldForDate(state);
+  const generatedState = createGeneratedWorldState(refreshed.generatedWorld ?? {}, refreshed);
+  const runtime = effectiveRuntimeFor(buildGeneratedWorld(refreshed), generatedState, refreshed);
+  const playerNation = effectivePlayerNation(runtime, generatedState);
+  const expeditionRegion = effectiveExpeditionRegion(runtime, generatedState);
+  const expeditionTile = effectiveExpeditionTile(runtime, generatedState, expeditionRegion);
+  const wealth = Number(refreshed.player?.metrics?.wealth) || 0;
+  const food = Number(refreshed.player?.villageLife?.supplies?.food) || 0;
+  const canAfford = wealth >= GENERATED_COLONY_COST.wealth && food >= GENERATED_COLONY_COST.food;
+  const reputation = getRegionalReputationReport(refreshed, {
+    regionId: expeditionRegion.id,
+    regions: runtime.nations.regions,
+  });
+  const hasRequiredReputation = reputation.value >= GENERATED_COLONY_REQUIRED_REPUTATION;
+  const owned = expeditionRegion.nationId === playerNation.id;
+  const roadTiles = new Set((runtime.nations.roads ?? [])
+    .filter((road) => road.regionIds?.includes(expeditionRegion.id))
+    .flatMap((road) => road.tileIndices ?? [])
+    .filter((index) => runtime.tiles[index]?.regionId === expeditionRegion.id));
+  const urbanCenter = runtime.nations.objects.find((object) => object.id === expeditionRegion.roadHubObjectId)
+    ?? runtime.nations.objects.find((object) => object.regionId === expeditionRegion.id && object.regionSeat);
+  const urbanTile = urbanCenter ? runtime.tiles[urbanCenter.tileIndex] : null;
+  const localSettlements = runtime.nations.objects.filter((object) => object.regionId === expeditionRegion.id && object.settlementLevel);
+  const developedRadius = urbanTile ? Math.max(
+    SETTLEMENT_EXPANSION_WAVE_TILES,
+    ...localSettlements.map((object) => generatedTileDistance(runtime, urbanTile, runtime.tiles[object.tileIndex])),
+  ) : 0;
+  const maximumExpansionRadius = developedRadius + SETTLEMENT_EXPANSION_WAVE_TILES;
+  const candidates = !owned || !urbanTile || !roadTiles.size ? [] : expeditionRegion.tileIndices.flatMap((tileIndex) => {
+    const tile = runtime.tiles[tileIndex];
+    const terrainTile = runtime.terrain.tiles[tileIndex];
+    const score = colonizationSuitability(tile, terrainTile, playerNation);
+    if (!tile?.passable || score === null || runtime.nations.objects.some((object) => (
+      generatedVisualDistance(runtime, tile, runtime.tiles[object.tileIndex]) < GENERATED_OBJECT_MIN_DISTANCE
+    ))) return [];
+    const roadsideDistance = generatedRoadDistance(runtime, expeditionRegion.id, tile, roadTiles);
+    const urbanDistance = generatedTileDistance(runtime, urbanTile, tile);
+    if (roadsideDistance > ROADSIDE_SETTLEMENT_MAX_OFFSET || urbanDistance > maximumExpansionRadius) return [];
+    const travelMinutes = tile.id === expeditionTile.id ? 0 : localTravelMinutes(runtime, expeditionTile, tile);
+    const expansionWave = Math.max(1, Math.ceil(urbanDistance / SETTLEMENT_EXPANSION_WAVE_TILES));
+    return [{
+      id: tile.id,
+      tileId: tile.id,
+      tile,
+      region: expeditionRegion,
+      nation: playerNation,
+      current: tile.id === expeditionTile.id,
+      canMove: tile.id !== expeditionTile.id,
+      travelMinutes,
+      movementCost: 0,
+      roadsideDistance,
+      urbanDistance,
+      expansionWave,
+      suitability: score,
+      defaultName: `${expeditionRegion.name.replace(/地方$/, "")}開拓${generatedState.colonies.length + 1}`,
+      canFound: tile.id === expeditionTile.id && canAfford && hasRequiredReputation,
+    }];
+  }).sort((left, right) => (
+    left.expansionWave - right.expansionWave
+    || left.roadsideDistance - right.roadsideDistance
+    || right.suitability - left.suitability
+    || left.tile.index - right.tile.index
+  )).slice(0, 12);
+  const reason = !owned
+    ? "植民できるのは自国が支配する地方だけです。"
+    : !urbanTile ? "この地方には植民の起点となる都市・町がありません。"
+      : !roadTiles.size ? "この地方には入植者を送れる街道がありません。"
+        : !candidates.length ? "都市圏から段階的に延ばせる街道沿いの空き地がありません。"
+          : !hasRequiredReputation ? `植民にはこの地方の名声${GENERATED_COLONY_REQUIRED_REPUTATION}が必要です（現在${reputation.value}）。依頼の達成や善行で信用を築いてください。`
+            : !canAfford ? `植民には財産${GENERATED_COLONY_COST.wealth}と保存食${GENERATED_COLONY_COST.food}日分が必要です。`
+              : "街道沿いの候補地へ移動すると村を建設できます。";
+  return {
+    runtime,
+    generatedState,
+    playerNation,
+    expeditionRegion,
+    expeditionTile,
+    urbanCenter,
+    developedRadius,
+    maximumExpansionRadius,
+    candidates,
+    bestCandidate: candidates[0] ?? null,
+    canAfford,
+    reputation,
+    requiredReputation: GENERATED_COLONY_REQUIRED_REPUTATION,
+    hasRequiredReputation,
+    owned,
+    wealth,
+    food,
+    cost: GENERATED_COLONY_COST,
+    reason,
+  };
+}
+
+export function moveGeneratedExpeditionToColonizationSite(state, tileId) {
+  const refreshed = refreshGeneratedWorldForDate(state);
+  const colonization = getGeneratedColonizationView(refreshed);
+  const candidate = colonization.candidates.find((entry) => entry.tileId === tileId);
+  if (!candidate) throw new RangeError(colonization.owned
+    ? "この区画は街道沿いの植民候補地ではないか、既存集落との間隔が不足しています。"
+    : colonization.reason);
+  if (candidate.current) return refreshed;
+  return {
+    ...refreshed,
+    generatedWorld: {
+      ...cloneGeneratedWorldState(refreshed.generatedWorld),
+      expeditionRegionId: candidate.region.id,
+      expeditionTileId: candidate.tile.id,
+      selectedRegionId: candidate.region.id,
+      expeditionClockMinutes: advancedClockMinutes(refreshed.generatedWorld.expeditionClockMinutes, candidate.travelMinutes),
+    },
+  };
+}
+
+export function foundGeneratedVillage(state, tileId, options = {}) {
+  const refreshed = refreshGeneratedWorldForDate(state);
+  const colonization = getGeneratedColonizationView(refreshed);
+  const candidate = colonization.candidates.find((entry) => entry.tileId === tileId);
+  if (!candidate) throw new RangeError(colonization.owned
+    ? "この区画は街道沿いの植民候補地ではないか、既存集落との間隔が不足しています。"
+    : colonization.reason);
+  if (!candidate.current) throw new RangeError("植民候補地へ到着してから村を建設してください。");
+  if (!colonization.hasRequiredReputation) throw new RangeError(colonization.reason);
+  if (!colonization.canAfford) throw new RangeError(colonization.reason);
+  if (!refreshed.player) throw new Error("植民を実行するプレイヤーが存在しません。");
+  const sequence = colonization.generatedState.colonies.length + 1;
+  const requestedName = String(options.name ?? candidate.defaultName).trim().replace(/[村町市]$/, "").slice(0, 32);
+  const baseName = requestedName || candidate.defaultName;
+  const colony = {
+    id: `colony-${revisionHash(colonization.generatedState.seed)}-${sequence}`,
+    tileId: candidate.tile.id,
+    regionId: candidate.region.id,
+    nationId: candidate.nation.id,
+    baseName,
+    population: GENERATED_COLONY_COST.initialPopulation,
+    growthRate: Number((0.0035 + candidate.tile.yields.food * 0.00035 + candidate.tile.freshwater * 0.001).toFixed(5)),
+    foundedPeriod: periodFor(refreshed),
+    founderId: refreshed.player.id ?? null,
+    expansionWave: candidate.expansionWave,
+  };
+  const nextGeneratedWorld = {
+    ...cloneGeneratedWorldState(refreshed.generatedWorld),
+    colonies: [...colonization.generatedState.colonies, colony],
+    expeditionClockMinutes: advancedClockMinutes(refreshed.generatedWorld.expeditionClockMinutes, GENERATED_COLONY_COST.foundingMinutes),
+  };
+  const player = structuredClone(refreshed.player);
+  player.metrics.wealth = Math.max(0, (player.metrics.wealth ?? 0) - GENERATED_COLONY_COST.wealth);
+  player.villageLife.supplies.food = Math.max(0, (player.villageLife.supplies.food ?? 0) - GENERATED_COLONY_COST.food);
+  const next = { ...refreshed, player, generatedWorld: nextGeneratedWorld };
+  const colonyRuntime = runtimeWithColonies(buildGeneratedWorld(next), createGeneratedWorldState(nextGeneratedWorld, next));
+  next.generatedWorld.regionalDomains = createRegionalDomainState(colonyRuntime, nextGeneratedWorld.regionalDomains, next);
+  return next;
 }
 
 export function getGeneratedWorldSiteView(state, siteId) {
@@ -810,6 +1274,8 @@ export function generatedWorldSaveSummary(state) {
     expeditionRegionId: generatedState.expeditionRegionId,
     expeditionTileId: generatedState.expeditionTileId,
     discoveredRegionCount: generatedState.discoveredRegionIds.length,
+    colonyCount: generatedState.colonies.length,
+    barbarianSiteCount: generatedState.barbarians?.sites?.filter((site) => site.status !== "destroyed").length ?? 0,
   };
 }
 

@@ -20,17 +20,17 @@ test("generated nations contain multiple administrative regions with settlement 
   const state = createRegionalWorld();
   const runtime = buildGeneratedWorld(state);
   assert.ok(runtime.nations.nations.every((nation) => nation.regionCount >= 2));
-  assert.ok(runtime.nations.regions.every((region) => region.officeTitle && region.settlementIds.length && region.roadHubObjectId));
+  assert.ok(runtime.nations.regions.every((region) => region.officeTitle && (region.uninhabited || (region.settlementIds.length && region.roadHubObjectId))));
   assert.ok(runtime.nations.roads.length > runtime.nations.regions.length);
   for (const nation of runtime.nations.nations) {
     const capitalObjects = runtime.nations.objects.filter((object) => object.regionId === nation.capitalRegionId);
     assert.ok(capitalObjects.some((object) => object.type === "castle"));
-    assert.ok(capitalObjects.some((object) => object.type === "city"));
-    assert.ok(capitalObjects.filter((object) => object.type === "village").length >= 2);
+    assert.ok(capitalObjects.some((object) => object.settlementLevel === "city"));
     const castle = capitalObjects.find((object) => object.type === "castle");
     const localRoads = runtime.nations.roads.filter((road) => road.fromObjectId === castle.id || road.toObjectId === castle.id);
-    assert.ok(localRoads.length >= 3, `${nation.name}の王城は周辺集落への街道ハブでなければならない`);
+    assert.ok(localRoads.length >= 1, `${nation.name}の王城は周辺集落への街道ハブでなければならない`);
   }
+  assert.ok(runtime.nations.objects.some((object) => object.placement === "roadside-expansion"));
 });
 
 test("village population advances through town and city thresholds on monthly simulation", () => {

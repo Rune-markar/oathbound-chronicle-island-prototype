@@ -8,10 +8,12 @@ import {
   setBattleTileFeature,
 } from "./tactical-battle.js";
 import { advanceGeneratedWorldTime } from "./generated-world-system.js";
+import { NOELA_ORBIS_ID, UNIQUE_CHARACTERS, getUniqueCharacter } from "./unique-characters.js";
+import { ABILITY_LABELS, normalizeAbilityScores } from "./character-abilities.js";
 
 const clone = (value) => structuredClone(value);
 
-export const ADVENTURE_SCHEMA_VERSION = 2;
+export const ADVENTURE_SCHEMA_VERSION = 4;
 
 export const ADVENTURE_ART = Object.freeze({
   village: "./assets/generated/adventure/village.png",
@@ -42,11 +44,11 @@ export const DUNGEON_ARCHETYPES = Object.freeze({
     title: "古樹迷森",
     symbol: "森",
     description: "巨木の根と苔むす祭石が道を変える、森そのものの迷宮。",
-    enemy: Object.freeze({ id: "thorn-stalker", name: "茨潜み", maxHp: 34, attack: 7, symbol: "蔦" }),
+    enemy: Object.freeze({ id: "forest-goblin-warbands", name: "森ゴブリンの群れ", maxHp: 34, attack: 7, symbol: "鬼" }),
     loot: Object.freeze([
       Object.freeze({ id: "moon-herb", name: "月灯草", icon: "薬" }),
       Object.freeze({ id: "elder-bark", name: "古樹皮", icon: "樹" }),
-      Object.freeze({ id: "thorn-heart", name: "茨潜みの心核", icon: "核" }),
+      Object.freeze({ id: "goblin-standard", name: "ゴブリン隊旗", icon: "旗" }),
     ]),
   }),
   spring: Object.freeze({
@@ -65,11 +67,67 @@ export const DUNGEON_ARCHETYPES = Object.freeze({
 });
 
 const PARTY_NAMES = Object.freeze(["セラ", "ミレル", "イルヴァ", "マラ", "ダリオ", "エドラス", "ガイウス", "ネリス"]);
+const PARTY_PORTRAITS = Object.freeze({
+  セラ: "./assets/generated/officer-sera.webp",
+  ミレル: "./assets/generated/officer-mirel.webp",
+  イルヴァ: "./assets/generated/officer-ilva.webp",
+  マラ: "./assets/generated/officer-mara.webp",
+  ダリオ: "./assets/generated/officer-dario.webp",
+  エドラス: "./assets/generated/officer-edras.webp",
+  ガイウス: "./assets/generated/officer-gaius.webp",
+  ネリス: "./assets/generated/race-human.webp",
+});
 const PARTY_ROLES = Object.freeze([
   Object.freeze({ id: "vanguard", name: "前衛", specialty: "敵の攻撃を引き受ける" }),
   Object.freeze({ id: "scout", name: "斥候", specialty: "罠と隠し道を見抜く" }),
   Object.freeze({ id: "healer", name: "治療師", specialty: "探索中の消耗を抑える" }),
   Object.freeze({ id: "mage", name: "術師", specialty: "敵の弱点を突く" }),
+]);
+
+export const NPC_GREETING_APPROACHES = Object.freeze([
+  Object.freeze({ id: "gentle", name: "穏やかにふるまう", shortName: "穏やか" }),
+  Object.freeze({ id: "imposing", name: "威圧的にふるまう", shortName: "威圧的" }),
+  Object.freeze({ id: "friendly", name: "気さくにふるまう", shortName: "気さく" }),
+]);
+
+const NPC_PERSONALITIES = Object.freeze([
+  Object.freeze({
+    id: "cautious", name: "慎重", favoredApproachId: "gentle", dislikedApproachId: "imposing",
+    reactions: Object.freeze({
+      gentle: "警戒を解き、落ち着いた声で名乗り返した。",
+      imposing: "椅子を引き、こちらの出方を慎重にうかがっている。",
+      friendly: "少し戸惑いながらも、短い世間話には応じた。",
+    }),
+  }),
+  Object.freeze({
+    id: "proud", name: "誇り高い", favoredApproachId: "imposing", dislikedApproachId: "friendly",
+    reactions: Object.freeze({
+      gentle: "礼は返したが、力量を測るような視線は崩さない。",
+      imposing: "挑むような笑みを返し、対等な相手として向き直った。",
+      friendly: "馴れ馴れしさを好まないらしく、返事は素っ気ない。",
+    }),
+  }),
+  Object.freeze({
+    id: "sociable", name: "社交的", favoredApproachId: "friendly", dislikedApproachId: "imposing",
+    reactions: Object.freeze({
+      gentle: "柔らかく笑い、旅先の話を一つ聞かせてくれた。",
+      imposing: "場を和ませようとはしたが、声には距離が残った。",
+      friendly: "待っていた友人のように席を空け、話を弾ませた。",
+    }),
+  }),
+  Object.freeze({
+    id: "disciplined", name: "実直", favoredApproachId: "gentle", dislikedApproachId: "friendly",
+    reactions: Object.freeze({
+      gentle: "簡潔だが丁寧に応じ、こちらの話を最後まで聞いた。",
+      imposing: "怯まず姿勢を正し、要件を率直に尋ねてきた。",
+      friendly: "冗談には乗らず、要件だけを話すよう促した。",
+    }),
+  }),
+]);
+
+const NPC_DISCOVERY_ORDER = Object.freeze([
+  "personality", "specialty", "level", "ability:strength", "ability:dexterity", "ability:constitution",
+  "ability:intelligence", "ability:wisdom", "ability:charisma",
 ]);
 
 const PERSONAL_MAP_FORAGE = Object.freeze({
@@ -128,6 +186,7 @@ function emptyAdventureState() {
     dungeonHistory: [],
     activeRun: null,
     personalMap: { regions: {} },
+    npcRelations: {},
   };
 }
 
@@ -165,14 +224,33 @@ export function normalizeAdventureState(state) {
     ...current,
     schemaVersion: ADVENTURE_SCHEMA_VERSION,
     inventory: [...(current.inventory ?? [])],
-    party: [...(current.party ?? [])],
+    party: (current.party ?? []).map((member) => ({
+      ...member,
+      abilities: normalizeAbilityScores(member.abilities, { seed: member.id ?? member.name, role: `${member.role ?? ""} ${member.specialty ?? ""}` }),
+    })),
     activeContracts: [...(current.activeContracts ?? [])],
     completedContracts: [...(current.completedContracts ?? [])],
     completedDungeonIds: [...(current.completedDungeonIds ?? [])],
     dungeonHistory: [...(current.dungeonHistory ?? [])],
     activeRun,
     personalMap: normalizePersonalMapState(current.personalMap),
+    npcRelations: Object.fromEntries(Object.entries(current.npcRelations ?? {}).map(([candidateId, relation]) => [candidateId, {
+      interactions: Math.max(0, Math.floor(Number(relation?.interactions) || 0)),
+      firstApproachId: relation?.firstApproachId ?? null,
+      firstImpressionBonus: relation?.firstImpressionBonus === true,
+      discovered: [...new Set((relation?.discovered ?? []).filter((entry) => typeof entry === "string"))],
+      lastResult: relation?.lastResult ? { ...relation.lastResult } : null,
+    }])),
   };
+  if (state.player) {
+    state.player.abilities = normalizeAbilityScores(state.player.abilities, { seed: `player:${state.player.name ?? "主人公"}`, role: state.player.specialty });
+    if (Array.isArray(state.player.villageLife?.party)) {
+      state.player.villageLife.party = state.player.villageLife.party.map((member) => ({
+        ...member,
+        abilities: normalizeAbilityScores(member.abilities, { seed: member.id ?? member.name, role: `${member.role ?? ""} ${member.specialty ?? ""}` }),
+      }));
+    }
+  }
   return state;
 }
 
@@ -194,16 +272,57 @@ function addVillageInventoryItem(state, item, quantity = 1) {
   else inventory.push({ ...item, category: "material", quantity });
 }
 
+function inventoryQuantity(inventory, itemId) {
+  return (inventory ?? []).filter((entry) => entry.id === itemId)
+    .reduce((sum, entry) => sum + Math.max(0, Number(entry.quantity) || 0), 0);
+}
+
+function removeInventoryQuantity(inventory, itemId, quantity) {
+  let remaining = quantity;
+  for (const entry of inventory ?? []) {
+    if (entry.id !== itemId || remaining <= 0) continue;
+    const held = Math.max(0, Number(entry.quantity) || 0);
+    const removed = Math.min(held, remaining);
+    entry.quantity = held - removed;
+    remaining -= removed;
+  }
+  for (let index = (inventory?.length ?? 0) - 1; index >= 0; index -= 1) {
+    if ((inventory[index].quantity ?? 0) <= 0) inventory.splice(index, 1);
+  }
+}
+
 function grantLoot(state, run, item) {
-  addInventoryItem(state.adventure, item);
-  addVillageInventoryItem(state, item);
-  run.loot.push({ ...item, quantity: 1 });
+  const appraised = hasActiveUniqueCompanion(state, NOELA_ORBIS_ID);
+  const quantity = appraised ? 2 : 1;
+  addInventoryItem(state.adventure, item, quantity);
+  addVillageInventoryItem(state, item, quantity);
+  const recovered = { ...item, quantity };
+  if (appraised) {
+    recovered.provenanceAppraiserId = NOELA_ORBIS_ID;
+    run.provenanceBonusLoot = (run.provenanceBonusLoot ?? 0) + 1;
+  }
+  run.loot.push(recovered);
+  return recovered;
 }
 
 function activePartyCount(state) {
   const villageParty = state.player?.villageLife?.party;
   if (Array.isArray(villageParty)) return villageParty.filter((member) => member.active !== false && member.alive !== false).length;
   return state.adventure?.party?.length ?? 0;
+}
+
+function hasActiveUniqueCompanion(state, characterId) {
+  const memberId = UNIQUE_CHARACTERS[characterId]?.adventure?.memberId;
+  if (!memberId) return false;
+  const villageParty = state.player?.villageLife?.party;
+  if (Array.isArray(villageParty)) {
+    return villageParty.some((member) => (
+      (member.uniqueCharacterId === characterId || member.id === memberId)
+      && member.active !== false
+      && member.alive !== false
+    ));
+  }
+  return state.adventure?.party?.some((member) => member.uniqueCharacterId === characterId || member.id === memberId) ?? false;
 }
 
 function regionTile(region, runtime, offset) {
@@ -436,6 +555,7 @@ function personalEncounterRun(state, context, location, resultId) {
     playerHp,
     playerMaxHp,
     skippedBattles: 0,
+    completedContractIds: [],
     loot: [],
     combat: {
       enemyId: archetype.enemy.id,
@@ -461,20 +581,28 @@ export function explorePersonalMap(state, context, options = {}) {
   const candidates = definitions.filter((location) => current.neighborIds.includes(location.id) && !record.discoveredLocationIds.includes(location.id));
   const deterministicRoll = hashString(`${next.generatedWorld?.seed ?? "world"}:${context.region.id}:${current.id}:${record.explorationCount}`) / 0x100000000;
   const roll = Number.isFinite(options.roll) ? Math.min(0.999999, Math.max(0, Number(options.roll))) : deterministicRoll;
+  const scholar = Object.values(UNIQUE_CHARACTERS).find((character) => (
+    character.adventure?.passiveId === "epigraphic_insight" && hasActiveUniqueCompanion(next, character.id)
+  ));
+  const discoveryThreshold = scholar ? 0.45 : 0.3;
   record.explorationCount += 1;
   const resultId = `${context.region.id}:${record.explorationCount}`;
   let result;
-  if (roll < 0.3 && candidates.length) {
+  if (roll < discoveryThreshold && candidates.length) {
     const found = candidates[hashString(`${resultId}:location`) % candidates.length];
     record.discoveredLocationIds.push(found.id);
     result = {
       id: resultId,
       type: "location",
       title: "新たな場所を発見",
-      message: `${found.name}を発見した。個人マップから移動できる。`,
+      message: scholar
+        ? `${scholar.name}が碑文と地形を照合し、${found.name}を発見した。個人マップから移動できる。`
+        : `${found.name}を発見した。個人マップから移動できる。`,
       locationId: found.id,
       locationName: found.name,
       symbol: found.symbol,
+      assistedBy: scholar?.id ?? null,
+      assistName: scholar?.adventure?.passiveName ?? null,
     };
   } else if (roll < 0.55) {
     result = {
@@ -527,21 +655,55 @@ export function explorePersonalMap(state, context, options = {}) {
 export function getGuildContracts(state, context) {
   const { dungeon, village } = getRegionAdventureSites(state, context);
   const archetype = DUNGEON_ARCHETYPES[dungeon.dungeonType];
+  const terrain = context.region.dominantTerrain;
+  const forageBase = PERSONAL_MAP_FORAGE[terrain] ?? PERSONAL_MAP_FORAGE.plains;
+  const forageItem = { ...forageBase, id: `${forageBase.id}:${context.region.id}` };
+  const issue = Math.max(0, Math.floor(state.player?.villageLife?.guildRequestsCompleted ?? 0));
   const definitions = [
-    { suffix: "survey", title: `${dungeon.name}の踏査`, detail: "最奥まで到達し、危険経路を記録する。道中の遭難者がいれば救助する。", merit: 10, routeEvent: "chance_rescue", reward: { wealth: 3, renown: 2 } },
-    { suffix: "materials", title: `${archetype.loot[0].name}の確保`, detail: "探索中に採取できる素材をギルドへ持ち帰る。", merit: 9, reward: { wealth: 4, renown: 1 } },
-    { suffix: "subjugation", title: `${archetype.enemy.name}の討伐`, detail: "探索者を襲う主を退ける。戦闘スキップによる自動解決も有効。", merit: 12, reward: { wealth: 5, renown: 3 } },
+    {
+      suffix: "survey", title: `${dungeon.name}の踏査`,
+      detail: `個人マップで${dungeon.name}を発見して移動し、最奥まで到達して危険経路を記録する。`,
+      merit: 10, routeEvent: "chance_rescue", reward: { wealth: 3, renown: 2 },
+      objective: { type: "clear_dungeon", targetId: dungeon.id, targetName: dungeon.name, required: 1, unit: "箇所" },
+    },
+    {
+      suffix: "forage", title: `${forageItem.name}の採集`,
+      detail: `${context.region.name}の周辺を実際に探索して${forageItem.name}を3個集め、集落の依頼窓口へ納品する。`,
+      merit: 9, reward: { wealth: 4, renown: 1 },
+      objective: { type: "collect_item", targetId: forageItem.id, targetName: forageItem.name, required: 3, unit: "個" },
+    },
+    {
+      suffix: "subjugation", title: `${archetype.enemy.name}の討伐`,
+      detail: `${dungeon.name}または周辺探索で${archetype.enemy.name}と遭遇し、戦闘で1群を退ける。`,
+      merit: 12, reward: { wealth: 5, renown: 3 },
+      objective: { type: "defeat_enemy", targetId: archetype.enemy.id, targetName: archetype.enemy.name, required: 1, unit: "群" },
+    },
   ];
   const accepted = new Set(state.adventure?.activeContracts?.map((contract) => contract.id));
   const completed = new Set(state.adventure?.completedContracts?.map((contract) => contract.id));
-  return definitions.map((definition) => ({
-    ...definition,
-    id: `contract:${context.region.id}:${definition.suffix}`,
-    villageId: village.id,
-    dungeonId: dungeon.id,
-    status: state.player?.villageLife?.quests?.find((quest) => quest.id === `contract:${context.region.id}:${definition.suffix}`)?.status
-      ?? (completed.has(`contract:${context.region.id}:${definition.suffix}`) ? "completed" : accepted.has(`contract:${context.region.id}:${definition.suffix}`) ? "active" : "available"),
-  }));
+  return definitions.map((definition) => {
+    const id = `contract:${context.region.id}:${definition.suffix}:${issue}`;
+    const status = state.player?.villageLife?.quests?.find((quest) => quest.id === id)?.status
+      ?? (completed.has(id) ? "completed" : accepted.has(id) ? "active" : "available");
+    const activeContract = state.adventure?.activeContracts?.find((contract) => contract.id === id);
+    const completedContract = state.adventure?.completedContracts?.find((contract) => contract.id === id);
+    const objective = activeContract?.objective ?? completedContract?.objective ?? definition.objective;
+    const progress = ["completed", "reported"].includes(status)
+      ? objective.required
+      : objective.type === "collect_item"
+        ? Math.min(objective.required, inventoryQuantity(state.player?.villageLife?.inventory, objective.targetId))
+        : 0;
+    return {
+      ...definition,
+      id,
+      regionId: context.region.id,
+      villageId: village.id,
+      dungeonId: dungeon.id,
+      status,
+      objective: { ...objective, progress },
+      readyToSubmit: status === "accepted" && objective.type === "collect_item" && progress >= objective.required,
+    };
+  });
 }
 
 export function acceptGuildContract(state, contractId, context) {
@@ -552,7 +714,7 @@ export function acceptGuildContract(state, contractId, context) {
   if (next.adventure.activeContracts.length >= 5) throw new Error("同時に受けられる依頼は5件までです。");
   const villageLife = next.player?.villageLife;
   if (villageLife?.quests?.some((quest) => quest.source === "guild" && ["accepted", "active", "completed", "reported"].includes(quest.status))) {
-    throw new Error("先に受注中のギルド依頼を報告し、報酬を受け取ってください。");
+    throw new Error("先に受注中の依頼を集落の窓口へ報告し、報酬を受け取ってください。");
   }
   next.adventure.activeContracts.push({ ...contract, acceptedTurn: next.turn ?? 0, status: "active" });
   if (villageLife?.quests) {
@@ -561,6 +723,7 @@ export function acceptGuildContract(state, contractId, context) {
       id: contract.id,
       name: contract.title,
       objective: contract.detail,
+      objectiveData: { ...contract.objective, progress: 0 },
       source: "guild",
       status: "accepted",
       merit: contract.merit,
@@ -573,25 +736,184 @@ export function acceptGuildContract(state, contractId, context) {
   return next;
 }
 
-export function getTavernCandidates(state, { region }) {
+function markGuildContractCompleted(next, contract, run = null) {
+  next.adventure.activeContracts = next.adventure.activeContracts.filter((entry) => entry.id !== contract.id);
+  if (!next.adventure.completedContracts.some((entry) => entry.id === contract.id)) {
+    next.adventure.completedContracts.unshift({ ...contract, status: "completed", completedTurn: next.turn ?? 0 });
+  }
+  const villageLife = next.player?.villageLife;
+  const quest = villageLife?.quests?.find((entry) => entry.id === contract.id && ["accepted", "active"].includes(entry.status));
+  if (quest) {
+    quest.status = "completed";
+    quest.completedVillageId = quest.acceptedVillageId;
+    quest.objectiveData = { ...(quest.objectiveData ?? contract.objective), progress: contract.objective.required };
+    if (run && quest.routeEvent === "chance_rescue" && (villageLife.heroicRescues ?? 0) < 1) {
+      villageLife.heroicRescues = 1;
+      runLog(run, "途中で救った遭難者は領主の使者だった。命の恩人として名を尋ねられた。", "success");
+    }
+  }
+}
+
+export function completeGuildContractObjective(state, contractId, context) {
+  const next = preparedClone(state);
+  const contract = next.adventure.activeContracts.find((entry) => entry.id === contractId);
+  if (!contract) throw new RangeError("納品できる受注依頼がありません。");
+  if (contract.villageId !== getRegionAdventureSites(next, context).village.id) throw new Error("受注した集落の依頼窓口で納品してください。");
+  if (contract.objective?.type !== "collect_item") throw new Error("この依頼は現地で条件を達成する必要があります。");
+  const held = inventoryQuantity(next.player?.villageLife?.inventory, contract.objective.targetId);
+  if (held < contract.objective.required) {
+    throw new Error(`${contract.objective.targetName}が不足しています（${held}/${contract.objective.required}）。`);
+  }
+  removeInventoryQuantity(next.player.villageLife.inventory, contract.objective.targetId, contract.objective.required);
+  removeInventoryQuantity(next.adventure.inventory, contract.objective.targetId, contract.objective.required);
+  markGuildContractCompleted(next, contract);
+  return next;
+}
+
+function candidatePersonality(candidateId) {
+  return NPC_PERSONALITIES[hashString(`${candidateId}:personality`) % NPC_PERSONALITIES.length];
+}
+
+function npcRelation(state, candidateId) {
+  return state.adventure?.npcRelations?.[candidateId] ?? {
+    interactions: 0,
+    firstApproachId: null,
+    firstImpressionBonus: false,
+    discovered: [],
+    lastResult: null,
+  };
+}
+
+function isDiningWithLocalRenown(state, context, villageId) {
+  const lastAction = state.player?.villageLife?.lastAction;
+  const localRenown = Math.max(0, Number(context.localRenown ?? state.player?.metrics?.renown) || 0);
+  return lastAction?.actionId === "eat_meal" && lastAction.villageId === villageId && localRenown >= 10;
+}
+
+function socialCandidateView(state, candidate, personality) {
+  const relation = npcRelation(state, candidate.id);
+  const discovered = new Set(relation.discovered);
+  return {
+    interactions: relation.interactions,
+    firstImpressionBonus: relation.firstImpressionBonus,
+    canInvite: relation.firstImpressionBonus,
+    personality: discovered.has("personality") ? { id: personality.id, name: personality.name } : null,
+    specialtyKnown: discovered.has("specialty"),
+    levelKnown: discovered.has("level"),
+    knownAbilities: Object.fromEntries(Object.entries(candidate.abilities ?? {}).filter(([abilityId]) => discovered.has(`ability:${abilityId}`))),
+    discoveryCount: discovered.size,
+    lastResult: relation.lastResult,
+  };
+}
+
+export function getTavernCandidates(state, context) {
+  const { region } = context;
   const seed = `${state.generatedWorld?.seed ?? "world"}:${region.id}`;
-  return Array.from({ length: 4 }, (_, index) => {
+  const villageId = context.villageId ?? getRegionAdventureSites(state, context).village.id;
+  const diningInvitationIndex = isDiningWithLocalRenown(state, context, villageId)
+    ? hashString(`${seed}:dining-invitation:${state.player.villageLife.lastAction.id}`) % 4
+    : -1;
+  const genericCandidates = Array.from({ length: 4 }, (_, index) => {
     const value = hashString(`${seed}:party:${index}`);
     const role = PARTY_ROLES[(value + index) % PARTY_ROLES.length];
     const name = PARTY_NAMES[(value >>> 3) % PARTY_NAMES.length];
     const id = `party:${region.id}:${index}`;
-    return {
+    const candidate = {
       id,
       name,
+      portraitImage: PARTY_PORTRAITS[name],
       roleId: role.id,
       role: role.name,
       specialty: role.specialty,
+      abilities: normalizeAbilityScores(null, { seed: id, role: `${role.name} ${role.specialty}` }),
       level: 1 + value % 4,
-      incoming: index < 2,
+      incoming: index === diningInvitationIndex,
+      unique: false,
       joined: (state.adventure?.party?.some((member) => member.id === id)
         || state.player?.villageLife?.party?.some((member) => member.id === id)) ?? false,
     };
+    return { ...candidate, social: socialCandidateView(state, candidate, candidatePersonality(id)) };
   });
+  const uniqueCandidates = Object.values(UNIQUE_CHARACTERS)
+    .filter((character) => character.adventure?.memberId)
+    .map((character) => ({
+    id: character.adventure.memberId,
+    characterId: character.id,
+    uniqueCharacterId: character.id,
+    unique: true,
+    name: character.name,
+    portraitImage: character.portraitImage,
+    roleId: character.adventure.roleId,
+    role: character.adventure.role,
+    specialty: character.adventure.specialty,
+    abilities: { ...character.abilities },
+    level: character.adventure.level,
+    incoming: false,
+    passiveId: character.adventure.passiveId,
+    passiveName: character.adventure.passiveName,
+    passiveDescription: character.adventure.passiveDescription,
+    recruitmentLine: character.adventure.recruitmentLine,
+    playerReply: character.adventure.playerReply,
+    transparent: character.adventure.transparent === true,
+    joined: (state.adventure?.party?.some((member) => member.id === character.adventure.memberId)
+      || state.player?.villageLife?.party?.some((member) => member.id === character.adventure.memberId)) ?? false,
+    })).map((candidate) => ({ ...candidate, social: socialCandidateView(state, candidate, candidatePersonality(candidate.id)) }));
+  return [...genericCandidates, ...uniqueCandidates];
+}
+
+function clampProbability(value) {
+  return Math.min(0.95, Math.max(0.05, value));
+}
+
+function firstImpressionChance(charisma, personality, approachId) {
+  const affinity = approachId === personality.favoredApproachId ? 0.28 : approachId === personality.dislikedApproachId ? -0.22 : 0;
+  return clampProbability(0.32 + (Number(charisma) - 10) * 0.035 + affinity);
+}
+
+function insightChance(wisdom, interactions) {
+  return clampProbability(0.26 + (Number(wisdom) - 10) * 0.04 + Math.min(0.28, interactions * 0.07));
+}
+
+export function interactWithNpcCandidate(state, candidateId, approachId, context, options = {}) {
+  if (!NPC_GREETING_APPROACHES.some((approach) => approach.id === approachId)) throw new RangeError("選べない振る舞いです。");
+  const next = preparedClone(state);
+  const candidate = getTavernCandidates(next, context).find((entry) => entry.id === candidateId);
+  if (!candidate || candidate.joined) throw new RangeError("その人物とは今ここで会話できません。");
+  const personality = candidatePersonality(candidate.id);
+  const relation = next.adventure.npcRelations[candidate.id] ??= {
+    interactions: 0, firstApproachId: null, firstImpressionBonus: false, discovered: [], lastResult: null,
+  };
+  const firstMeeting = relation.interactions === 0;
+  const charisma = next.player?.abilities?.charisma ?? 10;
+  const wisdom = next.player?.abilities?.wisdom ?? 10;
+  const impressionChance = firstMeeting ? firstImpressionChance(charisma, personality, approachId) : 0;
+  const impressionRoll = Number.isFinite(options.firstImpressionRoll) ? options.firstImpressionRoll : Number.isFinite(options.roll) ? options.roll : Math.random();
+  const gainedFirstImpressionBonus = firstMeeting && impressionRoll < impressionChance;
+  relation.interactions += 1;
+  relation.firstApproachId ??= approachId;
+  relation.firstImpressionBonus ||= gainedFirstImpressionBonus;
+
+  const discoveryChance = insightChance(wisdom, relation.interactions);
+  const insightRoll = Number.isFinite(options.insightRoll) ? options.insightRoll : Number.isFinite(options.roll) ? options.roll : Math.random();
+  const discoveryId = NPC_DISCOVERY_ORDER.find((entry) => !relation.discovered.includes(entry)) ?? null;
+  const discovered = Boolean(discoveryId && insightRoll < discoveryChance);
+  if (discovered) relation.discovered.push(discoveryId);
+  const discoveryLabel = discoveryId === "personality" ? `性格「${personality.name}」`
+    : discoveryId === "specialty" ? `得意分野「${candidate.specialty}」`
+      : discoveryId === "level" ? `力量 Lv.${candidate.level}`
+        : discoveryId?.startsWith("ability:") ? `能力値 ${ABILITY_LABELS[discoveryId.slice(8)]} ${candidate.abilities[discoveryId.slice(8)]}` : null;
+  relation.lastResult = {
+    approachId,
+    firstMeeting,
+    gainedFirstImpressionBonus,
+    impressionChance,
+    discoveryChance,
+    discovered: discovered ? discoveryId : null,
+    discoveryLabel: discovered ? discoveryLabel : null,
+    reaction: personality.reactions[approachId],
+    venue: options.venue === "guild" ? "guild" : "tavern",
+  };
+  return next;
 }
 
 function recruitCandidate(state, candidateId, context, expectedIncoming) {
@@ -601,9 +923,38 @@ function recruitCandidate(state, candidateId, context, expectedIncoming) {
   const candidate = getTavernCandidates(next, context).find((entry) => entry.id === candidateId);
   if (!candidate || candidate.incoming !== expectedIncoming) throw new RangeError("その冒険者は今、酒場にいません。");
   if (candidate.joined) throw new Error("すでにパーティーへ参加しています。");
-  next.adventure.party.push({ ...candidate, joinedTurn: next.turn ?? 0, source: expectedIncoming ? "invitation" : "player-invite" });
+  if (!expectedIncoming && !candidate.social.firstImpressionBonus) throw new Error("初対面で好印象を得るまで、確実な勧誘はできません。");
+  const source = candidate.unique ? "unique-recruit" : expectedIncoming ? "invitation" : "player-invite";
+  next.adventure.party.push({ ...candidate, joinedTurn: next.turn ?? 0, source });
   if (Array.isArray(villageParty)) {
-    villageParty.push({ id: candidate.id, name: candidate.name, level: candidate.level, alive: true, active: true, role: candidate.role });
+    villageParty.push({
+      id: candidate.id,
+      name: candidate.name,
+      level: candidate.level,
+      alive: true,
+      active: true,
+      role: candidate.role,
+      roleId: candidate.roleId,
+      specialty: candidate.specialty,
+      abilities: { ...candidate.abilities },
+      portraitImage: candidate.portraitImage ?? null,
+      unique: candidate.unique,
+      uniqueCharacterId: candidate.uniqueCharacterId ?? null,
+      passiveId: candidate.passiveId ?? null,
+      passiveName: candidate.passiveName ?? null,
+      transparent: candidate.transparent === true,
+    });
+  }
+  if (candidate.unique && next.player) {
+    next.player.history ??= [];
+    next.player.history.unshift({
+      turn: next.turn ?? 0,
+      year: next.year,
+      month: next.month,
+      title: `固有人物 ${candidate.name}が加入`,
+      detail: `${candidate.role}として探索隊へ参加。固有能力「${candidate.passiveName}」が有効になった。`,
+    });
+    next.player.history = next.player.history.slice(0, 60);
   }
   return next;
 }
@@ -638,9 +989,9 @@ const DUNGEON_BATTLE_PROFILES = Object.freeze({
   forest: Object.freeze({
     baseTerrain: "forest",
     enemyUnits: Object.freeze([
-      Object.freeze({ suffix: "stalker", name: "茨潜み群", classId: "infantry", count: 52, y: 4 }),
-      Object.freeze({ suffix: "spore", name: "胞子射手群", classId: "archer", count: 38, y: 2 }),
-      Object.freeze({ suffix: "runner", name: "根走り群", classId: "light_cavalry", count: 42, y: 7 }),
+      Object.freeze({ suffix: "stalker", name: "ゴブリン槍兵群", classId: "infantry", count: 52, y: 4 }),
+      Object.freeze({ suffix: "spore", name: "ゴブリン弓兵群", classId: "archer", count: 38, y: 2 }),
+      Object.freeze({ suffix: "runner", name: "ゴブリン狼騎兵群", classId: "light_cavalry", count: 42, y: 7 }),
     ]),
   }),
   spring: Object.freeze({
@@ -702,22 +1053,25 @@ export function getDungeonTacticalRoster(state) {
     斥候: { leadership: 3, war: 8, intelligence: 12, charisma: 2 },
     治療師: { leadership: 5, war: 1, intelligence: 16, charisma: 8 },
     術師: { leadership: 2, war: 5, intelligence: 18, charisma: 4 },
+    学者: { leadership: 2, war: 0, intelligence: 20, charisma: 5 },
   };
   const companions = (player?.villageLife?.party ?? [])
     .filter((member) => member.active !== false && member.alive !== false)
     .map((member) => {
       const level = Math.max(1, member.level ?? 1);
+      const uniqueCharacter = member.uniqueCharacterId ? getUniqueCharacter(member.uniqueCharacterId) : null;
       const bonus = roleBonuses[member.role] ?? { leadership: 3, war: 6, intelligence: 6, charisma: 3 };
       const base = 43 + level * 4;
       return {
         id: member.id,
         name: member.name,
         portrait: member.name.slice(0, 1),
+        portraitImage: member.portraitImage ?? uniqueCharacter?.portraitImage ?? null,
         role: member.role ?? "冒険者",
-        rank: `Lv.${level}`,
-        policy: `${member.role ?? "冒険者"}として探索隊を支援`,
-        traits: [member.role ?? "冒険者"],
-        stats: {
+        rank: uniqueCharacter ? `固有人物 · Lv.${level}` : `Lv.${level}`,
+        policy: uniqueCharacter?.policy ?? `${member.role ?? "冒険者"}として探索隊を支援`,
+        traits: uniqueCharacter?.traits ?? [member.role ?? "冒険者"],
+        stats: uniqueCharacter ? { ...uniqueCharacter.stats } : {
           leadership: Math.min(86, base + bonus.leadership),
           war: Math.min(90, base + bonus.war),
           intelligence: Math.min(92, base + bonus.intelligence),
@@ -739,6 +1093,9 @@ export function createDungeonTacticalBattle(state) {
   const map = prepareDungeonBattleTerrain(createBattleMap({ width: 14, height: 10, terrainType: profile.baseTerrain }), run.dungeonType);
   const playerCommanderId = `cmd:${run.id}:player`;
   const enemyCommanderId = `cmd:${run.id}:enemy`;
+  const starRingMage = Object.values(UNIQUE_CHARACTERS).find((character) => (
+    character.adventure?.passiveId === "astral_calibration" && hasActiveUniqueCompanion(state, character.id)
+  ));
   const commanders = [
     createCommander({ id: playerCommanderId, name: state.player?.name ?? "探索隊長", side: "player", position: { x: 2, y: 5 }, leadership: 62, tactics: 62, bravery: 68, traits: ["探索隊"] }),
     createCommander({ id: enemyCommanderId, name: run.combat.enemyName, side: "enemy", position: { x: 12, y: 5 }, leadership: 60, tactics: 58, bravery: 78, commandRange: 8, traits: [DUNGEON_ARCHETYPES[run.dungeonType].name, "ダンジョンの主"] }),
@@ -746,7 +1103,27 @@ export function createDungeonTacticalBattle(state) {
   const playerUnits = [
     createCombatUnit({ id: `unit:${run.id}:vanguard`, name: "探索隊前衛班", side: "player", unitClassId: "infantry", commanderId: playerCommanderId, soldierCount: 54, position: { x: 4, y: 4 }, order: UNIT_ORDERS.ADVANCE }),
     createCombatUnit({ id: `unit:${run.id}:ranged`, name: "探索隊射撃班", side: "player", unitClassId: "archer", commanderId: playerCommanderId, soldierCount: 42, position: { x: 3, y: 2 }, order: UNIT_ORDERS.ATTACK }),
-    createCombatUnit({ id: `unit:${run.id}:support`, name: "探索隊支援班", side: "player", unitClassId: "mage", commanderId: playerCommanderId, soldierCount: 38, position: { x: 3, y: 7 }, order: UNIT_ORDERS.ATTACK }),
+    createCombatUnit({
+      id: `unit:${run.id}:support`,
+      name: starRingMage ? `${starRingMage.name}の星環術班` : "探索隊支援班",
+      iconUrl: starRingMage?.portraitImage ?? null,
+      side: "player",
+      unitClassId: "mage",
+      commanderId: playerCommanderId,
+      soldierCount: starRingMage ? 44 : 38,
+      experience: starRingMage ? 62 : 35,
+      position: { x: 3, y: 7 },
+      order: UNIT_ORDERS.ATTACK,
+      activeSkill: starRingMage ? "lightning" : "fire",
+      tags: starRingMage ? ["UNIQUE_SUPPORT", "ASTRAL_CALIBRATION"] : [],
+      statusEffects: starRingMage ? [{
+        id: "astral_calibration",
+        name: starRingMage.adventure.passiveName,
+        duration: 99,
+        modifiers: { magicPower: 1.22 },
+        sourceCharacterId: starRingMage.id,
+      }] : [],
+    }),
   ];
   const enemyUnits = profile.enemyUnits.map((definition, index) => createCombatUnit({
     id: `unit:${run.id}:enemy:${definition.suffix}`,
@@ -797,6 +1174,7 @@ export function startDungeonRun(state, dungeon, region) {
     playerHp,
     playerMaxHp,
     skippedBattles: 0,
+    completedContractIds: [],
     loot: [],
     combat: null,
     logSerial: 1,
@@ -810,23 +1188,16 @@ function finishRun(next, run) {
   const cleared = new Set(next.adventure.completedDungeonIds);
   cleared.add(run.dungeonId);
   next.adventure.completedDungeonIds = [...cleared];
-  const completed = next.adventure.activeContracts.filter((contract) => contract.dungeonId === run.dungeonId);
-  next.adventure.activeContracts = next.adventure.activeContracts.filter((contract) => contract.dungeonId !== run.dungeonId);
+  const completed = next.adventure.activeContracts.filter((contract) => (
+    contract.objective?.type === "clear_dungeon" && contract.objective.targetId === run.dungeonId
+  ));
   completed.forEach((contract) => {
-    const completedContract = { ...contract, status: "completed", completedTurn: next.turn ?? 0 };
-    next.adventure.completedContracts.unshift(completedContract);
+    markGuildContractCompleted(next, contract, run);
+    run.completedContractIds ??= [];
+    if (!run.completedContractIds.includes(contract.id)) run.completedContractIds.push(contract.id);
   });
   const villageLife = next.player?.villageLife;
   if (villageLife) {
-    const completedQuest = villageLife.quests?.find((quest) => quest.source === "guild" && ["accepted", "active"].includes(quest.status) && (!quest.dungeonId || quest.dungeonId === run.dungeonId));
-    if (completedQuest) {
-      completedQuest.status = "completed";
-      completedQuest.completedVillageId = completedQuest.acceptedVillageId;
-      if (completedQuest.routeEvent === "chance_rescue" && (villageLife.heroicRescues ?? 0) < 1) {
-        villageLife.heroicRescues = 1;
-        runLog(run, "途中で救った遭難者は領主の使者だった。命の恩人として名を尋ねられた。", "success");
-      }
-    }
     villageLife.fatigue = Math.min(100, (villageLife.fatigue ?? 0) + 12);
     villageLife.supplies.food = Math.max(0, (villageLife.supplies?.food ?? 0) - 1);
     villageLife.supplies.torches = Math.max(0, (villageLife.supplies?.torches ?? 0) - 1);
@@ -839,10 +1210,24 @@ function finishRun(next, run) {
     turn: next.turn ?? 0,
     skippedBattles: run.skippedBattles,
     loot: run.loot.map((item) => ({ ...item })),
-    completedContracts: completed.map((contract) => contract.id),
+    completedContracts: [...new Set(run.completedContractIds ?? [])],
   });
   next.adventure.dungeonHistory = next.adventure.dungeonHistory.slice(0, 40);
-  runLog(run, completed.length ? `探索完了。依頼${completed.length}件も同時に達成した。` : "最奥へ到達し、探索を完了した。", "success");
+  runLog(run, (run.completedContractIds?.length ?? 0) > 0 ? `探索完了。依頼${run.completedContractIds.length}件も達成した。` : "最奥へ到達し、探索を完了した。", "success");
+}
+
+function completeCombatObjectives(next, run) {
+  const completed = next.adventure.activeContracts.filter((contract) => (
+    contract.objective?.type === "defeat_enemy"
+    && contract.objective.targetId === run.combat?.enemyId
+    && (!contract.regionId || contract.regionId === run.regionId)
+    && (!contract.dungeonId || !run.dungeonId || contract.dungeonId === run.dungeonId)
+  ));
+  completed.forEach((contract) => {
+    markGuildContractCompleted(next, contract, run);
+    run.completedContractIds ??= [];
+    if (!run.completedContractIds.includes(contract.id)) run.completedContractIds.push(contract.id);
+  });
 }
 
 export function advanceDungeonRun(state) {
@@ -852,9 +1237,10 @@ export function advanceDungeonRun(state) {
   const archetype = DUNGEON_ARCHETYPES[run.dungeonType];
   if (run.step === 0) {
     const item = archetype.loot[0];
-    grantLoot(next, run, item);
+    const recovered = grantLoot(next, run, item);
     run.step = 1;
-    runLog(run, `${item.name}を発見。戦利品へ自動収納した。`, "loot");
+    const appraisalNote = recovered.provenanceAppraiserId ? ` ノエラの「来歴封緘」で同系資料を${recovered.quantity}点確保した。` : "";
+    runLog(run, `${item.name}を発見。戦利品へ自動収納した。${appraisalNote}`, "loot");
   } else if (run.step === 1) {
     const enemy = archetype.enemy;
     run.step = 2;
@@ -873,9 +1259,10 @@ export function advanceDungeonRun(state) {
     runLog(run, `${enemy.name}が道を塞いだ。戦闘システムを起動する。`, "danger");
   } else {
     const item = archetype.loot[1];
-    grantLoot(next, run, item);
+    const recovered = grantLoot(next, run, item);
     run.step = 3;
-    runLog(run, `${item.name}を回収し、帰還経路を確保した。`, "loot");
+    const appraisalNote = recovered.provenanceAppraiserId ? ` ノエラの「来歴封緘」で同系資料を${recovered.quantity}点確保した。` : "";
+    runLog(run, `${item.name}を回収し、帰還経路を確保した。${appraisalNote}`, "loot");
     finishRun(next, run);
   }
   return next;
@@ -899,6 +1286,7 @@ export function resolveDungeonTacticalBattle(state, battleResult) {
   if (battleResult.winner === "player") {
     run.combat.outcome = "victory";
     grantBattleTrophy(next, run);
+    completeCombatObjectives(next, run);
     run.phase = run.mode === "personal-map" ? "complete" : "exploring";
     runLog(run, run.mode === "personal-map"
       ? `${run.combat.enemyName}を退けた。周辺の安全を確保し、個人マップへ戻れる。`
@@ -932,6 +1320,7 @@ export function skipDungeonBattle(state) {
   run.combat.outcome = "skipped";
   run.skippedBattles += 1;
   grantBattleTrophy(next, run);
+  completeCombatObjectives(next, run);
   run.phase = run.mode === "personal-map" ? "complete" : "exploring";
   runLog(run, run.mode === "personal-map"
     ? `${run.combat.enemyName}との戦闘を自動解決した。戦利品を回収し、個人マップへ戻れる。`

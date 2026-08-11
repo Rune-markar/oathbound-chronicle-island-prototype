@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#172224" />
+    <title>現状台帳 — 誓界記</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='8' fill='%23172224'/%3E%3Ctext x='32' y='44' text-anchor='middle' font-size='34' fill='%23ead28d'%3E録%3C/text%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="./project-status.css" />
+  </head>
+  <body>
+    <header class="ledger-header">
+      <a href="./index.html" class="back-link">← ゲーム開始画面</a>
+      <div><small>PROJECT STATUS LEDGER / VER2</small><h1>現状台帳</h1><p>実装状況、未接続、計画、矛盾候補を一次出典まで追跡する。</p></div>
+      <dl id="auditSummary"></dl>
+    </header>
+    <main>
+      <section class="ledger-policy" aria-labelledby="policyTitle"><div><small>MAINTENANCE CONTRACT</small><h2 id="policyTitle">仕様変更と同時に更新する正本</h2></div><p id="maintenanceRule"></p></section>
+      <section class="ledger-controls" aria-label="台帳の絞り込み">
+        <div id="categoryFilters" role="group" aria-label="分類"></div>
+        <label><span>検索</span><input id="ledgerSearch" type="search" placeholder="機能・領域・出典を検索" autocomplete="off" /></label>
+      </section>
+      <section class="ledger-overview" id="ledgerOverview" aria-label="分類集計"></section>
+      <section class="ledger-results"><header><div><small>CURRENT FINDINGS</small><h2>監査項目</h2></div><b id="resultCount"></b></header><div id="ledgerEntries"></div></section>
+    </main>
+    <footer><span>LAST AUDIT <b id="lastAudit"></b></span><a href="./PROJECT_STATUS.md">更新規約を開く</a></footer>
+    <script type="module" src="./src/project-status.js"></script>
+  </body>
+</html>

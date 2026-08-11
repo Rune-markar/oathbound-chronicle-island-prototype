@@ -9,6 +9,7 @@ import {
   PEOPLE_REPRESENTATIVES,
   SETTING_NATIONS,
   getDiplomaticDelegate,
+  getEnemyCodexEntries,
   getExtremeCreature,
   getNationRelations,
   getNationsForPeople,
@@ -83,6 +84,15 @@ test("リヴァイアサンを種族と分離した超規格外生物として�
   assert.equal(leviathan.signs.length, 3);
   assert.equal(leviathan.strategicEffects.length, 3);
   assert.match(leviathan.doctrine, /交戦・捕獲・誘導を禁ずる/);
+  assert.equal(leviathan.image, "./assets/generated/enemy-leviathan.png");
+  assert.ok(existsSync(new URL(`../${leviathan.image.slice(2)}`, import.meta.url)));
+  assert.equal(leviathan.enemyCodex.category, "敵性存在 / 移動災害");
+  assert.equal(leviathan.enemyCodex.battleStatus, "非戦闘対象");
+  assert.match(leviathan.enemyCodex.encounterRule, /通常戦術戦闘には出現しない/);
+  assert.equal(leviathan.enemyCodex.knownCapabilities.length, 3);
+  assert.equal(leviathan.enemyCodex.unknowns.length, 3);
+  assert.equal(leviathan.enemyCodex.supplementalNotes.length, 3);
+  assert.deepEqual(getEnemyCodexEntries().map((entry) => entry.id), ["leviathan"]);
   assert.equal(PEOPLES.leviathan, undefined);
   assert.equal(getExtremeCreature("unknown"), null);
 });

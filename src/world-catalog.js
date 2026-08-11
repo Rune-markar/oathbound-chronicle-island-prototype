@@ -24,6 +24,7 @@ export const EXTREME_CREATURES = Object.freeze({
   leviathan: Object.freeze({
     id: "leviathan",
     name: "リヴァイアサン",
+    image: "./assets/generated/enemy-leviathan.png",
     epithet: "黒潮回廊を渡る海の境界災害",
     classification: "超規格外生物",
     sourceKind: "追加世界設定",
@@ -45,12 +46,41 @@ export const EXTREME_CREATURES = Object.freeze({
       "沿岸国は討伐軍ではなく観測所・避難港・共同警報網へ予算を割く",
     ]),
     doctrine: "交戦・捕獲・誘導を禁ずる。観測して退避し、進路上の港と艦隊を空にすることだけが現実的な対処とされる。",
+    enemyCodex: Object.freeze({
+      category: "敵性存在 / 移動災害",
+      dangerRank: "EX（大陸級海上災害）",
+      battleStatus: "非戦闘対象",
+      hostility: "捕食・領土的敵意は未確認。ただし接触と進路干渉は致命的",
+      affiliation: "なし（単独個体）",
+      intelligence: "不明。回遊と摂餌以外の意思疎通行動は未確認",
+      encounterRule: "個人探索・ダンジョン・通常戦術戦闘には出現しない。世界規模の回遊災害としてのみ発生",
+      rewards: "なし。遺物・素材を含め、接近・採取・回収を禁止",
+      knownCapabilities: Object.freeze([
+        "深海の熱脈・鉱物脈・高密度魔力脈を追跡して数十年周期で回遊する",
+        "浮上前から方位磁針・魔力計を偏向させ、長周期波と海面発光を引き起こす",
+        "攻撃行動を取らずとも、進路上の艦隊・港湾・沿岸地形を規模だけで破壊する",
+      ]),
+      unknowns: Object.freeze([
+        "全身形状・正確な全長・寿命",
+        "知性、繁殖個体の有無、同種の総数",
+        "負傷可能性と弱点。調査目的の交戦そのものが禁止されている",
+      ]),
+      supplementalNotes: Object.freeze([
+        "浮上した背部約410mのみ観測済みで、全身を目視して生還した記録はない",
+        "船や都市を獲物として狙った確証はなく、敵性判定は意図ではなく被害規模に基づく",
+        "沿岸各国の標準対応は討伐軍編成ではなく、観測所・避難港・共同警報網の整備",
+      ]),
+    }),
     location: Object.freeze({ x: 680, y: 660, label: "黒潮回廊・現在推定域" }),
   }),
 });
 
 export function getExtremeCreature(creatureId) {
   return EXTREME_CREATURES[creatureId] ?? null;
+}
+
+export function getEnemyCodexEntries() {
+  return Object.values(EXTREME_CREATURES).filter((creature) => creature.enemyCodex);
 }
 
 export const NOTION_OTHER_RACE_IDS = Object.freeze([

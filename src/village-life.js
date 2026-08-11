@@ -1,7 +1,9 @@
 import {
+  REGIONAL_REPUTATION_GAINS,
   normalizeRegionalReputationState,
   recordRegionalAchievement,
 } from "./regional-reputation.js";
+import { normalizeAbilityScores } from "./character-abilities.js";
 
 const clone = (value) => structuredClone(value);
 const clamp = (value, minimum, maximum) => Math.min(maximum, Math.max(minimum, value));
@@ -15,7 +17,64 @@ const facility = (id, name, icon, summary, actions) => Object.freeze({
   actions: Object.freeze(actions),
 });
 
-export const VILLAGE_LIFE_SCHEMA_VERSION = 2;
+export const VILLAGE_LIFE_SCHEMA_VERSION = 3;
+
+const TOWN_SCALE_LEVELS = new Set(["town", "city", "bay_city"]);
+const VILLAGE_SHOP_ACTION_IDS = new Set(["buy_food", "buy_materials", "sell_item"]);
+const VILLAGE_UNAVAILABLE_ACTION_IDS = new Set([
+  "buy_weapon", "buy_armor", "buy_tools", "enhance_equipment", "repair_equipment", "appraise_equipment",
+]);
+
+export function getSettlementScale(place = {}) {
+  const level = String(place?.settlementLevel ?? place?.level ?? place?.type ?? "village");
+  return TOWN_SCALE_LEVELS.has(level) ? "town" : "village";
+}
+
+export function getSettlementMeritGain(baseMerit, place = {}, baseRenown = 0) {
+  const scale = getSettlementScale(place);
+  const base = Math.max(0, Number(baseMerit) || 0);
+  const fame = Math.max(0, Number(baseRenown) || 0);
+  const factor = scale === "village" ? 1 : Math.min(1, 0.5 + fame / 200);
+  return {
+    scale,
+    baseMerit: base,
+    baseRenown: fame,
+    factor,
+    merit: Math.round(base * factor),
+  };
+}
+
+export const GUILD_STANDING_TIERS = Object.freeze([
+  Object.freeze({ id: "newcomer", name: "新顔", minimumMerit: 0, discountRate: 0, greeting: "まだ見ない顔だね。まずは仕事ぶりを見せてもらおう。" }),
+  Object.freeze({ id: "familiar", name: "顔なじみ", minimumMerit: 10, discountRate: 0.05, greeting: "あんたの働きは聞いているよ。少しなら勉強しよう。" }),
+  Object.freeze({ id: "trusted", name: "信頼される冒険者", minimumMerit: 30, discountRate: 0.1, greeting: "また力を貸してくれるのか。村の者として迎えるよ。" }),
+  Object.freeze({ id: "benefactor", name: "村の功労者", minimumMerit: 60, discountRate: 0.15, greeting: "あなたには何度も救われた。できる限りの支度を整えよう。" }),
+  Object.freeze({ id: "hero", name: "地方の英雄", minimumMerit: 100, discountRate: 0.2, greeting: "英雄殿がお戻りだ。皆、最高の品と敬意をもって迎えよう。" }),
+]);
+
+const MERIT_DISCOUNT_ACTIONS = new Set([
+  "restore_hp_mp", "recover_status", "rest", "buy_weapon", "buy_armor", "buy_tools", "buy_food",
+  "enhance_equipment", "repair_equipment", "appraise_equipment", "check_dungeon", "restock_supplies",
+]);
+const MERCHANT_PASSIVE_ID = "road_market_ledger";
+const MERCHANT_PURCHASE_DISCOUNT_RATE = 0.12;
+const MERCHANT_SALE_GAIN = 1.2;
+const MERCHANT_DISCOUNT_ACTIONS = new Set([
+  "buy_weapon", "buy_armor", "buy_tools", "buy_food", "buy_materials", "restock_supplies",
+]);
+
+function hasActiveCompanionPassive(life, passiveId) {
+  return life.party.some((member) => member.active !== false && member.alive !== false && member.passiveId === passiveId);
+}
+
+export function getGuildStanding(stateOrLife) {
+  const life = stateOrLife?.player?.villageLife ?? stateOrLife?.villageLife ?? stateOrLife ?? {};
+  const merit = Math.max(0, Number(life.guildMerit) || 0);
+  const tierIndex = GUILD_STANDING_TIERS.findLastIndex((tier) => merit >= tier.minimumMerit);
+  const tier = GUILD_STANDING_TIERS[Math.max(0, tierIndex)];
+  const nextTier = GUILD_STANDING_TIERS[tierIndex + 1] ?? null;
+  return { ...tier, merit, discountPercent: Math.round(tier.discountRate * 100), nextTier };
+}
 
 export const SERVICE_ROUTE_DEFINITIONS = Object.freeze({
   guild_recognition: Object.freeze({
@@ -68,6 +127,7 @@ export const VILLAGE_FACILITIES = Object.freeze([
     action("buy_armor", "防具購入", "旅装用の防具を購入する。", 2),
     action("buy_tools", "道具購入", "薬草などの消耗品を購入する。", 1),
     action("buy_food", "食料購入", "保存食を購入する。", 1),
+    action("buy_materials", "一次素材購入", "薬草・原木・鉱石など、土地で採れる一次素材を購入する。", 1),
     action("sell_item", "アイテム売却", "所持品を一つ売却する。"),
   ]),
   facility("smithy", "鍛冶屋", "鍛", "装備の性能と状態を整える。", [
@@ -76,6 +136,7 @@ export const VILLAGE_FACILITIES = Object.freeze([
     action("appraise_equipment", "装備鑑定", "未鑑定の装備を調べる。", 1),
   ]),
   facility("tavern", "酒場", "酒", "仲間や土地の人々と縁を結ぶ。", [
+    action("eat_meal", "食事をする", "店内で食事を取り、周囲の客の話に耳を傾ける。", 1),
     action("recruit_companion", "仲間募集", "旅に同行する仲間を募集する。", 3),
     action("organize_party", "パーティ編成", "同行する仲間を切り替える。"),
     action("hear_rumor", "噂を聞く", "周辺の出来事や危険について聞く。"),
@@ -126,6 +187,22 @@ export const VILLAGE_FACILITIES = Object.freeze([
   ]),
 ]);
 
+export function getSettlementFacilities(place = {}) {
+  if (getSettlementScale(place) === "town") return VILLAGE_FACILITIES;
+  const guild = VILLAGE_FACILITIES.find((entry) => entry.id === "guild");
+  return VILLAGE_FACILITIES
+    .filter((entry) => !["smithy", "guild"].includes(entry.id))
+    .map((entry) => {
+      if (entry.id === "shop") return { ...entry, summary: "土地で採れた一次素材と食料を売買する。", actions: entry.actions.filter((item) => VILLAGE_SHOP_ACTION_IDS.has(item.id)) };
+      if (entry.id === "tavern") return {
+        ...entry,
+        summary: "仲間や土地の人々と縁を結び、村からの依頼を扱う。",
+        actions: [...entry.actions, ...guild.actions],
+      };
+      return entry;
+    });
+}
+
 const ACTION_INDEX = new Map(VILLAGE_FACILITIES.flatMap((entry) => (
   entry.actions.map((item) => [item.id, Object.freeze({ ...item, facilityId: entry.id, facilityName: entry.name })])
 )));
@@ -165,6 +242,7 @@ function defaultVillageLife() {
     guildMerit: 0,
     guildRequestsAccepted: 0,
     guildRequestsReported: 0,
+    guildRequestsCompleted: 0,
     heroicRescues: 0,
     tournamentWins: 0,
     recommendations: 0,
@@ -258,16 +336,34 @@ function effectiveCost(life, definition) {
   return definition.cost;
 }
 
-export function getVillageActionAvailability(state, actionId, villageId = null) {
+export function getVillageActionAvailability(state, actionId, villageInput = null) {
   const definition = getVillageAction(actionId);
   if (!definition) return { allowed: false, reason: "不明な村行動です", cost: 0 };
   if (!state?.player) return { allowed: false, reason: "操作する人物がいません", cost: definition.cost };
+  const place = typeof villageInput === "string" ? { id: villageInput } : (villageInput ?? {});
+  const villageId = place.id ?? null;
   const life = createVillageLifeState(state.player.villageLife);
+  if (getSettlementScale(place) === "village" && VILLAGE_UNAVAILABLE_ACTION_IDS.has(actionId)) {
+    return { allowed: false, reason: "この設備と加工品は町規模の集落でのみ利用できます", cost: definition.cost };
+  }
   const reason = requirementReason(life, actionId, villageId);
-  const cost = effectiveCost(life, definition);
-  if (reason) return { allowed: false, reason, cost };
-  if ((state.player.metrics?.wealth ?? 0) < cost) return { allowed: false, reason: `財産が${cost}必要です`, cost };
-  return { allowed: true, reason: null, cost };
+  const baseCost = effectiveCost(life, definition);
+  const standing = getGuildStanding(life);
+  const standingDiscountRate = baseCost > 0 && MERIT_DISCOUNT_ACTIONS.has(actionId) ? standing.discountRate : 0;
+  const companionDiscountRate = baseCost > 0
+    && MERCHANT_DISCOUNT_ACTIONS.has(actionId)
+    && hasActiveCompanionPassive(life, MERCHANT_PASSIVE_ID)
+    ? MERCHANT_PURCHASE_DISCOUNT_RATE
+    : 0;
+  const discountRate = Math.min(0.3, standingDiscountRate + companionDiscountRate);
+  const cost = Number((baseCost * (1 - discountRate)).toFixed(1));
+  const discountAmount = Number((baseCost - cost).toFixed(1));
+  const discount = { discountRate, standingDiscountRate, companionDiscountRate, discountAmount };
+  if (reason) return { allowed: false, reason, cost, baseCost, ...discount, standing };
+  if ((state.player.metrics?.wealth ?? 0) < cost) {
+    return { allowed: false, reason: `財産が${cost}必要です`, cost, baseCost, ...discount, standing };
+  }
+  return { allowed: true, reason: null, cost, baseCost, ...discount, standing };
 }
 
 function addInventory(life, item) {
@@ -392,7 +488,7 @@ export function performVillageAction(state, villageInput, actionId) {
     ? { id: villageInput, name: villageInput }
     : { ...villageInput, id: villageInput?.id, name: villageInput?.name };
   if (!village.id || !village.name) throw new Error("行動する村を指定してください");
-  const access = getVillageActionAvailability(state, actionId, village.id);
+  const access = getVillageActionAvailability(state, actionId, village);
   if (!access.allowed) throw new Error(access.reason);
 
   const next = clone(state);
@@ -416,6 +512,10 @@ export function performVillageAction(state, villageInput, actionId) {
       message = "短い休息を取り、疲労を回復した。月は進んでいない。";
       break;
     case "save": message = "現在の人物・世界・村の状態を記録した。"; break;
+    case "eat_meal":
+      life.hp = Math.min(life.maxHp, life.hp + 8);
+      message = "酒場で温かい食事を取り、周囲の客と同じ卓を囲んだ。土地で名が知られていれば、同行の誘いを受けることがある。";
+      break;
     case "buy_weapon":
       addInventory(life, { id: "village-steel-sword", name: "村鍛冶の鋼剣", category: "equipment", slot: "weapon", enhancement: 0, durability: 100, identified: true, quantity: 1 });
       message = "村鍛冶の鋼剣を購入した。";
@@ -426,10 +526,13 @@ export function performVillageAction(state, villageInput, actionId) {
       break;
     case "buy_tools": addInventory(life, { id: "healing-herb", name: "薬草", category: "item", quantity: 2 }); message = "薬草を2個購入した。"; break;
     case "buy_food": addInventory(life, { id: "travel-ration", name: "保存食", category: "food", quantity: 2 }); life.supplies.food += 2; message = "保存食を2日分購入した。"; break;
+    case "buy_materials": addInventory(life, { id: "local-raw-materials", name: "土地の一次素材", category: "material", quantity: 2 }); message = "薬草・原木・鉱石から選んだ一次素材を2個購入した。"; break;
     case "sell_item": {
       const sold = removeOneInventoryItem(life, 0);
-      player.metrics.wealth += 1;
-      message = `${sold.name}を売却し、財産を1得た。`;
+      const saleGain = hasActiveCompanionPassive(life, MERCHANT_PASSIVE_ID) ? MERCHANT_SALE_GAIN : 1;
+      player.metrics.wealth += saleGain;
+      message = `${sold.name}を売却し、財産を${saleGain}得た。`;
+      if (saleGain > 1) message += " カティアの「街道相場帳」が帰り荷まで含めた買い手を見つけた。";
       break;
     }
     case "enhance_equipment": life.equipment.weapon.enhancement = (life.equipment.weapon.enhancement ?? 0) + 1; message = `${life.equipment.weapon.name}を+${life.equipment.weapon.enhancement}へ強化した。`; break;
@@ -445,7 +548,8 @@ export function performVillageAction(state, villageInput, actionId) {
     }
     case "recruit_companion": {
       const name = COMPANION_NAMES[life.party.length] ?? `旅人${life.party.length + 1}`;
-      life.party.push({ id: `companion-${life.party.length + 1}`, name, level: 1, alive: true, active: life.party.every((member) => member.active !== true) });
+      const id = `companion-${life.party.length + 1}`;
+      life.party.push({ id, name, level: 1, alive: true, active: life.party.every((member) => member.active !== true), abilities: normalizeAbilityScores(null, { seed: id, role: "冒険者" }) });
       message = `${name}が仲間に加わった。`;
       break;
     }
@@ -482,7 +586,7 @@ export function performVillageAction(state, villageInput, actionId) {
         routeEvent: template.routeEvent ?? null,
         acceptedVillageId: village.id,
       });
-      message = `${template.title}を受注した。酒場で仲間を集め、探索準備を整えてから出発する。`;
+      message = `受付官マリエルが危険度・期限・達成証拠を読み上げ、${template.title}を受注票へ登録した。酒場で仲間を集め、探索準備を整えてから出発する。`;
       break;
     }
     case "complete_request": {
@@ -504,21 +608,26 @@ export function performVillageAction(state, villageInput, actionId) {
       const quest = life.quests.find((entry) => entry.source === "guild" && entry.status === "completed");
       quest.status = "reported";
       life.guildRequestsReported += 1;
-      life.guildMerit += quest.merit ?? 10;
+      const meritGain = getSettlementMeritGain(quest.merit ?? 10, village, player.metrics.renown);
+      life.guildMerit += meritGain.merit;
       player.progress.contracts = (player.progress.contracts ?? 0) + 1;
       player.metrics.martialMerit += 8;
-      recordRegionalAchievement(next, village, { label: quest.name, merit: quest.merit ?? 10, renown: 2 });
-      villageRelation(life, village.id, 3);
-      message = `${quest.name}を報告した。ギルド功績${quest.merit ?? 10}、武勲8を得て、この町を起点に功績が知られ始めた。`;
+      recordRegionalAchievement(next, village, { label: quest.name, merit: meritGain.merit, renown: REGIONAL_REPUTATION_GAINS.completedRequest });
+      villageRelation(life, village.id, meritGain.scale === "village" ? 3 : 1);
+      const standing = getGuildStanding(life);
+      const venue = meritGain.scale === "village" ? "酒場" : "ギルド";
+      const fameNote = meritGain.scale === "town" ? `（基本名声${meritGain.baseRenown}・町内係数${meritGain.factor.toFixed(2)}）` : "（村内係数1.00）";
+      message = `${quest.name}を${venue}の受付官マリエルへ報告した。功績${meritGain.merit}${fameNote}、武勲8、地方名声${REGIONAL_REPUTATION_GAINS.completedRequest}を得た。現在の扱いは「${standing.name}」となった。`;
       break;
     }
     case "receive_reward": {
       const quest = life.quests.find((entry) => entry.status === "reported");
       const reward = { wealth: 4, renown: 1, ...(quest.reward ?? {}) };
       quest.status = "rewarded";
+      life.guildRequestsCompleted += 1;
       player.metrics.wealth += reward.wealth;
       recordRegionalAchievement(next, village, { label: `${quest.name}の公式評価`, merit: 0, renown: reward.renown });
-      message = `${quest.name}の報酬として財産${reward.wealth}を得て、この町での評価が${reward.renown}高まった。`;
+      message = `受付官マリエルが${quest.name}の証拠と台帳を照合した。報酬として財産${reward.wealth}を得て、この町での評価が${reward.renown}高まった。`;
       break;
     }
     case "check_dungeon": {
@@ -544,13 +653,20 @@ export function performVillageAction(state, villageInput, actionId) {
     case "store_items": message = toggleStorage(life, ["item", "food", "supply"], "items"); break;
     case "store_equipment": message = toggleStorage(life, ["equipment"], "equipment"); break;
     case "manage_materials": message = toggleStorage(life, ["material"], "materials"); break;
-    case "talk_villagers": villageRelation(life, village.id, 1); message = "村人と話し、土地の暮らしを知った。"; break;
+    case "talk_villagers": {
+      villageRelation(life, village.id, 1);
+      const standing = getGuildStanding(life);
+      message = standing.id === "newcomer"
+        ? "村人と名乗り合い、土地の暮らしを教えてもらった。まだこちらの仕事ぶりを見定めている。"
+        : `${standing.greeting} 村人から土地の近況と感謝を聞いた。`;
+      break;
+    }
     case "gather_information": { const rumor = `${village.name}の水場と安全な街道を記録した。`; if (!life.rumors.includes(rumor)) life.rumors.push(rumor); message = rumor; break; }
-    case "trigger_event": villageRelation(life, village.id, 3); recordRegionalAchievement(next, village, { label: "荷車事故の救援", merit: 4, renown: 1 }); message = "荷車の事故を手伝い、この村での評判と関係が少し深まった。"; break;
+    case "trigger_event": villageRelation(life, village.id, 3); recordRegionalAchievement(next, village, { label: "荷車事故の救援", merit: 4, renown: REGIONAL_REPUTATION_GAINS.goodDeed }); message = `荷車の事故を手伝い、この村との関係と地方名声が${REGIONAL_REPUTATION_GAINS.goodDeed}高まった。`; break;
     case "find_sidequest": life.quests.push({ id: `${village.id}-side-${life.quests.length + 1}`, name: "村人の失くし物", source: "villager", status: "active" }); message = "村人の失くし物を探すサブクエストを受けた。"; break;
-    case "build_facility": villageProgress(life, village.id).buildings += 1; villageRelation(life, village.id, 4); recordRegionalAchievement(next, village, { label: "共同施設の建設支援", merit: 10, renown: 1 }); message = "不足していた共同施設の建設を支援し、この村で功績として記録された。"; break;
-    case "upgrade_facility": villageProgress(life, village.id).facilityLevel += 1; villageRelation(life, village.id, 3); recordRegionalAchievement(next, village, { label: "村の施設強化", merit: 8, renown: 1 }); message = `村の施設水準が${villageProgress(life, village.id).facilityLevel}になり、地域の功績として記録された。`; break;
-    case "invite_specialist": villageProgress(life, village.id).specialists += 1; villageRelation(life, village.id, 3); recordRegionalAchievement(next, village, { label: "商人・職人の誘致", merit: 8, renown: 1 }); message = "新しい商人・職人の定着を支援し、この村で功績として知られた。"; break;
+    case "build_facility": villageProgress(life, village.id).buildings += 1; villageRelation(life, village.id, 4); recordRegionalAchievement(next, village, { label: "共同施設の建設支援", merit: 10, renown: REGIONAL_REPUTATION_GAINS.goodDeed }); message = `不足していた共同施設の建設を支援し、地方名声が${REGIONAL_REPUTATION_GAINS.goodDeed}高まった。`; break;
+    case "upgrade_facility": villageProgress(life, village.id).facilityLevel += 1; villageRelation(life, village.id, 3); recordRegionalAchievement(next, village, { label: "村の施設強化", merit: 8, renown: REGIONAL_REPUTATION_GAINS.goodDeed }); message = `村の施設水準が${villageProgress(life, village.id).facilityLevel}になり、地方名声が${REGIONAL_REPUTATION_GAINS.goodDeed}高まった。`; break;
+    case "invite_specialist": villageProgress(life, village.id).specialists += 1; villageRelation(life, village.id, 3); recordRegionalAchievement(next, village, { label: "商人・職人の誘致", merit: 8, renown: REGIONAL_REPUTATION_GAINS.goodDeed }); message = `新しい商人・職人の定着を支援し、地方名声が${REGIONAL_REPUTATION_GAINS.goodDeed}高まった。`; break;
     case "change_equipment": {
       const index = firstInventoryIndex(life, ["equipment"]);
       const replacement = removeOneInventoryItem(life, index);
@@ -566,6 +682,8 @@ export function performVillageAction(state, villageInput, actionId) {
     default: break;
   }
 
+  if (access.standingDiscountRate > 0) message += ` ギルド功績「${access.standing.name}」の割引を受けた。`;
+  if (access.companionDiscountRate > 0) message += " カティアの「街道相場帳」により購入費が12%軽減された。";
   const unlockedRoutes = issueServiceInvitations(next, village);
   if (unlockedRoutes.length) message += ` ${unlockedRoutes.map((route) => `「${route.name}」`).join("・")}の士官経路が開いた。`;
   recordVillageAction(next, village, definition, message);

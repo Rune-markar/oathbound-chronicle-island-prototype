@@ -562,9 +562,10 @@ function worldObjectShape(type) {
   return `<path d="M-6 5V0l3-3 3 3v5ZM0 5V-2l3-3 3 3v7Z" fill="#e7d5a2" stroke="#32291f" stroke-width=".9"/><path d="M-4 5V2h2v3M2 5V1h2v4" fill="none" stroke="#8f5d3f" stroke-width=".8"/>`;
 }
 
-function worldObjectMarkers(world, nationMap, cellSize) {
+function worldObjectMarkers(world, nationMap, cellSize, visibleObjectIds = null) {
   const nationById = new Map(nationMap.nations.map((nation) => [nation.id, nation]));
-  const objects = Array.isArray(nationMap.objects) ? nationMap.objects : fallbackCapitalObjects(world, nationMap);
+  const objects = (Array.isArray(nationMap.objects) ? nationMap.objects : fallbackCapitalObjects(world, nationMap))
+    .filter((object) => !visibleObjectIds || visibleObjectIds.has(object.id));
   const groupIds = { village: "nationVillages", town: "nationTowns", city: "nationCities", fishing_port: "nationFishingPorts", port: "nationPorts", bay_city: "nationBayCities", fort: "nationForts", castle: "nationCapitals" };
   return ["village", "town", "city", "fishing_port", "port", "bay_city", "fort", "castle"].map((type) => {
     const markers = objects.filter((object) => object.type === type).map((object) => {
@@ -573,8 +574,11 @@ function worldObjectMarkers(world, nationMap, cellSize) {
       const nation = nationById.get(object.nationId);
       const x = (tile.x + 0.5) * cellSize;
       const y = (tile.y + 0.5) * cellSize;
-      const baseSize = type === "castle" ? 1.78 : ["city", "bay_city"].includes(type) ? 1.58 : type === "fort" ? 1.46 : ["town", "port"].includes(type) ? 1.22 : 1.02;
-      const scale = Math.max(0.68, cellSize * baseSize / 12);
+      // Markers must remain smaller than the generator's three-tile clearance.
+      // Keeping even capitals below 1.4x stops neighboring settlements from
+      // becoming an unreadable icon pile on the regional camera.
+      const baseSize = type === "castle" ? 1.38 : ["city", "bay_city"].includes(type) ? 1.22 : type === "fort" ? 1.08 : ["town", "port"].includes(type) ? 0.94 : 0.78;
+      const scale = Math.max(0.54, cellSize * baseSize / 12);
       return `<g class="world-object object-${type}${type === "castle" ? " nation-capital" : ""}" data-object-id="${escapeAttribute(object.id)}" data-object-type="${type}" transform="translate(${x.toFixed(2)} ${y.toFixed(2)}) scale(${scale.toFixed(3)})" filter="url(#markerShadow)"><title>${escapeAttribute(`${object.name} · ${nation?.name ?? "無主地"}`)}</title><rect x="-7" y="-7" width="14" height="14" rx="1.8" fill="${escapeAttribute(nation?.color ?? "#66777b")}" stroke="#fff0bd" stroke-width="1.05"/><rect x="-5.8" y="-5.8" width="11.6" height="11.6" rx="1" fill="#172629" fill-opacity=".3" stroke="#172326" stroke-width=".55"/>${worldObjectShape(type)}</g>`;
     }).join("");
     return `<g id="${groupIds[type]}" class="world-object-group is-${type}">${markers}</g>`;
@@ -589,6 +593,9 @@ export function renderTerrainSvg(world, options = {}) {
   const textureUrl = escapeAttribute(options.textureUrl ?? "./assets/generated/terrain-natural-texture.png");
   const showGrid = options.showGrid ?? true;
   const nationMap = options.nationMap ?? null;
+  const visibleObjectIds = options.visibleObjectIds instanceof Set
+    ? options.visibleObjectIds
+    : Array.isArray(options.visibleObjectIds) ? new Set(options.visibleObjectIds) : null;
   if (nationMap && (!Array.isArray(nationMap.nations) || nationMap.tileNationIds?.length !== world.tiles.length)) {
     throw new TypeError("Nation overlay does not match the generated terrain world.");
   }
@@ -622,7 +629,7 @@ export function renderTerrainSvg(world, options = {}) {
   <g filter="url(#riverSoft)">${riverPaths(world, cellSize)}</g>
   ${showGrid ? `<g fill="none" stroke="#d9d0b3" stroke-width="0.36" opacity="0.08">${squareGrid(world, cellSize)}</g>` : ""}
   ${nationMap ? `<g id="regionBorders" fill="none" stroke="#253b3b" stroke-width="${Math.max(0.42, cellSize * 0.038).toFixed(2)}" stroke-dasharray="${Math.max(0.8, cellSize * 0.09).toFixed(2)} ${Math.max(0.7, cellSize * 0.07).toFixed(2)}" stroke-linecap="round" opacity="0.72">${regionBorderPaths(world, nationMap, cellSize)}</g>` : ""}
-  ${nationMap ? `<g id="nationBorders" fill="none" stroke="#f4e6bb" stroke-width="${Math.max(0.65, cellSize * 0.062).toFixed(2)}" stroke-linecap="round" stroke-linejoin="round" opacity="0.76"><style>.nation-border.is-natural-border{stroke-width:${Math.max(0.76, cellSize * 0.07).toFixed(2)}}.nation-border.is-artificial-border{stroke-dasharray:${Math.max(1.5, cellSize * 0.2).toFixed(2)} ${Math.max(1, cellSize * 0.13).toFixed(2)};opacity:.68}.nation-border.is-river-border{stroke:#bfe6e8;stroke-width:${Math.max(0.8, cellSize * 0.078).toFixed(2)}}</style>${nationBorderPaths(world, nationMap, cellSize)}</g>${maritimeTravelNetwork(world, nationMap, cellSize)}${regionalTravelNetwork(world, nationMap, cellSize)}<g id="worldObjects">${worldObjectMarkers(world, nationMap, cellSize)}</g>` : ""}
+  ${nationMap ? `<g id="nationBorders" fill="none" stroke="#f4e6bb" stroke-width="${Math.max(0.65, cellSize * 0.062).toFixed(2)}" stroke-linecap="round" stroke-linejoin="round" opacity="0.76"><style>.nation-border.is-natural-border{stroke-width:${Math.max(0.76, cellSize * 0.07).toFixed(2)}}.nation-border.is-artificial-border{stroke-dasharray:${Math.max(1.5, cellSize * 0.2).toFixed(2)} ${Math.max(1, cellSize * 0.13).toFixed(2)};opacity:.68}.nation-border.is-river-border{stroke:#bfe6e8;stroke-width:${Math.max(0.8, cellSize * 0.078).toFixed(2)}}</style>${nationBorderPaths(world, nationMap, cellSize)}</g>${maritimeTravelNetwork(world, nationMap, cellSize)}${regionalTravelNetwork(world, nationMap, cellSize)}<g id="worldObjects">${worldObjectMarkers(world, nationMap, cellSize, visibleObjectIds)}</g>` : ""}
 </svg>`;
 }
 
