@@ -287,6 +287,13 @@ import {
   formatAbilityModifier,
   rollAbilityScores,
 } from "./character-abilities.js";
+import {
+  createGoddessPrologueState,
+  GODDESS_ARRIVAL_LINES,
+  GODDESS_DEPARTURE_LINE,
+  GODDESS_GENERATION_LINES,
+  GODDESS_NAME,
+} from "./goddess-prologue.js";
 
 const STORAGE_KEY = "oathbound-career-chronicle-v10";
 const LEGACY_STORAGE_KEYS = ["oathbound-continental-grand-strategy-v9", "oathbound-continental-grand-strategy-v8", "oathbound-continental-grand-strategy-v7", "oathbound-continental-grand-strategy-v6"];
@@ -382,10 +389,12 @@ let generatedMapVisualCache = { key: null, url: null };
 let tacticalEffectTimer = null;
 let tacticalEffectsPlaying = false;
 let adventureAdvanceTimer = null;
+let goddessSequenceToken = 0;
 const view = {
   launchOpen: true,
   characterCreationOpen: false,
   characterDraft: null,
+  goddessPrologue: createGoddessPrologueState(),
   generation: { active: false, progress: 0, stage: "idle", label: "", error: null },
   battlePreparation: null,
   tacticalBattle: null,
@@ -468,6 +477,12 @@ const elements = {
   launchActions: document.querySelector("#launchActions"),
   characterCreation: document.querySelector("#characterCreation"),
   characterAbilityRolls: document.querySelector("#characterAbilityRolls"),
+  goddessCharacterSetup: document.querySelector("#goddessCharacterSetup"),
+  goddessSpeaker: document.querySelector("#goddessSpeaker"),
+  goddessDialogueText: document.querySelector("#goddessDialogueText"),
+  goddessLineCounter: document.querySelector("#goddessLineCounter"),
+  goddessDialogueCue: document.querySelector("#goddessDialogueCue"),
+  goddessSeedValue: document.querySelector("#goddessSeedValue"),
   launchGeneration: document.querySelector("#launchGeneration"),
   launchGenerationStatus: document.querySelector("#launchGenerationStatus"),
   launchGenerationLabel: document.querySelector("#launchGenerationLabel"),
@@ -995,13 +1010,49 @@ function rollCharacterDraft(draft, advanceRoll = false) {
   };
 }
 
+const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+
+async function playGoddessArrival(token) {
+  for (let index = 0; index < GODDESS_ARRIVAL_LINES.length; index += 1) {
+    if (token !== goddessSequenceToken || !view.characterCreationOpen) return;
+    view.goddessPrologue = {
+      ...view.goddessPrologue,
+      phase: "arrival",
+      line: GODDESS_ARRIVAL_LINES[index],
+      lineNumber: index + 1,
+      lineTotal: GODDESS_ARRIVAL_LINES.length,
+    };
+    renderLaunchScreen();
+    await delay(index === 1 ? 4300 : 3000);
+  }
+  if (token !== goddessSequenceToken || !view.characterCreationOpen) return;
+  view.goddessPrologue = {
+    ...view.goddessPrologue,
+    phase: "selection",
+    line: "名を告げ、望む種族と出自、魂の適性を選びなさい。その選択から、あなたの能力を定めます。",
+    lineNumber: 4,
+    lineTotal: 4,
+  };
+  renderLaunchScreen();
+}
+
 function openCharacterCreation() {
+  goddessSequenceToken += 1;
   const worldSeed = createCharacterWorldSeed();
   view.characterDraft = rollCharacterDraft({
     name: "アレク", raceId: "human", origin: "没落貴族", roleId: "warrior", worldSeed, rollCount: 0,
   });
   view.characterCreationOpen = true;
+  view.goddessPrologue = {
+    active: true,
+    phase: "arrival",
+    line: GODDESS_ARRIVAL_LINES[0],
+    lineNumber: 1,
+    lineTotal: GODDESS_ARRIVAL_LINES.length,
+    generationReady: false,
+  };
   renderLaunchScreen();
+  void playGoddessArrival(goddessSequenceToken);
 }
 
 function renderCharacterCreation() {
@@ -1009,6 +1060,24 @@ function renderCharacterCreation() {
   elements.characterCreation.hidden = !view.characterCreationOpen;
   elements.launchActions.hidden = view.characterCreationOpen;
   if (!view.characterCreationOpen || !draft) return;
+  const goddess = view.goddessPrologue;
+  elements.characterCreation.classList.toggle("is-selecting", ["selection", "error"].includes(goddess.phase));
+  elements.goddessCharacterSetup.hidden = !["selection", "error"].includes(goddess.phase);
+  const returnButton = elements.characterCreation.querySelector('[data-character-create-action="cancel"]');
+  if (returnButton) returnButton.disabled = ["generating", "departure"].includes(goddess.phase);
+  elements.goddessSpeaker.textContent = GODDESS_NAME;
+  elements.goddessDialogueText.textContent = goddess.line;
+  elements.goddessLineCounter.textContent = goddess.phase === "selection"
+    ? "魂の選択"
+    : goddess.phase === "generating" ? `世界生成 ${view.generation.progress}%`
+      : goddess.phase === "departure" ? "転生"
+        : `${goddess.lineNumber} / ${goddess.lineTotal}`;
+  elements.goddessDialogueCue.textContent = goddess.phase === "selection"
+    ? "選択を確定すると会話と世界生成が自動で進みます"
+    : goddess.phase === "generating" ? "会話の裏で世界を生成しています"
+      : goddess.phase === "error" ? "選択内容を保ったまま再試行できます"
+        : "女神の言葉は自動で進みます";
+  elements.goddessSeedValue.textContent = `世界シード：${draft.worldSeed}`;
   const nameInput = document.querySelector("#characterCreationName");
   const raceSelect = document.querySelector("#characterCreationRace");
   const originSelect = document.querySelector("#characterCreationOrigin");
@@ -1020,10 +1089,10 @@ function renderCharacterCreation() {
   elements.characterAbilityRolls.innerHTML = ABILITY_KEYS.map((abilityId) => `
     <article><small>${abilityId.slice(0, 3).toUpperCase()}</small><span>${escapeHtml(ABILITY_LABELS[abilityId])}</span><strong>${draft.abilities[abilityId]}</strong><b>${formatAbilityModifier(draft.abilities[abilityId])}</b></article>
   `).join("");
-  elements.characterCreation.querySelector("header p").textContent = `4d6の最低1個を除外。${ABILITY_ROLES[draft.roleId]?.name ?? "自由人"}向けに高い出目を配分し、人物ごとのランダム差を残します。`;
+  elements.goddessCharacterSetup.querySelector("header p").textContent = `4d6の最低1個を除外。${ABILITY_ROLES[draft.roleId]?.name ?? "自由人"}向けに高い出目を配分し、シード由来の個体差を残します。`;
 }
 
-async function resetChronicle(options = {}) {
+async function resetChronicle(options = {}, flow = {}) {
   if (view.generation.active) return;
   const seed = typeof options.seed === "string" && options.seed.trim() ? options.seed : createCharacterWorldSeed();
   view.launchOpen = true;
@@ -1058,10 +1127,15 @@ async function resetChronicle(options = {}) {
       selectedFacilityId: "farmland", selectedCountryId: "valka", objectiveId: "transit", warMapView: "atlas", warRegionId: null, selectedWarHexId: null, warCouncilOpen: false, assignmentOpen: false,
       pendingTownId: null, guideOpen: false, endingOpen: false, resetOpen: false, expertMode: false, atlasMode: "generated", generatedMapScale: "region", generatedMapLegendOpen: true, pendingGeneratedDestinationId: null, pendingGeneratedTravelMode: "route",
       selectedGeneratedNationId: nextState.generatedWorld.playerNationId, worldNationFilter: "all", focusedTownCommandId: null,
-      characterCreationOpen: false, characterDraft: null,
+      characterCreationOpen: Boolean(flow.deferLaunch), characterDraft: flow.deferLaunch ? view.characterDraft : null,
     });
     view.generation = { active: true, progress: 100, stage: "complete", label: "新しい世界の生成が完了しました", error: null };
     render();
+    if (flow.deferLaunch) {
+      view.generation = { active: false, progress: 100, stage: "complete", label: "新しい世界の生成が完了しました", error: null };
+      renderLaunchScreen();
+      return true;
+    }
     await new Promise((resolve) => setTimeout(resolve, 140));
     view.generation = { active: false, progress: 100, stage: "complete", label: "新しい世界の生成が完了しました", error: null };
     view.launchOpen = false;
@@ -1069,6 +1143,7 @@ async function resetChronicle(options = {}) {
     render();
     audio.play("reset");
     showToast("地形テンプレートと種族適地から新しい世界を生成しました。");
+    return true;
   } catch (error) {
     console.error("New chronicle generation failed", error);
     view.generation = {
@@ -1081,7 +1156,74 @@ async function resetChronicle(options = {}) {
     view.launchOpen = true;
     renderLaunchScreen();
     showToast("世界生成に失敗しました。保存済みの年代記は保持されています。");
+    return false;
   }
+}
+
+async function beginGoddessReincarnation(draft) {
+  const token = ++goddessSequenceToken;
+  view.goddessPrologue = {
+    ...view.goddessPrologue,
+    phase: "generating",
+    line: GODDESS_GENERATION_LINES[0],
+    lineNumber: 1,
+    lineTotal: GODDESS_GENERATION_LINES.length,
+    generationReady: false,
+  };
+  renderLaunchScreen();
+  const options = {
+    seed: draft.worldSeed,
+    name: draft.name,
+    raceId: draft.raceId,
+    origin: draft.origin,
+    specialty: PLAYER_SPECIALTIES[draft.roleId] ?? PLAYER_SPECIALTIES.balanced,
+    abilities: { ...draft.abilities },
+  };
+  const generationPromise = resetChronicle(options, { deferLaunch: true });
+  const dialoguePromise = (async () => {
+    for (let index = 0; index < GODDESS_GENERATION_LINES.length; index += 1) {
+      if (token !== goddessSequenceToken) return;
+      view.goddessPrologue = {
+        ...view.goddessPrologue,
+        phase: "generating",
+        line: GODDESS_GENERATION_LINES[index],
+        lineNumber: index + 1,
+        lineTotal: GODDESS_GENERATION_LINES.length,
+      };
+      renderLaunchScreen();
+      await delay(2600);
+    }
+  })();
+  const [generated] = await Promise.all([generationPromise, dialoguePromise]);
+  if (token !== goddessSequenceToken) return;
+  if (!generated) {
+    view.goddessPrologue = {
+      ...view.goddessPrologue,
+      phase: "error",
+      line: "……世界の糸が乱れました。魂の形は保っています。もう一度、転生を願いなさい。",
+    };
+    renderLaunchScreen();
+    return;
+  }
+  view.goddessPrologue = {
+    ...view.goddessPrologue,
+    phase: "departure",
+    line: GODDESS_DEPARTURE_LINE,
+    lineNumber: 1,
+    lineTotal: 1,
+    generationReady: true,
+  };
+  renderLaunchScreen();
+  await delay(3600);
+  if (token !== goddessSequenceToken) return;
+  view.characterCreationOpen = false;
+  view.characterDraft = null;
+  view.goddessPrologue = createGoddessPrologueState();
+  view.launchOpen = false;
+  view.guideOpen = false;
+  render();
+  audio.play("reset");
+  showToast("女神の庭から、生成された世界へ転生しました。");
 }
 
 function costLabel(command) {
@@ -5292,7 +5434,11 @@ function renderLaunchScreen() {
   elements.launchGenerationDetail.textContent = generation.error
     ? `エラー: ${generation.error}（保存済みの年代記は保持されています）`
     : generation.stage === "complete" ? "開始地点を開きます。" : "地形、河川、種族適地、国境を順番に生成しています。";
-  elements.launchScreen.querySelectorAll("button").forEach((button) => { button.disabled = generation.active; });
+  elements.launchScreen.querySelectorAll("button").forEach((button) => {
+    const lockedGoddessExit = button.matches('[data-character-create-action="cancel"]')
+      && ["generating", "departure"].includes(view.goddessPrologue?.phase);
+    button.disabled = generation.active || lockedGoddessExit;
+  });
   const developerLauncher = elements.launchScreen.querySelector(".developer-launcher");
   if (developerLauncher) {
     developerLauncher.inert = generation.active || view.characterCreationOpen;
@@ -6640,8 +6786,10 @@ document.addEventListener("click", async (event) => {
   if (characterCreateAction) {
     const action = characterCreateAction.dataset.characterCreateAction;
     if (action === "cancel") {
+      goddessSequenceToken += 1;
       view.characterCreationOpen = false;
       view.characterDraft = null;
+      view.goddessPrologue = createGoddessPrologueState();
       renderLaunchScreen();
       return;
     }
@@ -6659,14 +6807,7 @@ document.addEventListener("click", async (event) => {
       }
       if ((state.turn > 0 || state.council.history.length > 0) && !window.confirm("保存済みの年代記を破棄して、この人物で新しい世界を始めますか？")) return;
       view.characterDraft = { ...draft, specialty: PLAYER_SPECIALTIES[draft.roleId] ?? PLAYER_SPECIALTIES.balanced };
-      void resetChronicle({
-        seed: draft.worldSeed,
-        name: draft.name,
-        raceId: draft.raceId,
-        origin: draft.origin,
-        specialty: PLAYER_SPECIALTIES[draft.roleId] ?? PLAYER_SPECIALTIES.balanced,
-        abilities: { ...draft.abilities },
-      });
+      void beginGoddessReincarnation(view.characterDraft);
       return;
     }
   }
