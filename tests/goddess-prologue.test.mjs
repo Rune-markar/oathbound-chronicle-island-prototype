@@ -76,6 +76,7 @@ test("開始画面は女神立ち絵、下部テキストウィンドウ、魂�
   const index = await readFile(new URL("../index.html", import.meta.url), "utf8");
   assert.match(index, /class="goddess-prologue"/);
   assert.match(index, /assets\/generated\/goddess-ilysia\.png/);
+  assert.doesNotMatch(index, /goddessMercyReveal|goddess-mercy-companion/);
   assert.match(index, /class="[^"]*goddess-dialogue[^"]*"/);
   assert.match(index, /id="characterCreationRace"/);
   assert.match(index, /CANONICAL ENDING MEMO/);
@@ -99,4 +100,24 @@ test("女神の会話窓は物語全体の共通テキストウィンドウ契�
   assert.match(styles, /\.story-text-window\s*\{/);
   assert.match(styles, /\.goddess-return\s*\{[^}]*font:[^;]*13px/s);
   assert.match(styles, /\.story-text-window p\s*\{[^}]*font-size:\s*19px/s);
+});
+
+test("スマートフォンでは魂確定ボタンをスクロール領域の外へ常設する", async () => {
+  const styles = await readFile(new URL("../styles.css", import.meta.url), "utf8");
+  assert.match(styles, /@media \(max-width: 760px\)[\s\S]*\.goddess-prologue\.is-selecting \.goddess-character-setup > footer\s*\{[^}]*position:\s*fixed/s);
+  assert.match(styles, /grid-template-columns:\s*minmax\(0, \.82fr\) minmax\(0, 1\.18fr\)/);
+  assert.match(styles, /bottom:\s*calc\(10px \+ env\(safe-area-inset-bottom, 0px\)\)/);
+  assert.match(styles, /\.goddess-prologue\.is-selecting \.goddess-dialogue\.story-text-window\s*\{[^}]*bottom:\s*calc\(82px/s);
+});
+
+test("女神界では右側の女神画像だけが連打対象となり、奴隷少女は表示しない", async () => {
+  const index = await readFile(new URL("../index.html", import.meta.url), "utf8");
+  const styles = await readFile(new URL("../styles.css", import.meta.url), "utf8");
+  assert.match(index, /class="goddess-portrait"[^>]*>\s*<img[^>]*data-goddess-persistent-tap/);
+  assert.doesNotMatch(index, /class="goddess-portrait"[^>]*data-goddess-persistent-tap/);
+  assert.doesNotMatch(index, /goddess-mercy-reveal|goddessMercyReveal/);
+  assert.match(styles, /\.goddess-prologue\.is-selecting \.goddess-portrait\s*\{[^}]*right:\s*0[^}]*width:\s*52vw/s);
+  assert.doesNotMatch(styles, /\.goddess-portrait\s*\{[^}]*inset:\s*0/s);
+  assert.match(styles, /\.goddess-portrait\s*\{[^}]*pointer-events:\s*none/s);
+  assert.match(styles, /\.goddess-portrait img\s*\{[^}]*pointer-events:\s*auto/s);
 });

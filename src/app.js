@@ -1096,8 +1096,6 @@ function renderCharacterCreation() {
   elements.launchActions.hidden = view.characterCreationOpen;
   if (!view.characterCreationOpen || !draft) return;
   const goddess = view.goddessPrologue;
-  const mercyReveal = document.querySelector("#goddessMercyReveal");
-  if (mercyReveal) mercyReveal.hidden = goddess.phase !== "mercy";
   elements.characterCreation.classList.toggle("is-selecting", ["selection", "error"].includes(goddess.phase));
   elements.goddessCharacterSetup.hidden = !["selection", "error"].includes(goddess.phase);
   const returnButton = elements.characterCreation.querySelector('[data-character-create-action="cancel"]');
