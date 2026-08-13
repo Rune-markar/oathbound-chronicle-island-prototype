@@ -23,6 +23,7 @@ import {
   regenerateGeneratedWorld,
   selectGeneratedWorldRegion,
   setGeneratedPlayerNation,
+  setGeneratedTravelModePreference,
 } from "../src/generated-world-system.js";
 import {
   createCareerInitialState,
@@ -262,6 +263,7 @@ test("player selection, region selection, and region expedition movement are per
   assert.equal(moved.generatedWorld.selectedRegionId, destination.regionId);
   assert.ok(moved.generatedWorld.expeditionMovement < 8);
   assert.ok(moved.generatedWorld.discoveredRegionIds.includes(destination.regionId));
+  assert.equal(moved.generatedWorld.travelModePreference, "route");
 
   const otherRegion = chosenView.runtime.nations.regions.find((region) => region.id !== destination.regionId);
   const selected = selectGeneratedWorldRegion(moved, otherRegion.id);
@@ -329,6 +331,7 @@ test("expeditions can move only to directly adjacent regions and never skip acro
   assert.equal(moved.generatedWorld.expeditionMovement, state.generatedWorld.expeditionMovement - destination.cost);
   assert.equal(moved.generatedWorld.expeditionClockMinutes, state.generatedWorld.expeditionClockMinutes + destination.travelMinutes);
   assert.equal(moved.generatedWorld.lastTravel.mode, "route");
+  assert.equal(moved.generatedWorld.travelModePreference, "route");
   assert.ok(destination.pathRegionIds.every((regionId) => moved.generatedWorld.discoveredRegionIds.includes(regionId)));
 
   const nonAdjacent = view.runtime.nations.regions.find((region) => (
@@ -357,7 +360,21 @@ test("regional travel defaults to roads while direct travel spends more supplies
   assert.equal(quietRoute.generatedWorld.lastTravel.encounter, null);
   const dangerousDirect = moveGeneratedExpeditionToRegion(state, destination.regionId, { mode: "direct", encounterRoll: 0, strengthRoll: 0 });
   assert.equal(dangerousDirect.generatedWorld.lastTravel.encounter.strength, "strong");
+  assert.equal(dangerousDirect.generatedWorld.travelModePreference, "direct");
   assert.equal(dangerousDirect.player.villageLife.supplies.food, state.player.villageLife.supplies.food - 3);
+});
+
+test("the first regional travel choice becomes the saved default and can be changed later", () => {
+  const state = setGeneratedPlayerNation(createCareerInitialState(), "nation-1");
+  assert.equal(state.generatedWorld.travelModePreference, null);
+  const configured = setGeneratedTravelModePreference(state, "direct");
+  assert.equal(configured.generatedWorld.travelModePreference, "direct");
+  const destination = getGeneratedExpeditionReachableRegions(configured)[0];
+  const moved = moveGeneratedExpeditionToRegion(configured, destination.regionId, { encounterRoll: 0.99 });
+  assert.equal(moved.generatedWorld.lastTravel.mode, "direct");
+  assert.equal(moved.generatedWorld.travelModePreference, "direct");
+  assert.equal(setGeneratedTravelModePreference(moved, "route").generatedWorld.travelModePreference, "route");
+  assert.throws(() => setGeneratedTravelModePreference(state, "unknown"), /不明な移動手段/);
 });
 
 test("map sites expose shared reachability and move the expedition to the exact castle, village, or fort tile", () => {

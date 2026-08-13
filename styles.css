@@ -129,6 +129,63 @@
   .character-creed-detail > div { grid-template-columns: 1fr; }
 }
 
+/* Party composition is deliberately separated into leader, active, and reserve zones. */
+.party-formation-board { margin: 14px 0; padding: 16px; border: 1px solid rgba(225, 193, 112, .32); background: linear-gradient(145deg, rgba(5, 25, 24, .94), rgba(17, 42, 39, .9)); box-shadow: 0 18px 42px rgba(0, 0, 0, .24); }
+.party-formation-board > header { display: grid; grid-template-columns: 1fr auto; align-items: end; gap: 3px 18px; padding-bottom: 12px; border-bottom: 1px solid rgba(225, 193, 112, .24); }
+.party-formation-board > header small { color: #c7a85a; font: 900 9px/1 system-ui, sans-serif; letter-spacing: .16em; }
+.party-formation-board > header h3 { margin: 5px 0 0; color: #fff0b3; font-size: 22px; }
+.party-formation-board > header > strong { grid-row: 1 / span 2; grid-column: 2; color: #fff2bf; font: 900 30px/1 Georgia, serif; }
+.party-formation-board > header > p { grid-column: 1 / -1; margin: 6px 0 0; color: #a9bdb5; font-size: 12px; }
+.party-formation-leader { display: grid; grid-template-columns: 54px 1fr auto; align-items: center; gap: 12px; margin: 14px 0; padding: 12px; border: 1px solid #d5ae52; background: linear-gradient(90deg, rgba(179, 134, 50, .2), rgba(10, 37, 34, .86)); }
+.party-formation-leader > i { width: 54px; height: 54px; display: grid; place-items: center; color: #173b36; border-radius: 50%; background: #e2c16b; font: 900 20px/1 Georgia, serif; font-style: normal; }
+.party-formation-leader span { display: grid; gap: 3px; }
+.party-formation-leader small { color: #dabd71; font-size: 9px; letter-spacing: .1em; }
+.party-formation-leader strong { color: #fff0bc; font-size: 17px; }
+.party-formation-leader p { margin: 0; color: #a9bbb4; font-size: 11px; }
+.party-formation-leader > b { padding: 7px 9px; color: #4a3d1d; background: #e3c36c; font-size: 10px; }
+.party-formation-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.party-formation-columns > section { min-width: 0; padding: 11px; border: 1px solid rgba(210, 190, 133, .18); background: rgba(0, 11, 12, .28); }
+.party-formation-columns > section > h4 { display: flex; justify-content: space-between; margin: 0 0 9px; color: #d9c37c; font-size: 13px; }
+.party-formation-member { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 12px; margin-top: 8px; padding: 10px; border: 1px solid rgba(220, 197, 133, .22); background: rgba(11, 31, 30, .88); }
+.party-formation-member.is-active { border-color: rgba(92, 181, 144, .58); box-shadow: inset 3px 0 #58a889; }
+.party-formation-member.is-reserve { opacity: .72; filter: saturate(.72); }
+.party-formation-member.is-mercy-companion { background: linear-gradient(130deg, rgba(78, 58, 39, .72), rgba(9, 31, 30, .92)); }
+.party-formation-member > figure { position: relative; width: 92px; height: 132px; grid-row: 1 / span 2; margin: 0; overflow: hidden; border: 1px solid rgba(225, 193, 112, .38); background: radial-gradient(circle at 50% 20%, #725e45, #172d2b 72%); }
+.party-formation-member > figure img { width: 100%; height: 100%; object-fit: contain; object-position: center bottom; transform: scale(1.42); transform-origin: 50% 18%; }
+.party-formation-member > figure > i { width: 100%; height: 100%; display: grid; place-items: center; color: #ead18a; font: 900 30px/1 Georgia, serif; }
+.party-formation-member figcaption { position: absolute; right: 4px; bottom: 4px; padding: 4px 6px; color: #effff7; background: rgba(35, 105, 82, .94); font: 900 8px/1 system-ui, sans-serif; }
+.party-formation-profile { min-width: 0; }
+.party-formation-profile > small { color: #c6aa63; font-size: 9px; }
+.party-formation-profile h4 { margin: 4px 0; color: #fff0b7; font-size: 18px; }
+.party-formation-profile p { margin: 0 0 7px; color: #b7c4bd; font-size: 10px; line-height: 1.45; }
+.party-formation-profile > em { color: #bcd1c7; font: normal 9px/1 system-ui, sans-serif; }
+.party-formation-hp { height: 5px; overflow: hidden; background: #152220; }
+.party-formation-hp span { width: var(--party-hp); height: 100%; display: block; background: linear-gradient(90deg, #4b9e78, #8bd19e); }
+.party-formation-abilities { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 3px; margin-top: 8px; }
+.party-formation-abilities span { display: grid; place-items: center; gap: 2px; padding: 4px 1px; border: 1px solid rgba(190, 174, 124, .18); background: rgba(255, 255, 255, .035); }
+.party-formation-abilities small { color: #8ea69b; font-size: 7px; }
+.party-formation-abilities b { color: #e7d8a8; font-size: 10px; }
+.party-formation-member > button { grid-column: 2; min-height: 34px; color: #f7e3a5; border: 1px solid rgba(224, 186, 89, .52); background: #315f55; cursor: pointer; font-size: 10px; font-weight: 900; }
+.party-formation-member > button:disabled { opacity: .45; cursor: not-allowed; }
+.party-formation-empty { margin: 0; padding: 18px 10px; color: #82968e; border: 1px dashed rgba(183, 178, 143, .24); font-size: 10px; text-align: center; }
+
+.goddess-portrait { padding: 0; border: 0; background: transparent; cursor: pointer; }
+.goddess-portrait:focus-visible { outline: 2px solid #f1cc6c; outline-offset: -6px; }
+.goddess-portrait.is-tapped img { animation: goddess-persistent-tap .2s ease; }
+@keyframes goddess-persistent-tap { 50% { filter: brightness(1.22) drop-shadow(0 0 18px rgba(255, 225, 146, .72)); transform: translateY(-3px) scale(1.005); } }
+.goddess-mercy-reveal { position: absolute; z-index: 4; right: 6vw; bottom: 150px; width: min(28vw, 390px); height: min(72vh, 720px); margin: 0; pointer-events: none; filter: drop-shadow(0 18px 28px rgba(0, 0, 0, .7)); animation: mercy-reveal-in .55s ease both; }
+.goddess-mercy-reveal[hidden] { display: none; }
+.goddess-mercy-reveal img { width: 100%; height: 100%; object-fit: contain; object-position: center bottom; }
+.goddess-mercy-reveal figcaption { position: absolute; right: 8%; bottom: 3%; padding: 7px 10px; color: #f6df9d; border: 1px solid rgba(226, 193, 109, .45); background: rgba(5, 24, 24, .92); font: 900 10px/1 system-ui, sans-serif; letter-spacing: .08em; }
+@keyframes mercy-reveal-in { from { opacity: 0; transform: translateX(36px); } to { opacity: 1; transform: none; } }
+
+@media (max-width: 880px) {
+  .party-formation-columns { grid-template-columns: 1fr; }
+  .party-formation-member { grid-template-columns: 76px minmax(0, 1fr); }
+  .party-formation-member > figure { width: 76px; height: 112px; }
+  .goddess-mercy-reveal { right: -2vw; bottom: 170px; width: 48vw; height: 58vh; opacity: .82; }
+}
+
 /* Personal rise and jurisdiction-based governance */
 .career-heading,
 .governance-heading {
@@ -2320,6 +2377,22 @@ a:focus-visible,
   pointer-events: none;
 }
 
+.generated-region-knowledge-layer {
+  position: absolute;
+  z-index: 3;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.generated-region-knowledge-layer path {
+  fill: #77817f;
+  opacity: .48;
+  mix-blend-mode: saturation;
+}
+
 .generated-expedition-marker {
   position: absolute;
   z-index: 3;
@@ -2459,6 +2532,12 @@ a:focus-visible,
 .generated-travel-mode-option small { color: #cfae58; font: 800 7px/1 system-ui, sans-serif; }
 .generated-travel-mode-option p { margin: 0; color: #bdb6a1; font: 8px/1.45 system-ui, sans-serif; }
 .generated-travel-mode-option em { color: #e5ca7d; font: normal 700 8px/1.3 system-ui, sans-serif; }
+.generated-travel-first-choice,
+.generated-travel-saved-choice { margin-top: 10px; padding: 9px; border-left: 3px solid #d8b75c; background: rgba(53, 104, 88, .24); }
+.generated-travel-first-choice strong,
+.generated-travel-saved-choice strong { display: block; color: #f5d77f; font: 800 10px/1.3 system-ui, sans-serif; }
+.generated-travel-first-choice p,
+.generated-travel-saved-choice p { margin: 4px 0 0; color: #c9c2ae; font: 8px/1.45 system-ui, sans-serif; }
 .generated-region-move-confirmation > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; margin-top: 11px; }
 .generated-region-move-confirmation > div span { display: grid; gap: 3px; padding: 8px; border: 1px solid rgba(218, 188, 108, .2); background: rgba(43, 85, 75, .38); }
 .generated-region-move-confirmation > div small { color: #b9ad8a; font-size: 7px; }
@@ -10096,10 +10175,18 @@ body:not(.is-expert-mode) .selection-card { bottom: 48px; }
 }
 @keyframes goddess-radiance-turn { to { transform: rotate(1turn); } }
 .goddess-portrait { position: absolute; inset: 0; margin: 0; display: grid; place-items: center; }
-.goddess-prologue.is-selecting .goddess-portrait { transform: translateX(18vw); transition: transform 1s ease; }
+.goddess-prologue.is-selecting .goddess-portrait { transform: translateX(24vw); transition: transform 1s ease; }
 .goddess-portrait::after { content: ""; position: absolute; inset: 0; box-shadow: inset 0 -24vh 18vh rgba(2, 8, 11, .88), inset 0 0 16vw rgba(2, 9, 12, .66); pointer-events: none; }
-.goddess-portrait img { width: 100%; height: 100%; object-fit: cover; object-position: center 22%; filter: saturate(.84) contrast(1.04) brightness(.78); animation: goddess-arrival 1.8s ease-out both; }
-.goddess-prologue.is-selecting .goddess-portrait img { object-position: 78% 22%; transition: object-position 1s ease; }
+.goddess-portrait img {
+  width: min(68vw, 820px);
+  height: 90vh;
+  object-fit: contain;
+  object-position: center bottom;
+  filter: saturate(.82) contrast(1.04) brightness(.76);
+  mask-image: linear-gradient(90deg, transparent 0, #000 8%, #000 92%, transparent 100%);
+  animation: goddess-arrival 1.8s ease-out both;
+}
+.goddess-prologue.is-selecting .goddess-portrait img { object-position: center bottom; transition: object-position 1s ease; }
 @keyframes goddess-arrival { from { opacity: 0; transform: scale(1.05); filter: blur(8px) saturate(.7) brightness(.65); } }
 .goddess-return { position: absolute; top: 24px; left: 26px; z-index: 3; padding: 8px 12px; color: rgba(244, 231, 195, .68); border: 1px solid rgba(221, 188, 113, .25); background: rgba(5, 18, 21, .66); cursor: pointer; font: 700 8px system-ui, sans-serif; letter-spacing: .08em; }
 .goddess-return:disabled { display: none; }
@@ -10145,7 +10232,7 @@ body:not(.is-expert-mode) .selection-card { bottom: 48px; }
 .goddess-character-setup > footer > span { margin-right: auto; color: #8ea39d; font: 700 8px system-ui, sans-serif; }
 .goddess-character-setup > footer button { padding: 9px 12px; color: #d8d2bd; border: 1px solid rgba(218, 186, 107, .3); background: #173b39; cursor: pointer; font: 800 9px system-ui, sans-serif; }
 .goddess-character-setup > footer .launch-primary { color: #fff0c7; border-color: #c89b43; background: #356659; }
-.launch-screen:has(.goddess-prologue:not([hidden])) .launch-generation { position: fixed; z-index: 14; top: 22px; right: 24px; width: min(440px, calc(100% - 48px)); }
+.launch-screen:has(.goddess-prologue:not([hidden])) .launch-generation { position: fixed; z-index: 14; top: 8vh; right: 18px; width: 88px; }
 
 .developer-design-memo { margin-top: 10px; border: 1px solid rgba(201, 155, 56, .3); background: rgba(12, 28, 29, .72); }
 .developer-design-memo > summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 13px; cursor: pointer; list-style: none; }
@@ -10202,6 +10289,89 @@ body:not(.is-expert-mode) .selection-card { bottom: 48px; }
 .launch-generation.is-error header small,
 .launch-generation.is-error header span { color: #ef9b83; }
 .launch-generation.is-error .launch-generation-track i { background: #c85f4f; box-shadow: none; }
+
+.launch-screen:has(.goddess-prologue:not([hidden])) .launch-generation {
+  bottom: 27vh;
+  display: grid;
+  grid-template-rows: auto minmax(130px, 1fr) auto;
+  gap: 11px;
+  padding: 14px 11px;
+  border: 1px solid rgba(222, 190, 112, .42);
+  background: linear-gradient(180deg, rgba(5, 17, 21, .92), rgba(16, 36, 38, .78));
+  box-shadow: 0 20px 60px rgba(0, 0, 0, .55), inset 0 0 30px rgba(215, 177, 88, .05);
+  backdrop-filter: blur(10px);
+}
+.launch-screen:has(.goddess-prologue:not([hidden])) .launch-generation[hidden] { display: none; }
+.launch-screen:has(.goddess-prologue:not([hidden])) .launch-generation::before,
+.launch-screen:has(.goddess-prologue:not([hidden])) .launch-generation::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  width: 24px;
+  height: 1px;
+  background: #d3aa52;
+  transform: translateX(-50%);
+  box-shadow: 0 0 9px rgba(224, 184, 91, .55);
+}
+.launch-screen:has(.goddess-prologue:not([hidden])) .launch-generation::before { top: -5px; }
+.launch-screen:has(.goddess-prologue:not([hidden])) .launch-generation::after { bottom: -5px; }
+.launch-screen:has(.goddess-prologue:not([hidden])) .launch-generation header {
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  gap: 7px;
+  text-align: center;
+}
+.launch-screen:has(.goddess-prologue:not([hidden])) .launch-generation header small { font-size: 6px; letter-spacing: .12em; }
+.launch-screen:has(.goddess-prologue:not([hidden])) .launch-generation header strong {
+  max-height: 92px;
+  overflow: hidden;
+  color: #d8cfb7;
+  font-size: 8px;
+  line-height: 1.5;
+  writing-mode: vertical-rl;
+}
+.launch-screen:has(.goddess-prologue:not([hidden])) .launch-generation header span { font-size: 13px; }
+.launch-screen:has(.goddess-prologue:not([hidden])) .launch-generation-track {
+  position: relative;
+  justify-self: center;
+  width: 8px;
+  height: 100%;
+  min-height: 130px;
+  border-color: rgba(222, 190, 112, .34);
+}
+.launch-screen:has(.goddess-prologue:not([hidden])) .launch-generation-track i {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  width: 100% !important;
+  height: var(--generation-progress, 0%);
+  background: linear-gradient(0deg, #477f72, #c89b43 72%, #fff0b0);
+  box-shadow: 0 0 13px rgba(226, 186, 91, .64);
+  transition: height .24s ease;
+}
+.launch-screen:has(.goddess-prologue:not([hidden])) .launch-generation p {
+  margin: 0;
+  color: #8ca09a;
+  font: 7px/1.5 system-ui, sans-serif;
+  text-align: center;
+}
+
+@media (max-width: 760px) {
+  .goddess-prologue.is-selecting .goddess-portrait { transform: none; }
+  .goddess-portrait img { width: 92vw; height: 80vh; object-position: center top; }
+  .launch-screen:has(.goddess-prologue:not([hidden])) .launch-generation {
+    top: 10px;
+    right: 10px;
+    bottom: auto;
+    width: 72px;
+    max-height: 42vh;
+    padding: 9px 7px;
+  }
+  .launch-screen:has(.goddess-prologue:not([hidden])) .launch-generation header strong,
+  .launch-screen:has(.goddess-prologue:not([hidden])) .launch-generation p { display: none; }
+}
 
 .developer-launcher { align-self: end; width: min(1120px, 100%); padding-top: 18px; border-top: 1px solid rgba(218, 188, 118, .23); }
 .developer-launcher > header { display: flex; align-items: end; justify-content: space-between; gap: 14px; margin-bottom: 10px; }
@@ -13611,6 +13781,20 @@ body.is-battle-preparation-open { overflow: hidden; }
 #backMenuSettingsCatalog .government-title-catalog strong { color: #f0dfa9; font-size: 10px; }
 #backMenuSettingsCatalog .government-title-catalog span { color: rgba(221, 225, 211, .65); font-size: 7px; }
 
+.back-menu-travel-options { margin-top: 7px; padding: 9px; border: 1px solid rgba(216, 188, 116, .2); background: rgba(7, 26, 27, .48); }
+.back-menu-travel-options > header { display: flex; align-items: center; gap: 8px; }
+.back-menu-travel-options > header i { width: 27px; height: 27px; display: grid; place-items: center; color: #ead38a; border: 1px solid rgba(216, 188, 116, .34); font: 900 9px/1 Georgia, serif; font-style: normal; }
+.back-menu-travel-options > header span { display: grid; gap: 2px; }
+.back-menu-travel-options > header strong { color: #f0dfa9; font-size: 9px; }
+.back-menu-travel-options > header small { color: #b8a675; font-size: 7px; }
+.back-menu-travel-options > div { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-top: 8px; }
+.back-menu-travel-options button { display: grid; gap: 3px; padding: 7px; color: #d8cfb3; border: 1px solid rgba(216, 188, 116, .2); background: #193635; cursor: pointer; font: 800 8px/1.2 system-ui, sans-serif; }
+.back-menu-travel-options button small { color: rgba(216, 225, 216, .56); font-size: 6px; }
+.back-menu-travel-options button.is-active { color: #253b37; border-color: #e1bf63; background: #e1c46d; }
+.back-menu-travel-options button.is-active small { color: #556154; }
+.back-menu-travel-options button:disabled { opacity: .48; cursor: not-allowed; }
+.back-menu-travel-options > p { margin: 7px 0 0; color: rgba(216, 225, 216, .58); font: 7px/1.45 system-ui, sans-serif; }
+
 .back-menu-chronicle {
   border-bottom: 1px solid rgba(224, 205, 153, .1);
 }
@@ -14645,3 +14829,99 @@ body.is-location-focus .village-central-status article > strong { font-size: cla
 }
 
 .personal-result-members article b { grid-row: 1 / span 2; grid-column: 2; align-self: center; }
+
+/* Shared visual-novel text window: goddess prologue and all story conversations. */
+.story-text-window {
+  --story-window-border: rgba(225, 193, 117, .64);
+  --story-window-speaker: #f2ce78;
+  --story-window-text: #fff6db;
+  --story-window-muted: #9aaca7;
+  border: 1px solid var(--story-window-border);
+  color: var(--story-window-text);
+  background: linear-gradient(100deg, rgba(4, 17, 21, .96), rgba(13, 31, 34, .94) 68%, rgba(45, 37, 28, .92));
+  box-shadow: 0 22px 70px rgba(0, 0, 0, .66), inset 0 0 50px rgba(207, 169, 84, .05);
+  backdrop-filter: blur(10px);
+}
+
+.story-text-window p {
+  color: var(--story-window-text);
+  font-size: 19px;
+  line-height: 1.75;
+  letter-spacing: .035em;
+  text-shadow: 0 2px 12px #000;
+}
+
+.goddess-return {
+  min-height: 46px;
+  padding: 12px 17px;
+  font: 800 13px/1.2 system-ui, sans-serif;
+  letter-spacing: .06em;
+}
+
+.goddess-dialogue.story-text-window { min-height: 174px; padding: 22px 28px 18px; }
+.goddess-dialogue.story-text-window header strong { color: var(--story-window-speaker); font-size: 21px; }
+.goddess-dialogue.story-text-window header span { color: var(--story-window-muted); font-size: 12px; }
+.goddess-dialogue.story-text-window p { margin: 15px 0 12px; font-size: clamp(18px, 1.65vw, 23px); }
+.goddess-dialogue.story-text-window footer { color: var(--story-window-muted); font-size: 11px; }
+
+.goddess-character-setup > header small { font-size: 11px; }
+.goddess-character-setup > header h2 { font-size: 24px; }
+.goddess-character-setup > header p { font-size: 13px; }
+.goddess-character-setup .character-creation-form label { font-size: 12px; }
+.goddess-character-setup .character-creation-form input,
+.goddess-character-setup .character-creation-form select { height: 46px; font-size: 15px; }
+.goddess-character-setup .character-ability-rolls small { font-size: 10px; }
+.goddess-character-setup .character-ability-rolls span { font-size: 12px; }
+.goddess-character-setup .character-ability-rolls b { font-size: 12px; }
+.goddess-character-setup > footer > span { font-size: 11px; }
+.goddess-character-setup > footer button { min-height: 44px; padding: 11px 15px; font-size: 13px; }
+
+.launch-screen:has(.goddess-prologue:not([hidden])) .launch-generation { width: 102px; }
+.launch-screen:has(.goddess-prologue:not([hidden])) .launch-generation header small { font-size: 8px; }
+.launch-screen:has(.goddess-prologue:not([hidden])) .launch-generation header strong { font-size: 10px; }
+.launch-screen:has(.goddess-prologue:not([hidden])) .launch-generation header span { font-size: 15px; }
+.launch-screen:has(.goddess-prologue:not([hidden])) .launch-generation p { font-size: 9px; }
+
+.village-conversation > header small { font-size: 13px; }
+.village-conversation > header h1 { font-size: 24px; }
+.village-conversation > header button { width: 46px; height: 46px; font-size: 23px; }
+.conversation-character figcaption small { font-size: 13px; }
+.conversation-character figcaption strong { font-size: 21px; }
+.conversation-place span { font-size: 13px; }
+.conversation-place strong { font-size: 20px; }
+.conversation-message.story-text-window { min-height: 164px; border-width: 1px 0 0; }
+.conversation-message.story-text-window > div > small { color: var(--story-window-speaker); font-size: 13px; }
+.conversation-message.story-text-window > div > strong { color: var(--story-window-speaker); font-size: 22px; }
+.conversation-message.story-text-window button { min-height: 58px; font-size: 16px; }
+.npc-social-message.story-text-window > div > span { font-size: 13px; }
+.npc-social-message.story-text-window nav button { font-size: 16px; }
+.npc-social-message.story-text-window nav button small { font-size: 11px; }
+.npc-known-profile h2 { font-size: 13px; }
+.npc-known-profile p,
+.npc-known-profile ul,
+.npc-known-profile aside b { font-size: 12px; }
+.npc-known-profile aside span,
+.npc-known-profile aside small { font-size: 11px; }
+
+@media (max-width: 760px) {
+  .goddess-return { top: 12px; left: 12px; min-height: 44px; padding: 10px 13px; font-size: 12px; }
+  .goddess-prologue.is-selecting .goddess-return { right: 12px; left: auto; }
+  .goddess-dialogue.story-text-window { min-height: 178px; padding: 16px 17px 14px; }
+  .goddess-dialogue.story-text-window header strong { font-size: 18px; }
+  .goddess-dialogue.story-text-window header span { font-size: 11px; }
+  .goddess-dialogue.story-text-window p,
+  .story-text-window p { font-size: 16px; line-height: 1.65; }
+  .goddess-character-setup > header h2 { font-size: 20px; }
+  .goddess-character-setup > header p { font-size: 12px; }
+  .goddess-character-setup .character-creation-form label { font-size: 11px; }
+  .goddess-character-setup .character-creation-form input,
+  .goddess-character-setup .character-creation-form select { font-size: 14px; }
+  .launch-screen:has(.goddess-prologue:not([hidden])) .launch-generation { width: 82px; }
+  .village-conversation > header h1 { font-size: 19px; }
+  .village-conversation > header button { width: 44px; height: 44px; }
+  .conversation-character figcaption small { font-size: 11px; }
+  .conversation-character figcaption strong { font-size: 15px; }
+  .conversation-message.story-text-window { min-height: 180px; padding: 14px 16px; }
+  .conversation-message.story-text-window > div > strong { font-size: 18px; }
+  .conversation-message.story-text-window button { min-height: 48px; font-size: 15px; }
+}

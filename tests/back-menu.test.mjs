@@ -22,6 +22,7 @@ test("front navigation shows world before person and keeps reference pages in th
   assert.match(backMenu, /data-back-menu-route="source-peoples"/);
   assert.match(backMenu, /data-back-menu-route="source-creatures"/);
   assert.match(backMenu, /id="backMenuSettingsCatalog"/);
+  assert.match(backMenu, /id="backMenuTravelOptions"/);
   assert.match(backMenu, /id="audioToggle"/);
   assert.match(backMenu, /data-open-guide/);
   assert.doesNotMatch(worldSwitch, /data-world-mode="statistics"/);
@@ -29,4 +30,7 @@ test("front navigation shows world before person and keeps reference pages in th
   assert.doesNotMatch(worldSwitch, /data-world-mode="creatures"/);
   assert.match(app, /view\.atlasMode = backMenuRoute\.dataset\.backMenuRoute === "source-peoples" \? "peoples" : "creatures"/);
   assert.match(app, /elements\.backMenuSettingsCatalog\.innerHTML = governmentTitleCatalog\(\)/);
+  assert.match(app, /data-generated-travel-preference="route"/);
+  assert.match(app, /data-generated-travel-preference="direct"/);
+  assert.match(app, /setGeneratedTravelModePreference\(state, mode\)/);
 });

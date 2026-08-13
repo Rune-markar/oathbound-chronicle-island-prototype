@@ -67,11 +67,16 @@ test("normal play generates the whole world, then zooms to region-level movement
   assert.match(appSource, /移動を実行すると世界時刻が進みます/);
   assert.match(appSource, /pendingGeneratedTravelMode: "route"/);
   assert.match(appSource, /data-generated-travel-mode/);
+  assert.match(appSource, /初回のみ移動方法を選択/);
+  assert.match(appSource, /既定の移動方法/);
+  assert.match(appSource, /バックメニューの「システム → 地方移動」から変更できます/);
+  assert.match(appSource, /data-generated-travel-preference/);
   const mapMoveSelection = appSource.match(/const generatedMapMoveRegion = event\.target\.closest[\s\S]*?const generatedMoveConfirm/)?.[0] ?? "";
   assert.match(mapMoveSelection, /view\.pendingGeneratedDestinationId = generatedMapMoveRegion\.dataset\.generatedMapMoveRegion/);
   assert.doesNotMatch(mapMoveSelection, /moveGeneratedExpeditionToRegion/);
   const mapMoveConfirmation = appSource.match(/const generatedMoveConfirm = event\.target\.closest[\s\S]*?const generatedRegionButton/)?.[0] ?? "";
-  assert.match(mapMoveConfirmation, /moveGeneratedExpeditionToRegion\(state, regionId, \{ mode: view\.pendingGeneratedTravelMode \}\)/);
+  assert.match(mapMoveConfirmation, /const travelMode = state\.generatedWorld\?\.travelModePreference \?\? view\.pendingGeneratedTravelMode/);
+  assert.match(mapMoveConfirmation, /moveGeneratedExpeditionToRegion\(state, regionId, \{ mode: travelMode \}\)/);
   assert.match(mapMoveConfirmation, /await playGeneratedTravel\(next, destination\.name/);
   assert.match(styleSource, /\.generated-region-move-target\s*\{[^}]*touch-action: manipulation;[^}]*pointer-events: auto;/s);
   assert.doesNotMatch(appSource, /data-generated-region-destination-id/);
@@ -104,6 +109,19 @@ test("normal play generates the whole world, then zooms to region-level movement
   for (const type of ["castle", "city", "town", "village", "fort"]) {
     assert.match(markup, new RegExp(`class="is-${type}"`));
   }
+});
+
+test("undiscovered regions are shown with a subdued gray knowledge overlay", () => {
+  const overlayFunction = appSource.match(/function generatedUnknownRegionOverlay\([\s\S]*?\n\}/)?.[0] ?? "";
+  assert.match(overlayFunction, /new Set\(discoveredRegionIds \?\? \[\]\)/);
+  assert.match(overlayFunction, /if \(discovered\.has\(region\.id\)\) return/);
+  assert.match(overlayFunction, /region\.tileIndices/);
+  assert.match(appSource, /class="generated-region-knowledge-layer"/);
+  assert.match(appSource, /generatedState\.discoveredRegionIds/);
+  assert.match(appSource, /\.\.\.generatedState\.discoveredRegionIds, expeditionRegion\.id/);
+  assert.match(appSource, /dataset\.unknownRegionCount/);
+  assert.match(styleSource, /\.generated-region-knowledge-layer path\s*\{[^}]*fill: #77817f;[^}]*opacity: \.48;[^}]*mix-blend-mode: saturation;/s);
+  assert.match(styleSource, /\.generated-region-knowledge-layer\s*\{[^}]*pointer-events: none;/s);
 });
 
 test("campaign information stays in the left dock while regional movement is map-only", () => {

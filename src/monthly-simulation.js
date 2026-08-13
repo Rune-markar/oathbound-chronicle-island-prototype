@@ -198,6 +198,7 @@ import {
   getVillageActionAvailability,
   normalizeVillageLifeState,
   performVillageAction,
+  setPartyMemberActive,
 } from "./village-life.js";
 import {
   REGIONAL_REPUTATION_GAINS,
@@ -322,6 +323,7 @@ export {
   getVillageActionAvailability,
   normalizeVillageLifeState,
   performVillageAction,
+  setPartyMemberActive,
   REGIONAL_REPUTATION_GAINS,
   REGIONAL_REPUTATION_SCHEMA_VERSION,
   createRegionalReputationState,

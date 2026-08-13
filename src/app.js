@@ -116,6 +116,7 @@ import {
   getPersonalChronicleView,
   performCareerAction,
   performVillageAction,
+  setPartyMemberActive,
   reassignDelegatedRole,
   queueOrder,
   resolveBorderNegotiation,
@@ -183,6 +184,7 @@ import {
   refreshGeneratedWorldForDate,
   selectGeneratedWorldRegion,
   setGeneratedPlayerNation,
+  setGeneratedTravelModePreference,
 } from "./generated-world-system.js";
 import {
   ADVENTURE_ART,
@@ -288,11 +290,14 @@ import {
   rollAbilityScores,
 } from "./character-abilities.js";
 import {
+  createGoddessMercyCompanion,
   createGoddessPrologueState,
   GODDESS_ARRIVAL_LINES,
   GODDESS_DEPARTURE_LINE,
   GODDESS_GENERATION_LINES,
+  GODDESS_MERCY_LINES,
   GODDESS_NAME,
+  registerGoddessPersistentTap,
 } from "./goddess-prologue.js";
 
 const STORAGE_KEY = "oathbound-career-chronicle-v10";
@@ -570,6 +575,7 @@ const elements = {
   outlinerContent: document.querySelector("#outlinerContent"),
   backMenu: document.querySelector("#backMenu"),
   backMenuSettingsCatalog: document.querySelector("#backMenuSettingsCatalog"),
+  backMenuTravelOptions: document.querySelector("#backMenuTravelOptions"),
   warCouncilModal: document.querySelector("#warCouncilModal"),
   objectiveTabs: document.querySelector("#objectiveTabs"),
   warCouncilReport: document.querySelector("#warCouncilReport"),
@@ -1030,10 +1036,38 @@ async function playGoddessArrival(token) {
     ...view.goddessPrologue,
     phase: "selection",
     line: "名を告げ、望む種族と出自、魂の適性を選びなさい。その選択から、あなたの能力を定めます。",
-    lineNumber: 4,
-    lineTotal: 4,
+    lineNumber: GODDESS_ARRIVAL_LINES.length + 1,
+    lineTotal: GODDESS_ARRIVAL_LINES.length + 1,
   };
   renderLaunchScreen();
+}
+
+async function playGoddessMercyBranch() {
+  const token = ++goddessSequenceToken;
+  view.characterDraft = { ...readCharacterDraftForm(), mercyGranted: true };
+  for (let index = 0; index < GODDESS_MERCY_LINES.length; index += 1) {
+    if (token !== goddessSequenceToken || !view.characterCreationOpen) return;
+    view.goddessPrologue = {
+      ...view.goddessPrologue,
+      phase: "mercy",
+      line: GODDESS_MERCY_LINES[index],
+      lineNumber: index + 1,
+      lineTotal: GODDESS_MERCY_LINES.length,
+      mercyGranted: true,
+    };
+    renderLaunchScreen();
+    await delay(index === 2 ? 3900 : 3100);
+  }
+  if (token !== goddessSequenceToken || !view.characterCreationOpen) return;
+  view.goddessPrologue = {
+    ...view.goddessPrologue,
+    phase: "selection",
+    line: GODDESS_MERCY_LINES.at(-1),
+    lineNumber: GODDESS_MERCY_LINES.length,
+    lineTotal: GODDESS_MERCY_LINES.length,
+  };
+  renderLaunchScreen();
+  showToast("女神の慈悲により、非力な少女が最初から同行します。");
 }
 
 function openCharacterCreation() {
@@ -1044,6 +1078,7 @@ function openCharacterCreation() {
   });
   view.characterCreationOpen = true;
   view.goddessPrologue = {
+    ...createGoddessPrologueState(),
     active: true,
     phase: "arrival",
     line: GODDESS_ARRIVAL_LINES[0],
@@ -1061,6 +1096,8 @@ function renderCharacterCreation() {
   elements.launchActions.hidden = view.characterCreationOpen;
   if (!view.characterCreationOpen || !draft) return;
   const goddess = view.goddessPrologue;
+  const mercyReveal = document.querySelector("#goddessMercyReveal");
+  if (mercyReveal) mercyReveal.hidden = goddess.phase !== "mercy";
   elements.characterCreation.classList.toggle("is-selecting", ["selection", "error"].includes(goddess.phase));
   elements.goddessCharacterSetup.hidden = !["selection", "error"].includes(goddess.phase);
   const returnButton = elements.characterCreation.querySelector('[data-character-create-action="cancel"]');
@@ -1071,12 +1108,14 @@ function renderCharacterCreation() {
     ? "魂の選択"
     : goddess.phase === "generating" ? `世界生成 ${view.generation.progress}%`
       : goddess.phase === "departure" ? "転生"
+        : goddess.phase === "mercy" ? `慈悲 ${goddess.lineNumber} / ${goddess.lineTotal}`
         : `${goddess.lineNumber} / ${goddess.lineTotal}`;
   elements.goddessDialogueCue.textContent = goddess.phase === "selection"
     ? "選択を確定すると会話と世界生成が自動で進みます"
     : goddess.phase === "generating" ? "会話の裏で世界を生成しています"
       : goddess.phase === "error" ? "選択内容を保ったまま再試行できます"
-        : "女神の言葉は自動で進みます";
+        : goddess.phase === "mercy" ? "しつこい願いに、女神が応じました"
+          : "女神の言葉は自動で進みます";
   elements.goddessSeedValue.textContent = `世界シード：${draft.worldSeed}`;
   const nameInput = document.querySelector("#characterCreationName");
   const raceSelect = document.querySelector("#characterCreationRace");
@@ -1096,7 +1135,7 @@ async function resetChronicle(options = {}, flow = {}) {
   if (view.generation.active) return;
   const seed = typeof options.seed === "string" && options.seed.trim() ? options.seed : createCharacterWorldSeed();
   view.launchOpen = true;
-  view.characterCreationOpen = false;
+  view.characterCreationOpen = Boolean(flow.deferLaunch);
   view.guideOpen = false;
   view.resetOpen = false;
   view.generation = { active: true, progress: 1, stage: "seed", label: "新しい世界の生成を開始します", error: null };
@@ -1117,6 +1156,10 @@ async function resetChronicle(options = {}, flow = {}) {
     renderLaunchScreen();
     await new Promise((resolve) => requestAnimationFrame(() => resolve()));
     const nextState = normalizeAdventureState(refreshGeneratedWorldForDate(createCareerInitialState({ ...options, seed, generatedWorldRuntime })));
+    if (options.goddessMercyCompanion && !nextState.player.villageLife.party.some((member) => member.goddessMercyCompanion)) {
+      nextState.player.villageLife.party.push(options.goddessMercyCompanion);
+      nextState.player.history.unshift({ turn: 0, title: "女神の慈悲", detail: `${options.goddessMercyCompanion.name}を伴い、二人で辺境の街道へ降り立った。` });
+    }
     localStorage.removeItem(STORAGE_KEY);
     state = nextState;
     Object.assign(view, {
@@ -1178,6 +1221,7 @@ async function beginGoddessReincarnation(draft) {
     origin: draft.origin,
     specialty: PLAYER_SPECIALTIES[draft.roleId] ?? PLAYER_SPECIALTIES.balanced,
     abilities: { ...draft.abilities },
+    goddessMercyCompanion: draft.mercyGranted ? createGoddessMercyCompanion(draft.worldSeed) : null,
   };
   const generationPromise = resetChronicle(options, { deferLaunch: true });
   const dialoguePromise = (async () => {
@@ -3790,7 +3834,7 @@ function renderNpcSocialConversation(conversation, village) {
       <div class="conversation-place"><span>${escapeHtml(knownPersonality)}</span><strong>${escapeHtml(candidate.social.relationship.name)}</strong></div>
       <figure class="conversation-character is-other ${counterpart.transparent ? "has-transparent-art" : ""}"><img src="${escapeHtml(counterpart.image)}" alt="${escapeHtml(counterpart.name)}"><figcaption><small>${escapeHtml(counterpart.role)}</small><strong>${escapeHtml(counterpart.name)}</strong></figcaption></figure>
     </div>
-    <footer class="conversation-message npc-social-message">
+    <footer class="conversation-message story-text-window npc-social-message">
       <div class="npc-conversation-result"><small>${result ? result.joined ? "PARTY JOINED" : "REACTION" : "FIRST CONTACT"}</small><strong>${escapeHtml(candidate.name)}</strong><p>${escapeHtml(resultText)}</p><span>${candidate.social.firstMeetingComplete ? `関係：${escapeHtml(candidate.social.relationship.name)} · 会話${candidate.social.interactions}回` : `魅力 ${state.player.abilities?.charisma ?? 10}で第一印象を判定`}</span></div>
       <section class="npc-known-profile" aria-label="判明した人物情報"><h2>分かったこと</h2><p><b>人柄</b>${escapeHtml(knownPersonality)}</p>${knownDetails.length ? `<ul>${knownDetails.map((detail) => `<li>${escapeHtml(detail)}</li>`).join("")}</ul>` : "<p>経歴や腕前は、まだ推し量れない。</p>"}${recruitment ? `<aside><b>加入条件 · ${escapeHtml(recruitment.name)}</b><span>${escapeHtml(recruitment.summary)}</span><small>${escapeHtml(recruitment.hint)}</small></aside>` : "<aside><b>加入条件</b><span>仕事の話をすれば、同行する理由を確かめられる。</span></aside>"}</section>
       <nav aria-label="会話行動">${actionButtons}</nav>
@@ -3814,7 +3858,7 @@ function renderVillageConversation() {
       <div class="conversation-place"><span>${escapeHtml(village.name)}</span><strong>${escapeHtml(conversation.title)}</strong></div>
       <figure class="conversation-character is-other ${counterpart.transparent ? "has-transparent-art" : ""} ${line.side === "other" ? "is-speaking" : ""}"><img src="${escapeHtml(counterpart.image)}" alt="${escapeHtml(counterpart.name)}"><figcaption><small>${escapeHtml(counterpart.role)}</small><strong>${escapeHtml(counterpart.name)}</strong></figcaption></figure>
     </div>
-    <footer class="conversation-message"><div><small>${line.side === "player" ? "PLAYER" : "VILLAGER"}</small><strong>${escapeHtml(line.speaker)}</strong><p>${escapeHtml(line.text)}</p></div><button type="button" data-village-dialogue-next>${finalLine ? "この行動を実行" : "返答する"}<span>→</span></button></footer>
+    <footer class="conversation-message story-text-window"><div><small>${line.side === "player" ? "PLAYER" : "VILLAGER"}</small><strong>${escapeHtml(line.speaker)}</strong><p>${escapeHtml(line.text)}</p></div><button type="button" data-village-dialogue-next>${finalLine ? "この行動を実行" : "返答する"}<span>→</span></button></footer>
   </section>`;
 }
 
@@ -3988,7 +4032,7 @@ function renderTavernAdventureBoard(venue = "tavern", section = "all") {
   const tabs = venue === "tavern" ? `<nav class="tavern-section-tabs" aria-label="酒場の掲示分類">
     ${[
       ["requests", "依頼掲示"],
-      ["adventurers", "一般冒険者"],
+      ["adventurers", "仲間・編成"],
       ["unique", "固有人物"],
     ].map(([id, label]) => `<button type="button" data-tavern-section="${id}" class="${section === id ? "is-active" : ""}" aria-pressed="${section === id}">${label}</button>`).join("")}
   </nav>` : "";
@@ -3997,12 +4041,30 @@ function renderTavernAdventureBoard(venue = "tavern", section = "all") {
     <div class="tavern-party-columns"><section><h4>話しかける</h4>${genericCandidates.filter((candidate) => !candidate.incoming).map(candidateCard).join("")}</section></div>`;
   const uniqueMarkup = `<section class="tavern-unique-companion"><header><div><small>UNIQUE CHARACTER</small><h4>固有人物</h4></div><p>地域シードから生成される冒険者とは別に、固有の経歴・会話・能力を持つ人物です。</p></header>${uniqueCandidates.map(candidateCard).join("")}</section>`;
   const content = venue !== "tavern" || section === "all" ? `${genericMarkup}${uniqueMarkup}`
-    : section === "adventurers" ? genericMarkup
+    : section === "adventurers" ? `${renderPartyFormationBoard()}${genericMarkup}`
       : section === "unique" ? uniqueMarkup
         : "";
   return `${tabs}<section class="adventure-facility-board tavern-party-board">
     <header><div><small>NPC CONVERSATION · ${venue === "guild" ? "GUILD" : "TAVERN"}</small><h3>${venue === "guild" ? "ギルド" : "酒場"}の冒険者</h3></div><p>初対面の後は、会話で人柄・経歴・腕前・同行条件を段階的に確かめます。</p></header>
     ${content || "<p class=\"adviser-note\">上の「依頼掲示」から受注内容を確認できます。</p>"}
+  </section>`;
+}
+
+function renderPartyFormationBoard() {
+  const life = state.player?.villageLife;
+  const party = life?.party ?? [];
+  const active = party.filter((member) => member.active !== false && member.alive !== false);
+  const reserve = party.filter((member) => member.active === false || member.alive === false);
+  const abilityRow = (member) => ABILITY_KEYS.map((abilityId) => `<span title="${escapeHtml(ABILITY_LABELS[abilityId])}"><small>${escapeHtml(ABILITY_LABELS[abilityId].slice(0, 1))}</small><b>${Number(member.abilities?.[abilityId] ?? 0)}</b></span>`).join("");
+  const memberCard = (member, activeMember) => `<article class="party-formation-member ${activeMember ? "is-active" : "is-reserve"} ${member.goddessMercyCompanion ? "is-mercy-companion" : ""}">
+    <figure>${member.portraitImage ? `<img src="${escapeHtml(member.portraitImage)}" alt="${escapeHtml(member.name)}の立ち絵">` : `<i>${escapeHtml(member.name.slice(0, 1))}</i>`}<figcaption>${activeMember ? "同行中" : member.alive === false ? "戦闘不能" : "待機"}</figcaption></figure>
+    <div class="party-formation-profile"><small>Lv.${member.level ?? 1} · ${escapeHtml(member.role ?? "冒険者")}</small><h4>${escapeHtml(member.name)}</h4><p>${escapeHtml(member.status ?? member.origin ?? member.specialty ?? "同行者")}</p><div class="party-formation-hp"><span style="--party-hp:${Math.max(0, Math.min(100, Math.round((member.hp ?? 0) / Math.max(1, member.maxHp ?? 1) * 100)))}%"></span></div><em>HP ${member.hp ?? 0} / ${member.maxHp ?? 0}</em><div class="party-formation-abilities">${abilityRow(member)}</div></div>
+    <button type="button" data-party-member-toggle="${escapeHtml(member.id)}" data-party-active="${activeMember ? "false" : "true"}" ${member.alive === false ? "disabled" : ""}>${activeMember ? "待機にする" : "同行させる"}</button>
+  </article>`;
+  return `<section class="party-formation-board" aria-label="パーティー編成">
+    <header><div><small>PARTY FORMATION</small><h3>探索パーティー</h3></div><strong>${1 + active.length}名</strong><p>主人公＋同行中${active.length}名</p></header>
+    <article class="party-formation-leader"><i>${escapeHtml(state.player.name.slice(0, 1))}</i><span><small>LEADER · 常時参加</small><strong>${escapeHtml(state.player.name)}</strong><p>${escapeHtml(state.player.specialty ?? "旅人")}</p></span><b>主人公</b></article>
+    <div class="party-formation-columns"><section><h4><span>同行中</span><b>${active.length}名</b></h4>${active.length ? active.map((member) => memberCard(member, true)).join("") : "<p class=\"party-formation-empty\">同行者はいません。主人公一人で出発します。</p>"}</section><section><h4><span>待機</span><b>${reserve.length}名</b></h4>${reserve.length ? reserve.map((member) => memberCard(member, false)).join("") : "<p class=\"party-formation-empty\">待機中の仲間はいません。</p>"}</section></div>
   </section>`;
 }
 
@@ -4013,6 +4075,7 @@ function villageFacilityAdventureContent(facilityId, village = activeVillageCont
     const requests = view.tavernSection === "requests" && villageRequests ? renderGuildAdventureBoard() : "";
     return `${renderTavernAdventureBoard("tavern", view.tavernSection)}${requests}`;
   }
+  if (facilityId === "preparation") return renderPartyFormationBoard();
   if (facilityId === "shop") {
     const inventory = state.player?.villageLife?.inventory ?? [];
     return `<section class="adventure-facility-board village-shop-inventory"><header><div><small>SELECT ITEM TO SELL</small><h3>所持品を選んで売却</h3></div><p>売却前に品名と数量を確認します。</p></header><div>${inventory.length ? inventory.map((item) => `<article><span><strong>${escapeHtml(item.name)}</strong><small>所持 ${item.quantity ?? 1}</small></span><button type="button" data-sell-village-item="${escapeHtml(item.id)}">1個売却 →</button></article>`).join("") : "<p>売却できる所持品はありません。</p>"}</div></section>`;
@@ -4458,6 +4521,49 @@ function visibleUnwrappedTileX(tileX, viewport, worldWidth) {
     .sort((left, right) => Math.abs(left + 0.5 - (viewport.x + viewport.width / 2)) - Math.abs(right + 0.5 - (viewport.x + viewport.width / 2)))[0];
 }
 
+function generatedUnknownRegionOverlay(runtime, viewport, discoveredRegionIds) {
+  const discovered = new Set(discoveredRegionIds ?? []);
+  const rows = new Map();
+  const visibleUnknownRegionIds = new Set();
+  runtime.nations.regions.forEach((region) => {
+    if (discovered.has(region.id)) return;
+    region.tileIndices.forEach((index) => {
+      const tile = runtime.tiles[index];
+      if (!tile) return;
+      const x = visibleUnwrappedTileX(tile.x, viewport, runtime.terrain.width);
+      if (x + 1 <= viewport.x || x >= viewport.x + viewport.width || tile.y + 1 <= viewport.y || tile.y >= viewport.y + viewport.height) return;
+      const row = rows.get(tile.y) ?? [];
+      row.push(x);
+      rows.set(tile.y, row);
+      visibleUnknownRegionIds.add(region.id);
+    });
+  });
+  const commands = [];
+  [...rows.entries()].sort(([left], [right]) => left - right).forEach(([y, values]) => {
+    const ordered = [...new Set(values)].sort((left, right) => left - right);
+    let start = ordered[0];
+    let end = start;
+    const appendRun = () => {
+      if (!Number.isFinite(start)) return;
+      const left = (start - viewport.x) / viewport.width * 100;
+      const top = (y - viewport.y) / viewport.height * 100;
+      const width = (end - start + 1) / viewport.width * 100;
+      const height = 1 / viewport.height * 100;
+      commands.push(`M${left.toFixed(3)} ${top.toFixed(3)}h${width.toFixed(3)}v${height.toFixed(3)}h-${width.toFixed(3)}Z`);
+    };
+    ordered.slice(1).forEach((x) => {
+      if (x === end + 1) end = x;
+      else {
+        appendRun();
+        start = x;
+        end = x;
+      }
+    });
+    appendRun();
+  });
+  return { path: commands.join(""), visibleUnknownRegionCount: visibleUnknownRegionIds.size };
+}
+
 // Regional maps follow the hierarchy of European settlement networks instead
 // of drawing every hamlet at the same importance. Major cities represent broad
 // hinterlands, market towns fill the gaps, and minor sites appear locally.
@@ -4585,7 +4691,10 @@ function renderGeneratedRegionMoveConfirmation(copy, runtime, viewport) {
     return;
   }
   const travelOptions = getGeneratedExpeditionTravelOptions(state, view.pendingGeneratedDestinationId);
-  const selectedMode = travelOptions.find((option) => option.id === view.pendingGeneratedTravelMode) ?? travelOptions[0];
+  const savedMode = state.generatedWorld?.travelModePreference ?? null;
+  const firstSelection = !savedMode;
+  const activeMode = firstSelection ? view.pendingGeneratedTravelMode : savedMode;
+  const selectedMode = travelOptions.find((option) => option.id === activeMode) ?? travelOptions[0];
   const region = runtime.regionById.get(view.pendingGeneratedDestinationId);
   const nation = region ? runtime.nationById.get(region.nationId) : null;
   if (!selectedMode || !region) {
@@ -4605,10 +4714,12 @@ function renderGeneratedRegionMoveConfirmation(copy, runtime, viewport) {
     <header><div><small>TRAVEL CONFIRMATION</small><strong>地方移動の確認</strong></div><button type="button" data-generated-map-move-cancel aria-label="移動確認を閉じる">×</button></header>
     <h2>${escapeHtml(region.name)}</h2>
     <p>${escapeHtml(nation?.name ?? "所属不明")} · ${escapeHtml(generatedRegionTerrainLabel(region))}</p>
-    <nav class="generated-travel-mode-options" aria-label="移動手段">${optionRows}</nav>
+    ${firstSelection
+      ? `<aside class="generated-travel-first-choice"><strong>初回のみ移動方法を選択</strong><p>ここで選んだ方法を今後の既定値として保存します。初期選択は「道順」です。</p></aside><nav class="generated-travel-mode-options" aria-label="移動手段">${optionRows}</nav>`
+      : `<aside class="generated-travel-saved-choice"><strong>既定の移動方法：${escapeHtml(selectedMode.name)}</strong><p>移動方法はバックメニューの「システム → 地方移動」から変更できます。</p></aside>`}
     <div><span><small>所要時間</small><strong>約${formatGeneratedTravelDuration(selectedMode.travelMinutes)}</strong></span><span><small>消費</small><strong>移動力${selectedMode.cost} · 保存食${selectedMode.supplyCost}</strong></span></div>
     <em>${selectedMode.name} · 遭遇率 ${Math.round(selectedMode.encounterChance * 100)}%。移動を実行すると世界時刻が進みます。</em>
-    <footer><button type="button" data-generated-map-move-cancel>戻る</button><button type="button" class="is-confirm" data-generated-map-move-confirm="${region.id}" ${selectedMode.available ? "" : "disabled"}>${selectedMode.available ? "この手段で移動" : "物資不足"}</button></footer>
+    <footer><button type="button" data-generated-map-move-cancel>戻る</button><button type="button" class="is-confirm" data-generated-map-move-confirm="${region.id}" ${selectedMode.available ? "" : "disabled"}>${selectedMode.available ? firstSelection ? "既定に設定して移動" : "この設定で移動" : "物資不足"}</button></footer>
   </section>`;
 }
 
@@ -4851,7 +4962,7 @@ function positionGeneratedSiteMarkers(copy, runtime, viewport, dungeon, personal
 }
 
 function renderGeneratedWorldMapLayer() {
-  const { runtime, expeditionRegion, expeditionTile, playerNation } = getGeneratedWorldView(state);
+  const { runtime, generatedState, expeditionRegion, expeditionTile, playerNation } = getGeneratedWorldView(state);
   const currentNation = runtime.nationById.get(expeditionRegion.nationId) ?? playerNation;
   const { dungeon } = getRegionAdventureSites(state, { runtime, region: expeditionRegion, nation: currentNation });
   const personalMap = getPersonalMapView(state, { runtime, region: expeditionRegion, nation: currentNation });
@@ -4889,6 +5000,7 @@ function renderGeneratedWorldMapLayer() {
           <img alt="生成世界の西側複製" draggable="false"><img alt="高精細な海岸、山脈、森林、河川、地方、国家、拠点を描いた生成世界" draggable="false"><img alt="生成世界の東側複製" draggable="false">
         </div>
         <div class="generated-world-fog" aria-hidden="true"></div>
+        <svg class="generated-region-knowledge-layer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><path></path></svg>
         <svg class="generated-travel-route" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><path></path></svg>
         <button type="button" class="generated-expedition-marker" aria-label="現在地"><span><b>現在地</b></span><i aria-hidden="true">◆</i></button>
         <div class="generated-region-move-layer" aria-label="隣接地方への地図移動"></div>
@@ -4920,6 +5032,10 @@ function renderGeneratedWorldMapLayer() {
     fog.style.setProperty("--recognition-y", `${recognitionTop}%`);
     fog.style.setProperty("--recognition-radius-x", `${recognition.radius / viewport.width * 100}%`);
     fog.style.setProperty("--recognition-radius-y", `${recognition.radius / viewport.height * 100}%`);
+    const knowledgeLayer = copy.querySelector(".generated-region-knowledge-layer");
+    const unknownOverlay = generatedUnknownRegionOverlay(runtime, viewport, [...generatedState.discoveredRegionIds, expeditionRegion.id]);
+    knowledgeLayer.querySelector("path").setAttribute("d", unknownOverlay.path);
+    knowledgeLayer.dataset.unknownRegionCount = String(unknownOverlay.visibleUnknownRegionCount);
     positionGeneratedRegionMarker(copy, expeditionRegion, expeditionTile, runtime, viewport);
     positionGeneratedRegionMoveTargets(copy, runtime, expeditionRegion, expeditionTile, viewport);
     renderGeneratedRegionMoveConfirmation(copy, runtime, viewport);
@@ -5315,6 +5431,16 @@ function renderOutliner() {
 function renderBackMenu() {
   if (!elements.backMenuSettingsCatalog) return;
   elements.backMenuSettingsCatalog.innerHTML = governmentTitleCatalog();
+  if (!elements.backMenuTravelOptions) return;
+  const preference = state.generatedWorld?.travelModePreference ?? null;
+  const labels = { route: "道順", direct: "最短経路" };
+  elements.backMenuTravelOptions.innerHTML = `
+    <header><i aria-hidden="true">路</i><span><strong>地方移動</strong><small>${preference ? `既定：${labels[preference]}` : "初回移動時に設定"}</small></span></header>
+    <div role="group" aria-label="既定の地方移動方法">
+      <button type="button" data-generated-travel-preference="route" class="${preference === "route" ? "is-active" : ""}" ${preference ? "" : "disabled"}>道順<small>街道優先・低負荷</small></button>
+      <button type="button" data-generated-travel-preference="direct" class="${preference === "direct" ? "is-active" : ""}" ${preference ? "" : "disabled"}>最短経路<small>直行・高負荷</small></button>
+    </div>
+    <p>${preference ? "次の地方移動から適用します。" : "最初の地方移動で選択肢を表示し、その選択を保存します。"}</p>`;
 }
 
 function renderTicker() {
@@ -5431,6 +5557,7 @@ function renderLaunchScreen() {
   elements.launchGenerationPercent.textContent = `${generation.progress}%`;
   elements.launchGenerationProgress.setAttribute("aria-valuenow", String(generation.progress));
   elements.launchGenerationBar.style.width = `${generation.progress}%`;
+  elements.launchGeneration.style.setProperty("--generation-progress", `${generation.progress}%`);
   elements.launchGenerationDetail.textContent = generation.error
     ? `エラー: ${generation.error}（保存済みの年代記は保持されています）`
     : generation.stage === "complete" ? "開始地点を開きます。" : "地形、河川、種族適地、国境を順番に生成しています。";
@@ -6705,6 +6832,7 @@ function playNavigationCue(event) {
     "[data-world-mode]",
     "[data-generated-map-move-region]",
     "[data-generated-travel-mode]",
+    "[data-generated-travel-preference]",
     "[data-generated-map-move-confirm]",
     "[data-generated-map-move-cancel]",
     "[data-generated-region-id]",
@@ -6780,6 +6908,17 @@ document.addEventListener("click", async (event) => {
           : result?.affinityDelta < 0 ? "相手の反応が少し冷たくなりました。" : "会話を重ねました。";
       commit(next, notice, result?.joined ? "confirm" : "ui");
     } catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
+  const goddessPersistentTap = event.target.closest("[data-goddess-persistent-tap]");
+  if (goddessPersistentTap) {
+    const result = registerGoddessPersistentTap(view.goddessPrologue);
+    view.goddessPrologue = result.state;
+    goddessPersistentTap.classList.remove("is-tapped");
+    void goddessPersistentTap.offsetWidth;
+    goddessPersistentTap.classList.add("is-tapped");
+    if (result.triggered) void playGoddessMercyBranch();
+    else audio.play("ui");
     return;
   }
   const characterCreateAction = event.target.closest("[data-character-create-action]");
@@ -7157,11 +7296,25 @@ document.addEventListener("click", async (event) => {
     } catch (error) { showToast(error.message, "danger"); }
     return;
   }
+  const partyMemberToggle = event.target.closest("[data-party-member-toggle]");
+  if (partyMemberToggle) {
+    try {
+      const next = setPartyMemberActive(state, partyMemberToggle.dataset.partyMemberToggle, partyMemberToggle.dataset.partyActive === "true");
+      commit(next, next.player.villageLife.lastAction.message, "confirm");
+    } catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
   const villageAction = event.target.closest("[data-village-action]");
   if (villageAction) {
     const village = activeVillageContext();
     if (!village) {
       showToast("行動する村が選択されていません。", "danger");
+      return;
+    }
+    if (["organize_party", "prepare_party"].includes(villageAction.dataset.villageAction)) {
+      view.selectedVillageFacilityId = "preparation";
+      view.villageFacilityOpen = true;
+      renderPanelFromTop();
       return;
     }
     try {
@@ -7492,7 +7645,7 @@ document.addEventListener("click", async (event) => {
   const generatedMapMoveRegion = event.target.closest("[data-generated-map-move-region]");
   if (generatedMapMoveRegion) {
     view.pendingGeneratedDestinationId = generatedMapMoveRegion.dataset.generatedMapMoveRegion;
-    view.pendingGeneratedTravelMode = "route";
+    view.pendingGeneratedTravelMode = state.generatedWorld?.travelModePreference ?? "route";
     view.selectedGeneratedSite = null;
     view.generatedSiteInfoOpen = false;
     renderMap();
@@ -7505,9 +7658,19 @@ document.addEventListener("click", async (event) => {
     return;
   }
   const generatedTravelMode = event.target.closest("[data-generated-travel-mode]");
-  if (generatedTravelMode && ["route", "direct"].includes(generatedTravelMode.dataset.generatedTravelMode)) {
+  if (!state.generatedWorld?.travelModePreference && generatedTravelMode && ["route", "direct"].includes(generatedTravelMode.dataset.generatedTravelMode)) {
     view.pendingGeneratedTravelMode = generatedTravelMode.dataset.generatedTravelMode;
     renderMap();
+    return;
+  }
+  const generatedTravelPreference = event.target.closest("[data-generated-travel-preference]");
+  if (generatedTravelPreference && state.generatedWorld?.travelModePreference) {
+    const mode = generatedTravelPreference.dataset.generatedTravelPreference;
+    try {
+      commit(setGeneratedTravelModePreference(state, mode), `${mode === "route" ? "道順" : "最短経路"}を地方移動の既定に設定しました。`, "confirm");
+    } catch (error) {
+      showToast(error.message, "danger");
+    }
     return;
   }
   const generatedMoveConfirm = event.target.closest("[data-generated-map-move-confirm]");
@@ -7515,14 +7678,16 @@ document.addEventListener("click", async (event) => {
     const regionId = generatedMoveConfirm.dataset.generatedMapMoveConfirm;
     if (!regionId || regionId !== view.pendingGeneratedDestinationId) return;
     try {
+      const firstSelection = !state.generatedWorld?.travelModePreference;
+      const travelMode = state.generatedWorld?.travelModePreference ?? view.pendingGeneratedTravelMode;
       const travelPlan = getGeneratedExpeditionTravelOptions(state, regionId)
-        .find((option) => option.id === view.pendingGeneratedTravelMode);
-      let next = moveGeneratedExpeditionToRegion(state, regionId, { mode: view.pendingGeneratedTravelMode });
+        .find((option) => option.id === travelMode);
+      let next = moveGeneratedExpeditionToRegion(state, regionId, { mode: travelMode });
       if (next.generatedWorld?.lastTravel?.encounter) next = startGeneratedTravelEncounter(next);
       const destination = getGeneratedWorldView(next).expeditionRegion;
       view.pendingGeneratedDestinationId = null;
       view.pendingGeneratedTravelMode = "route";
-      await playGeneratedTravel(next, destination.name, `${travelPlan?.name ?? "順路"}で${destination.name}へ移動しました。`, travelPlan);
+      await playGeneratedTravel(next, destination.name, `${travelPlan?.name ?? "道順"}で${destination.name}へ移動しました。${firstSelection ? " この方法を既定に設定しました。以降はバックメニューのオプションから変更できます。" : ""}`, travelPlan);
     } catch (error) {
       showToast(error.message, "danger");
     }

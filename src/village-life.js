@@ -340,6 +340,20 @@ export function normalizeVillageLifeState(state) {
   return state;
 }
 
+export function setPartyMemberActive(state, memberId, active) {
+  const next = clone(state);
+  normalizeVillageLifeState(next);
+  const member = next.player.villageLife.party.find((entry) => entry.id === memberId);
+  if (!member) throw new Error("編成する仲間が見つかりません。");
+  if (member.alive === false && active) throw new Error("戦闘不能の仲間は同行させられません。");
+  member.active = Boolean(active);
+  next.player.villageLife.lastAction = {
+    id: "party_formation",
+    message: `${member.name}を${member.active ? "同行中" : "待機"}にしました。`,
+  };
+  return next;
+}
+
 export function getVillageAction(actionId) {
   return ACTION_INDEX.get(actionId) ?? null;
 }

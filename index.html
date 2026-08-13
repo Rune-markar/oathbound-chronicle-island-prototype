@@ -32,7 +32,8 @@
       <section class="goddess-prologue" id="characterCreation" aria-labelledby="characterCreationTitle" hidden>
         <div class="goddess-scene">
           <div class="goddess-radiance" aria-hidden="true"></div>
-          <figure class="goddess-portrait"><img src="./assets/generated/goddess-ilysia.png" alt="星輪を背に手を差し伸べる女神イリシアの立ち絵"></figure>
+          <button class="goddess-portrait" type="button" data-goddess-persistent-tap aria-label="女神イリシアに触れる"><img src="./assets/generated/goddess-ilysia.png" alt="星輪を背に手を差し伸べる女神イリシアの立ち絵"></button>
+          <figure class="goddess-mercy-reveal" id="goddessMercyReveal" hidden><img src="./assets/generated/goddess-mercy-companion.png" alt="女神の慈悲として与えられる粗末な衣の少女"><figcaption>女神の慈悲 · 最初の同行者</figcaption></figure>
           <button class="goddess-return" type="button" data-character-create-action="cancel">女神の庭を離れる</button>
           <div class="goddess-character-setup" id="goddessCharacterSetup" hidden>
             <header><div><small>SOUL DESIGN / 4D6 DROP LOWEST</small><h2 id="characterCreationTitle">転生する姿と才を定める</h2></div><p>選んだ適性に応じて、シードから得た6つの能力値を割り当てます。</p></header>
@@ -45,9 +46,9 @@
             <div class="character-ability-rolls" id="characterAbilityRolls" aria-live="polite"></div>
             <footer><span id="goddessSeedValue">世界シードを結んでいます</span><button type="button" data-character-create-action="reroll">別の才を願う</button><button class="launch-primary" type="button" data-character-create-action="start">この魂を受け入れる</button></footer>
           </div>
-          <div class="goddess-dialogue" role="status" aria-live="polite">
+          <div class="goddess-dialogue story-text-window" role="status" aria-live="polite">
             <header><strong id="goddessSpeaker">女神イリシア</strong><span id="goddessLineCounter">1 / 3</span></header>
-            <p id="goddessDialogueText">……目を開きなさい、迷える魂よ。</p>
+            <p id="goddessDialogueText">目を開け、迷える魂。</p>
             <footer><span id="goddessDialogueCue">女神の言葉は自動で進みます</span><i aria-hidden="true"></i></footer>
           </div>
         </div>
@@ -209,6 +210,7 @@
                   <button type="button" data-open-guide><i aria-hidden="true">?</i><span><strong>遊び方</strong><small>現在の段階と操作案内</small></span></button>
                   <a href="./manual.html" target="_blank" rel="noopener noreferrer"><i aria-hidden="true">書</i><span><strong>完全版マニュアル</strong><small>詳細な仕様と遊び方</small></span></a>
                 </div>
+                <div class="back-menu-travel-options" id="backMenuTravelOptions" aria-label="地方移動のオプション"></div>
               </section>
               <details class="back-menu-chronicle">
                 <summary>情報・年代記</summary>

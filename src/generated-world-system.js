@@ -37,7 +37,7 @@ import {
 } from "./world-intelligence.js";
 
 export const GENERATED_WORLD_DEFAULTS = Object.freeze({
-  version: 12,
+  version: 13,
   seed: "eldoria-317",
   width: 160,
   height: 100,
@@ -50,6 +50,7 @@ export const GENERATED_WORLD_DEFAULTS = Object.freeze({
   expeditionMovement: 8,
   expeditionPeriod: "317-4",
   expeditionClockMinutes: 8 * 60,
+  travelModePreference: null,
   discoveredRegionIds: [],
   colonies: [],
   geopolitics: null,
@@ -76,9 +77,13 @@ const GENERATED_WORLD_CLOCK_LIMIT = 999 * 24 * 60 - 1;
 const generatedTravelRouteCache = new Map();
 
 export const GENERATED_TRAVEL_MODES = Object.freeze({
-  route: Object.freeze({ id: "route", name: "順路", description: "街道・集落間の道を優先。移動と補給の効率がよく、遭遇率6%。遭遇しても弱い魔物が中心。", encounterChance: 0.06 }),
-  direct: Object.freeze({ id: "direct", name: "直行", description: "地形を横断して最短方向へ進む。補給負荷が大きく、遭遇率38%。強い魔物に遭う場合が多い。", encounterChance: 0.38 }),
+  route: Object.freeze({ id: "route", name: "道順", description: "街道・集落間の道を優先。移動と補給の効率がよく、遭遇率6%。遭遇しても弱い魔物が中心。", encounterChance: 0.06 }),
+  direct: Object.freeze({ id: "direct", name: "最短経路", description: "地形を横断して目的地方へ直行する。補給負荷が大きく、遭遇率38%。強い魔物に遭う場合が多い。", encounterChance: 0.38 }),
 });
+
+function normalizedTravelModePreference(value) {
+  return typeof value === "string" && GENERATED_TRAVEL_MODES[value] ? value : null;
+}
 
 function generatedWorldRuntimeKey(generatedState) {
   return ["regional-hd-v8-barbarian-frontier", generatedState.seed, generatedState.width, generatedState.height, generatedState.plateCount, generatedState.nationCount].join("|");
@@ -583,6 +588,7 @@ export function createGeneratedWorldState(options = {}, dateState = null) {
     expeditionMovement: clampInteger(options.expeditionMovement, GENERATED_WORLD_DEFAULTS.expeditionMovement, 0, 8),
     expeditionPeriod: options.expeditionPeriod ?? periodFor(dateState),
     expeditionClockMinutes: clockMinutes(options.expeditionClockMinutes),
+    travelModePreference: normalizedTravelModePreference(options.travelModePreference),
     discoveredRegionIds: [...new Set((options.discoveredRegionIds ?? []).filter((id) => typeof id === "string"))].slice(0, 512),
     colonies: normalizedColonies(options.colonies),
     geopolitics: preserveGeopoliticalState(options.geopolitics),
@@ -630,6 +636,18 @@ export function getGeneratedWorldTimeView(state) {
     phase,
     phaseLabel: phaseLabels[phase],
     timeLabel: `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`,
+  };
+}
+
+export function setGeneratedTravelModePreference(state, mode) {
+  if (!GENERATED_TRAVEL_MODES[mode]) throw new RangeError("不明な移動手段です。");
+  const refreshed = refreshGeneratedWorldForDate(state);
+  return {
+    ...refreshed,
+    generatedWorld: {
+      ...cloneGeneratedWorldState(refreshed.generatedWorld),
+      travelModePreference: mode,
+    },
   };
 }
 
@@ -1417,7 +1435,7 @@ export function moveGeneratedExpeditionToRegion(state, destinationId, options = 
   if (!destination) throw new RangeError("存在しない地方です。");
   if (destination.id === from.id) return selectGeneratedWorldRegion(refreshed, destination.id);
   if (!from.neighborIds.includes(destination.id)) throw new RangeError("移動できるのは現在地に隣接する地方だけです。");
-  const travelMode = options.mode ?? "route";
+  const travelMode = options.mode ?? generatedState.travelModePreference ?? "route";
   if (!GENERATED_TRAVEL_MODES[travelMode]) throw new RangeError("不明な移動手段です。");
   const reachable = getGeneratedExpeditionTravelOptions(refreshed, destination.id).find((entry) => entry.id === travelMode);
   if (!reachable?.available) throw new RangeError(reachable?.unavailableReason ?? "この隣接地方へ移動するための物資が不足しています。");
@@ -1449,6 +1467,7 @@ export function moveGeneratedExpeditionToRegion(state, destinationId, options = 
       legacySelectedTileId: undefined,
       expeditionMovement: generatedState.expeditionMovement - reachable.cost,
       expeditionClockMinutes: advancedClockMinutes(generatedState.expeditionClockMinutes, reachable.travelMinutes),
+      travelModePreference: generatedState.travelModePreference ?? travelMode,
       discoveredRegionIds: [...discovered].slice(-512),
       lastTravel: {
         fromRegionId: from.id,
