@@ -82,13 +82,27 @@ test("開始画面は女神立ち絵、下部テキストウィンドウ、魂�
   assert.match(index, /CANONICAL ENDING MEMO/);
 });
 
-test("世界生成中も女神界を閉じず、右端の進捗レールへ実進捗を渡す", async () => {
+test("世界生成中も女神界を閉じず、画面上部の進捗バーへ実進捗を渡す", async () => {
   const app = await readFile(new URL("../src/app.js", import.meta.url), "utf8");
   const styles = await readFile(new URL("../styles.css", import.meta.url), "utf8");
   assert.match(app, /view\.characterCreationOpen = Boolean\(flow\.deferLaunch\)/);
   assert.match(app, /--generation-progress/);
   assert.match(styles, /launch-screen:has\(\.goddess-prologue:not\(\[hidden\]\)\) \.launch-generation/);
-  assert.match(styles, /height: var\(--generation-progress, 0%\)/);
+  assert.match(styles, /width: var\(--generation-progress, 0%\) !important/);
+  assert.match(styles, /top:\s*14px/);
+  assert.match(styles, /grid-template-columns:\s*auto minmax\(0, 1fr\) auto/);
+});
+
+test("転生時は女神の連続移動と世界へ降り立つ三段階演出を保つ", async () => {
+  const index = await readFile(new URL("../index.html", import.meta.url), "utf8");
+  const app = await readFile(new URL("../src/app.js", import.meta.url), "utf8");
+  const styles = await readFile(new URL("../styles.css", import.meta.url), "utf8");
+  assert.match(index, /id="worldArrivalOverlay"/);
+  assert.match(app, /classList\.toggle\("is-generating"/);
+  assert.match(app, /async function playWorldArrival/);
+  assert.match(app, /await playWorldArrival\(token\)/);
+  assert.match(styles, /goddess-seamless-drift/);
+  assert.match(styles, /\.world-arrival-overlay\s*\{/);
 });
 
 test("女神の会話窓は物語全体の共通テキストウィンドウ契約になる", async () => {

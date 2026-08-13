@@ -79,6 +79,16 @@
       <footer><span>LOCAL PROTOTYPE</span><span>データはこの端末のブラウザに保存されます</span></footer>
     </section>
 
+    <section class="world-arrival-overlay is-hidden" id="worldArrivalOverlay" role="status" aria-live="assertive" aria-hidden="true">
+      <div class="world-arrival-rings" aria-hidden="true"><i></i><i></i><i></i></div>
+      <div class="world-arrival-copy">
+        <small>DESCENT TO THE GENERATED WORLD</small>
+        <h1 id="worldArrivalTitle">世界の風が、魂を迎える</h1>
+        <p id="worldArrivalText">女神の庭を離れ、まだ名も知らぬ大地へ降りていく。</p>
+        <span><i></i></span>
+      </div>
+    </section>
+
     <section class="battle-preparation-screen is-hidden" id="battlePreparationScreen" aria-labelledby="battlePreparationTitle">
       <header class="battle-preparation-header">
         <div><span>ORDER OF BATTLE / MUSTERING PHASE</span><h1 id="battlePreparationTitle">灰冠平原・戦闘前編成</h1><p id="battlePreparationIntro">参陣人物、陣形、初期配置、兵站計画を確定してください。</p></div>
@@ -224,8 +234,8 @@
           </details>
         </div>
         <nav class="primary-tabs" id="primaryTabs">
-          <button class="is-active" type="button" data-panel="world"><span>界</span>世界</button>
-          <button type="button" data-panel="career"><span>人</span>人物</button>
+          <button class="is-active" type="button" data-shortcut-tab="world"><span>界</span>世界</button>
+          <button type="button" data-shortcut-tab="characters"><span>人</span>人物</button>
           <button type="button" data-panel="governance" hidden><span>領</span>統治</button>
           <button type="button" data-panel="centralization" hidden><span>冠</span>国制</button>
           <button type="button" data-panel="council" hidden><span>♜</span>評定</button>
@@ -620,6 +630,13 @@
       </main>
 
     </div>
+
+    <section class="character-detail-modal is-hidden" id="characterDetailModal" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="characterDetailTitle">
+      <div class="character-detail-window">
+        <header class="character-detail-window-bar"><div><small>CHARACTER RECORD / INDEPENDENT WINDOW</small><strong id="characterDetailTitle">人物詳細</strong></div><button type="button" data-close-character-detail aria-label="人物詳細を閉じる">×</button></header>
+        <div class="character-detail-content" id="characterDetailContent"></div>
+      </div>
+    </section>
 
     <div class="modal-backdrop is-hidden" id="guideModal" role="dialog" aria-modal="true" aria-labelledby="guideTitle">
       <section class="guide-board">

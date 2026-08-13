@@ -34,6 +34,27 @@ test("every mapped nation subdivides each major region into three territory tile
   }
 });
 
+test("左端タブはショートカットだけを切り替え、人物詳細は独立窓で開く", () => {
+  assert.match(markup, /data-shortcut-tab="world"/);
+  assert.match(markup, /data-shortcut-tab="characters"/);
+  assert.match(markup, /id="characterDetailModal"[^>]*role="dialog"/);
+  assert.match(appSource, /function renderCharacterShortcutPanel/);
+  assert.match(appSource, /data-open-character-detail/);
+  assert.match(appSource, /view\.panel = "world";\s*view\.shortcutTab/s);
+  assert.match(styleSource, /\.character-detail-modal\s*\{/);
+});
+
+test("生成世界地図はポインタドラッグとタッチスワイプでカメラを移動できる", () => {
+  assert.match(appSource, /generatedWorldScroll\?\.addEventListener\("pointerdown"/);
+  assert.match(appSource, /setPointerCapture/);
+  assert.match(appSource, /view\.generatedPanX/);
+  assert.match(appSource, /view\.generatedPanY/);
+  assert.match(styleSource, /\.generated-world-scroll\s*\{[^}]*touch-action:\s*none/s);
+  assert.match(appSource, /data-drag-generated-confirm/);
+  assert.match(appSource, /floatingWindowGesture/);
+  assert.match(styleSource, /--confirm-x/);
+});
+
 test("normal play generates the whole world, then zooms to region-level movement", () => {
   const initialView = appSource.match(/const view = \{[\s\S]*?\n\};/)?.[0] ?? "";
   const resetFlow = appSource.match(/async function resetChronicle[\s\S]*?function costLabel/)?.[0] ?? "";

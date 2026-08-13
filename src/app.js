@@ -395,6 +395,9 @@ let tacticalEffectTimer = null;
 let tacticalEffectsPlaying = false;
 let adventureAdvanceTimer = null;
 let goddessSequenceToken = 0;
+let generatedMapPanGesture = null;
+let floatingWindowGesture = null;
+let suppressGeneratedMapClickUntil = 0;
 const view = {
   launchOpen: true,
   characterCreationOpen: false,
@@ -413,6 +416,10 @@ const view = {
   selectedTacticalFortificationId: null,
   tacticalInspectorDismissed: false,
   panel: "world",
+  shortcutTab: "world",
+  selectedShortcutCharacterId: state.player?.id ?? null,
+  characterDetailOpen: false,
+  worldArrival: { active: false, stage: 0 },
   spendingCategoryId: "social_security",
   spendingCityId: "selene",
   mapMode: "political",
@@ -456,6 +463,10 @@ const view = {
   atlasMode: "generated",
   generatedMapScale: "region",
   generatedMapLegendOpen: true,
+  generatedPanX: 0,
+  generatedPanY: 0,
+  generatedConfirmOffsetX: 0,
+  generatedConfirmOffsetY: 0,
   pendingGeneratedDestinationId: null,
   pendingGeneratedTravelMode: "route",
   selectedGeneratedSite: null,
@@ -495,6 +506,9 @@ const elements = {
   launchGenerationProgress: document.querySelector("#launchGenerationProgress"),
   launchGenerationBar: document.querySelector("#launchGenerationBar"),
   launchGenerationDetail: document.querySelector("#launchGenerationDetail"),
+  worldArrivalOverlay: document.querySelector("#worldArrivalOverlay"),
+  worldArrivalTitle: document.querySelector("#worldArrivalTitle"),
+  worldArrivalText: document.querySelector("#worldArrivalText"),
   battlePreparationScreen: document.querySelector("#battlePreparationScreen"),
   battlePreparationTitle: document.querySelector("#battlePreparationTitle"),
   battlePreparationIntro: document.querySelector("#battlePreparationIntro"),
@@ -540,6 +554,9 @@ const elements = {
   analysisToggle: document.querySelector("#analysisToggle"),
   leftPanel: document.querySelector("#leftPanel"),
   primaryTabs: document.querySelector("#primaryTabs"),
+  characterDetailModal: document.querySelector("#characterDetailModal"),
+  characterDetailContent: document.querySelector("#characterDetailContent"),
+  characterDetailTitle: document.querySelector("#characterDetailTitle"),
   alertRack: document.querySelector("#alertRack"),
   mapStage: document.querySelector(".map-stage"),
   cityWorkspace: document.querySelector("#cityWorkspace"),
@@ -812,6 +829,10 @@ function renderTabs() {
   elements.primaryTabs.querySelectorAll("[data-panel]").forEach((button) => {
     button.hidden = Boolean(allowed && !allowed.has(button.dataset.panel));
     button.classList.toggle("is-active", button.dataset.panel === view.panel);
+  });
+  elements.primaryTabs.querySelectorAll("[data-shortcut-tab]").forEach((button) => {
+    button.hidden = false;
+    button.classList.toggle("is-active", view.panel === "world" && button.dataset.shortcutTab === view.shortcutTab);
   });
 }
 
@@ -1097,6 +1118,8 @@ function renderCharacterCreation() {
   if (!view.characterCreationOpen || !draft) return;
   const goddess = view.goddessPrologue;
   elements.characterCreation.classList.toggle("is-selecting", ["selection", "error"].includes(goddess.phase));
+  elements.characterCreation.classList.toggle("is-generating", goddess.phase === "generating");
+  elements.characterCreation.classList.toggle("is-departing", goddess.phase === "departure");
   elements.goddessCharacterSetup.hidden = !["selection", "error"].includes(goddess.phase);
   const returnButton = elements.characterCreation.querySelector('[data-character-create-action="cancel"]');
   if (returnButton) returnButton.disabled = ["generating", "departure"].includes(goddess.phase);
@@ -1127,6 +1150,37 @@ function renderCharacterCreation() {
     <article><small>${abilityId.slice(0, 3).toUpperCase()}</small><span>${escapeHtml(ABILITY_LABELS[abilityId])}</span><strong>${draft.abilities[abilityId]}</strong><b>${formatAbilityModifier(draft.abilities[abilityId])}</b></article>
   `).join("");
   elements.goddessCharacterSetup.querySelector("header p").textContent = `4d6の最低1個を除外。${ABILITY_ROLES[draft.roleId]?.name ?? "自由人"}向けに高い出目を配分し、シード由来の個体差を残します。`;
+}
+
+function renderWorldArrival() {
+  if (!elements.worldArrivalOverlay) return;
+  const arrival = view.worldArrival ?? { active: false, stage: 0 };
+  const stages = [
+    ["世界の風が、魂を迎える", "女神の庭を離れ、まだ名も知らぬ大地へ降りていく。"],
+    ["雲海の下に、大地が姿を現す", "国境、街道、村々。あなたの選択を待つ世界が近づいてくる。"],
+    ["最初の一歩を刻む", "足元に土の感触が戻る。ここから、あなた自身の年代記が始まる。"],
+  ];
+  const [title, text] = stages[Math.min(stages.length - 1, arrival.stage)] ?? stages[0];
+  elements.worldArrivalOverlay.classList.toggle("is-hidden", !arrival.active);
+  elements.worldArrivalOverlay.classList.toggle("is-arrived", arrival.stage >= 2);
+  elements.worldArrivalOverlay.setAttribute("aria-hidden", String(!arrival.active));
+  elements.worldArrivalTitle.textContent = title;
+  elements.worldArrivalText.textContent = text;
+}
+
+async function playWorldArrival(token) {
+  view.worldArrival = { active: true, stage: 0 };
+  renderWorldArrival();
+  for (let stage = 1; stage < 3; stage += 1) {
+    await delay(1400);
+    if (token !== goddessSequenceToken) return;
+    view.worldArrival = { active: true, stage };
+    renderWorldArrival();
+  }
+  await delay(1700);
+  if (token !== goddessSequenceToken) return;
+  view.worldArrival = { active: false, stage: 2 };
+  renderWorldArrival();
 }
 
 async function resetChronicle(options = {}, flow = {}) {
@@ -1162,11 +1216,11 @@ async function resetChronicle(options = {}, flow = {}) {
     state = nextState;
     Object.assign(view, {
       battlePreparation: null, tacticalBattle: null, tacticalOrigin: null, tacticalResult: null, tacticalResultOpen: false, commanderDisposition: null, commanderDispositionOpen: false, selectedTacticalUnitId: null, selectedTacticalCommanderId: null, selectedTacticalFortificationId: null, tacticalInspectorDismissed: false,
-      panel: "world", spendingCategoryId: "social_security", spendingCityId: "selene", mapMode: "political", scale: "world",
+      panel: "world", shortcutTab: "world", selectedShortcutCharacterId: nextState.player.id, characterDetailOpen: false, spendingCategoryId: "social_security", spendingCityId: "selene", mapMode: "political", scale: "world",
       selectedType: null, selectedId: null, selectedTileName: null, selectedTerrain: null, selectedTerrainType: null, tileWindowOpen: false,
       selectedCityId: "selene", cityTab: "overview", selectedTownId: "mugiwano", townTab: "overview", selectedVillageId: null, selectedVillageFacilityId: "inn", villageFacilityOpen: false, tavernSection: "requests", villageConversation: null, locationScene: null, selectedLocationZoneId: null, locationSceneResult: null, adventureOpen: false, selectedAuthorityDomain: "justice", selectedNationalReformSystem: "population_land_knowledge",
       selectedFacilityId: "farmland", selectedCountryId: "valka", objectiveId: "transit", warMapView: "atlas", warRegionId: null, selectedWarHexId: null, warCouncilOpen: false, assignmentOpen: false,
-      pendingTownId: null, guideOpen: false, endingOpen: false, resetOpen: false, expertMode: false, atlasMode: "generated", generatedMapScale: "region", generatedMapLegendOpen: true, pendingGeneratedDestinationId: null, pendingGeneratedTravelMode: "route",
+      pendingTownId: null, guideOpen: false, endingOpen: false, resetOpen: false, expertMode: false, atlasMode: "generated", generatedMapScale: "region", generatedMapLegendOpen: true, generatedPanX: 0, generatedPanY: 0, generatedConfirmOffsetX: 0, generatedConfirmOffsetY: 0, pendingGeneratedDestinationId: null, pendingGeneratedTravelMode: "route",
       selectedGeneratedNationId: nextState.generatedWorld.playerNationId, worldNationFilter: "all", focusedTownCommandId: null,
       characterCreationOpen: Boolean(flow.deferLaunch), characterDraft: flow.deferLaunch ? view.characterDraft : null,
     });
@@ -1265,6 +1319,8 @@ async function beginGoddessReincarnation(draft) {
   view.guideOpen = false;
   render();
   audio.play("reset");
+  await playWorldArrival(token);
+  if (token !== goddessSequenceToken) return;
   showToast("女神の庭から、生成された世界へ転生しました。");
 }
 
@@ -4158,6 +4214,76 @@ function renderVillageWorkspace() {
     </div>`;
 }
 
+function shortcutCharacters() {
+  if (!state.player) return [];
+  const player = state.player;
+  const life = player.villageLife;
+  const playerEntry = {
+    id: player.id,
+    kind: "player",
+    name: player.name,
+    role: `${getCareerStage(state).name} · ${player.title}`,
+    portraitImage: "./assets/generated/player-conversation-human.png",
+    hp: life?.hp ?? 100,
+    maxHp: life?.maxHp ?? 100,
+    active: true,
+    abilities: player.abilities ?? {},
+    equipment: life?.equipment ?? {},
+  };
+  const companions = (life?.party ?? []).map((member) => ({
+    ...member,
+    kind: "companion",
+    role: member.role ?? "同行者",
+    hp: member.hp ?? member.maxHp ?? 100,
+    maxHp: member.maxHp ?? member.hp ?? 100,
+    abilities: member.abilities ?? {},
+    equipment: member.equipment ?? {},
+  }));
+  return [playerEntry, ...companions];
+}
+
+function shortcutEquipmentLabel(character) {
+  const equipment = character.equipment ?? {};
+  const weapon = equipment.weapon?.name ?? equipment.weapon ?? "装備なし";
+  const armor = equipment.armor?.name ?? equipment.armor ?? "防具なし";
+  return `${weapon} / ${armor}`;
+}
+
+function renderCharacterShortcutPanel() {
+  const characters = shortcutCharacters();
+  const selected = characters.find((character) => character.id === view.selectedShortcutCharacterId) ?? characters[0];
+  if (selected) view.selectedShortcutCharacterId = selected.id;
+  const cards = characters.map((character) => {
+    const active = character.id === selected?.id;
+    const abilityValues = Object.values(character.abilities ?? {}).filter((value) => Number.isFinite(Number(value)));
+    const abilitySummary = abilityValues.length ? `能力平均 ${Math.round(abilityValues.reduce((sum, value) => sum + Number(value), 0) / abilityValues.length)}` : `Lv.${character.level ?? 1}`;
+    const portrait = character.portraitImage
+      ? `<img src="${escapeHtml(character.portraitImage)}" alt="${escapeHtml(character.name)}の顔グラフィック">`
+      : `<span aria-hidden="true">${escapeHtml(character.name.slice(0, 1))}</span>`;
+    return `<button type="button" class="character-shortcut-card ${active ? "is-selected" : ""}" data-shortcut-character="${escapeHtml(character.id)}" aria-pressed="${active}">
+      <figure>${portrait}<figcaption>${character.kind === "player" ? "主人公" : character.active ? "同行中" : "待機"}</figcaption></figure>
+      <span><small>${escapeHtml(character.role)}</small><strong>${escapeHtml(character.name)}</strong><em>HP ${character.hp} / ${character.maxHp} · ${escapeHtml(abilitySummary)}</em><b>${escapeHtml(shortcutEquipmentLabel(character))}</b></span>
+    </button>`;
+  }).join("");
+  elements.leftPanel.innerHTML = `<header class="panel-heading character-shortcut-heading"><span>CHARACTER SHORTCUT</span><h1>人物</h1><p>人物を選ぶと、この欄だけで概要を切り替えます。</p></header><div class="panel-body character-shortcut-body"><div class="character-shortcut-list">${cards || "<p>表示できる人物がいません。</p>"}</div>${selected ? `<section class="character-shortcut-summary"><small>SELECTED CHARACTER</small><h2>${escapeHtml(selected.name)}</h2><dl><div><dt>状態</dt><dd>HP ${selected.hp} / ${selected.maxHp}</dd></div><div><dt>装備</dt><dd>${escapeHtml(shortcutEquipmentLabel(selected))}</dd></div></dl><button type="button" data-open-character-detail="${escapeHtml(selected.id)}">詳細を見る</button></section>` : ""}</div>`;
+}
+
+function renderCharacterDetailModal() {
+  const characters = shortcutCharacters();
+  const character = characters.find((entry) => entry.id === view.selectedShortcutCharacterId) ?? characters[0];
+  const open = Boolean(view.characterDetailOpen && character);
+  elements.characterDetailModal.classList.toggle("is-hidden", !open);
+  elements.characterDetailModal.setAttribute("aria-hidden", String(!open));
+  if (!open) return;
+  elements.characterDetailTitle.textContent = `${character.name}の詳細`;
+  if (character.kind === "player") {
+    elements.characterDetailContent.innerHTML = renderCareerWorkspace();
+    return;
+  }
+  const abilities = Object.entries(character.abilities ?? {}).map(([key, value]) => `<div><dt>${escapeHtml(ABILITY_LABELS[key] ?? key)}</dt><dd>${value}</dd></div>`).join("");
+  elements.characterDetailContent.innerHTML = `<article class="companion-detail-sheet"><header><figure>${character.portraitImage ? `<img src="${escapeHtml(character.portraitImage)}" alt="${escapeHtml(character.name)}の立ち絵">` : `<span>${escapeHtml(character.name.slice(0, 1))}</span>`}</figure><div><small>COMPANION RECORD</small><h1>${escapeHtml(character.name)}</h1><p>${escapeHtml(character.role)} · ${character.active ? "同行中" : "待機"}</p></div></header><section><h2>状態と装備</h2><dl><div><dt>生命力</dt><dd>HP ${character.hp} / ${character.maxHp}</dd></div><div><dt>装備</dt><dd>${escapeHtml(shortcutEquipmentLabel(character))}</dd></div>${abilities}</dl></section></article>`;
+}
+
 function renderCareerPanel() {
   const player = state.player;
   const stage = getCareerStage(state);
@@ -4273,7 +4399,8 @@ function renderGovernanceWorkspace() {
 }
 
 function renderLeftPanel() {
-  if (view.panel === "career") renderCareerPanel();
+  if (view.panel === "world" && view.shortcutTab === "characters") renderCharacterShortcutPanel();
+  else if (view.panel === "career") renderCareerPanel();
   else if (view.panel === "village") renderVillagePanel();
   else if (view.panel === "location") renderLocationPanel();
   else if (view.panel === "governance") renderGovernancePanel();
@@ -4708,8 +4835,8 @@ function renderGeneratedRegionMoveConfirmation(copy, runtime, viewport) {
     <p>${escapeHtml(option.description)}</p>
     <em>約${formatGeneratedTravelDuration(option.travelMinutes)} · 移動力${option.cost} · 保存食${option.supplyCost}${option.unavailableReason ? ` · ${escapeHtml(option.unavailableReason)}` : ""}</em>
   </button>`).join("");
-  layer.innerHTML = `<section class="generated-region-move-confirmation" role="dialog" aria-label="${escapeHtml(region.name)}への移動確認">
-    <header><div><small>TRAVEL CONFIRMATION</small><strong>地方移動の確認</strong></div><button type="button" data-generated-map-move-cancel aria-label="移動確認を閉じる">×</button></header>
+  layer.innerHTML = `<section class="generated-region-move-confirmation" role="dialog" aria-label="${escapeHtml(region.name)}への移動確認" style="--confirm-x:${Number(view.generatedConfirmOffsetX) || 0}px;--confirm-y:${Number(view.generatedConfirmOffsetY) || 0}px">
+    <header data-drag-generated-confirm title="ドラッグまたはスワイプで移動"><div><small>TRAVEL CONFIRMATION</small><strong>地方移動の確認</strong></div><button type="button" data-generated-map-move-cancel aria-label="移動確認を閉じる">×</button></header>
     <h2>${escapeHtml(region.name)}</h2>
     <p>${escapeHtml(nation?.name ?? "所属不明")} · ${escapeHtml(generatedRegionTerrainLabel(region))}</p>
     ${firstSelection
@@ -4971,7 +5098,12 @@ function renderGeneratedWorldMapLayer() {
   const colonyCandidate = selectedSite?.kind === "colony"
     ? colonization.candidates.find((candidate) => candidate.tileId === selectedSite.id) ?? colonization.bestCandidate
     : colonization.bestCandidate;
-  const viewport = generatedRegionViewport(expeditionRegion, expeditionTile, runtime);
+  const baseViewport = generatedRegionViewport(expeditionRegion, expeditionTile, runtime);
+  const viewport = {
+    ...baseViewport,
+    x: baseViewport.x + (Number(view.generatedPanX) || 0),
+    y: Math.min(Math.max(0, runtime.terrain.height - baseViewport.height), Math.max(0, baseViewport.y + (Number(view.generatedPanY) || 0))),
+  };
   const visibleObjectIds = generatedMapVisibleObjectIds(runtime, expeditionRegion, expeditionTile, viewport, recognition.recognizedTileIds, selectedSite);
   const focusedNation = ["geopolitics", "nations", "statistics"].includes(view.atlasMode)
     ? runtime.nationById.get(view.selectedGeneratedNationId) ?? playerNation
@@ -6628,6 +6760,7 @@ function renderAdventureScreen() {
 
 function render() {
   renderLaunchScreen();
+  renderWorldArrival();
   renderBattlePreparation();
   renderTacticalBattle();
   renderAnalysisMode();
@@ -6651,6 +6784,7 @@ function render() {
   renderEndingModal();
   renderResetModal();
   renderAdventureScreen();
+  renderCharacterDetailModal();
 }
 
 function renderPanelFromTop() {
@@ -6868,11 +7002,91 @@ function playNavigationCue(event) {
 }
 
 audio.subscribe(renderAudioControl);
+elements.generatedWorldScroll?.addEventListener("pointerdown", (event) => {
+  if (view.generatedTravel || event.button !== 0 || event.target.closest("button, input, select, a, .generated-region-move-confirmation")) return;
+  const copy = event.target.closest(".generated-world-copy");
+  if (!copy) return;
+  generatedMapPanGesture = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, dx: 0, dy: 0, moved: false, copy };
+  elements.generatedWorldScroll.setPointerCapture(event.pointerId);
+  elements.generatedWorldScroll.classList.add("is-panning");
+});
+elements.generatedWorldScroll?.addEventListener("pointermove", (event) => {
+  if (!generatedMapPanGesture || generatedMapPanGesture.pointerId !== event.pointerId) return;
+  generatedMapPanGesture.dx = event.clientX - generatedMapPanGesture.startX;
+  generatedMapPanGesture.dy = event.clientY - generatedMapPanGesture.startY;
+  generatedMapPanGesture.moved ||= Math.hypot(generatedMapPanGesture.dx, generatedMapPanGesture.dy) > 6;
+  if (!generatedMapPanGesture.moved) return;
+  event.preventDefault();
+  generatedMapPanGesture.copy.style.transform = `translate3d(${generatedMapPanGesture.dx}px, ${generatedMapPanGesture.dy}px, 0)`;
+});
+function finishGeneratedMapPan(event) {
+  const gesture = generatedMapPanGesture;
+  if (!gesture || gesture.pointerId !== event.pointerId) return;
+  gesture.copy.style.transform = "";
+  elements.generatedWorldScroll.classList.remove("is-panning");
+  generatedMapPanGesture = null;
+  if (!gesture.moved) return;
+  const rect = elements.generatedWorldScroll.getBoundingClientRect();
+  const viewportWidth = Number(gesture.copy.dataset.viewportWidth) || 1;
+  const viewportHeight = Number(gesture.copy.dataset.viewportHeight) || 1;
+  view.generatedPanX = (Number(view.generatedPanX) || 0) - gesture.dx / Math.max(1, rect.width) * viewportWidth;
+  view.generatedPanY = (Number(view.generatedPanY) || 0) - gesture.dy / Math.max(1, rect.height) * viewportHeight;
+  suppressGeneratedMapClickUntil = Date.now() + 250;
+  renderGeneratedWorldMapLayer();
+}
+elements.generatedWorldScroll?.addEventListener("pointerup", finishGeneratedMapPan);
+elements.generatedWorldScroll?.addEventListener("pointercancel", finishGeneratedMapPan);
+document.addEventListener("pointerdown", (event) => {
+  const handle = event.target.closest("[data-drag-generated-confirm]");
+  if (!handle || event.target.closest("button") || event.button !== 0) return;
+  const windowElement = handle.closest(".generated-region-move-confirmation");
+  const boundary = windowElement?.parentElement;
+  if (!windowElement || !boundary) return;
+  const rect = windowElement.getBoundingClientRect();
+  const bounds = boundary.getBoundingClientRect();
+  floatingWindowGesture = {
+    pointerId: event.pointerId,
+    startX: event.clientX,
+    startY: event.clientY,
+    originX: Number(view.generatedConfirmOffsetX) || 0,
+    originY: Number(view.generatedConfirmOffsetY) || 0,
+    minDx: bounds.left - rect.left,
+    maxDx: bounds.right - rect.right,
+    minDy: bounds.top - rect.top,
+    maxDy: bounds.bottom - rect.bottom,
+    windowElement,
+  };
+  handle.setPointerCapture(event.pointerId);
+  windowElement.classList.add("is-dragging");
+});
+document.addEventListener("pointermove", (event) => {
+  const gesture = floatingWindowGesture;
+  if (!gesture || gesture.pointerId !== event.pointerId) return;
+  event.preventDefault();
+  const dx = Math.min(gesture.maxDx, Math.max(gesture.minDx, event.clientX - gesture.startX));
+  const dy = Math.min(gesture.maxDy, Math.max(gesture.minDy, event.clientY - gesture.startY));
+  view.generatedConfirmOffsetX = gesture.originX + dx;
+  view.generatedConfirmOffsetY = gesture.originY + dy;
+  gesture.windowElement.style.setProperty("--confirm-x", `${view.generatedConfirmOffsetX}px`);
+  gesture.windowElement.style.setProperty("--confirm-y", `${view.generatedConfirmOffsetY}px`);
+});
+function finishFloatingWindowDrag(event) {
+  if (!floatingWindowGesture || floatingWindowGesture.pointerId !== event.pointerId) return;
+  floatingWindowGesture.windowElement.classList.remove("is-dragging");
+  floatingWindowGesture = null;
+}
+document.addEventListener("pointerup", finishFloatingWindowDrag);
+document.addEventListener("pointercancel", finishFloatingWindowDrag);
 document.addEventListener("pointerdown", (event) => {
   if (!event.target.closest("#audioToggle")) void audio.unlock();
 }, { capture: true });
 
 document.addEventListener("click", async (event) => {
+  if (Date.now() < suppressGeneratedMapClickUntil && event.target.closest("#generatedWorldScroll")) {
+    event.preventDefault();
+    event.stopPropagation();
+    return;
+  }
   playNavigationCue(event);
   if (view.generatedTravel) {
     event.preventDefault();
@@ -7324,11 +7538,12 @@ document.addEventListener("click", async (event) => {
   if (villageExit) {
     view.villageFacilityOpen = false;
     view.villageConversation = null;
-    view.panel = villageExit.dataset.leaveVillage === "world" ? "world" : "career";
-    if (view.panel === "world") {
-      view.atlasMode = "generated";
-      view.generatedMapScale = "region";
-    }
+    view.panel = "world";
+    view.shortcutTab = villageExit.dataset.leaveVillage === "world" ? "world" : "characters";
+    view.characterDetailOpen = villageExit.dataset.leaveVillage === "career";
+    view.selectedShortcutCharacterId = state.player?.id ?? view.selectedShortcutCharacterId;
+    view.atlasMode = "generated";
+    view.generatedMapScale = "region";
     renderPanelFromTop();
     return;
   }
@@ -7632,6 +7847,10 @@ document.addEventListener("click", async (event) => {
   const generatedMapScaleButton = event.target.closest("[data-generated-map-scale]");
   if (generatedMapScaleButton) {
     view.generatedMapScale = generatedMapScaleButton.dataset.generatedMapScale;
+    view.generatedPanX = 0;
+    view.generatedPanY = 0;
+    view.generatedConfirmOffsetX = 0;
+    view.generatedConfirmOffsetY = 0;
     renderMap();
     return;
   }
@@ -7772,6 +7991,34 @@ document.addEventListener("click", async (event) => {
     }
     view.scale = "country";
     renderPanelFromTop();
+    return;
+  }
+  const shortcutTab = event.target.closest("[data-shortcut-tab]");
+  if (shortcutTab) {
+    clearTileDetailSelection();
+    view.panel = "world";
+    view.shortcutTab = shortcutTab.dataset.shortcutTab;
+    view.atlasMode = "generated";
+    view.generatedMapScale = "region";
+    renderPanelFromTop();
+    return;
+  }
+  const shortcutCharacter = event.target.closest("[data-shortcut-character]");
+  if (shortcutCharacter) {
+    view.selectedShortcutCharacterId = shortcutCharacter.dataset.shortcutCharacter;
+    renderLeftPanel();
+    return;
+  }
+  const openCharacterDetail = event.target.closest("[data-open-character-detail]");
+  if (openCharacterDetail) {
+    view.selectedShortcutCharacterId = openCharacterDetail.dataset.openCharacterDetail;
+    view.characterDetailOpen = true;
+    renderCharacterDetailModal();
+    return;
+  }
+  if (event.target.closest("[data-close-character-detail]") || event.target === elements.characterDetailModal) {
+    view.characterDetailOpen = false;
+    renderCharacterDetailModal();
     return;
   }
   const panelButton = event.target.closest("[data-panel]");
@@ -8315,7 +8562,18 @@ elements.audioToggle.addEventListener("click", async () => {
   const enabled = await audio.toggle();
   if (enabled) audio.play("confirm");
 });
-document.querySelector("#realmHome").addEventListener("click", () => { clearTileDetailSelection(); view.panel = state.player ? "career" : "council"; view.scale = "country"; renderPanelFromTop(); });
+document.querySelector("#realmHome").addEventListener("click", () => {
+  clearTileDetailSelection();
+  if (!state.player) {
+    view.panel = "council";
+  } else {
+    view.panel = "world";
+    view.shortcutTab = "characters";
+    view.selectedShortcutCharacterId = state.player.id;
+    view.characterDetailOpen = true;
+  }
+  renderPanelFromTop();
+});
 document.querySelector("#saveButton").addEventListener("click", () => persist(true));
 document.querySelector("#resetButton").addEventListener("click", (event) => {
   view.resetOpen = true;
@@ -8330,6 +8588,11 @@ elements.guideModal.addEventListener("click", (event) => {
   }
 });
 document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && view.characterDetailOpen) {
+    view.characterDetailOpen = false;
+    renderCharacterDetailModal();
+    return;
+  }
   if (event.key === "Escape" && view.adventureOpen && ["complete", "failed"].includes(state.adventure.activeRun?.phase)) {
     view.adventureOpen = false;
     commit(closeDungeonRun(state), "地方地図へ戻りました。", "ui");

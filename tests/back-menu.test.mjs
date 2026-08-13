@@ -13,7 +13,8 @@ test("front navigation shows world before person and keeps reference pages in th
   const backMenu = markup.match(/<details class="outliner left-info-drawer" id="backMenu"[\s\S]*?<\/details>/)?.[0] ?? "";
   const worldSwitch = app.match(/function worldModeSwitch\(\)[\s\S]*?^}/m)?.[0] ?? "";
 
-  assert.ok(primaryTabs.indexOf('data-panel="world"') < primaryTabs.indexOf('data-panel="career"'));
+  assert.ok(primaryTabs.indexOf('data-shortcut-tab="world"') < primaryTabs.indexOf('data-shortcut-tab="characters"'));
+  assert.doesNotMatch(primaryTabs, /data-panel="career"/);
   assert.doesNotMatch(primaryTabs, /data-panel="people"/);
   assert.match(backMenu, /設定集/);
   assert.ok(backMenu.indexOf("世界統計") < backMenu.indexOf("原案種族"));
