@@ -10384,7 +10384,11 @@ body:not(.is-expert-mode) .selection-card { bottom: 48px; }
 .developer-launch-grid strong { color: #e8dfca; font-size: 11px; }
 .developer-launch-grid small { color: #879994; font: 8px/1.4 system-ui, sans-serif; }
 .developer-launch-grid b { color: #b89957; font: 800 8px system-ui, sans-serif; }
-.launch-screen > footer { display: flex; justify-content: space-between; gap: 20px; color: #667a75; font: 800 7px system-ui, sans-serif; letter-spacing: .14em; }
+.launch-screen > footer { display: flex; align-items: center; justify-content: space-between; gap: 20px; color: #667a75; font: 800 7px system-ui, sans-serif; letter-spacing: .14em; }
+.launch-build-info { color: #8ea49c; white-space: nowrap; }
+.launch-build-info b { color: #d1bd89; font-weight: 900; }
+.launch-build-info a { color: #d7ad55; text-underline-offset: 2px; }
+.launch-build-info a:hover { color: #f2d58e; }
 
 body.is-battle-preparation-open { overflow: hidden; }
 .battle-preparation-screen {

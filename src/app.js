@@ -1,3 +1,4 @@
+import { BUILD_INFO, getBuildCommitUrl } from "./build-info.js";
 import {
   ADMINISTRATION_MANDATES,
   ADMINISTRATION_MODES,
@@ -507,6 +508,9 @@ const view = {
 
 const elements = {
   launchScreen: document.querySelector("#launchScreen"),
+  launchDeveloperBuild: document.querySelector("#launchDeveloperBuild"),
+  launchProductVersion: document.querySelector("#launchProductVersion"),
+  launchCommitLink: document.querySelector("#launchCommitLink"),
   launchActions: document.querySelector("#launchActions"),
   characterCreation: document.querySelector("#characterCreation"),
   characterAbilityRolls: document.querySelector("#characterAbilityRolls"),
@@ -640,6 +644,17 @@ const elements = {
   adventureContent: document.querySelector("#adventureContent"),
   toast: document.querySelector("#toast"),
 };
+
+function renderBuildInfo() {
+  const shortCommit = BUILD_INFO.commit.slice(0, 7);
+  elements.launchDeveloperBuild.textContent = `PRODUCT ${BUILD_INFO.version} · BUILD ${shortCommit} · GENERATION VER2`;
+  elements.launchProductVersion.textContent = BUILD_INFO.version;
+  elements.launchCommitLink.textContent = shortCommit;
+  elements.launchCommitLink.href = getBuildCommitUrl();
+  elements.launchCommitLink.title = `GitHub コミット ${BUILD_INFO.commit}`;
+}
+
+renderBuildInfo();
 
 function loadState() {
   try {
