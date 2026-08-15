@@ -15220,3 +15220,240 @@ body.is-location-focus .village-central-status article > strong { font-size: cla
   .equipment-upgrade-prompt { top: auto; right: 14px; bottom: calc(76px + env(safe-area-inset-bottom)); }
   .offline-report-board { padding: 20px; }
 }
+
+/* Landscape-only play kit: persistent map, PC-style command chrome, opt-in drawers. */
+.landscape-guard { display: none; }
+
+.strategy-shell {
+  height: 100dvh;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  grid-template-rows: 64px minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.left-dock { display: contents; }
+
+.left-hud {
+  position: relative;
+  z-index: 30;
+  grid-column: 1 / 3;
+  grid-row: 1;
+  min-width: 0;
+  height: 64px;
+  display: grid;
+  grid-template-columns: 210px minmax(260px, 1fr) 278px 122px;
+  border: 0;
+  border-bottom: 1px solid #a6813a;
+  background: linear-gradient(90deg, #0d2023, #142a2c 62%, #0c1c1f);
+  box-shadow: 0 6px 18px rgba(3, 10, 12, .5);
+}
+
+.left-hud .grand-topbar { display: contents; }
+.left-hud .realm-identity {
+  grid-column: 1;
+  min-height: 64px;
+  padding: 7px 14px;
+  border: 0;
+  border-right: 1px solid rgba(221, 200, 147, .18);
+}
+.left-hud .resource-ledger { display: none; }
+.left-hud .date-controls {
+  grid-column: 3;
+  height: 64px;
+  grid-template-columns: 104px minmax(0, 1fr);
+  border-left: 1px solid rgba(221, 200, 147, .18);
+}
+.left-hud .campaign-bar {
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
+  min-height: 64px;
+  display: block;
+  border: 0;
+  background: transparent;
+}
+.left-hud .campaign-bar-goal,
+.left-hud .campaign-bar-actions { display: none; }
+.left-hud .campaign-bar-next {
+  height: 64px;
+  display: grid;
+  align-content: center;
+  gap: 3px;
+  padding: 8px 18px;
+  border: 0;
+}
+.left-hud .campaign-bar-next > small,
+.left-hud .campaign-bar-next > strong,
+.left-hud .campaign-bar-next > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.left-hud .campaign-bar-next > strong { font-size: 12px; }
+
+.left-info-drawer {
+  grid-column: 4;
+  grid-row: 1;
+  border: 0;
+  border-left: 1px solid rgba(221, 200, 147, .18);
+  background: transparent;
+}
+.left-info-drawer > summary { height: 64px; padding: 8px 14px; }
+.left-info-drawer .back-menu-content {
+  position: fixed;
+  z-index: 45;
+  top: 64px;
+  right: 0;
+  bottom: 38px;
+  width: min(430px, calc(100vw - 90px));
+  max-height: none;
+  background: linear-gradient(180deg, rgba(13, 37, 39, .99), rgba(8, 27, 29, .99));
+  box-shadow: -14px 18px 38px rgba(2, 9, 10, .5);
+}
+.left-info-drawer > footer {
+  position: fixed;
+  z-index: 46;
+  right: 0;
+  bottom: 0;
+  width: min(430px, calc(100vw - 90px));
+  min-height: 38px;
+  background: #0b2022;
+}
+
+.left-dock > .primary-tabs {
+  z-index: 20;
+  grid-column: 1;
+  grid-row: 2;
+  min-height: 0;
+  border-right: 1px solid #876e3a;
+  box-shadow: 6px 0 18px rgba(5, 15, 17, .32);
+}
+.left-dock > .primary-tabs button { height: 64px; }
+
+.ledger-drawer {
+  position: fixed;
+  z-index: 25;
+  top: 64px;
+  bottom: 0;
+  left: 72px;
+  width: min(390px, calc(100vw - 170px));
+  display: grid;
+  grid-template-rows: 44px minmax(0, 1fr);
+  visibility: hidden;
+  border-right: 1px solid #a6813a;
+  background: var(--panel);
+  box-shadow: 14px 0 34px rgba(4, 13, 14, .46);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-24px);
+  transition: opacity .18s ease, transform .22s ease, visibility .22s;
+}
+.ledger-drawer.is-open {
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(0);
+}
+.ledger-drawer-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 8px 6px 14px;
+  color: #f2dfaa;
+  background: #173033;
+  border-bottom: 1px solid rgba(210, 181, 105, .36);
+}
+.ledger-drawer-bar span,
+.ledger-drawer-bar small,
+.ledger-drawer-bar strong { display: block; }
+.ledger-drawer-bar small {
+  color: #bca35f;
+  font: 800 7px/1 system-ui, sans-serif;
+  letter-spacing: .14em;
+}
+.ledger-drawer-bar strong { margin-top: 2px; font-size: 11px; }
+.ledger-drawer-bar button {
+  width: 32px;
+  height: 32px;
+  border: 1px solid rgba(222, 202, 149, .3);
+  color: #f4dfaa;
+  background: rgba(255, 255, 255, .04);
+  cursor: pointer;
+  font-size: 19px;
+}
+.left-dock > .ledger-drawer .ledger-panel { min-height: 0; overflow-y: auto; }
+
+.map-stage {
+  grid-column: 2;
+  grid-row: 2;
+  width: 100%;
+  height: auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+@media (max-width: 980px) and (orientation: landscape) {
+  .left-hud { grid-template-columns: 174px minmax(190px, 1fr) 230px 72px; }
+  .left-info-drawer > summary { justify-content: center; padding-inline: 6px; }
+  .left-info-drawer > summary span,
+  .left-info-drawer > summary strong { display: none; }
+  .left-hud .campaign-bar-next > span { display: none; }
+}
+
+@media (orientation: portrait) {
+  body { overflow: hidden; }
+  body > :not(.landscape-guard),
+  body > :not(.landscape-guard) * {
+    visibility: hidden !important;
+    pointer-events: none !important;
+  }
+  .landscape-guard {
+    position: fixed;
+    z-index: 1000000;
+    inset: 0;
+    display: grid;
+    place-content: center;
+    justify-items: center;
+    gap: 12px;
+    padding: 34px;
+    color: #f7e8bc;
+    background: radial-gradient(circle at 50% 32%, rgba(70, 120, 107, .3), transparent 30%), linear-gradient(155deg, #10282a, #091719 70%);
+    text-align: center;
+  }
+  .landscape-guard-device {
+    width: 82px;
+    height: 132px;
+    display: grid;
+    place-items: center;
+    border: 3px solid #d5b869;
+    border-radius: 12px;
+    box-shadow: 0 12px 34px rgba(0, 0, 0, .34);
+    transform: rotate(90deg);
+  }
+  .landscape-guard-device i {
+    width: 54px;
+    height: 88px;
+    border: 1px solid rgba(213, 184, 105, .45);
+    background: linear-gradient(145deg, #315c53, #193a3a);
+  }
+  .landscape-guard small { color: #d5b869; font: 800 10px/1 system-ui, sans-serif; letter-spacing: .2em; }
+  .landscape-guard h1 { margin: 0; font: 700 clamp(24px, 7vw, 42px)/1.25 Georgia, "Yu Mincho", serif; }
+  .landscape-guard p { max-width: 420px; margin: 0; color: #bdc9c3; line-height: 1.7; }
+  .landscape-guard button {
+    min-height: 48px;
+    margin-top: 4px;
+    padding: 10px 18px;
+    border: 1px solid #d5b869;
+    color: #172224;
+    background: linear-gradient(180deg, #f0d88f, #c7a75e);
+    cursor: pointer;
+    font-weight: 800;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ledger-drawer { transition: none; }
+}

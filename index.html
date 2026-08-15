@@ -11,6 +11,14 @@
   <body>
     <div class="grain" aria-hidden="true"></div>
 
+    <section class="landscape-guard" id="landscapeGuard" aria-labelledby="landscapeGuardTitle">
+      <div class="landscape-guard-device" aria-hidden="true"><i></i></div>
+      <small>LANDSCAPE PLAY KIT</small>
+      <h1 id="landscapeGuardTitle">端末を横向きにしてください</h1>
+      <p>誓界記は、地図と操作欄を同時に表示する横画面専用ゲームです。</p>
+      <button id="requestLandscape" type="button">全画面で横向きを試す</button>
+    </section>
+
     <section class="launch-screen" id="launchScreen" aria-labelledby="launchTitle">
       <div class="launch-atmosphere" aria-hidden="true"><i></i><i></i><i></i></div>
       <header class="launch-brand">
@@ -245,7 +253,13 @@
           <button type="button" data-panel="diplomacy" hidden><span>⚖</span>外交</button>
           <button type="button" data-panel="military" hidden><span>⚔</span>軍事</button>
         </nav>
-        <section class="ledger-panel" id="leftPanel" aria-live="polite"></section>
+        <section class="ledger-drawer" id="ledgerDrawer" aria-hidden="true" aria-label="選択中の操作パネル">
+          <header class="ledger-drawer-bar">
+            <span><small>COMMAND DRAWER</small><strong>操作・情報</strong></span>
+            <button id="closeLedgerDrawer" type="button" aria-label="操作パネルを閉じる">×</button>
+          </header>
+          <section class="ledger-panel" id="leftPanel" aria-live="polite"></section>
+        </section>
       </aside>
 
       <main class="map-stage">

@@ -147,16 +147,31 @@ test("undiscovered regions are shown with a subdued gray knowledge overlay", () 
   assert.match(styleSource, /\.generated-region-knowledge-layer\s*\{[^}]*pointer-events: none;/s);
 });
 
-test("campaign information stays in the left dock while regional movement is map-only", () => {
+test("landscape shell keeps the map visible and moves detailed information into an opt-in drawer", () => {
   const leftDock = markup.match(/<aside class="left-dock"[^>]*>[\s\S]*?<\/aside>/)?.[0] ?? "";
   assert.match(leftDock, /class="left-hud"/);
   assert.match(leftDock, /class="grand-topbar"/);
   assert.match(leftDock, /class="campaign-bar"/);
   assert.match(leftDock, /id="leftPanel"/);
+  assert.match(leftDock, /id="ledgerDrawer"[^>]*aria-hidden="true"/);
+  assert.match(leftDock, /id="closeLedgerDrawer"/);
   assert.match(appSource, /class="generated-command-status"/);
   assert.doesNotMatch(appSource, /class="generated-move-command"/);
   assert.doesNotMatch(appSource, /<h2>地方へ移動<\/h2>/);
-  assert.match(styleSource, /\.strategy-shell\s*\{[^}]*height: 100vh;[^}]*grid-template-columns: 400px/s);
+  assert.match(styleSource, /Landscape-only play kit/);
+  assert.match(styleSource, /\.strategy-shell\s*\{[^}]*height: 100dvh;[^}]*grid-template-columns: 72px minmax\(0, 1fr\);/s);
+  assert.match(styleSource, /\.ledger-drawer\s*\{[^}]*position: fixed;[^}]*visibility: hidden;/s);
+  assert.match(styleSource, /\.ledger-drawer\.is-open\s*\{[^}]*visibility: visible;/s);
+  assert.match(appSource, /ledgerDrawerOpen: false/);
+  assert.match(appSource, /function openLedgerDrawer\(\)/);
+});
+
+test("portrait screens are blocked by an explicit landscape-only orientation gate", () => {
+  assert.match(markup, /id="landscapeGuard"/);
+  assert.match(markup, /端末を横向きにしてください/);
+  assert.match(markup, /id="requestLandscape"/);
+  assert.match(styleSource, /@media \(orientation: portrait\)[\s\S]*?\.landscape-guard\s*\{[\s\S]*?display: grid;/);
+  assert.match(appSource, /screen\.orientation\?\.lock\?\.\("landscape"\)/);
 });
 
 test("personal log ticker shows four rows and the full chronicle folds after ten entries", () => {

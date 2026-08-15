@@ -414,6 +414,7 @@ let floatingWindowGesture = null;
 let suppressGeneratedMapClickUntil = 0;
 const view = {
   launchOpen: true,
+  ledgerDrawerOpen: false,
   characterCreationOpen: false,
   characterDraft: null,
   goddessPrologue: createGoddessPrologueState(),
@@ -569,6 +570,8 @@ const elements = {
   audioStatus: document.querySelector("#audioStatus"),
   analysisToggle: document.querySelector("#analysisToggle"),
   leftPanel: document.querySelector("#leftPanel"),
+  ledgerDrawer: document.querySelector("#ledgerDrawer"),
+  closeLedgerDrawer: document.querySelector("#closeLedgerDrawer"),
   primaryTabs: document.querySelector("#primaryTabs"),
   characterDetailModal: document.querySelector("#characterDetailModal"),
   characterDetailContent: document.querySelector("#characterDetailContent"),
@@ -854,6 +857,20 @@ function renderTabs() {
     button.hidden = false;
     button.classList.toggle("is-active", view.panel === "world" && button.dataset.shortcutTab === view.shortcutTab);
   });
+  elements.ledgerDrawer.classList.toggle("is-open", view.ledgerDrawerOpen);
+  elements.ledgerDrawer.setAttribute("aria-hidden", String(!view.ledgerDrawerOpen));
+  elements.primaryTabs.querySelectorAll("button").forEach((button) => {
+    button.setAttribute("aria-expanded", String(view.ledgerDrawerOpen && button.classList.contains("is-active")));
+  });
+}
+
+function openLedgerDrawer() {
+  view.ledgerDrawerOpen = true;
+}
+
+function closeLedgerDrawer() {
+  view.ledgerDrawerOpen = false;
+  renderTabs();
 }
 
 function campaignObjectiveItems(campaign, compact = false) {
@@ -4281,17 +4298,15 @@ function renderCharacterShortcutPanel() {
   if (selected) view.selectedShortcutCharacterId = selected.id;
   const cards = characters.map((character) => {
     const active = character.id === selected?.id;
-    const abilityValues = Object.values(character.abilities ?? {}).filter((value) => Number.isFinite(Number(value)));
-    const abilitySummary = abilityValues.length ? `能力平均 ${Math.round(abilityValues.reduce((sum, value) => sum + Number(value), 0) / abilityValues.length)}` : `Lv.${character.level ?? 1}`;
     const portrait = character.portraitImage
       ? `<img src="${escapeHtml(character.portraitImage)}" alt="${escapeHtml(character.name)}の顔グラフィック">`
       : `<span aria-hidden="true">${escapeHtml(character.name.slice(0, 1))}</span>`;
     return `<button type="button" class="character-shortcut-card ${active ? "is-selected" : ""}" data-shortcut-character="${escapeHtml(character.id)}" aria-pressed="${active}">
       <figure>${portrait}<figcaption>${character.kind === "player" ? "主人公" : character.active ? "同行中" : "待機"}</figcaption></figure>
-      <span><small>${escapeHtml(character.role)}</small><strong>${escapeHtml(character.name)}</strong><em>HP ${character.hp} / ${character.maxHp} · ${escapeHtml(abilitySummary)}</em><b>${escapeHtml(shortcutEquipmentLabel(character))}</b></span>
+      <span><small>${escapeHtml(character.role)}</small><strong>${escapeHtml(character.name)}</strong><em>HP ${character.hp} / ${character.maxHp}</em><b>${escapeHtml(shortcutEquipmentLabel(character))}</b></span>
     </button>`;
   }).join("");
-  elements.leftPanel.innerHTML = `<header class="panel-heading character-shortcut-heading"><span>CHARACTER SHORTCUT</span><h1>人物</h1><p>人物を選ぶと、この欄だけで概要を切り替えます。</p></header><div class="panel-body character-shortcut-body"><div class="character-shortcut-list">${cards || "<p>表示できる人物がいません。</p>"}</div>${selected ? `<section class="character-shortcut-summary"><small>SELECTED CHARACTER</small><h2>${escapeHtml(selected.name)}</h2><dl><div><dt>状態</dt><dd>HP ${selected.hp} / ${selected.maxHp}</dd></div><div><dt>装備</dt><dd>${escapeHtml(shortcutEquipmentLabel(selected))}</dd></div></dl><button type="button" data-open-character-detail="${escapeHtml(selected.id)}">詳細を見る</button></section>` : ""}</div>`;
+  elements.leftPanel.innerHTML = `<header class="panel-heading character-shortcut-heading"><span>CHARACTER SHORTCUT</span><h1>人物</h1><p>能力値などの個人情報は、人物を選んで「詳細を見る」から確認します。</p></header><div class="panel-body character-shortcut-body"><div class="character-shortcut-list">${cards || "<p>表示できる人物がいません。</p>"}</div>${selected ? `<section class="character-shortcut-summary"><small>SELECTED CHARACTER</small><h2>${escapeHtml(selected.name)}</h2><dl><div><dt>状態</dt><dd>HP ${selected.hp} / ${selected.maxHp}</dd></div><div><dt>装備</dt><dd>${escapeHtml(shortcutEquipmentLabel(selected))}</dd></div></dl><button type="button" data-open-character-detail="${escapeHtml(selected.id)}">詳細を見る</button></section>` : ""}</div>`;
 }
 
 function renderCharacterDetailModal() {
@@ -8031,6 +8046,7 @@ document.addEventListener("click", async (event) => {
   }
   const backMenuRoute = event.target.closest("[data-back-menu-route]");
   if (backMenuRoute) {
+    openLedgerDrawer();
     clearTileDetailSelection();
     if (backMenuRoute.dataset.backMenuRoute === "world-statistics") {
       view.panel = "world";
@@ -8065,6 +8081,7 @@ document.addEventListener("click", async (event) => {
   }
   const shortcutTab = event.target.closest("[data-shortcut-tab]");
   if (shortcutTab) {
+    openLedgerDrawer();
     clearTileDetailSelection();
     view.panel = "world";
     view.shortcutTab = shortcutTab.dataset.shortcutTab;
@@ -8093,6 +8110,7 @@ document.addEventListener("click", async (event) => {
   }
   const panelButton = event.target.closest("[data-panel]");
   if (panelButton) {
+    openLedgerDrawer();
     clearTileDetailSelection();
     view.panel = panelButton.dataset.panel;
     if (view.panel === "world") {
@@ -8633,6 +8651,7 @@ elements.audioToggle.addEventListener("click", async () => {
   if (enabled) audio.play("confirm");
 });
 document.querySelector("#realmHome").addEventListener("click", () => {
+  openLedgerDrawer();
   clearTileDetailSelection();
   if (!state.player) {
     view.panel = "council";
@@ -8643,6 +8662,15 @@ document.querySelector("#realmHome").addEventListener("click", () => {
     view.characterDetailOpen = true;
   }
   renderPanelFromTop();
+});
+elements.closeLedgerDrawer.addEventListener("click", closeLedgerDrawer);
+document.querySelector("#requestLandscape")?.addEventListener("click", async () => {
+  try {
+    if (!document.fullscreenElement) await document.documentElement.requestFullscreen?.();
+    await screen.orientation?.lock?.("landscape");
+  } catch {
+    showToast("横向きに回転するとゲーム画面を開けます。", "ui");
+  }
 });
 document.querySelector("#saveButton").addEventListener("click", () => persist(true));
 document.querySelector("#resetButton").addEventListener("click", (event) => {
@@ -8658,6 +8686,10 @@ elements.guideModal.addEventListener("click", (event) => {
   }
 });
 document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && view.ledgerDrawerOpen) {
+    closeLedgerDrawer();
+    return;
+  }
   if (event.key === "Escape" && view.characterDetailOpen) {
     view.characterDetailOpen = false;
     renderCharacterDetailModal();
