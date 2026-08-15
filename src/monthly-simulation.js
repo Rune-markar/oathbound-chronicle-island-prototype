@@ -276,6 +276,7 @@ import {
   resolveCrimeSentence,
   resolveCrimeRecovery,
 } from "./crime-system.js";
+import { advanceMerchantMarkets } from "./merchant-trade.js";
 
 export {
   CRIME_HEAT_GAINS,
@@ -1010,6 +1011,7 @@ export function performCareerAction(state, actionId, delegation = {}) {
 
 export function advanceCareerMonth(state) {
   let next = advancePlayerCareerMonth(state);
+  advanceMerchantMarkets(next);
   resolveRoleDelegations(WORLD, next);
   if (next.scenarioMode === "generated") {
     next = advanceGeneratedWorldRegions(next);
