@@ -272,6 +272,7 @@ import {
   recordCrimeIncident,
   resolveAccompliceDecision,
   resolveCrimeSentence,
+  resolveCrimeRecovery,
 } from "./crime-system.js";
 
 export {
@@ -287,6 +288,7 @@ export {
   recordCrimeIncident,
   resolveAccompliceDecision,
   resolveCrimeSentence,
+  resolveCrimeRecovery,
   getTheftOpportunities,
   previewTheft,
   executeTheft,

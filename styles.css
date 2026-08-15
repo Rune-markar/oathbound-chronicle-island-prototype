@@ -20,6 +20,72 @@
   font-family: "Yu Mincho", "Hiragino Mincho ProN", "Noto Serif JP", Georgia, serif;
 }
 
+.crime-context-section,
+.crime-status-board {
+  border: 1px solid color-mix(in srgb, #8f4a3e 55%, var(--line, #675b4c));
+  border-radius: 14px;
+  background: linear-gradient(145deg, rgba(37, 25, 24, .96), rgba(20, 25, 29, .94));
+  color: #f2e8d4;
+  padding: 16px;
+  min-width: 0;
+}
+
+.crime-context-section > header,
+.crime-status-board > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.crime-context-section h2,
+.crime-status-board strong { margin: 0; }
+.crime-context-section p { color: #cdbda8; }
+.crime-opportunity-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr)); gap: 12px; }
+.crime-opportunity { display: grid; gap: 10px; border: 1px solid rgba(205, 172, 126, .32); border-radius: 10px; padding: 12px; background: rgba(0, 0, 0, .2); min-width: 0; }
+.crime-opportunity header { display: flex; justify-content: space-between; gap: 8px; }
+.crime-opportunity header span { display: grid; min-width: 0; }
+.crime-opportunity header strong { overflow-wrap: anywhere; }
+.crime-opportunity header b { color: #efb36d; white-space: nowrap; }
+.crime-opportunity dl { display: grid; gap: 5px; margin: 0; }
+.crime-opportunity dl div { display: grid; grid-template-columns: 5em minmax(0, 1fr); gap: 8px; }
+.crime-opportunity dt { color: #a99a88; }
+.crime-opportunity dd { margin: 0; overflow-wrap: anywhere; }
+.crime-opportunity button,
+.crime-support-actions button,
+.crime-recovery-actions button,
+.crime-context-section > button { border: 1px solid #ad725d; background: #65382f; color: #fff3dc; border-radius: 8px; padding: 10px 12px; }
+[data-crime-action]:disabled,
+.crime-support-actions button:disabled,
+.crime-recovery-actions button:disabled { opacity: .42; cursor: not-allowed; filter: grayscale(.5); }
+.crime-support-actions,
+.crime-recovery-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.crime-support-actions button { display: grid; text-align: left; }
+.crime-feedback { margin: 10px 0 0; font-size: .9rem; }
+.crime-accomplice-field { display: grid; gap: 5px; margin: 10px 0; }
+.crime-accomplice-field select { width: 100%; border: 1px solid #ad725d; border-radius: 8px; background: #201b1b; color: #fff3dc; padding: 9px; }
+.crime-status-board { margin-block: 14px; }
+.crime-status-board > summary { cursor: pointer; list-style: none; }
+.crime-status-board > summary::-webkit-details-marker { display: none; }
+.crime-status-board > summary span { display: grid; }
+.crime-status-board > summary b { color: #efb36d; }
+.crime-status-content { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 12px; margin-top: 14px; }
+.crime-status-content section { border-top: 1px solid rgba(255,255,255,.12); padding-top: 10px; min-width: 0; }
+.crime-status-content h3 { margin: 0 0 8px; }
+.crime-status-content ul { list-style: none; display: grid; gap: 5px; margin: 0; padding: 0; }
+.crime-status-content li { display: flex; justify-content: space-between; gap: 8px; }
+.crime-status-content li span { color: #cdbda8; text-align: right; }
+.crime-recovery-actions { grid-column: 1 / -1; }
+
+@media (max-width: 720px) {
+  .crime-context-section,
+  .crime-status-board { padding: 12px; border-radius: 10px; }
+  .crime-context-section > header { align-items: flex-start; flex-direction: column; }
+  .crime-opportunity-grid,
+  .crime-status-content { grid-template-columns: minmax(0, 1fr); }
+  .crime-recovery-actions button { flex: 1 1 9em; }
+}
+
 /* Continuous creed system: values remain data-first; these cards expose only readable tendencies. */
 .policy-creed {
   display: block;

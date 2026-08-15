@@ -139,6 +139,33 @@ import {
   setOccupationGarrison,
   setOccupationPolicy,
   setWarPlan,
+  getSettlementTheftOpportunities,
+  previewTheft,
+  executeTheft,
+  getSettlementExtortionOpportunities,
+  previewExtortion,
+  executeExtortion,
+  getRobberyOpportunities,
+  previewRobbery,
+  startRobbery,
+  resolveRobberyThreat,
+  resolveRobberyBattle,
+  getSmugglingOffers,
+  acceptSmugglingOffer,
+  inspectSmugglingCheckpoint,
+  deliverSmugglingCargo,
+  getSabotageTargets,
+  startSabotage,
+  prepareSabotage,
+  executeSabotage,
+  getAssassinationTargets,
+  startAssassination,
+  prepareAssassination,
+  executeAssassination,
+  getCrimeStatusView,
+  discoverUnderworldContacts,
+  fenceStolenItem,
+  resolveCrimeRecovery,
 } from "./simulation.js";
 import {
   AUTOSAVE_INTERVAL_MS,
@@ -4051,6 +4078,111 @@ function completeVillageConversation() {
   }
 }
 
+function crimePreviewCard(action, opportunity, preview, jurisdictionName, label) {
+  const reward = preview.expectedReward?.text ?? opportunity.reward?.text ?? opportunity.loot?.text ?? "結果に応じた報酬";
+  const requirements = preview.preparationRequirements ?? opportunity.preparationRequirements ?? ["現地の状況を確認する"];
+  const targetName = preview.targetName ?? opportunity.target?.name ?? opportunity.cargo?.name ?? opportunity.name;
+  const penalty = preview.maximumPenalty ?? opportunity.maximumPenalty ?? "拘束と法令に基づく処罰";
+  return `<article class="crime-opportunity" data-crime-preview="${action}">
+    <header><span><small>${escapeHtml(label)}</small><strong>${escapeHtml(targetName)}</strong></span><b>危険 ${escapeHtml(preview.riskLabel ?? opportunity.riskLabel ?? "不明")}</b></header>
+    <dl><div><dt>対象</dt><dd>${escapeHtml(targetName)}</dd></div><div><dt>管轄</dt><dd>${escapeHtml(jurisdictionName)}</dd></div><div><dt>準備</dt><dd>${requirements.map(escapeHtml).join("・")}</dd></div><div><dt>見込報酬</dt><dd>${escapeHtml(reward)}</dd></div><div><dt>最大刑罰</dt><dd>${escapeHtml(penalty)}</dd></div></dl>
+    <button type="button" data-crime-action="${action}" data-crime-target="${escapeHtml(opportunity.id)}" aria-expanded="false">${escapeHtml(label)}を実行</button>
+  </article>`;
+}
+
+function renderSettlementCrimeSection(village) {
+  if (!village) return "";
+  const context = { ...currentAdventureContext(), settlement: village, jurisdictionId: village.regionId, jurisdictionName: village.regionName };
+  const theft = getSettlementTheftOpportunities(state, village, context)[0];
+  const extortion = getSettlementExtortionOpportunities(state, village, context)[0];
+  const stolen = state.player.crime?.stolenItems ?? [];
+  const contacts = state.player.crime?.contacts?.filter((entry) => entry.jurisdictionId === village.regionId) ?? [];
+  return `<section class="crime-context-section" aria-labelledby="settlementCrimeTitle">
+    <header><div><small>ILLEGAL / LOCAL</small><h2 id="settlementCrimeTitle">非合法</h2></div><p>対象と管轄を確かめてから実行します。</p></header>
+    <div class="crime-opportunity-grid">
+      ${crimePreviewCard("theft", theft, previewTheft(state, theft), village.regionName, "窃盗")}
+      ${crimePreviewCard("extortion", extortion, previewExtortion(state, extortion), village.regionName, "恐喝")}
+    </div>
+    <nav class="crime-support-actions" aria-label="裏社会の行動">
+      <button type="button" data-crime-support="discover" data-jurisdiction-id="${escapeHtml(village.regionId)}" aria-pressed="${contacts.length > 0}"><strong>連絡先を探す</strong><small>${contacts.length ? `${contacts.length}人と接触済み` : "酒場で財産1を使う"}</small></button>
+      <button type="button" data-crime-support="fence" ${stolen.length ? `data-stolen-item-id="${escapeHtml(stolen[0].id)}"` : "disabled"} title="${stolen.length ? escapeHtml(`${stolen[0].name}を換金`) : "換金できる盗品がありません"}"><strong>盗品を故買屋へ流す</strong><small>${stolen.length ? escapeHtml(stolen[0].name) : "盗品なし"}</small></button>
+    </nav>
+    <p class="crime-feedback" aria-live="polite">成功・失敗と露見の結果は年代記へ記録されます。</p>
+  </section>`;
+}
+
+function currentCrimeTravelContext() {
+  if (!view.pendingGeneratedDestinationId) return null;
+  try {
+    const world = getGeneratedWorldView(state);
+    const destination = world.runtime.regionById.get(view.pendingGeneratedDestinationId);
+    if (!destination) return null;
+    const options = getGeneratedExpeditionTravelOptions(state, destination.id);
+    const travel = options.find((entry) => entry.id === view.pendingGeneratedTravelMode) ?? options[0] ?? {};
+    return { origin: world.expeditionRegion, destination, travel };
+  } catch { return null; }
+}
+
+function renderTravelCrimeSection() {
+  const route = currentCrimeTravelContext();
+  const activeSmuggling = state.player.crime?.activeSmuggling;
+  if (!route && !activeSmuggling) return `<section class="crime-context-section is-compact"><header><div><small>ILLEGAL / ROAD</small><h2>非合法</h2></div><p>移動先を選ぶと街道の対象が現れます。</p></header><div class="crime-opportunity-grid"><button type="button" data-crime-action="robbery" disabled title="街道の移動先を選んでください">強盗</button><button type="button" data-crime-action="smuggling" disabled title="街道の移動先を選んでください">密輸</button></div></section>`;
+  const robbery = route ? getRobberyOpportunities(state, route)[0] : null;
+  const robberyPreview = robbery ? previewRobbery(state, robbery) : null;
+  const offers = route ? getSmugglingOffers(state, route) : [];
+  const smuggling = offers[0];
+  const activeLabel = activeSmuggling ? `${activeSmuggling.cargo.name} → ${activeSmuggling.destinationJurisdiction.name}` : null;
+  return `<section class="crime-context-section"><header><div><small>ILLEGAL / ROAD &amp; BORDER</small><h2>非合法</h2></div><p>${activeLabel ? escapeHtml(`密輸中：${activeLabel}`) : "街道上の具体的な対象だけを表示します。"}</p></header><div class="crime-opportunity-grid">
+    ${robbery ? crimePreviewCard("robbery", robbery, robberyPreview, robbery.jurisdictionName, "街道強盗") : ""}
+    ${smuggling ? crimePreviewCard("smuggling", smuggling, { riskLabel: smuggling.riskLabel, targetName: smuggling.cargo.name, expectedReward: smuggling.reward, preparationRequirements: ["密輸人との接触", "国境経路の確認"], maximumPenalty: smuggling.maximumPenalty }, smuggling.destinationJurisdiction.name, "密輸を受託") : `<button type="button" data-crime-action="smuggling" ${activeSmuggling ? "" : "disabled"} data-crime-stage="${activeSmuggling ? "checkpoint" : "offer"}" title="${activeSmuggling ? "検問を通過する" : "現地の密輸人との接触が必要です"}">${activeSmuggling ? "密輸の検問・納品" : "密輸依頼なし"}</button>`}
+  </div><p class="crime-feedback" aria-live="polite">検問は管轄境界を越える時だけ発生します。</p></section>`;
+}
+
+function renderStrategicCrimeSection(context) {
+  if (!context || context.kind !== "object") return "";
+  const targets = getSabotageTargets(state, { regionId: currentAdventureContext().region.id });
+  const target = targets.find((entry) => entry.backingId === context.id);
+  if (!target) return "";
+  const active = state.player.crime?.activeSabotage;
+  const stage = active?.stage ?? "start";
+  return `<section class="crime-context-section"><header><div><small>ILLEGAL / STRATEGIC TARGET</small><h2>非合法</h2></div><p>実在する施設状態へ損害が反映されます。</p></header>${crimePreviewCard("sabotage", target, { riskLabel: target.riskLabel, targetName: target.name, expectedReward: { text: "対象施設の機能低下" }, preparationRequirements: target.preparationRequirements, maximumPenalty: target.maximumPenalty }, context.regionName, stage === "start" ? "破壊工作を開始" : stage === "started" ? "破壊工作を準備" : "破壊工作を実行").replace('data-crime-action="sabotage"', `data-crime-action="sabotage" data-crime-stage="${stage}"`)}</section>`;
+}
+
+function renderCrimeStatusBoard() {
+  const crime = state.player.crime ?? {};
+  const jurisdictionId = activeVillageContext()?.regionId ?? state.player.locationId;
+  const status = getCrimeStatusView(state, { jurisdictionId });
+  const heatRows = Object.entries(crime.heatByJurisdiction ?? {}).map(([id, heat]) => `<li><strong>${escapeHtml(id)}</strong><span>${getCrimeStatusView(state, { jurisdictionId: id }).heatLabel} ${heat}</span></li>`).join("");
+  const contactRoleNames = { fence: "故買屋", smuggler: "密輸人", broker: "仲介人" };
+  const contacts = (crime.contacts ?? []).map((entry) => `<li><strong>${escapeHtml(entry.name ?? contactRoleNames[entry.role] ?? "連絡先")}</strong><span>${escapeHtml(contactRoleNames[entry.role] ?? entry.role)} · 信頼${entry.trust}${entry.trust >= 20 ? " · 隠れ家" : ""}</span></li>`).join("");
+  const incidents = (crime.incidents ?? []).slice(0, 6).map((entry) => `<li><strong>${escapeHtml(entry.historyText || entry.type)}</strong><span>${entry.resolved ? "解決済み" : entry.severity === "capital" ? "死刑相当・未解決" : entry.severity === "serious" ? "重罪・未解決" : "未解決"}</span></li>`).join("");
+  const serious = (crime.incidents ?? []).some((entry) => !entry.resolved && ["serious", "capital"].includes(entry.severity));
+  return `<details class="crime-status-board"><summary><span><small>CRIME / HEAT / UNDERWORLD</small><strong>犯罪歴・手配・裏社会</strong></span><b>${status.heatLabel} ${status.heat}</b></summary><div class="crime-status-content">
+    <section><h3>犯罪歴と管轄</h3><ul>${incidents || "<li>犯罪歴なし</li>"}${heatRows}</ul></section>
+    <section><h3>盗品・連絡先・隠れ家</h3><p>盗品 ${(crime.stolenItems ?? []).length}件 · 連絡先 ${(crime.contacts ?? []).length}人 · 隠れ家 ${status.safehouseAvailable ? "利用可" : "信頼20が必要"}</p><ul>${contacts || "<li>裏社会との接触なし</li>"}</ul></section>
+    <section><h3>進行中</h3><p>密輸 ${crime.activeSmuggling ? "運搬中" : "なし"} · 恐喝 ${(crime.extortionArrangements ?? []).filter((entry) => entry.active !== false).length}件 · 工作 ${crime.activeSabotage || crime.activeAssassination ? "進行中" : "なし"}</p><p>刑罰 ${(crime.sentences ?? []).length}件 · 権力濫用 ${(crime.abuses ?? []).length}件</p></section>
+    <nav class="crime-recovery-actions" aria-label="手配からの回復">
+      <button type="button" data-crime-recovery="surrender" ${status.unresolvedIncidents ? "" : "disabled"} title="${status.unresolvedIncidents ? "出頭して刑に服す" : "未解決事件がありません"}">出頭・服役</button>
+      <button type="button" data-crime-recovery="safehouse" ${status.safehouseAvailable ? "" : "disabled"} title="${status.safehouseAvailable ? "隠れ家へ身を隠す" : "現地の連絡先に信頼20が必要です"}">隠れ家</button>
+      <button type="button" data-crime-recovery="escape" ${status.heat ? "" : "disabled"}>管轄外へ逃亡</button>
+      <button type="button" data-crime-recovery="pardon" ${state.player.sovereign || (crime.contacts ?? []).some((entry) => entry.jurisdictionId === jurisdictionId && entry.role === "broker" && entry.trust >= 40) ? "" : "disabled"} title="君主権または信頼40の仲介人が必要です">恩赦を得る</button>
+      <button type="button" data-crime-recovery="asylum" ${serious ? "" : "disabled"}>亡命・追放</button>
+    </nav><p class="crime-feedback" aria-live="polite">回復行動も人物状態と年代記へ反映されます。</p>
+  </div></details>`;
+}
+
+function renderPersonCrimeSection() {
+  let targets = [];
+  try { targets = getAssassinationTargets(state, { regionId: currentAdventureContext().region.id }); } catch { targets = []; }
+  const target = targets[0];
+  if (!target) return `<section class="crime-context-section is-compact"><header><div><small>ILLEGAL / PERSON</small><h2>非合法</h2></div><p>保護対象や対象化されていない人物は暗殺対象にできません。</p></header><button type="button" data-crime-action="assassination" disabled title="対象化可能な人物がいません">暗殺対象なし</button></section>`;
+  const active = state.player.crime?.activeAssassination;
+  const stage = active?.stage ?? "start";
+  const companions = (state.player.villageLife?.party ?? []).filter((entry) => entry.active !== false && entry.alive !== false);
+  const companionField = stage === "start" ? `<label class="crime-accomplice-field"><span>同行者の参加</span><select data-crime-accomplice><option value="">単独で行う</option>${companions.map((entry) => `<option value="${escapeHtml(entry.id)}">${escapeHtml(entry.name)}</option>`).join("")}</select><small>選んだ同行者は準備時に承諾・拒否・通報を判断します。</small></label>` : active?.selectedAccomplice ? `<p>参加打診：${escapeHtml(active.selectedAccomplice.name)}</p>` : "";
+  return `<section class="crime-context-section"><header><div><small>ILLEGAL / PERSON &amp; COMPANION</small><h2>非合法</h2></div><p>同行者は参加を拒否・通報・離脱する場合があります。</p></header>${companionField}${crimePreviewCard("assassination", target, { riskLabel: target.riskLabel, targetName: target.name, expectedReward: { text: "政治的障害の排除" }, preparationRequirements: target.preparationRequirements, maximumPenalty: target.maximumPenalty }, target.regionId, stage === "start" ? "暗殺計画を開始" : stage === "started" ? "暗殺計画を準備" : "暗殺を実行").replace('data-crime-action="assassination"', `data-crime-action="assassination" data-crime-stage="${stage}"`)}</section>`;
+}
+
 function renderVillagePanel() {
   const village = activeVillageContext();
   if (!village) {
@@ -4071,6 +4203,7 @@ function renderVillagePanel() {
       <section class="panel-section village-vital-card"><div><small>HP</small><strong>${life.hp}<i> / ${life.maxHp}</i></strong></div><div><small>MP</small><strong>${life.mp}<i> / ${life.maxMp}</i></strong></div><p><b>${escapeHtml(villageConditionSummary(life))}</b><span>財産 ${state.player.metrics.wealth} · 食料 ${life.supplies.food} · 松明 ${life.supplies.torches}</span></p></section>
       <section class="panel-section"><div class="section-heading"><h2>施設</h2><small>${facilities.length}か所</small></div><nav class="village-panel-facilities">${facilities.map((facility) => `<button type="button" data-village-facility="${facility.id}" class="${facility.id === selected.id ? "is-active" : ""}"><i>${facility.icon}</i><span>${facility.name}</span><small>${facility.actions.length}</small></button>`).join("")}</nav></section>
       <section class="panel-section village-choice-section"><div class="section-heading"><h2>${selected.name}での行動</h2><small>会話して実行</small></div><p class="village-choice-summary">${selected.summary}</p><div class="village-choice-list">${actions}</div>${villageFacilityAdventureContent(selected.id)}</section>
+      ${renderSettlementCrimeSection(village)}
       <section class="panel-section village-panel-exits"><button type="button" data-leave-village="career">人物画面へ</button><button type="button" data-leave-village="world">地方地図へ</button></section>
     </div>`;
 }
@@ -4082,7 +4215,7 @@ function renderLocationPanel() {
     return;
   }
   const definition = LOCATION_SCENE_DEFINITIONS[context.type];
-  elements.leftPanel.innerHTML = `<header class="panel-heading village-heading"><span>${definition.eyebrow}</span><h1>${escapeHtml(context.name)}</h1><p>${escapeHtml(context.regionName)} · ${escapeHtml(context.nationName)}</p></header><div class="panel-body"><section class="panel-section"><p class="adviser-note"><strong>${escapeHtml(definition.summary)}</strong><br>${escapeHtml(context.terrainLabel)}</p></section><section class="panel-section"><button type="button" class="town-open-commands" data-leave-location>地方地図へ戻る</button></section></div>`;
+  elements.leftPanel.innerHTML = `<header class="panel-heading village-heading"><span>${definition.eyebrow}</span><h1>${escapeHtml(context.name)}</h1><p>${escapeHtml(context.regionName)} · ${escapeHtml(context.nationName)}</p></header><div class="panel-body"><section class="panel-section"><p class="adviser-note"><strong>${escapeHtml(definition.summary)}</strong><br>${escapeHtml(context.terrainLabel)}</p></section>${renderStrategicCrimeSection(context)}<section class="panel-section"><button type="button" class="town-open-commands" data-leave-location>地方地図へ戻る</button></section></div>`;
 }
 
 function activeGuildRequest(life) {
@@ -4301,6 +4434,7 @@ function renderVillageWorkspace() {
       </section>
       ${life.lastAction?.villageId === village.id ? `<article class="village-action-result village-central-result"><i>✓</i><div><small>直前の行動 · ${escapeHtml(life.lastAction.facilityName)}</small><strong>${escapeHtml(life.lastAction.actionName)}</strong><p>${escapeHtml(life.lastAction.message)}</p></div></article>` : ""}
       ${renderVillageQuestFlow(life, village)}
+      ${renderSettlementCrimeSection(village)}
       <section class="village-ledger-grid">
         <article><header><small>PERSONAL LOADOUT</small><h2>装備と所持品</h2></header><dl><div><dt>武器</dt><dd>${escapeHtml(life.equipment.weapon.name)} +${life.equipment.weapon.enhancement ?? 0}</dd></div><div><dt>防具</dt><dd>${escapeHtml(life.equipment.armor.name)}</dd></div><div><dt>所持品</dt><dd>${life.inventory.map((item) => `${escapeHtml(item.name)}×${item.quantity ?? 1}`).join("・") || "なし"}</dd></div><div><dt>倉庫</dt><dd>${life.storage.items.length + life.storage.equipment.length + life.storage.materials.length}品</dd></div></dl></article>
         <article><header><small>LOCAL PROGRESS</small><h2>依頼と村の発展</h2></header><dl><div><dt>地域功績</dt><dd>${life.guildMerit}</dd></div><div><dt>報告済み依頼</dt><dd>${life.guildRequestsReported}件</dd></div><div><dt>建設支援</dt><dd>${progress.buildings}件</dd></div><div><dt>誘致</dt><dd>${progress.specialists}人</dd></div></dl></article>
@@ -4396,6 +4530,7 @@ function renderCareerPanel() {
       <section class="panel-section career-position-card"><div class="section-heading"><h2>現在の立場</h2><small>${escapeHtml(positionStatus)}</small></div><p class="adviser-note"><strong>${stage.description}</strong><br>${relation}</p><div class="career-panel-track"><i style="--value:${(stage.order + 1) / CAREER_STAGE_ROUTE.length * 100}%"></i><span>個人</span><span>領主</span><span>君主</span></div></section>
       <section class="panel-section"><div class="realm-facts career-facts"><div><i>⚔</i><small>武勲</small><strong>${player.metrics.martialMerit}</strong></div><div><i>政</i><small>政績</small><strong>${player.metrics.civilMerit}</strong></div><div><i>✦</i><small>${escapeHtml(regionalReputation.regionName)}の名声</small><strong>${regionalReputation.value}</strong></div><div><i>¤</i><small>財産</small><strong>${player.metrics.wealth}</strong></div></div></section>
       <section class="panel-section"><div class="section-heading"><h2>最新の年代記</h2><small>${latest.year ?? state.year}年</small></div><p class="adviser-note"><strong>${escapeHtml(latest.title)}</strong><br>${escapeHtml(latest.detail)}</p></section>
+      ${renderCrimeStatusBoard()}
       ${stage.governance ? `<section class="panel-section"><button class="town-open-commands" type="button" data-panel="governance">管轄統治を開く</button></section>` : ""}
     </div>`;
 }
@@ -4457,6 +4592,9 @@ function renderCareerWorkspace() {
       ${regionalReputationBoard(regionalReputation)}
       ${invitations}
       ${renderVillageEntrySection(true)}
+      ${renderTravelCrimeSection()}
+      ${renderPersonCrimeSection()}
+      ${renderCrimeStatusBoard()}
       <section class="career-actions"><header><div><small>CURRENT CHOICES</small><h2>今できること</h2></div><p>権限を得ていない国家命令は表示しません。</p></header><div>${careerActionButtons(player) || (stage.governance ? `<button type="button" data-panel="governance"><strong>統治画面を開く</strong><small>現在の管轄と委任権限で実行可能な命令だけを表示</small></button>` : `<p class="career-action-note">上の仕官先を選び、具体的な主君との主従関係を結んでください。</p>`)}</div></section>
       ${roleDelegationSection()}
       ${renderPersonalChronicle(player.history)}
@@ -7223,7 +7361,131 @@ document.addEventListener("pointerdown", (event) => {
   if (!event.target.closest("#audioToggle")) void audio.unlock();
 }, { capture: true });
 
+function crimeOutcomeMessage(label, result) {
+  const outcome = result?.outcome;
+  if (outcome === "success_hidden") return `${label}に成功し、露見せず離脱しました。`;
+  if (outcome === "success_exposed") return `${label}に成功しましたが、犯行が露見しました。`;
+  if (outcome === "failed_escaped") return `${label}に失敗しましたが、拘束を免れました。`;
+  if (outcome === "captured") return `${label}に失敗し、拘束されました。`;
+  return `${label}の状況を更新しました。`;
+}
+
+function crimeOpportunityById(items, id) {
+  return items.find((entry) => entry.id === id) ?? null;
+}
+
+function executeCrimeActionFromUi(button) {
+  const action = button.dataset.crimeAction;
+  const targetId = button.dataset.crimeTarget;
+  const village = activeVillageContext();
+  const route = currentCrimeTravelContext();
+  if (action === "theft") {
+    const opportunities = getSettlementTheftOpportunities(state, village, { jurisdictionId: village.regionId, jurisdictionName: village.regionName });
+    const result = executeTheft(state, crimeOpportunityById(opportunities, targetId));
+    commit(result.state, crimeOutcomeMessage("窃盗", result.result), result.result.detected ? "event" : "confirm");
+    return;
+  }
+  if (action === "extortion") {
+    const opportunities = getSettlementExtortionOpportunities(state, village, { jurisdictionId: village.regionId, jurisdictionName: village.regionName });
+    const result = executeExtortion(state, crimeOpportunityById(opportunities, targetId));
+    commit(result.state, crimeOutcomeMessage("恐喝", result.result), result.result.detected ? "event" : "confirm");
+    return;
+  }
+  if (action === "robbery") {
+    if (!route) throw new Error("街道の移動先を選んでください");
+    const opportunity = crimeOpportunityById(getRobberyOpportunities(state, route), targetId);
+    const threatened = resolveRobberyThreat(startRobbery(state, opportunity));
+    if (threatened.result.battle) {
+      const finishedBattle = autoResolveBattle(threatened.result.battle);
+      const resolved = resolveRobberyBattle(threatened.state, createBattleResult(finishedBattle), { detected: true });
+      commit(resolved.state, crimeOutcomeMessage("隊商との強盗戦闘", resolved.result), "event");
+    } else commit(threatened.state, crimeOutcomeMessage("街道強盗", threatened.result), "confirm");
+    return;
+  }
+  if (action === "smuggling") {
+    const active = state.player.crime?.activeSmuggling;
+    if (!active) {
+      if (!route) throw new Error("密輸経路を選んでください");
+      const offer = crimeOpportunityById(getSmugglingOffers(state, route), targetId);
+      commit(acceptSmugglingOffer(state, offer), `${offer.cargo.name}を${offer.destinationJurisdiction.name}へ運ぶ密輸依頼を受けました。`, "confirm");
+      return;
+    }
+    if (!route) throw new Error("密輸経路の次の管轄を選んでください");
+    const checkpoint = inspectSmugglingCheckpoint(state, route);
+    if (checkpoint.result.outcome && checkpoint.result.outcome !== "clear") {
+      commit(checkpoint.state, crimeOutcomeMessage("密輸検問", checkpoint.result), "event");
+      return;
+    }
+    if (route.destination.id === active.destinationJurisdiction.id) {
+      const delivered = deliverSmugglingCargo(checkpoint.state, { jurisdictionId: active.destinationJurisdiction.id });
+      commit(delivered.state, `${active.cargo.name}を届け、${active.reward.text}を得ました。`, "confirm");
+    } else commit(checkpoint.state, "検問を通過し、密輸品の運搬を続けます。", "confirm");
+    return;
+  }
+  if (action === "sabotage") {
+    const target = crimeOpportunityById(getSabotageTargets(state), targetId);
+    const active = state.player.crime?.activeSabotage;
+    if (!active) commit(startSabotage(state, target), `${target.name}への破壊工作を開始しました。`, "confirm");
+    else if (active.stage === "started") commit(prepareSabotage(state), `${active.target.name}への工作準備を終えました。`, "confirm");
+    else {
+      const result = executeSabotage(state);
+      commit(result.state, crimeOutcomeMessage("破壊工作", result.result), result.result.detected ? "event" : "confirm");
+    }
+    return;
+  }
+  if (action === "assassination") {
+    const target = crimeOpportunityById(getAssassinationTargets(state, { regionId: currentAdventureContext().region.id }), targetId);
+    const active = state.player.crime?.activeAssassination;
+    const accompliceId = button.closest(".crime-context-section")?.querySelector("[data-crime-accomplice]")?.value || null;
+    if (!active) commit(startAssassination(state, target, { accompliceId }), `${target.name}への暗殺計画を開始しました。`, "event");
+    else if (active.stage === "started") commit(prepareAssassination(state), `${active.target.name}への暗殺準備を終えました。`, "event");
+    else {
+      const result = executeAssassination(state);
+      commit(result.state, crimeOutcomeMessage("暗殺", result.result), "event");
+    }
+  }
+}
+
+function crimeRecoveryDestination(jurisdictionId) {
+  try {
+    const world = getGeneratedWorldView(state);
+    return world.runtime.nations.regions.find((entry) => entry.id !== jurisdictionId)?.id ?? null;
+  } catch { return null; }
+}
+
 document.addEventListener("click", async (event) => {
+  const crimeAction = event.target.closest("[data-crime-action]");
+  if (crimeAction && !crimeAction.disabled) {
+    try { executeCrimeActionFromUi(crimeAction); }
+    catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
+  const crimeSupport = event.target.closest("[data-crime-support]");
+  if (crimeSupport && !crimeSupport.disabled) {
+    const village = activeVillageContext();
+    try {
+      if (crimeSupport.dataset.crimeSupport === "discover") {
+        commit(discoverUnderworldContacts(state, { jurisdictionId: village.regionId, jurisdictionName: village.regionName }), `${village.name}の裏社会で故買屋・密輸人・仲介人との連絡口を見つけました。`, "confirm");
+      } else {
+        commit(fenceStolenItem(state, { jurisdictionId: village.regionId, itemId: crimeSupport.dataset.stolenItemId }), "盗品を通常価値の4割で換金しました。", "confirm");
+      }
+    } catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
+  const recoveryButton = event.target.closest("[data-crime-recovery]");
+  if (recoveryButton && !recoveryButton.disabled) {
+    const action = recoveryButton.dataset.crimeRecovery;
+    const jurisdictionId = activeVillageContext()?.regionId ?? state.player.locationId;
+    const incident = state.player.crime?.incidents?.find((entry) => !entry.resolved && (entry.jurisdiction?.id ?? entry.jurisdictionId) === jurisdictionId)
+      ?? state.player.crime?.incidents?.find((entry) => !entry.resolved);
+    const destinationJurisdictionId = crimeRecoveryDestination(jurisdictionId);
+    try {
+      const next = resolveCrimeRecovery(state, { action, jurisdictionId, destinationJurisdictionId, incidentId: incident?.id, severity: incident?.severity, crimeType: incident?.type, authorized: action === "pardon" && state.player.sovereign });
+      const labels = { surrender: "出頭して刑に服しました。", safehouse: "裏社会の隠れ家へ身を隠しました。", escape: "管轄外へ逃亡しました。", pardon: "恩赦により現地の手配が解かれました。", asylum: "他国へ亡命し、元の管轄から追放されました。" };
+      commit(next, labels[action], action === "pardon" ? "confirm" : "event");
+    } catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
   if (Date.now() < suppressGeneratedMapClickUntil && event.target.closest("#generatedWorldScroll")) {
     event.preventDefault();
     event.stopPropagation();

@@ -53,6 +53,7 @@ function emptyCrimeState() {
     assassinationRecords: [],
     activeAssassination: null,
     accompliceDecisions: [],
+    recoveries: [],
     sentences: [],
     abuses: [],
     abusePressureByJurisdiction: {},
@@ -141,6 +142,7 @@ export function normalizeCrimeState(state) {
     assassinationRecords: [...(prior.assassinationRecords ?? [])],
     activeAssassination: prior.activeAssassination ? clone(prior.activeAssassination) : null,
     accompliceDecisions: [...(prior.accompliceDecisions ?? [])],
+    recoveries: [...(prior.recoveries ?? [])],
     sentences: [...(prior.sentences ?? [])],
     abuses: [...(prior.abuses ?? [])],
     abusePressureByJurisdiction: { ...(prior.abusePressureByJurisdiction ?? {}) },
@@ -366,5 +368,55 @@ export function resolveCrimeSentence(state, input = {}) {
   const incidentEntry = crime.incidents.find((entry) => entry.id === input.incidentId);
   if (incidentEntry) incidentEntry.resolved = true;
   advanceCalendar(next, months);
+  return next;
+}
+
+export function resolveCrimeRecovery(state, input = {}) {
+  const action = input.action;
+  const jurisdictionId = input.jurisdictionId ?? jurisdictionIdOf(input.jurisdiction);
+  if (!jurisdictionId) throw new TypeError("回復行動には管轄が必要です");
+  if (action === "surrender") return resolveCrimeSentence(state, input);
+
+  const next = normalizeCrimeState(state);
+  const crime = next.player.crime;
+  const recovery = {
+    id: `recovery-${next.turn ?? 0}-${crime.recoveries.length + 1}`,
+    action,
+    jurisdictionId,
+    turn: next.turn ?? 0,
+    year: next.year ?? null,
+    month: next.month ?? null,
+  };
+
+  if (action === "safehouse") {
+    const contact = crime.contacts.find((entry) => entry.jurisdictionId === jurisdictionId && (entry.trust ?? 0) >= 20);
+    if (!contact) throw new Error("この管轄で隠れ家を使うには裏社会の信頼20が必要です");
+    recovery.contactId = contact.id;
+    recovery.status = "hidden";
+  } else if (action === "escape" || action === "asylum") {
+    const destinationJurisdictionId = input.destinationJurisdictionId;
+    if (!destinationJurisdictionId || destinationJurisdictionId === jurisdictionId) throw new Error("管轄外の行き先を指定してください");
+    next.player.locationId = destinationJurisdictionId;
+    if (next.generatedWorld) {
+      next.generatedWorld.expeditionRegionId = destinationJurisdictionId;
+      next.generatedWorld.selectedRegionId = destinationJurisdictionId;
+    }
+    recovery.destinationJurisdictionId = destinationJurisdictionId;
+    recovery.status = action === "asylum" ? "exile" : "escaped";
+  } else if (action === "pardon") {
+    const authorized = input.authorized === true
+      || next.player.sovereign === true
+      || crime.contacts.some((entry) => entry.jurisdictionId === jurisdictionId && entry.role === "broker" && (entry.trust ?? 0) >= 40);
+    if (!authorized) throw new Error("恩赦には君主権、正式な許可、または信頼40の仲介人が必要です");
+    crime.incidents.forEach((entry) => {
+      if (jurisdictionIdOf(entry.jurisdiction) === jurisdictionId) entry.resolved = true;
+    });
+    crime.heatByJurisdiction[jurisdictionId] = 0;
+    recovery.status = "pardoned";
+  } else {
+    throw new RangeError(`未知の回復行動です: ${action ?? ""}`);
+  }
+
+  crime.recoveries.unshift(recovery);
   return next;
 }
