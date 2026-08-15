@@ -4181,15 +4181,17 @@ function renderTravelSabotage(route) {
   if (!route) return "";
   const routeRegions = new Set([route.origin.id, ...(route.travel.pathRegionIds ?? []), route.destination.id]);
   try {
-    const target = getSabotageTargets(state).find((entry) => entry.kind === "road" && routeRegions.has(entry.regionId));
-    return target ? sabotageCard(target, target.regionId, "road") : "";
+    const roadSabotageTargets = getSabotageTargets(state).filter((entry) => entry.kind === "road" && routeRegions.has(entry.regionId));
+    return roadSabotageTargets.map((target) => sabotageCard(target, target.regionId, "road")).join("");
   } catch { return ""; }
 }
 
 function renderSettlementSabotage(village) {
   try {
-    const target = getSabotageTargets(state, { regionId: village.regionId }).find((entry) => entry.kind === "facility");
-    return target ? `<section class="crime-settlement-sabotage"><h3>施設への破壊工作</h3>${sabotageCard(target, village.regionName, "facility")}</section>` : "";
+    const facilitySabotageTargets = getSabotageTargets(state, { regionId: village.regionId }).filter((entry) => entry.kind === "facility");
+    return facilitySabotageTargets.length
+      ? `<section class="crime-settlement-sabotage"><h3>施設への破壊工作</h3>${facilitySabotageTargets.map((target) => sabotageCard(target, village.regionName, "facility")).join("")}</section>`
+      : "";
   } catch { return ""; }
 }
 

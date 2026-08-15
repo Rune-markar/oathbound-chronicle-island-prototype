@@ -6,6 +6,7 @@ import { CRIME_RISK_LABELS, resolveCrimeEvent, resolveCrimeRecovery } from "../s
 const appSource = await readFile(new URL("../src/app.js", import.meta.url), "utf8");
 const stylesSource = await readFile(new URL("../styles.css", import.meta.url), "utf8");
 const manualSource = await readFile(new URL("../MANUAL.md", import.meta.url), "utf8");
+const changelogSource = await readFile(new URL("../CHANGELOG.md", import.meta.url), "utf8");
 
 function stateWithCrime(overrides = {}) {
   return {
@@ -164,6 +165,13 @@ test("active smuggling, extortion variants, accomplices, and backed sabotage rou
   assert.match(appSource, /renderSettlementSabotage/);
 });
 
+test("travel and settlement sabotage render every matching backed target", () => {
+  assert.match(appSource, /roadSabotageTargets\.map\(/);
+  assert.match(appSource, /facilitySabotageTargets\.map\(/);
+  assert.doesNotMatch(appSource, /function renderTravelSabotage[\s\S]{0,500}\.find\(/);
+  assert.doesNotMatch(appSource, /function renderSettlementSabotage[\s\S]{0,500}\.find\(/);
+});
+
 test("crime controls avoid false disclosure state and enforce local support prerequisites", () => {
   assert.doesNotMatch(appSource, /data-crime-action=[^>]*aria-expanded/);
   assert.match(appSource, /hasLocalFence/);
@@ -188,6 +196,8 @@ test("crime risk vocabulary is exact in code, UI contract, and manual", () => {
   assert.deepEqual(CRIME_RISK_LABELS, ["有利", "互角", "危険", "極めて危険"]);
   assert.match(manualSource, /有利・互角・危険・極めて危険/);
   assert.doesNotMatch(manualSource, /危険度は「低・中・高・極高」/);
+  assert.match(changelogSource, /有利・互角・危険・極めて危険/);
+  assert.doesNotMatch(changelogSource, /危険度は確率ではなく低・中・高・極高/);
 });
 
 test("smuggling checkpoint is integrated into confirmed generated travel", () => {
