@@ -8,10 +8,12 @@ import {
   setBattleTerrain,
   setBattleTileFeature,
 } from "./tactical-battle.js";
-import { advanceGeneratedWorldTime } from "./generated-world-system.js";
+import { advanceGeneratedWorldTime, getGeneratedTravelCrimeContext } from "./generated-world-system.js";
 import { NOELA_ORBIS_ID, UNIQUE_CHARACTERS, getUniqueCharacter } from "./unique-characters.js";
 import { ABILITY_LABELS, normalizeAbilityScores } from "./character-abilities.js";
 import { discoverUnderworldContacts, fenceStolenItem, normalizeCrimeState } from "./crime-system.js";
+import { getRobberyOpportunities } from "./robbery-system.js";
+import { getSmugglingOffers } from "./smuggling-system.js";
 
 const clone = (value) => structuredClone(value);
 
@@ -49,6 +51,14 @@ export function discoverTavernUnderworldContacts(state, context = {}) {
 export function fenceTavernStolenItem(state, itemId, context = {}) {
   const location = underworldJurisdiction(state, context);
   return fenceStolenItem(state, { itemId, jurisdictionId: location.jurisdictionId });
+}
+
+export function getRoadRobberyOpportunities(state, travel = state.generatedWorld?.lastTravel) {
+  return getRobberyOpportunities(state, getGeneratedTravelCrimeContext(state, travel));
+}
+
+export function getCrossBorderSmugglingOffers(state, travel = state.generatedWorld?.lastTravel) {
+  return getSmugglingOffers(state, getGeneratedTravelCrimeContext(state, travel));
 }
 
 export const ADVENTURE_SCHEMA_VERSION = 5;

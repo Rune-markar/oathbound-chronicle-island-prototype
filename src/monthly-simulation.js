@@ -211,6 +211,19 @@ import {
   previewExtortion,
 } from "./extortion-system.js";
 import {
+  getRobberyOpportunities,
+  previewRobbery,
+  startRobbery,
+  resolveRobberyThreat,
+  resolveRobberyBattle,
+} from "./robbery-system.js";
+import {
+  getSmugglingOffers,
+  acceptSmugglingOffer,
+  inspectSmugglingCheckpoint,
+  deliverSmugglingCargo,
+} from "./smuggling-system.js";
+import {
   REGIONAL_REPUTATION_GAINS,
   REGIONAL_REPUTATION_SCHEMA_VERSION,
   createRegionalReputationState,
@@ -269,6 +282,15 @@ export {
   previewExtortion,
   executeExtortion,
   collectExtortionPayment,
+  getRobberyOpportunities,
+  previewRobbery,
+  startRobbery,
+  resolveRobberyThreat,
+  resolveRobberyBattle,
+  getSmugglingOffers,
+  acceptSmugglingOffer,
+  inspectSmugglingCheckpoint,
+  deliverSmugglingCargo,
   getSettlementTheftOpportunities,
   getSettlementExtortionOpportunities,
   ADMINISTRATION_MANDATES,

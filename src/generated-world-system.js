@@ -1196,6 +1196,23 @@ export function getGeneratedExpeditionTravelOptions(state, destinationId) {
   return generatedTravelOptions(runtime, generatedState, refreshed, destination);
 }
 
+export function getGeneratedTravelCrimeContext(state, travel = state.generatedWorld?.lastTravel) {
+  if (!travel?.fromRegionId || !travel?.destinationRegionId) throw new TypeError("犯罪行動に使える移動記録がありません。");
+  const refreshed = refreshGeneratedWorldForDate(state);
+  const generatedState = createGeneratedWorldState(refreshed.generatedWorld ?? {}, refreshed);
+  const runtime = effectiveRuntimeFor(buildGeneratedWorld(refreshed), generatedState, refreshed);
+  const origin = regionById(runtime, travel.fromRegionId);
+  const destination = regionById(runtime, travel.destinationRegionId);
+  if (!origin || !destination) throw new RangeError("移動記録の地方が生成世界に存在しません。");
+  return {
+    origin: { id: origin.id, name: origin.name, nationId: origin.nationId },
+    destination: { id: destination.id, name: destination.name, nationId: destination.nationId },
+    travel: structuredClone(travel),
+    crossesJurisdiction: origin.id !== destination.id,
+    crossesNationalBorder: origin.nationId !== destination.nationId,
+  };
+}
+
 export function getGeneratedExpeditionReachableTiles(state) {
   return getGeneratedExpeditionReachableRegions(state);
 }
