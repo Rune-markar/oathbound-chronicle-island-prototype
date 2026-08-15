@@ -125,4 +125,3 @@
 - [ ] Update the linked Notion specification pages and mandatory `仕様変更・更新履歴` with date, summary, reason, impact, implementation, tests, and final commit reference.
 - [ ] Run `npm run check`, then inspect `git diff --check`, `git status --short`, and the complete plan acceptance checklist.
 - [ ] Commit as `docs: document criminal play flow implementation`.
-
