@@ -7537,7 +7537,7 @@ function executeCrimeActionFromUi(button) {
   if (action === "sabotage") {
     const target = crimeOpportunityById(getSabotageTargets(state), targetId);
     const active = state.player.crime?.activeSabotage;
-    const accompliceId = button.closest(".crime-context-section")?.querySelector("[data-sabotage-accomplice]")?.value || null;
+    const accompliceId = button.closest("[data-sabotage-context]")?.querySelector("[data-sabotage-accomplice]")?.value || null;
     if (!active) commit(startSabotage(state, target, { accompliceId }), `${target.name}への破壊工作を開始しました。`, "confirm");
     else if (active.stage === "started") {
       const event = currentCrimeEvent(active);

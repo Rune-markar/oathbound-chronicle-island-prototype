@@ -172,6 +172,11 @@ test("travel and settlement sabotage render every matching backed target", () =>
   assert.doesNotMatch(appSource, /function renderSettlementSabotage[\s\S]{0,500}\.find\(/);
 });
 
+test("each sabotage action reads the accomplice selector from its clicked card", () => {
+  assert.match(appSource, /button\.closest\(["']\[data-sabotage-context\]["']\)\?\.querySelector\(["']\[data-sabotage-accomplice\]["']\)/);
+  assert.doesNotMatch(appSource, /button\.closest\(["']\.crime-context-section["']\)\?\.querySelector\(["']\[data-sabotage-accomplice\]["']\)/);
+});
+
 test("crime controls avoid false disclosure state and enforce local support prerequisites", () => {
   assert.doesNotMatch(appSource, /data-crime-action=[^>]*aria-expanded/);
   assert.match(appSource, /hasLocalFence/);
