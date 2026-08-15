@@ -36,6 +36,15 @@ test("extortion opportunities are stable concrete targets with one-off and recur
   assert.ok(opportunities.every((entry) => entry.riskLabel && entry.maximumPenalty && entry.expectedReward.wealth > 0));
 });
 
+test("generated settlement extortion uses region jurisdiction instead of the village site id", () => {
+  const state = fixture();
+  const opportunities = getExtortionOpportunities(state, {
+    settlement: { id: "village:generated-7", name: "生成村" },
+    region: { id: "region:generated-7", name: "生成地方" },
+  });
+  assert.ok(opportunities.every((entry) => entry.jurisdictionId === "region:generated-7"));
+});
+
 test("one-off extortion pays real wealth and reported extortion adds heat and an NPC consequence", () => {
   const state = fixture();
   const opportunity = getExtortionOpportunities(state, context).find((entry) => entry.mode === "one_off");
@@ -62,6 +71,22 @@ test("recurring protection creates a due arrangement and deterministic execution
   assert.equal(arrangement.amount, opportunity.expectedReward.wealth);
   assert.equal(arrangement.pressure, 1);
   assert.equal(arrangement.nextDueTurn, (state.turn ?? 0) + 1);
+});
+
+test("default extortion resolution uses generated-world seed and explicit seed overrides it", () => {
+  const worldA = fixture();
+  const worldB = fixture();
+  worldA.worldSeed = worldB.worldSeed = "legacy-shared-seed";
+  worldA.generatedWorld.seed = "world-a";
+  worldB.generatedWorld.seed = "world-b";
+  const opportunity = getExtortionOpportunities(worldA, context).find((entry) => entry.mode === "one_off");
+  assert.equal(executeExtortion(worldA, opportunity).result.outcome, "success_hidden");
+  assert.equal(executeExtortion(worldA, opportunity).result.outcome, executeExtortion(worldA, opportunity).result.outcome);
+  assert.equal(executeExtortion(worldB, opportunity).result.outcome, "failed_escaped");
+  assert.equal(
+    executeExtortion(worldA, opportunity, { seed: "explicit" }).result.outcome,
+    executeExtortion(worldB, opportunity, { seed: "explicit" }).result.outcome,
+  );
 });
 
 test("due collection pays wealth and raises pressure while an early collection is rejected immutably", () => {

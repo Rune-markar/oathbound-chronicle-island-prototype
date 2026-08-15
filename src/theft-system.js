@@ -6,7 +6,7 @@ function contextOf(context = {}) {
   const settlement = context.settlement ?? context.village ?? context.place ?? context;
   const settlementId = settlement?.id;
   if (!settlementId) throw new TypeError("窃盗機会には集落IDが必要です");
-  const jurisdictionId = context.jurisdictionId ?? context.jurisdiction?.id ?? settlement.regionId ?? settlementId;
+  const jurisdictionId = context.jurisdictionId ?? context.jurisdiction?.id ?? context.region?.id ?? settlement.regionId ?? settlementId;
   return {
     settlementId,
     settlementName: settlement.name ?? context.settlementName ?? settlementId,
@@ -29,7 +29,7 @@ function selectedOutcome(state, opportunity, options) {
     if (!CRIME_OUTCOMES.includes(options.outcome)) throw new RangeError(`未知の犯罪結果です: ${options.outcome}`);
     return options.outcome;
   }
-  const roll = hashString(`${options.seed ?? state.worldSeed ?? "crime"}:${opportunity.id}:${state.turn ?? 0}`) % 100;
+  const roll = hashString(`${options.seed ?? state.generatedWorld?.seed ?? state.worldSeed ?? "crime"}:${opportunity.id}:${state.turn ?? 0}`) % 100;
   if (roll < 45) return "success_hidden";
   if (roll < 70) return "success_exposed";
   if (roll < 90) return "failed_escaped";

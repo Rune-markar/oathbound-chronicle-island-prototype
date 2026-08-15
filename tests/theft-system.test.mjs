@@ -39,6 +39,18 @@ test("settlement theft opportunities expose stable concrete targets and qualitat
   assert.equal(previewTheft(state, first[0]).targetId, "merchant:village:orta");
 });
 
+test("generated settlement crime uses its region jurisdiction just like the tavern underworld route", () => {
+  const state = fixture();
+  const generatedContext = {
+    settlement: { id: "village:generated-7", name: "生成村" },
+    region: { id: "region:generated-7", name: "生成地方" },
+  };
+  const opportunity = getTheftOpportunities(state, generatedContext)[0];
+  const tavern = getTavernUnderworldView(state, generatedContext);
+  assert.equal(opportunity.jurisdictionId, "region:generated-7");
+  assert.equal(tavern.jurisdictionId, "region:generated-7");
+});
+
 test("theft resolution is deterministic and leaves its input untouched", () => {
   const state = fixture("deterministic-theft");
   const original = structuredClone(state);
@@ -47,6 +59,22 @@ test("theft resolution is deterministic and leaves its input untouched", () => {
   const second = executeTheft(state, opportunity, { seed: "same-seed" });
   assert.deepEqual(first, second);
   assert.deepEqual(state, original);
+});
+
+test("default theft resolution uses generated-world seed while explicit seed remains authoritative", () => {
+  const worldA = fixture();
+  const worldB = fixture();
+  worldA.worldSeed = worldB.worldSeed = "legacy-shared-seed";
+  worldA.generatedWorld.seed = "world-a";
+  worldB.generatedWorld.seed = "world-b";
+  const opportunity = getTheftOpportunities(worldA, context)[0];
+  assert.equal(executeTheft(worldA, opportunity).result.outcome, "success_hidden");
+  assert.equal(executeTheft(worldA, opportunity).result.outcome, executeTheft(worldA, opportunity).result.outcome);
+  assert.equal(executeTheft(worldB, opportunity).result.outcome, "failed_escaped");
+  assert.equal(
+    executeTheft(worldA, opportunity, { seed: "explicit" }).result.outcome,
+    executeTheft(worldB, opportunity, { seed: "explicit" }).result.outcome,
+  );
 });
 
 test("hidden and exposed theft create provenance-bearing stolen items with exact heat", () => {
@@ -89,6 +117,7 @@ test("tavern routes use shared contact discovery and fencing state", () => {
   state = discoverTavernUnderworldContacts(state, context);
   const view = getTavernUnderworldView(state, context);
   assert.equal(view.contacts.length, 3);
+  assert.equal(view.canDiscover, false, "all three local roles are already known");
   assert.equal(view.stolenItems.length, 1);
   assert.equal(state.player.metrics.wealth, beforeWealth - 1);
   const item = state.player.crime.stolenItems[0];

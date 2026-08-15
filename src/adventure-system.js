@@ -28,12 +28,15 @@ function underworldJurisdiction(state, context = {}) {
 export function getTavernUnderworldView(state, context = {}) {
   const location = underworldJurisdiction(state, context);
   const normalized = normalizeCrimeState(state);
+  const localContacts = normalized.player.crime.contacts.filter((entry) => entry.jurisdictionId === location.jurisdictionId);
+  const localRoles = new Set(localContacts.map((entry) => entry.role));
+  const hasUndiscoveredRole = ["fence", "smuggler", "broker"].some((role) => !localRoles.has(role));
   return {
     ...location,
-    contacts: clone(normalized.player.crime.contacts.filter((entry) => entry.jurisdictionId === location.jurisdictionId)),
+    contacts: clone(localContacts),
     stolenItems: clone(normalized.player.crime.stolenItems),
     discoveryCost: 1,
-    canDiscover: (normalized.player.metrics?.wealth ?? 0) >= 1,
+    canDiscover: hasUndiscoveredRole && (normalized.player.metrics?.wealth ?? 0) >= 1,
     canFence: normalized.player.crime.contacts.some((entry) => entry.role === "fence" && entry.jurisdictionId === location.jurisdictionId)
       && normalized.player.crime.stolenItems.length > 0,
   };

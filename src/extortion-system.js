@@ -5,7 +5,7 @@ const RISK_LABELS = Object.freeze(["低", "中", "高", "極高"]);
 function contextOf(context = {}) {
   const settlement = context.settlement ?? context.village ?? context.place ?? context;
   if (!settlement?.id) throw new TypeError("恐喝機会には集落IDが必要です");
-  const jurisdictionId = context.jurisdictionId ?? context.jurisdiction?.id ?? settlement.regionId ?? settlement.id;
+  const jurisdictionId = context.jurisdictionId ?? context.jurisdiction?.id ?? context.region?.id ?? settlement.regionId ?? settlement.id;
   return {
     settlementId: settlement.id,
     settlementName: settlement.name ?? settlement.id,
@@ -28,7 +28,7 @@ function resolveOutcome(state, opportunity, options, pressure = 0) {
     if (!CRIME_OUTCOMES.includes(options.outcome)) throw new RangeError(`未知の犯罪結果です: ${options.outcome}`);
     return options.outcome;
   }
-  const roll = hashString(`${options.seed ?? state.worldSeed ?? "crime"}:${opportunity.id}:${state.turn ?? 0}:${pressure}`) % 100;
+  const roll = hashString(`${options.seed ?? state.generatedWorld?.seed ?? state.worldSeed ?? "crime"}:${opportunity.id}:${state.turn ?? 0}:${pressure}`) % 100;
   const reportThreshold = Math.min(78, 52 + pressure * 8);
   if (roll < Math.max(18, 48 - pressure * 6)) return "success_hidden";
   if (roll < reportThreshold) return "success_exposed";
