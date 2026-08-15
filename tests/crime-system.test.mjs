@@ -64,12 +64,13 @@ test("legacy career saves gain an empty versioned crime state without losing pla
   const state = baseState({ name: "旧い英雄", customField: { preserved: true } });
   const original = structuredClone(state);
   const normalized = normalizeCrimeState(state);
-  assert.equal(normalized, state);
-  assert.equal(state.player.name, original.player.name);
-  assert.deepEqual(state.player.customField, original.player.customField);
-  assert.equal(state.player.crime.schemaVersion, CRIME_SCHEMA_VERSION);
-  assert.deepEqual(state.player.crime.incidents, []);
-  assert.deepEqual(state.player.crime.heatByJurisdiction, {});
+  assert.notEqual(normalized, state);
+  assert.deepEqual(state, original);
+  assert.equal(normalized.player.name, original.player.name);
+  assert.deepEqual(normalized.player.customField, original.player.customField);
+  assert.equal(normalized.player.crime.schemaVersion, CRIME_SCHEMA_VERSION);
+  assert.deepEqual(normalized.player.crime.incidents, []);
+  assert.deepEqual(normalized.player.crime.heatByJurisdiction, {});
 });
 
 test("all crime heat gains and heat-label boundaries are exact", () => {
@@ -82,8 +83,7 @@ test("all crime heat gains and heat-label boundaries are exact", () => {
     assassination: 70,
   });
   for (const [heat, label] of [[0, "平常"], [19, "平常"], [20, "警戒"], [39, "警戒"], [40, "指名手配"], [69, "指名手配"], [70, "厳戒"], [100, "厳戒"]]) {
-    const state = baseState();
-    normalizeCrimeState(state);
+    const state = normalizeCrimeState(baseState());
     state.player.crime.heatByJurisdiction.orta = heat;
     assert.equal(getCrimeStatusView(state, { jurisdictionId: "orta" }).heatLabel, label);
   }
@@ -145,8 +145,7 @@ test("wealth 1 discovers local fence, smuggler, and broker while insufficient we
 });
 
 test("fencing requires a discovered local fence, removes the stolen item, and pays exactly 40 percent", () => {
-  const state = baseState({ metrics: { wealth: 2 } });
-  normalizeCrimeState(state);
+  const state = normalizeCrimeState(baseState({ metrics: { wealth: 2 } }));
   state.player.crime.stolenItems.push({ id: "ruby", name: "紅玉", normalValue: 15, jurisdictionId: "orta" });
   assert.throws(() => fenceStolenItem(state, { itemId: "ruby", jurisdictionId: "orta" }), /故買屋/);
   const connected = discoverUnderworldContacts(state, { jurisdictionId: "orta" });
@@ -178,16 +177,14 @@ test("accomplice accept, refuse, and report decisions persist consequences immut
 });
 
 test("minor and serious sentences confiscate gain, apply consequences, and advance deterministic time", () => {
-  let minor = baseState({ metrics: { wealth: 20, liegeTrust: 30 } });
-  normalizeCrimeState(minor);
+  let minor = normalizeCrimeState(baseState({ metrics: { wealth: 20, liegeTrust: 30 } }));
   minor.player.crime.illegalGain = 4;
   minor = resolveCrimeSentence(minor, { severity: "minor", fine: 3, jurisdictionId: "orta" });
   assert.equal(minor.player.metrics.wealth, 13);
   assert.equal(minor.player.crime.illegalGain, 0);
   assert.deepEqual([minor.year, minor.month, minor.turn], [317, 5, 1]);
 
-  let serious = baseState({ stage: "commander", metrics: { wealth: 30, liegeTrust: 30 } });
-  normalizeCrimeState(serious);
+  let serious = normalizeCrimeState(baseState({ stage: "commander", metrics: { wealth: 30, liegeTrust: 30 } }));
   serious.player.crime.illegalGain = 5;
   const first = resolveCrimeSentence(serious, { severity: "serious", fine: 4, jurisdictionId: "orta" });
   const second = resolveCrimeSentence(serious, { severity: "serious", fine: 4, jurisdictionId: "orta" });

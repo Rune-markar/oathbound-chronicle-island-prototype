@@ -108,9 +108,10 @@ function deterministicSentenceMonths(input, crime) {
 
 export function normalizeCrimeState(state) {
   requirePlayerState(state);
+  const next = clone(state);
   const baseline = emptyCrimeState();
-  const prior = state.player.crime ?? {};
-  state.player.crime = {
+  const prior = next.player.crime ?? {};
+  next.player.crime = {
     ...baseline,
     ...prior,
     schemaVersion: CRIME_SCHEMA_VERSION,
@@ -127,15 +128,15 @@ export function normalizeCrimeState(state) {
     monthsElapsed: Math.max(0, Number.isFinite(prior.monthsElapsed) ? prior.monthsElapsed : 0),
     runEnded: Boolean(prior.runEnded),
   };
-  Object.entries(state.player.crime.heatByJurisdiction).forEach(([jurisdictionId, heat]) => {
-    state.player.crime.heatByJurisdiction[jurisdictionId] = normalizeHeat(heat);
+  Object.entries(next.player.crime.heatByJurisdiction).forEach(([jurisdictionId, heat]) => {
+    next.player.crime.heatByJurisdiction[jurisdictionId] = normalizeHeat(heat);
   });
-  return state;
+  return next;
 }
 
 export function getCrimeStatusView(state, context = {}) {
   requirePlayerState(state);
-  const normalized = normalizeCrimeState(clone(state));
+  const normalized = normalizeCrimeState(state);
   const crime = normalized.player.crime;
   const jurisdictionId = context.jurisdictionId ?? jurisdictionIdOf(context.jurisdiction) ?? normalized.player.locationId ?? null;
   const storedHeat = jurisdictionId ? normalizeHeat(crime.heatByJurisdiction[jurisdictionId]) : 0;
@@ -176,7 +177,7 @@ export function recordCrimeIncident(state, incident) {
   if (!CRIME_OUTCOMES.includes(incident.outcome)) throw new RangeError(`未知の犯罪結果です: ${incident.outcome ?? ""}`);
   const jurisdictionId = jurisdictionIdOf(incident.jurisdiction);
   if (!jurisdictionId) throw new TypeError("犯罪には管轄が必要です");
-  const next = normalizeCrimeState(clone(state));
+  const next = normalizeCrimeState(state);
   const crime = next.player.crime;
   const entry = clone({
     id: incident.id ?? `crime-${next.turn ?? 0}-${crime.incidents.length + 1}`,
@@ -207,7 +208,7 @@ export function recordCrimeIncident(state, incident) {
 
 export function resolveAccompliceDecision(state, input = {}) {
   if (!(input.decision in ACCOMPLICE_CONSEQUENCES)) throw new RangeError(`未知の共犯者判断です: ${input.decision ?? ""}`);
-  const next = normalizeCrimeState(clone(state));
+  const next = normalizeCrimeState(state);
   next.player.crime.accompliceDecisions.unshift({
     id: input.id ?? `accomplice-${next.turn ?? 0}-${next.player.crime.accompliceDecisions.length + 1}`,
     accompliceId: input.accompliceId ?? null,
@@ -222,7 +223,7 @@ export function resolveAccompliceDecision(state, input = {}) {
 }
 
 export function discoverUnderworldContacts(state, context = {}) {
-  const next = normalizeCrimeState(clone(state));
+  const next = normalizeCrimeState(state);
   ensureMetrics(next.player);
   if (next.player.metrics.wealth < 1) throw new RangeError("裏社会を探す資金が足りません");
   const jurisdictionId = context.jurisdictionId ?? jurisdictionIdOf(context.jurisdiction) ?? next.player.locationId;
@@ -243,7 +244,7 @@ export function discoverUnderworldContacts(state, context = {}) {
 }
 
 export function fenceStolenItem(state, input = {}) {
-  const next = normalizeCrimeState(clone(state));
+  const next = normalizeCrimeState(state);
   ensureMetrics(next.player);
   const jurisdictionId = input.jurisdictionId ?? next.player.locationId;
   const hasFence = next.player.crime.contacts.some((contact) => contact.role === "fence" && contact.jurisdictionId === jurisdictionId);
@@ -267,7 +268,7 @@ export function fenceStolenItem(state, input = {}) {
 }
 
 export function advanceCrimeMonth(state) {
-  const next = normalizeCrimeState(clone(state));
+  const next = normalizeCrimeState(state);
   const crime = next.player.crime;
   crime.monthsElapsed += 1;
   for (const jurisdictionId of Object.keys(crime.heatByJurisdiction)) {
@@ -281,7 +282,7 @@ export function advanceCrimeMonth(state) {
 }
 
 export function resolveCrimeSentence(state, input = {}) {
-  const next = normalizeCrimeState(clone(state));
+  const next = normalizeCrimeState(state);
   const crime = next.player.crime;
   ensureMetrics(next.player);
   const jurisdictionId = input.jurisdictionId ?? jurisdictionIdOf(input.jurisdiction) ?? next.player.locationId;

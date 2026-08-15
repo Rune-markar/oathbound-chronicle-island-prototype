@@ -208,8 +208,7 @@ export function initializeCareerState(baseState, options = {}) {
     title: "名もなき個人として街道へ立つ",
     text: "依頼を果たし、武勲、名声、財産、人脈を得て、自らの立場を選ぶ。", tone: "info",
   }];
-  normalizeCrimeState(next);
-  return next;
+  return normalizeCrimeState(next);
 }
 
 export function normalizeCareerState(state) {
@@ -239,7 +238,7 @@ export function normalizeCareerState(state) {
     state.player.title = getTitleForCareerStage(state.player.stage, state.player.governmentFormId);
   }
   normalizeVillageLifeState(state);
-  normalizeCrimeState(state);
+  state.player.crime = normalizeCrimeState(state).player.crime;
   return state;
 }
 
