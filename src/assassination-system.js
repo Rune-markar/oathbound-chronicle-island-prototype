@@ -92,7 +92,11 @@ export function getAssassinationTargets(state, context = {}) {
     const character = (normalized.generatedWorld?.characters ?? []).find((entry) => entry.id === lordId);
     if (character && protectedCharacter(character)) return [];
     const sortedEntries = [...officeEntries].sort((left, right) => left.regionId.localeCompare(right.regionId));
-    const { regionId, office } = sortedEntries[0];
+    const contextualEntry = context.regionId
+      ? sortedEntries.find((entry) => entry.regionId === context.regionId)
+      : sortedEntries[0];
+    if (!contextualEntry) return [];
+    const { regionId, office } = contextualEntry;
     const region = regionById.get(regionId);
     return [{
       id: `lord:${regionId}:${lordId}`,
@@ -118,7 +122,7 @@ export function getAssassinationTargets(state, context = {}) {
 export function startAssassination(state, target, options = {}) {
   const next = normalizeCrimeState(state);
   if (next.player.crime.activeAssassination) throw new Error("進行中の暗殺計画があります");
-  const current = getAssassinationTargets(next).find((entry) => entry.id === target?.id);
+  const current = getAssassinationTargets(next, { regionId: target?.regionId }).find((entry) => entry.id === target?.id);
   if (!current) throw new Error("実在し、明示的に対象化できる人物が必要です");
   const companion = activeCompanion(next, options.accompliceId);
   next.player.crime.activeAssassination = {

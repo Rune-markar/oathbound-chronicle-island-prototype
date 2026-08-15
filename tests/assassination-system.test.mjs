@@ -56,6 +56,44 @@ test("a targetable generated office holder is emitted once with every real offic
   assert.equal(resolved.state.generatedWorld.regionalDomains.regionStates[thirdRegion.id].lordId, null);
 });
 
+test("multi-office lord targets contextualize to the requested office jurisdiction without losing other offices", () => {
+  let { state, region: regionA } = fixture("assassination-office-context");
+  const runtime = buildGeneratedWorld(state);
+  const regionB = runtime.nations.regions.find((entry) => entry.nationId !== regionA.nationId);
+  state.generatedWorld.regionalDomains.regionStates[regionA.id].lordId = "generated:target";
+  state.generatedWorld.regionalDomains.regionStates[regionA.id].lordName = "標的人物";
+  state = appointGeneratedRegionalLord(state, regionB.id, { lordId: "generated:target", lordName: "標的人物" });
+
+  const unfiltered = getAssassinationTargets(state).filter((target) => target.characterId === "generated:target");
+  assert.equal(unfiltered.length, 1);
+  assert.deepEqual(unfiltered, getAssassinationTargets(state).filter((target) => target.characterId === "generated:target"));
+
+  const contextual = getAssassinationTargets(state, { regionId: regionB.id }).filter((target) => target.characterId === "generated:target");
+  assert.equal(contextual.length, 1);
+  assert.equal(contextual[0].regionId, regionB.id);
+  assert.equal(contextual[0].jurisdictionId, regionB.id);
+  assert.equal(contextual[0].nationId, state.generatedWorld.regionalDomains.regionStates[regionB.id].nationId);
+  assert.deepEqual(contextual[0].officeRegionIds.sort(), [regionA.id, regionB.id].sort());
+
+  const domesticState = structuredClone(state);
+  domesticState.player.sovereign = true;
+  domesticState.generatedWorld.playerNationId = contextual[0].nationId;
+  const domestic = executeAssassination(prepareAssassination(startAssassination(domesticState, contextual[0])), { outcome: "success_exposed" });
+  assert.equal(domestic.state.player.crime.heatByJurisdiction[regionB.id] ?? 0, 0);
+  assert.equal(domestic.state.player.crime.abuses[0].jurisdictionId, regionB.id);
+  assert.equal(domestic.state.generatedWorld.regionalDomains.regionStates[regionA.id].lordId, null);
+  assert.equal(domestic.state.generatedWorld.regionalDomains.regionStates[regionB.id].lordId, null);
+
+  const foreignState = structuredClone(state);
+  foreignState.player.sovereign = true;
+  foreignState.generatedWorld.playerNationId = regionA.nationId;
+  const foreign = executeAssassination(prepareAssassination(startAssassination(foreignState, contextual[0])), { outcome: "success_exposed" });
+  assert.equal(foreign.state.player.crime.heatByJurisdiction[regionB.id], 70);
+  assert.equal(foreign.state.player.crime.abuses.length, 0);
+  assert.equal(foreign.state.generatedWorld.regionalDomains.regionStates[regionA.id].lordId, null);
+  assert.equal(foreign.state.generatedWorld.regionalDomains.regionStates[regionB.id].lordId, null);
+});
+
 test("canonical unique and story character identities cannot become targets even without character records", () => {
   let { state, region } = fixture("assassination-canonical-protection");
   state = appointGeneratedRegionalLord(state, region.id, { lordId: LISETTE_VALENNE_ID, lordName: "リゼット" });
