@@ -500,13 +500,15 @@ function attemptResponse(runtime, site, period, context) {
   };
 }
 
-function maybeSpawnSite(runtime, state, period, events) {
+function maybeSpawnSite(runtime, state, period, events, context = {}) {
   const activeCount = state.sites.filter((site) => site.status !== "destroyed").length;
   const maximum = Math.min(12, Math.max(3, Math.ceil(runtime.nations.regions.length / 8)));
   if (activeCount >= maximum || state.sites.length >= BARBARIAN_SITE_LIMIT) return;
   if (hashUnit(runtime.terrain.seed, period, "barbarian-spawn") >= 0.16) return;
   const site = createSite(runtime, state.sites.length, state.sites, period);
   if (!site) return;
+  const activeRegionIds = context.simulationFidelity?.activeIndividualRegionIds;
+  if (activeRegionIds && !activeRegionIds.includes(site.regionId)) return;
   state.sites.push(site);
   events.push({
     id: `barbarian-spawn-${period}-${site.id}`,
@@ -526,10 +528,14 @@ export function advanceBarbarianWorld(runtime, source = null, dateState = null, 
   const period = periodFor(dateState);
   if (next.lastAdvancedPeriod === period) return next;
   const events = [];
+  const activeRegionIds = context.simulationFidelity?.activeIndividualRegionIds
+    ? new Set(context.simulationFidelity.activeIndividualRegionIds)
+    : null;
   for (const site of next.sites) {
     if (site.status === "destroyed") continue;
     site.hostNationId = currentNationId(runtime, site.regionId);
     if (site.agreement && site.agreement.nationId !== site.hostNationId) site.agreement = null;
+    if (activeRegionIds && !activeRegionIds.has(site.regionId)) continue;
     site.ageMonths += 1;
     if (site.kind === "monster_nest") {
       const damage = monsterDamage(runtime, site, period);
@@ -565,7 +571,7 @@ export function advanceBarbarianWorld(runtime, source = null, dateState = null, 
     }
     events.push(attemptResponse(runtime, site, period, context));
   }
-  maybeSpawnSite(runtime, next, period, events);
+  maybeSpawnSite(runtime, next, period, events, context);
   next.lastAdvancedPeriod = period;
   next.events = [...next.events, ...events].slice(-BARBARIAN_EVENT_LIMIT);
   return next;

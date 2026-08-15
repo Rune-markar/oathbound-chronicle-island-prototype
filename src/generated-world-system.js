@@ -35,6 +35,10 @@ import {
   getKnownWorldTimeline,
   recordKnownWorldEvents,
 } from "./world-intelligence.js";
+import {
+  buildSimulationFidelityPlan,
+  preserveSimulationFidelityPlan,
+} from "./simulation-fidelity.js";
 
 export const GENERATED_WORLD_DEFAULTS = Object.freeze({
   version: 14,
@@ -97,6 +101,8 @@ function cloneGeneratedWorldState(value) {
     geopolitics: preserveGeopoliticalState(value.geopolitics),
     regionalDomains: preserveRegionalDomainState(value.regionalDomains),
     barbarians: preserveBarbarianState(value.barbarians),
+    simulationFidelity: preserveSimulationFidelityPlan(value.simulationFidelity),
+    pendingStrategicDecisions: structuredClone(value.pendingStrategicDecisions ?? []),
     intelligence: createWorldIntelligenceState(value.intelligence),
     lastTravel: value.lastTravel ? structuredClone(value.lastTravel) : null,
   };
@@ -598,6 +604,10 @@ export function createGeneratedWorldState(options = {}, dateState = null) {
     geopolitics: preserveGeopoliticalState(options.geopolitics),
     regionalDomains: preserveRegionalDomainState(options.regionalDomains),
     barbarians: preserveBarbarianState(options.barbarians),
+    simulationFidelity: preserveSimulationFidelityPlan(options.simulationFidelity),
+    pendingStrategicDecisions: Array.isArray(options.pendingStrategicDecisions)
+      ? structuredClone(options.pendingStrategicDecisions.slice(-24))
+      : [],
     intelligence: createWorldIntelligenceState(options.intelligence),
     lastTravel: options.lastTravel && typeof options.lastTravel === "object" ? structuredClone(options.lastTravel) : null,
   };
@@ -892,7 +902,11 @@ export function advanceGeneratedWorldGeopolitics(state) {
   const runtime = effectiveRuntimeFor(baseRuntime, { ...generatedState, regionalDomains }, state);
   const baseline = generatedState.geopolitics
     ?? createGeopoliticalWorldState(runtime, null, previousPeriodDate(state));
-  const geopolitics = locateGeopoliticalEvents(runtime, advanceGeopoliticalWorld(runtime, baseline, state));
+  const advancedGeopolitics = advanceGeopoliticalWorld(runtime, baseline, state, {
+    protectedNationIds: generatedState.simulationFidelity?.playerControlledNationIds ?? [],
+  });
+  const pendingStrategicDecisions = advancedGeopolitics.pendingStrategicDecisions ?? [];
+  const geopolitics = locateGeopoliticalEvents(runtime, advancedGeopolitics);
   const intelligence = recordNearbyWorldEvents(state, runtime, generatedState, geopolitics);
   return {
     ...state,
@@ -901,6 +915,10 @@ export function advanceGeneratedWorldGeopolitics(state) {
       regionalDomains,
       geopolitics,
       intelligence,
+      pendingStrategicDecisions: [
+        ...(generatedState.pendingStrategicDecisions ?? []).filter((decision) => decision.period !== geopolitics.lastAdvancedPeriod),
+        ...pendingStrategicDecisions,
+      ].slice(-24),
     },
   };
 }
@@ -966,6 +984,26 @@ export function advanceGeneratedWorldRegions(state) {
   };
 }
 
+export function refreshGeneratedWorldSimulationFidelity(state) {
+  const generatedState = createGeneratedWorldState(state.generatedWorld ?? {}, state);
+  const baseRuntime = buildGeneratedWorld(state);
+  const regionalDomains = createRegionalDomainState(runtimeWithColonies(baseRuntime, generatedState), generatedState.regionalDomains, state);
+  const runtime = effectiveRuntimeFor(baseRuntime, { ...generatedState, regionalDomains }, state);
+  const effectiveGeneratedState = { ...generatedState, regionalDomains };
+  const expeditionRegion = effectiveExpeditionRegion(runtime, effectiveGeneratedState);
+  const playerNation = effectivePlayerNation(runtime, effectiveGeneratedState);
+  const simulationFidelity = buildSimulationFidelityPlan(state, {
+    runtime,
+    generatedState: effectiveGeneratedState,
+    expeditionRegion,
+    playerNation,
+  });
+  return {
+    ...state,
+    generatedWorld: { ...effectiveGeneratedState, simulationFidelity },
+  };
+}
+
 export function advanceGeneratedWorldBarbarians(state) {
   const generatedState = createGeneratedWorldState(state.generatedWorld ?? {}, state);
   const baseRuntime = buildGeneratedWorld(state);
@@ -974,7 +1012,10 @@ export function advanceGeneratedWorldBarbarians(state) {
   const runtime = effectiveRuntimeFor(baseRuntime, { ...generatedState, regionalDomains }, state);
   const geopolitics = createGeopoliticalWorldState(runtime, generatedState.geopolitics, state);
   const previousAdvancedPeriod = generatedState.barbarians?.lastAdvancedPeriod ?? null;
-  const barbarians = advanceBarbarianWorld(runtime, generatedState.barbarians, state, { geopolitics });
+  const barbarians = advanceBarbarianWorld(runtime, generatedState.barbarians, state, {
+    geopolitics,
+    simulationFidelity: generatedState.simulationFidelity,
+  });
   const currentEvents = previousAdvancedPeriod === barbarians.lastAdvancedPeriod
     ? []
     : barbarians.events.filter((event) => event.period === barbarians.lastAdvancedPeriod);

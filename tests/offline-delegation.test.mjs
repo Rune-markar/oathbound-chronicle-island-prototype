@@ -37,6 +37,17 @@ test("offline progress is capped and major decisions remain pending", () => {
   assert.deepEqual(resumed.report.pendingDecisions, ["季節評定"]);
 });
 
+test("irreversible generated-nation decisions are shared in the return chronicle", () => {
+  const advance = (state) => ({
+    ...state,
+    generatedWorld: {
+      pendingStrategicDecisions: [{ title: "試験国・停戦受諾" }],
+    },
+  });
+  const resumed = resumeDelegatedChronicle(base(), advance, 1_000 + OFFLINE_MONTH_MS);
+  assert.ok(resumed.report.pendingDecisions.includes("試験国・停戦受諾"));
+});
+
 test("saving stamps a clone without mutating the live state", () => {
   const source = base();
   const saved = markChronicleSaved(source, 42_000);

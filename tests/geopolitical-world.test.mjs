@@ -9,6 +9,7 @@ import {
   GEOPOLITICAL_MODEL_REFERENCES,
   GEOPOLITICAL_PULL_SET,
   GEOPOLITICAL_SCHEMA_VERSION,
+  advanceGeopoliticalWorld,
   deriveGeopoliticalProfiles,
 } from "../src/geopolitical-world.js";
 import { advanceCareerMonth, createCareerInitialState } from "../src/simulation.js";
@@ -109,6 +110,27 @@ test("a unilateral ceasefire request remains an offer until the opponent accepts
   assert.equal(state.generatedWorld.geopolitics.relations[key].atWar, false);
   assert.equal(state.generatedWorld.geopolitics.relations[key].truceMonths, 12);
   assert.equal(state.generatedWorld.geopolitics.relations[key].ceasefireOffer, null);
+});
+
+test("a player-controlled nation keeps defending but defers an irreversible ceasefire decision", () => {
+  const state = createWorld("protected-peace-contract");
+  const runtime = getGeneratedWorldView(state).runtime;
+  const snapshot = structuredClone(state.generatedWorld.geopolitics);
+  const [key] = Object.keys(snapshot.relations);
+  const [playerNationId, opponentId] = key.split(":");
+  snapshot.relations[key] = { ...snapshot.relations[key], relation: -60, tension: 92, atWar: true, warMonths: 8 };
+  snapshot.nationStates[playerNationId] = {
+    ...snapshot.nationStates[playerNationId], readiness: 10, cohesion: 10, foodSecurity: 10,
+  };
+  const advanced = advanceGeopoliticalWorld(runtime, snapshot, { year: 317, month: 5 }, {
+    protectedNationIds: [playerNationId],
+  });
+  const playerEvent = advanced.events.find((event) => event.period === "317-5" && event.nationId === playerNationId);
+
+  assert.equal(playerEvent.pullId, "sustain_war");
+  assert.equal(advanced.relations[key].atWar, true);
+  assert.equal(advanced.pendingStrategicDecisions[0].pullId, "seek_ceasefire");
+  assert.equal(advanced.pendingStrategicDecisions[0].targetNationId, opponentId);
 });
 
 test("an alliance proposal needs a reciprocal decision and enforces both nations' caps", () => {

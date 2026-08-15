@@ -546,16 +546,44 @@ function nextOffer(currentOffer, seekers, acceptors, nationIds, clear) {
   return null;
 }
 
-export function advanceGeopoliticalWorld(runtime, source, dateState) {
+const PLAYER_APPROVAL_PULL_IDS = new Set(["limited_war", "seek_ceasefire", "accept_ceasefire"]);
+
+function deferProtectedDecision(nation, decision, protectedNationIds, period) {
+  if (!protectedNationIds.has(nation.id) || !PLAYER_APPROVAL_PULL_IDS.has(decision.pullId)) {
+    return { decision, pendingDecision: null };
+  }
+  const requestedPullId = decision.pullId;
+  const fallbackPullId = requestedPullId === "limited_war" ? "fortify_frontier" : "sustain_war";
+  return {
+    decision: {
+      ...decision,
+      pullId: fallbackPullId,
+      score: decision.score,
+      drivers: [...decision.drivers, driver("プレイヤー承認待ち", 100)],
+    },
+    pendingDecision: {
+      id: `strategic-approval-${period}-${nation.id}-${requestedPullId}`,
+      period,
+      nationId: nation.id,
+      targetNationId: decision.targetNationId,
+      pullId: requestedPullId,
+      title: `${nation.name}・${GEOPOLITICAL_PULL_SET[requestedPullId].name}`,
+      summary: "不可逆な開戦・停戦判断のため、守備と戦線維持だけを続けてプレイヤーの帰還を待っています。",
+    },
+  };
+}
+
+export function advanceGeopoliticalWorld(runtime, source, dateState, options = {}) {
   const snapshot = createGeopoliticalWorldState(runtime, source, dateState);
   const period = periodFor(dateState);
   if (snapshot.lastAdvancedPeriod === period) return snapshot;
   const profiles = deriveGeopoliticalProfiles(runtime);
   const pairs = derivePairStructures(runtime, profiles);
-  const decisions = runtime.nations.nations.map((nation) => ({
-    nation,
-    decision: chooseNationalPull(runtime.terrain.seed, period, nation.id, profiles, pairs, snapshot),
-  }));
+  const protectedNationIds = new Set(options.protectedNationIds ?? []);
+  const decisions = runtime.nations.nations.map((nation) => {
+    const selected = chooseNationalPull(runtime.terrain.seed, period, nation.id, profiles, pairs, snapshot);
+    return { nation, ...deferProtectedDecision(nation, selected, protectedNationIds, period) };
+  });
   const nationDeltas = {};
   const relationDeltas = {};
   const relationActions = {};
@@ -647,6 +675,7 @@ export function advanceGeopoliticalWorld(runtime, source, dateState) {
     if (actions.warStarters.includes(nation.id)) decision.outcome = "war_started";
   }
   const events = decisions.map(({ nation, decision }) => eventCopy(period, nation, runtime.nationById.get(decision.targetNationId), decision));
+  const pendingStrategicDecisions = decisions.map((entry) => entry.pendingDecision).filter(Boolean);
   return {
     schemaVersion: GEOPOLITICAL_SCHEMA_VERSION,
     establishedPeriod: snapshot.establishedPeriod,
@@ -654,6 +683,7 @@ export function advanceGeopoliticalWorld(runtime, source, dateState) {
     nationStates,
     relations,
     events: [...snapshot.events, ...events].slice(-MAX_EVENTS),
+    pendingStrategicDecisions,
   };
 }
 

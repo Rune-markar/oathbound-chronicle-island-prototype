@@ -408,7 +408,7 @@ let tacticalEffectsPlaying = false;
 let adventureAdvanceTimer = null;
 let goddessSequenceToken = 0;
 let equipmentOfferTimer = null;
-let singleChoiceTimer = null;
+let informationalCloseTimer = null;
 let generatedMapPanGesture = null;
 let floatingWindowGesture = null;
 let suppressGeneratedMapClickUntil = 0;
@@ -5687,8 +5687,6 @@ function renderAssignmentModal() {
 }
 
 function renderEventModal() {
-  clearTimeout(singleChoiceTimer);
-  singleChoiceTimer = null;
   const open = state.phase === "event" && state.pendingEvent;
   elements.eventModal.classList.toggle("is-hidden", !open);
   if (!open) return;
@@ -5704,12 +5702,13 @@ function renderEventModal() {
     </button>
   `).join("");
   if (definition.choices.length === 1) {
-    elements.eventLocation.textContent += " · 一択のため3秒後に自動決定";
-    singleChoiceTimer = setTimeout(() => elements.eventChoices.querySelector("button:not(:disabled)")?.click(), 3000);
+    elements.eventLocation.textContent += " · 一択でも結果を伴うため自動決定しません";
   }
 }
 
 function renderOfflineReport() {
+  clearTimeout(informationalCloseTimer);
+  informationalCloseTimer = null;
   const report = view.offlineReport;
   const open = Boolean(view.offlineReportOpen && report);
   elements.offlineReportModal?.classList.toggle("is-hidden", !open);
@@ -5719,6 +5718,10 @@ function renderOfflineReport() {
     <dl><div><dt>経過</dt><dd>${report.monthsAdvanced}か月</dd></div><div><dt>重大判断</dt><dd>${report.pendingDecisions.join("・") || "保留なし"}</dd></div></dl>
     ${report.events.length ? `<ul>${report.events.map((event) => `<li>${escapeHtml(event)}</li>`).join("")}</ul>` : ""}
     <button type="button" data-close-offline-report>年代記を閉じる</button>`;
+  informationalCloseTimer = setTimeout(() => {
+    view.offlineReportOpen = false;
+    renderOfflineReport();
+  }, 3000);
 }
 
 function renderEquipmentUpgradePrompt() {

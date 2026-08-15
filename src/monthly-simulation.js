@@ -94,6 +94,7 @@ import {
   advanceGeneratedWorldBarbarians,
   advanceGeneratedWorldGeopolitics,
   advanceGeneratedWorldRegions,
+  refreshGeneratedWorldSimulationFidelity,
   appointGeneratedRegionalLord,
   createCharacterWorldSeed,
   createGeneratedWorldState,
@@ -920,6 +921,7 @@ export function advanceCareerMonth(state) {
   resolveRoleDelegations(WORLD, next);
   if (next.scenarioMode === "generated") {
     next = advanceGeneratedWorldRegions(next);
+    next = refreshGeneratedWorldSimulationFidelity(next);
     next = advanceGeneratedWorldGeopolitics(next);
     const previousBarbarianPeriod = next.generatedWorld?.barbarians?.lastAdvancedPeriod ?? null;
     next = advanceGeneratedWorldBarbarians(next);

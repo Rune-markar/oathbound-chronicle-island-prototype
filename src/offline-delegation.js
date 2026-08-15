@@ -39,6 +39,7 @@ export function resumeDelegatedChronicle(state, advanceMonth, now = Date.now()) 
     pendingDecisions: [
       next.council?.pending ? "季節評定" : null,
       next.pendingEvent ? "都市事件" : null,
+      ...(next.generatedWorld?.pendingStrategicDecisions ?? []).map((decision) => decision.title ?? "国家戦略判断"),
     ].filter(Boolean),
   };
   next.player.history ??= [];
