@@ -15653,6 +15653,15 @@ body.is-location-focus .village-central-status article > strong { font-size: cla
   .landscape-guard small { color: #d5b869; font: 800 10px/1 system-ui, sans-serif; letter-spacing: .2em; }
   .landscape-guard h1 { margin: 0; font: 700 clamp(24px, 7vw, 42px)/1.25 Georgia, "Yu Mincho", serif; }
   .landscape-guard p { max-width: 420px; margin: 0; color: #bdc9c3; line-height: 1.7; }
+  .landscape-guard-status {
+    max-width: 420px;
+    margin: 0;
+    padding: 9px 12px;
+    color: #ffe0a0;
+    border: 1px solid rgba(213, 184, 105, .45);
+    background: rgba(78, 35, 26, .5);
+  }
+  .landscape-guard-status[hidden] { display: none; }
   .landscape-guard button {
     min-height: 48px;
     margin-top: 4px;
@@ -15663,6 +15672,7 @@ body.is-location-focus .village-central-status article > strong { font-size: cla
     cursor: pointer;
     font-weight: 800;
   }
+  .landscape-guard button:disabled { cursor: wait; opacity: .68; }
 }
 
 @media (prefers-reduced-motion: reduce) {

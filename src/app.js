@@ -1,3 +1,4 @@
+import { requestLandscapeMode } from "./orientation-control.js";
 import { BUILD_INFO, getBuildCommitUrl } from "./build-info.js";
 import {
   ADMINISTRATION_MANDATES,
@@ -8743,13 +8744,19 @@ document.querySelector("#realmHome").addEventListener("click", () => {
 });
 elements.closeLedgerDrawer.addEventListener("click", closeLedgerDrawer);
 document.querySelector("[data-close-ledger-drawer]")?.addEventListener("click", closeLedgerDrawer);
-document.querySelector("#requestLandscape")?.addEventListener("click", async () => {
-  try {
-    if (!document.fullscreenElement) await document.documentElement.requestFullscreen?.();
-    await screen.orientation?.lock?.("landscape");
-  } catch {
-    showToast("横向きに回転するとゲーム画面を開けます。", "ui");
+const landscapeStartButton = document.querySelector("#requestLandscape");
+const landscapeGuardStatus = document.querySelector("#landscapeGuardStatus");
+landscapeStartButton?.addEventListener("click", async () => {
+  landscapeStartButton.disabled = true;
+  landscapeStartButton.setAttribute("aria-busy", "true");
+  landscapeGuardStatus.hidden = true;
+  const result = await requestLandscapeMode();
+  if (!result.ok) {
+    landscapeGuardStatus.textContent = "このブラウザでは横画面固定を利用できません";
+    landscapeGuardStatus.hidden = false;
   }
+  landscapeStartButton.disabled = false;
+  landscapeStartButton.removeAttribute("aria-busy");
 });
 const compactShellMedia = window.matchMedia("(max-width: 980px) and (orientation: landscape)");
 compactShellMedia.addEventListener?.("change", () => {

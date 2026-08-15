@@ -206,12 +206,12 @@ test("compact mobile navigation preserves map state and exposes accessible locke
   assert.match(appSource, /view\.generatedMapLegendOpen = !isCompactMobileShell\(\)/);
 });
 
-test("portrait screens are blocked by an explicit landscape-only orientation gate", () => {
-  assert.match(markup, /id="landscapeGuard"/);
-  assert.match(markup, /端末を横向きにしてください/);
-  assert.match(markup, /id="requestLandscape"/);
+test("portrait screens offer an app-controlled landscape start action", () => {
+  assert.match(markup, /id="landscapeGuardTitle">横画面でゲームを開始/);
+  assert.match(markup, /id="requestLandscape"[^>]*>横画面で開始/);
+  assert.match(markup, /id="landscapeGuardStatus"[^>]*role="status"[^>]*aria-live="polite"/);
+  assert.doesNotMatch(markup, /端末を横向きにしてください|横向きに回転/);
   assert.match(styleSource, /@media \(orientation: portrait\)[\s\S]*?\.landscape-guard\s*\{[\s\S]*?display: grid;/);
-  assert.match(appSource, /screen\.orientation\?\.lock\?\.\("landscape"\)/);
 });
 
 test("personal log ticker shows four rows and the full chronicle folds after ten entries", () => {
