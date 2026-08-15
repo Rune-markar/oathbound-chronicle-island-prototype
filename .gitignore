@@ -3,5 +3,6 @@ tmp/
 .codex_tmp/
 .playwright-cli/
 output/
+.worktrees/
 .codex-remote-attachments/
 *.pptx
