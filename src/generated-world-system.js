@@ -62,6 +62,8 @@ export const GENERATED_WORLD_DEFAULTS = Object.freeze({
   barbarians: null,
   intelligence: null,
   lastTravel: null,
+  characters: [],
+  characterStates: {},
 });
 
 export const GENERATED_COLONY_COST = Object.freeze({
@@ -105,6 +107,8 @@ function cloneGeneratedWorldState(value) {
     pendingStrategicDecisions: structuredClone(value.pendingStrategicDecisions ?? []),
     intelligence: createWorldIntelligenceState(value.intelligence),
     lastTravel: value.lastTravel ? structuredClone(value.lastTravel) : null,
+    characters: structuredClone(value.characters ?? []),
+    characterStates: structuredClone(value.characterStates ?? {}),
   };
 }
 
@@ -610,6 +614,8 @@ export function createGeneratedWorldState(options = {}, dateState = null) {
       : [],
     intelligence: createWorldIntelligenceState(options.intelligence),
     lastTravel: options.lastTravel && typeof options.lastTravel === "object" ? structuredClone(options.lastTravel) : null,
+    characters: Array.isArray(options.characters) ? structuredClone(options.characters) : [],
+    characterStates: options.characterStates && typeof options.characterStates === "object" ? structuredClone(options.characterStates) : {},
   };
 }
 

@@ -224,6 +224,18 @@ import {
   deliverSmugglingCargo,
 } from "./smuggling-system.js";
 import {
+  executeSabotage,
+  getSabotageTargets,
+  prepareSabotage,
+  startSabotage,
+} from "./sabotage-system.js";
+import {
+  executeAssassination,
+  getAssassinationTargets,
+  prepareAssassination,
+  startAssassination,
+} from "./assassination-system.js";
+import {
   REGIONAL_REPUTATION_GAINS,
   REGIONAL_REPUTATION_SCHEMA_VERSION,
   createRegionalReputationState,
@@ -291,6 +303,14 @@ export {
   acceptSmugglingOffer,
   inspectSmugglingCheckpoint,
   deliverSmugglingCargo,
+  getSabotageTargets,
+  startSabotage,
+  prepareSabotage,
+  executeSabotage,
+  getAssassinationTargets,
+  startAssassination,
+  prepareAssassination,
+  executeAssassination,
   getSettlementTheftOpportunities,
   getSettlementExtortionOpportunities,
   ADMINISTRATION_MANDATES,

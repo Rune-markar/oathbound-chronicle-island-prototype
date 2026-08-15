@@ -358,6 +358,7 @@ export function recordHistoricalEvent(world, state, input) {
   const event = {
     id,
     type: input.type ?? "state_change",
+    ...(input.severity ? { severity: input.severity } : {}),
     year: input.year ?? state.year,
     month: input.month ?? state.month,
     title: input.title,
@@ -395,6 +396,22 @@ export function recordHistoricalEvent(world, state, input) {
     addEdge(history, id, nodeId, "destroyed");
   });
   return event;
+}
+
+export function recordCriminalHistoricalEvent(state, input) {
+  const next = structuredClone(state);
+  const nationId = input.nationId ?? next.generatedWorld?.playerNationId ?? next.player?.affiliation?.nationId ?? "unknown-polity";
+  const regionId = input.regionId ?? input.jurisdictionId ?? "unknown-region";
+  const world = {
+    nation: { id: nationId },
+    provinces: { [regionId]: { name: input.regionName ?? regionId } },
+  };
+  recordHistoricalEvent(world, next, {
+    ...input,
+    actors: input.actors ?? [next.player?.id ?? "player", nationId],
+    locations: input.locations ?? [regionId],
+  });
+  return next;
 }
 
 function recordPressureManifestation(world, state, pressure, previousStageIndex) {
@@ -652,6 +669,14 @@ function bindingExists(state, binding) {
   if (binding.type === "centralization_stage") return state.centralizationCampaign?.stageHistory?.some((entry) => entry.stageId === binding.id) === true;
   if (binding.type === "centralization_ending") return state.centralizationCampaign?.ending?.id === binding.id;
   if (binding.type === "leviathan") return Boolean(state.leviathan);
+  if (binding.type === "regional_asset") return Boolean(state.generatedWorld?.regionalDomains?.assetStates?.[binding.assetId]);
+  if (binding.type === "generated_character") return (state.generatedWorld?.characters ?? []).some((character) => character.id === binding.characterId);
+  if (binding.type === "regional_office_vacancy") {
+    const office = state.generatedWorld?.regionalDomains?.regionStates?.[binding.regionId];
+    return Boolean(office) && office.lordId == null;
+  }
+  if (binding.type === "crime_abuse") return state.player?.crime?.abuses?.some((abuse) => abuse.id === binding.id) === true;
+  if (binding.type === "crime_incident") return state.player?.crime?.incidents?.some((incident) => incident.id === binding.id) === true;
   return false;
 }
 

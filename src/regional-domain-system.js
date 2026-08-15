@@ -53,6 +53,41 @@ function baseSettlementState(object) {
   };
 }
 
+function domainAssetDefinitions(runtime) {
+  const roads = (runtime.nations.roads ?? []).map((road) => ({
+    id: `road:${road.id}`,
+    backingId: road.id,
+    kind: "road",
+    name: `${road.id}街道`,
+    regionId: road.regionIds?.[0] ?? null,
+    nationId: road.nationIds?.[0] ?? null,
+  }));
+  const objects = (runtime.nations.objects ?? [])
+    .filter((object) => ["fort", "castle"].includes(object.type) || object.settlementLevel)
+    .map((object) => ({
+      id: `${["fort", "castle"].includes(object.type) ? object.type : "facility"}:${object.id}`,
+      backingId: object.id,
+      kind: ["fort", "castle"].includes(object.type) ? object.type : "facility",
+      name: object.name,
+      regionId: object.regionId,
+      nationId: object.nationId,
+    }));
+  return [...roads, ...objects];
+}
+
+function baseAssetState(definition) {
+  return {
+    id: definition.id,
+    backingId: definition.backingId,
+    kind: definition.kind,
+    regionId: definition.regionId,
+    nationId: definition.nationId,
+    condition: 100,
+    available: true,
+    lastDamagedPeriod: null,
+  };
+}
+
 export function preserveRegionalDomainState(source) {
   if (!source || typeof source !== "object") return null;
   return {
@@ -61,6 +96,7 @@ export function preserveRegionalDomainState(source) {
     lastAdvancedPeriod: typeof source.lastAdvancedPeriod === "string" ? source.lastAdvancedPeriod : null,
     regionStates: clone(source.regionStates ?? {}),
     settlementStates: clone(source.settlementStates ?? {}),
+    assetStates: clone(source.assetStates ?? {}),
     independentPolities: clone(source.independentPolities ?? {}),
     events: clone(Array.isArray(source.events) ? source.events.slice(-REGIONAL_DOMAIN_EVENT_LIMIT) : []),
   };
@@ -112,12 +148,24 @@ export function createRegionalDomainState(runtime, source = null, dateState = nu
       lastTransitionPeriod: typeof stored.lastTransitionPeriod === "string" ? stored.lastTransitionPeriod : null,
     }];
   }));
+  const assetStates = Object.fromEntries(domainAssetDefinitions(runtime).map((definition) => {
+    const fallback = baseAssetState(definition);
+    const stored = preserved?.assetStates?.[definition.id] ?? {};
+    const condition = clamp(Number.isFinite(Number(stored.condition)) ? Number(stored.condition) : fallback.condition, 0, 100);
+    return [definition.id, {
+      ...fallback,
+      condition,
+      available: stored.available === false ? false : condition > 0,
+      lastDamagedPeriod: typeof stored.lastDamagedPeriod === "string" ? stored.lastDamagedPeriod : null,
+    }];
+  }));
   return {
     schemaVersion: REGIONAL_DOMAIN_SCHEMA_VERSION,
     establishedPeriod: preserved?.establishedPeriod ?? period,
     lastAdvancedPeriod: preserved?.lastAdvancedPeriod ?? null,
     regionStates,
     settlementStates,
+    assetStates,
     independentPolities,
     events: (preserved?.events ?? []).filter((event) => event && typeof event.id === "string").slice(-REGIONAL_DOMAIN_EVENT_LIMIT),
   };
@@ -147,7 +195,9 @@ function effectiveNationMap(runtime, domains) {
   const objects = runtime.nations.objects.map((object) => {
     const region = regionById.get(object.regionId);
     const settlement = domains.settlementStates[object.id];
-    if (!settlement) return { ...object, nationId: region?.nationId ?? object.nationId };
+    const assetId = ["fort", "castle"].includes(object.type) ? `${object.type}:${object.id}` : object.settlementLevel ? `facility:${object.id}` : null;
+    const asset = assetId ? domains.assetStates[assetId] : null;
+    if (!settlement) return { ...object, nationId: region?.nationId ?? object.nationId, condition: asset?.condition ?? 100, available: asset?.available ?? true };
     const preservesSpecialRole = Boolean(object.maritime) || ["castle", "fort"].includes(object.type);
     return {
       ...object,
@@ -159,11 +209,15 @@ function effectiveNationMap(runtime, domains) {
       growthRate: settlement.growthRate,
       name: preservesSpecialRole ? object.name : settlementName(object.baseName, settlement.level),
       importance: preservesSpecialRole ? object.importance : settlement.level === "city" ? 3 : settlement.level === "town" ? 2 : 1,
+      condition: asset?.condition ?? 100,
+      available: asset?.available ?? true,
     };
   });
   const objectById = new Map(objects.map((object) => [object.id, object]));
   const roads = (runtime.nations.roads ?? []).map((road) => ({
     ...road,
+    condition: domains.assetStates[`road:${road.id}`]?.condition ?? 100,
+    available: domains.assetStates[`road:${road.id}`]?.available ?? true,
     nationIds: [...new Set([objectById.get(road.fromObjectId)?.nationId, objectById.get(road.toObjectId)?.nationId].filter(Boolean))],
     scope: objectById.get(road.fromObjectId)?.nationId === objectById.get(road.toObjectId)?.nationId
       ? road.scope === "local" ? "local" : "regional"
@@ -250,6 +304,7 @@ function effectiveNationMap(runtime, domains) {
   const visualRevision = [
     ...regions.map((region) => `${region.id}:${region.nationId}`),
     ...objects.filter((object) => object.settlementLevel).map((object) => `${object.id}:${object.settlementLevel}`),
+    ...Object.values(domains.assetStates).map((asset) => `${asset.id}:${asset.condition}:${asset.available ? 1 : 0}`),
   ].join("|");
   return {
     domains,
@@ -301,6 +356,10 @@ export function advanceRegionalDomains(runtime, source = null, dateState = null)
   const period = periodFor(dateState);
   if (next.lastAdvancedPeriod === period) return next;
   const roadEndpointIds = new Set((runtime.nations.roads ?? []).flatMap((road) => [road.fromObjectId, road.toObjectId]));
+  Object.values(next.assetStates).forEach((asset) => {
+    asset.condition = clamp(asset.condition + 10, 0, 100);
+    asset.available = asset.condition > 0;
+  });
   for (const object of runtime.nations.objects.filter((entry) => entry.settlementLevel)) {
     const settlement = next.settlementStates[object.id];
     const previousLevel = settlement.level;
@@ -325,6 +384,62 @@ export function advanceRegionalDomains(runtime, source = null, dateState = null)
     }
   }
   next.lastAdvancedPeriod = period;
+  next.events = next.events.slice(-REGIONAL_DOMAIN_EVENT_LIMIT);
+  return next;
+}
+
+export function getRegionalDomainAssetTargets(runtime, source = null, dateState = null) {
+  const domains = createRegionalDomainState(runtime, source, dateState);
+  const definitions = new Map(domainAssetDefinitions(runtime).map((definition) => [definition.id, definition]));
+  return Object.values(domains.assetStates).map((asset) => ({
+    ...definitions.get(asset.id),
+    condition: asset.condition,
+    available: asset.available,
+  })).filter((asset) => asset.backingId && asset.regionId);
+}
+
+export function damageRegionalDomainAsset(runtime, source, targetId, amount = 65, dateState = null) {
+  const next = createRegionalDomainState(runtime, source, dateState);
+  const asset = next.assetStates[targetId];
+  if (!asset) throw new RangeError("破壊工作の対象資産が存在しません。");
+  asset.condition = clamp(asset.condition - Math.max(1, Number(amount) || 0), 0, 100);
+  asset.available = asset.condition > 0;
+  asset.lastDamagedPeriod = periodFor(dateState);
+  next.events.push({
+    id: `regional-asset-damaged-${periodFor(dateState)}-${targetId}`,
+    type: "regional_asset_damaged",
+    period: periodFor(dateState),
+    assetId: targetId,
+    backingId: asset.backingId,
+    regionId: asset.regionId,
+    nationId: asset.nationId,
+    condition: asset.condition,
+    title: `${targetId}が破壊工作で損傷`,
+  });
+  next.events = next.events.slice(-REGIONAL_DOMAIN_EVENT_LIMIT);
+  return next;
+}
+
+export function vacateRegionalOffice(runtime, source, regionId, lordId, dateState = null) {
+  const next = createRegionalDomainState(runtime, source, dateState);
+  const region = runtime.nations.regions.find((entry) => entry.id === regionId);
+  const office = next.regionStates[regionId];
+  if (!region || !office) throw new RangeError("空席化する地方官職が存在しません。");
+  if (lordId && office.lordId !== lordId) throw new Error("対象人物は現在の地方領主ではありません。");
+  const previousLordId = office.lordId;
+  const previousLordName = office.lordName;
+  office.lordId = null;
+  office.lordName = null;
+  next.events.push({
+    id: `regional-office-vacated-${periodFor(dateState)}-${regionId}-${previousLordId ?? "unknown"}`,
+    type: "regional_office_vacated",
+    period: periodFor(dateState),
+    regionId,
+    nationId: office.nationId,
+    lordId: previousLordId,
+    lordName: previousLordName,
+    title: `${region.name}の${office.officeTitle}が空席化`,
+  });
   next.events = next.events.slice(-REGIONAL_DOMAIN_EVENT_LIMIT);
   return next;
 }

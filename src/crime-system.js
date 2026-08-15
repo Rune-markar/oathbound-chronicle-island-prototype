@@ -48,9 +48,14 @@ function emptyCrimeState() {
     activeRobbery: null,
     smugglingRecords: [],
     activeSmuggling: null,
+    sabotageRecords: [],
+    activeSabotage: null,
+    assassinationRecords: [],
+    activeAssassination: null,
     accompliceDecisions: [],
     sentences: [],
     abuses: [],
+    abusePressureByJurisdiction: {},
     illegalGain: 0,
     monthsElapsed: 0,
     runEnded: false,
@@ -131,9 +136,14 @@ export function normalizeCrimeState(state) {
     activeRobbery: prior.activeRobbery ? clone(prior.activeRobbery) : null,
     smugglingRecords: [...(prior.smugglingRecords ?? [])],
     activeSmuggling: prior.activeSmuggling ? clone(prior.activeSmuggling) : null,
+    sabotageRecords: [...(prior.sabotageRecords ?? [])],
+    activeSabotage: prior.activeSabotage ? clone(prior.activeSabotage) : null,
+    assassinationRecords: [...(prior.assassinationRecords ?? [])],
+    activeAssassination: prior.activeAssassination ? clone(prior.activeAssassination) : null,
     accompliceDecisions: [...(prior.accompliceDecisions ?? [])],
     sentences: [...(prior.sentences ?? [])],
     abuses: [...(prior.abuses ?? [])],
+    abusePressureByJurisdiction: { ...(prior.abusePressureByJurisdiction ?? {}) },
     illegalGain: Math.max(0, Number.isFinite(prior.illegalGain) ? prior.illegalGain : 0),
     monthsElapsed: Math.max(0, Number.isFinite(prior.monthsElapsed) ? prior.monthsElapsed : 0),
     runEnded: Boolean(prior.runEnded),
@@ -311,6 +321,8 @@ export function resolveCrimeSentence(state, input = {}) {
       detected: true,
       turn: next.turn ?? 0,
     });
+    const pressureGain = input.severity === "capital" || input.crimeType === "assassination" ? 40 : 25;
+    crime.abusePressureByJurisdiction[jurisdictionId] = clamp((crime.abusePressureByJurisdiction[jurisdictionId] ?? 0) + pressureGain, 0, 100);
     return next;
   }
 
