@@ -4,5 +4,6 @@ tmp/
 .playwright-cli/
 output/
 .worktrees/
+.superpowers/
 .codex-remote-attachments/
 *.pptx
