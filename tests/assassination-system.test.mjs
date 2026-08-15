@@ -9,6 +9,7 @@ import {
 import { appointGeneratedRegionalLord, buildGeneratedWorld } from "../src/generated-world-system.js";
 import { auditHistoricalEffectBindings } from "../src/history-model.js";
 import { createCareerInitialState } from "../src/simulation.js";
+import { LISETTE_VALENNE_ID, UNIQUE_COMPANION_ID } from "../src/unique-characters.js";
 
 function fixture(seed = "assassination-contract") {
   let state = createCareerInitialState({ seed, width: 48, height: 32, plateCount: 8, nationCount: 4 });
@@ -20,6 +21,7 @@ function fixture(seed = "assassination-contract") {
     { id: "generated:untargetable", name: "対象外", generated: true, targetable: false, alive: true, regionId: region.id, nationId },
     { id: "unique:protected", name: "固有人物", characterKind: "unique", unique: true, targetable: true, alive: true, regionId: region.id, nationId },
     { id: "generated:story", name: "物語人物", generated: true, targetable: true, story: true, alive: true, regionId: region.id, nationId },
+    { id: "generated:metadata-protected", name: "保護人物", generated: true, targetable: true, alive: true, regionId: region.id, nationId, metadata: { characterKind: "unique", storyProtected: true } },
   ];
   state = appointGeneratedRegionalLord(state, region.id, { lordId: "generated:lord", lordName: "地方卿" });
   return { state, region, nationId };
@@ -30,8 +32,36 @@ test("assassination targets only explicit generated targets and real current lor
   const targets = getAssassinationTargets(state);
   assert.ok(targets.some((target) => target.id === "character:generated:target"));
   assert.ok(targets.some((target) => target.id === `lord:${region.id}:generated:lord` && target.kind === "regional_lord"));
-  assert.equal(targets.some((target) => /untargetable|unique|story/.test(target.id)), false);
+  assert.equal(targets.some((target) => /untargetable|unique|story|metadata-protected/.test(target.id)), false);
   assert.deepEqual(targets, getAssassinationTargets(state));
+});
+
+test("a targetable generated office holder is emitted once with every real office binding", () => {
+  let { state, region } = fixture("assassination-office-dedup");
+  const runtime = buildGeneratedWorld(state);
+  const secondRegion = runtime.nations.regions.find((entry) => entry.id !== region.id);
+  const thirdRegion = runtime.nations.regions.find((entry) => ![region.id, secondRegion.id].includes(entry.id));
+  state.generatedWorld.regionalDomains.regionStates[region.id].lordId = "generated:target";
+  state.generatedWorld.regionalDomains.regionStates[region.id].lordName = "標的人物";
+  state = appointGeneratedRegionalLord(state, secondRegion.id, { lordId: "generated:target", lordName: "標的人物" });
+  const matching = getAssassinationTargets(state).filter((target) => target.characterId === "generated:target");
+  assert.equal(matching.length, 1);
+  assert.equal(matching[0].kind, "regional_lord");
+  assert.deepEqual(matching[0].officeRegionIds.sort(), [region.id, secondRegion.id].sort());
+  let started = startAssassination(state, matching[0]);
+  started = appointGeneratedRegionalLord(started, thirdRegion.id, { lordId: "generated:target", lordName: "標的人物" });
+  const resolved = executeAssassination(prepareAssassination(started), { outcome: "success_hidden" });
+  assert.equal(resolved.state.generatedWorld.regionalDomains.regionStates[region.id].lordId, null);
+  assert.equal(resolved.state.generatedWorld.regionalDomains.regionStates[secondRegion.id].lordId, null);
+  assert.equal(resolved.state.generatedWorld.regionalDomains.regionStates[thirdRegion.id].lordId, null);
+});
+
+test("canonical unique and story character identities cannot become targets even without character records", () => {
+  let { state, region } = fixture("assassination-canonical-protection");
+  state = appointGeneratedRegionalLord(state, region.id, { lordId: LISETTE_VALENNE_ID, lordName: "リゼット" });
+  assert.equal(getAssassinationTargets(state).some((target) => target.characterId === LISETTE_VALENNE_ID), false);
+  state = appointGeneratedRegionalLord(state, region.id, { lordId: UNIQUE_COMPANION_ID, lordName: "エルネ" });
+  assert.equal(getAssassinationTargets(state).some((target) => target.characterId === UNIQUE_COMPANION_ID), false);
 });
 
 test("assassination requires start and preparation and rejects invalid companions immutably", () => {
@@ -102,4 +132,22 @@ test("foreign capture ends the run while domestic sovereign capture records abus
   assert.equal(abused.state.player.crime.heatByJurisdiction[domesticTarget.jurisdictionId] ?? 0, 0);
   assert.equal(abused.state.player.crime.abuses[0].kind, "abuse_of_power");
   assert.ok(abused.state.player.crime.abusePressureByJurisdiction[domesticTarget.jurisdictionId] >= 25);
+});
+
+test("assassination domestic classification ignores spoofed options and follows live office ownership", () => {
+  const foreign = fixture("assassination-domestic-spoof-foreign");
+  const foreignTarget = getAssassinationTargets(foreign.state)[0];
+  foreign.state.generatedWorld.playerNationId = buildGeneratedWorld(foreign.state).nations.nations.find((nation) => nation.id !== foreignTarget.nationId).id;
+  foreign.state.player.sovereign = true;
+  const prosecuted = executeAssassination(prepareAssassination(startAssassination(foreign.state, foreignTarget)), { outcome: "captured", domestic: true });
+  assert.equal(prosecuted.state.player.crime.runEnded, true);
+  assert.equal(prosecuted.state.player.crime.heatByJurisdiction[foreignTarget.jurisdictionId], 70);
+
+  const domestic = fixture("assassination-domestic-spoof-home");
+  const domesticTarget = getAssassinationTargets(domestic.state)[0];
+  domestic.state.generatedWorld.playerNationId = domesticTarget.nationId;
+  domestic.state.player.sovereign = true;
+  const abused = executeAssassination(prepareAssassination(startAssassination(domestic.state, domesticTarget)), { outcome: "captured", domestic: false });
+  assert.equal(abused.state.player.crime.runEnded, false);
+  assert.equal(abused.state.player.crime.abuses[0].kind, "abuse_of_power");
 });

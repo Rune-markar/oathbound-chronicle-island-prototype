@@ -7,6 +7,7 @@ import {
 } from "./crime-system.js";
 import { buildGeneratedWorld } from "./generated-world-system.js";
 import {
+  createRegionalDomainState,
   damageRegionalDomainAsset,
   getRegionalDomainAssetTargets,
 } from "./regional-domain-system.js";
@@ -30,23 +31,25 @@ function deactivateCompanion(state, companionId) {
   }
 }
 
-function isDomesticSovereign(state, target, options) {
+function isDomesticSovereign(state, target) {
   if (!state.player?.sovereign) return false;
-  if (typeof options.domestic === "boolean") return options.domestic;
-  return Boolean(state.generatedWorld?.playerNationId && state.generatedWorld.playerNationId === target.nationId);
+  const runtime = buildGeneratedWorld(state);
+  const domains = createRegionalDomainState(runtime, state.generatedWorld?.regionalDomains, state);
+  const jurisdictionNationId = domains.regionStates[target.regionId]?.nationId;
+  return Boolean(jurisdictionNationId && state.generatedWorld?.playerNationId === jurisdictionNationId);
 }
 
 export function getSabotageTargets(state, context = {}) {
   const normalized = normalizeCrimeState(state);
   const runtime = context.runtime ?? buildGeneratedWorld(normalized);
-  const domains = normalized.generatedWorld?.regionalDomains;
+  const domains = createRegionalDomainState(runtime, normalized.generatedWorld?.regionalDomains, normalized);
   const objectById = new Map(runtime.nations.objects.map((object) => [object.id, object]));
   const roadById = new Map((runtime.nations.roads ?? []).map((road) => [road.id, road]));
   return getRegionalDomainAssetTargets(runtime, domains, normalized)
     .map((asset) => {
       const road = asset.kind === "road" ? roadById.get(asset.backingId) : null;
       const object = road ? null : objectById.get(asset.backingId);
-      const nationId = normalized.generatedWorld.regionalDomains.regionStates[asset.regionId]?.nationId ?? asset.nationId;
+      const nationId = domains.regionStates[asset.regionId]?.nationId ?? asset.nationId;
       const endpoints = road ? [objectById.get(road.fromObjectId)?.name, objectById.get(road.toObjectId)?.name].filter(Boolean) : [];
       return {
         id: asset.id,
@@ -123,7 +126,7 @@ export function executeSabotage(state, options = {}) {
   if (active.plotExposed && outcome === "success_hidden") outcome = "success_exposed";
   const successful = outcome === "success_hidden" || outcome === "success_exposed";
   const detected = Boolean(options.detected) || active.plotExposed || outcome === "success_exposed" || outcome === "captured";
-  const domesticSovereign = isDomesticSovereign(normalized, active.target, options);
+  const domesticSovereign = isDomesticSovereign(normalized, active.target);
   let next = normalized;
   if (successful) {
     const runtime = buildGeneratedWorld(next);

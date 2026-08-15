@@ -28,6 +28,15 @@ test("sabotage exposes stable real road, fort/castle, and facility targets", () 
   }
 });
 
+test("sabotage synthesizes domain assets for legacy saves with null regional domains", () => {
+  const state = fixture("sabotage-null-domains");
+  state.generatedWorld.regionalDomains = null;
+  const targets = getSabotageTargets(state);
+  assert.ok(targets.length > 0);
+  assert.ok(targets.every((target) => target.regionId && target.nationId));
+  assert.equal(state.generatedWorld.regionalDomains, null);
+});
+
 test("sabotage is ordered start, prepare, execute and migrates active state immutably", () => {
   const state = fixture("sabotage-order");
   const target = getSabotageTargets(state)[0];
@@ -93,4 +102,22 @@ test("domestic sovereign sabotage becomes abuse pressure without ordinary heat",
   assert.equal(resolved.state.player.crime.abuses[0].kind, "abuse_of_power");
   assert.ok(resolved.state.player.crime.abusePressureByJurisdiction[target.jurisdictionId] > 0);
   assert.ok(resolved.state.generatedWorld.regionalDomains.assetStates[target.id].condition < 100);
+});
+
+test("sabotage domestic classification ignores spoofed options and follows live ownership", () => {
+  let foreign = fixture("sabotage-domestic-spoof-foreign");
+  const foreignTarget = getSabotageTargets(foreign).find((entry) => entry.nationId !== foreign.generatedWorld.playerNationId);
+  foreign.player.sovereign = true;
+  foreign = prepareSabotage(startSabotage(foreign, foreignTarget));
+  const prosecuted = executeSabotage(foreign, { outcome: "success_exposed", domestic: true });
+  assert.equal(prosecuted.state.player.crime.heatByJurisdiction[foreignTarget.jurisdictionId], 45);
+  assert.equal(prosecuted.state.player.crime.abuses.length, 0);
+
+  let domestic = fixture("sabotage-domestic-spoof-home");
+  const domesticTarget = getSabotageTargets(domestic).find((entry) => entry.nationId === domestic.generatedWorld.playerNationId);
+  domestic.player.sovereign = true;
+  domestic = prepareSabotage(startSabotage(domestic, domesticTarget));
+  const abused = executeSabotage(domestic, { outcome: "success_exposed", domestic: false });
+  assert.equal(abused.state.player.crime.heatByJurisdiction[domesticTarget.jurisdictionId] ?? 0, 0);
+  assert.equal(abused.state.player.crime.abuses[0].kind, "abuse_of_power");
 });
