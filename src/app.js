@@ -6296,7 +6296,7 @@ function renderTacticalSummary(battle) {
   };
   elements.tacticalBattleSummary.innerHTML = `
     ${side(summary.player, "player", labels.player)}
-    <div class="tactical-turn-counter"><small>${summary.winner ? "決着" : "指示フェーズ"}</small><strong>${summary.winner ? summary.winner === "player" ? labels.playerVictory : summary.winner === "enemy" ? labels.enemyVictory : "引き分け" : `第${summary.turn + 1}ターン`}</strong></div>
+    <div class="tactical-turn-counter"><small>${summary.winner ? `時刻 ${summary.actionTime} で決着` : `行動時刻 ${summary.actionTime}`}</small><strong>${summary.winner ? summary.winner === "player" ? labels.playerVictory : summary.winner === "enemy" ? labels.enemyVictory : "引き分け" : `第${summary.turn + 1}判定`}</strong></div>
     ${side(summary.enemy, "enemy", labels.enemy)}
   `;
 }
@@ -6504,6 +6504,7 @@ function renderTacticalUnitInspector(battle, unit) {
           <span><small>結束</small><strong>${Math.round(unit.cohesion)}</strong></span>
           <span><small>疲労</small><strong>${Math.round(unit.fatigue)}</strong></span>
           <span><small>位置</small><strong>${tacticalPositionLabel(unit.position)}</strong></span>
+          <span><small>行動値</small><strong>${unit.actionInterval ?? "未確定"} · 次回 ${unit.nextActionAt ?? 0}</strong></span>
         </div>
         <section class="tactical-logistics-sheet ${logistics.connected ? "is-connected" : "is-cut"}">
           <header><div><small>補給経路</small><h3>${escapeHtml(logisticsSourceName)}</h3></div><b>${escapeHtml(logisticsRouteLabel)}</b></header>

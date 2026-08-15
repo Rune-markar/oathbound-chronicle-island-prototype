@@ -1480,6 +1480,8 @@ export function createDungeonTacticalBattle(state) {
         position: playerPositions[index] ?? { x: 2 + index % 4, y: 1 + index % 8 },
         order: UNIT_ORDERS.ATTACK,
         activeSkill: astralCalibration ? "lightning" : healingRole ? "heal" : undefined,
+        actionActorType: index === 0 ? "local_player" : "ai",
+        actionAbilityScore: participant.abilities?.dexterity ?? null,
         tags: ["PERSONAL_COMBATANT", index === 0 ? "PLAYER_CHARACTER" : "PARTY_MEMBER", ...(index === 0 ? [] : [`PARTY_ID:${participant.id}`]), ...(healingRole ? ["HEALER"] : []), ...(astralCalibration ? ["ASTRAL_CALIBRATION"] : [])],
         statusEffects: astralCalibration ? [{
           id: "astral_calibration",
@@ -1506,6 +1508,7 @@ export function createDungeonTacticalBattle(state) {
         position: enemyPositions[index],
         facing: FACING.WEST,
         order: UNIT_ORDERS.ATTACK,
+        actionActorType: "ai",
         tags: ["PERSONAL_COMBATANT", "ENCOUNTER_ENEMY"],
       });
     });

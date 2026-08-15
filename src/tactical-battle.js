@@ -15,6 +15,13 @@ import {
   UNIT_ORDERS,
 } from "./tactical-data.js";
 import { AURELIA_ZAFIR_ID, BERTHA_ARNFELD_ID, UNIQUE_CHARACTERS } from "./unique-characters.js";
+import {
+  ACTION_ACTOR_TYPES,
+  deriveActionInterval,
+  isActionDue,
+  nextActionTime,
+  resolveActionTimingConfig,
+} from "./action-timing.js";
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const positionKey = ({ x, y }) => `${x},${y}`;
@@ -120,6 +127,7 @@ export function createCombatUnit({
   commanderId, soldierCount = 120, maxSoldierCount = soldierCount, hp, maxHp: requestedMaxHp = null, morale, fatigue = 0,
   cohesion, experience = 35, supply = 100, maxSupply = 100, position, facing = FACING.EAST, statusEffects = [], tags = [],
   order = UNIT_ORDERS.HOLD, activeSkill = null,
+  actionActorType = ACTION_ACTOR_TYPES.AI, actionAbilityScore = null,
 } = {}) {
   const unitClass = assertDefinition(UNIT_CLASSES, unitClassId, "兵種");
   const race = assertDefinition(RACES, raceId, "種族");
@@ -149,6 +157,7 @@ export function createCombatUnit({
     order, lastOrder: order, state: "STABLE", engagedWith: [],
     plannedPosition: null, targetId: null, activeSkill: activeSkill ?? (unitClassId === "mage" ? "fire" : null),
     plannedAction: null, playerInstructions: {}, lastMovedDistance: 0, turnChargeBonus: 0, actedThisTurn: false,
+    actionActorType, actionAbilityScore, actionInterval: null, nextActionAt: 0, lastActionAt: null, actionReadyThisPulse: false,
   };
 }
 
@@ -238,16 +247,18 @@ function normalizeFortificationSupply(fortification) {
 
 export function createBattleState({
   id = "battle", name = "戦術戦闘", map = createBattleMap(), units = [], commanders = [], seed = 317,
-  supplyNodes = null, formations = null, fortifications = [],
+  supplyNodes = null, formations = null, fortifications = [], actionTimingConfig = null,
 } = {}) {
   validateBattleEntities(map, units, commanders, fortifications);
   return {
-    version: 4, id, name, map, units, commanders, fortifications: fortifications.map(normalizeFortificationSupply),
+    version: 5, id, name, map, units, commanders, fortifications: fortifications.map(normalizeFortificationSupply),
     turn: 0, phase: "command", winner: null, outcome: null,
     rngState: Math.max(1, Math.trunc(seed) >>> 0),
     retreatEdges: { player: "west", enemy: "east" },
     supplyNodes: (supplyNodes ?? createDefaultSupplyNodes(map)).map(normalizeSupplyNode),
     formations: { player: "line", enemy: "line", ...(formations ?? {}) },
+    actionTime: 0,
+    actionTimingConfig: resolveActionTimingConfig(actionTimingConfig ?? {}),
     log: [{ turn: 0, phase: "command", message: "両軍の初期配置が完了しました。" }],
   };
 }
@@ -1274,7 +1285,9 @@ function commandPhase(battle) {
     unit.actedThisTurn = false;
     unit.lastMovedDistance = 0;
     unit.turnChargeBonus = 0;
+    unit.actionReadyThisPulse = isActionDue(battle.actionTime, unit.nextActionAt);
     if (!activeForCombat(unit)) return;
+    if (!unit.actionReadyThisPulse) return;
     const instructions = unit.playerInstructions ?? {};
     const directMove = Boolean(instructions.move && unit.plannedPosition);
     const directAction = Boolean(instructions.action && unit.plannedAction);
@@ -1283,7 +1296,7 @@ function commandPhase(battle) {
     else if (directTarget) planAiUnit(battle, unit, directTarget);
     else if (!directMove && !directAction) planAiUnit(battle, unit);
   });
-  addLog(battle, "command", "指示済みの部隊は命令を実行し、未指示の部隊は兵種・特性・現在命令に基づいて自律行動します。");
+  addLog(battle, "command", `行動時刻${battle.actionTime}。行動値が一致した部隊だけが命令を実行し、未指示なら兵種・特性・現在命令に基づいて自律判断します。`);
 }
 
 function applyDamage(battle, target, power, moraleDamage, sourceName, phase, casualtyMultiplier = 1) {
@@ -1346,7 +1359,7 @@ function movementPhase(battle) {
     commander.plannedPosition = null;
   });
   refreshEngagements(battle);
-  const movers = battle.units.filter((unit) => activeForCombat(unit) && unit.plannedPosition)
+  const movers = battle.units.filter((unit) => activeForCombat(unit) && unit.actionReadyThisPulse && unit.plannedPosition)
     .sort((a, b) => Number(Boolean(b.playerInstructions?.move)) - Number(Boolean(a.playerInstructions?.move))
       || getEffectiveStats(battle, b).movement - getEffectiveStats(battle, a).movement);
   movers.forEach((unit) => {
@@ -1392,7 +1405,7 @@ function refreshEngagements(battle) {
 }
 
 function chargeReactionPhase(battle) {
-  battle.units.filter((unit) => activeForCombat(unit) && unit.lastMovedDistance >= 3 && unit.abilities.includes("charge")).forEach((attacker) => {
+  battle.units.filter((unit) => activeForCombat(unit) && unit.actionReadyThisPulse && unit.lastMovedDistance >= 3 && unit.abilities.includes("charge")).forEach((attacker) => {
     const target = getBattleUnit(battle, attacker.targetId) ?? attacker.engagedWith.map((id) => getBattleUnit(battle, id)).find(Boolean);
     if (!target || !activeForCombat(target) || distance(attacker.position, target.position) !== 1) return;
     const preview = getChargePreview(battle, attacker.id, target.id);
@@ -1426,7 +1439,7 @@ export function hasLineOfSight(battle, from, to) {
 }
 
 function rangedPhase(battle) {
-  battle.units.filter((unit) => activeForCombat(unit) && unit.rangedAttack > 0 && !unit.engagedWith.length).forEach((attacker) => {
+  battle.units.filter((unit) => activeForCombat(unit) && unit.actionReadyThisPulse && unit.rangedAttack > 0 && !unit.engagedWith.length).forEach((attacker) => {
     const target = getBattleUnit(battle, attacker.targetId) ?? chooseAiTarget(battle, attacker);
     if (!target || !activeForCombat(target)) return;
     const stats = getEffectiveStats(battle, attacker);
@@ -1531,7 +1544,7 @@ export function applyEngineerAction(battle, unitId, actionId, position) {
 }
 
 function magicAndEngineerPhase(battle) {
-  battle.units.filter((unit) => activeForCombat(unit) && unit.plannedAction).forEach((unit) => {
+  battle.units.filter((unit) => activeForCombat(unit) && unit.actionReadyThisPulse && unit.plannedAction).forEach((unit) => {
     const { actionId, position } = unit.plannedAction;
     try {
       if (unit.abilities.includes("magic")) applyMagicSkillMutable(battle, unit, actionId, position);
@@ -1572,7 +1585,7 @@ function meleeAttack(battle, attacker, defender) {
 }
 
 function meleePhase(battle) {
-  const attackers = battle.units.filter(activeForCombat).sort((a, b) => b.experience - a.experience);
+  const attackers = battle.units.filter((unit) => activeForCombat(unit) && unit.actionReadyThisPulse).sort((a, b) => b.experience - a.experience);
   const attackedPairs = new Set();
   attackers.forEach((attacker) => {
     const adjacent = battle.units.filter((target) => target.side !== attacker.side && activeForCombat(target) && distance(attacker.position, target.position) === 1);
@@ -1595,7 +1608,7 @@ export function getMoraleState(morale) {
 }
 
 function moralePhase(battle) {
-  battle.units.filter(onField).forEach((unit) => {
+  battle.units.filter((unit) => onField(unit) && unit.actionReadyThisPulse).forEach((unit) => {
     if (unit.state === "ROUTED") return;
     const routedAllies = battle.units.filter((ally) => ally.side === unit.side && ally.id !== unit.id && ally.state === "ROUTED" && distance(ally.position, unit.position) <= 3).length;
     if (routedAllies) unit.morale = clamp(unit.morale - routedAllies * 7, 0, 100);
@@ -1612,7 +1625,7 @@ function moralePhase(battle) {
 }
 
 function routPhase(battle) {
-  battle.units.filter((unit) => unit.state === "ROUTED" && onField(unit)).forEach((unit) => {
+  battle.units.filter((unit) => unit.state === "ROUTED" && onField(unit) && unit.actionReadyThisPulse).forEach((unit) => {
     const retreatX = unit.side === "player" ? 0 : battle.map.width - 1;
     if (unit.position.x === retreatX) {
       unit.state = "ESCAPED";
@@ -1627,7 +1640,7 @@ function routPhase(battle) {
 }
 
 function pursuitPhase(battle) {
-  battle.units.filter((unit) => activeForCombat(unit) && unit.abilities.includes("pursuit")).forEach((pursuer) => {
+  battle.units.filter((unit) => activeForCombat(unit) && unit.actionReadyThisPulse && unit.abilities.includes("pursuit")).forEach((pursuer) => {
     const target = nearestEnemy(battle, pursuer, (enemy) => enemy.state === "ROUTED");
     if (!target) return;
     const stats = getEffectiveStats(battle, pursuer);
@@ -1646,7 +1659,7 @@ function pursuitPhase(battle) {
 function fatigueAndStatusPhase(battle) {
   const deliveryBudgets = new Map();
   const deliveryTotals = new Map();
-  battle.units.filter(onField).forEach((unit) => {
+  battle.units.filter((unit) => onField(unit) && unit.actionReadyThisPulse).forEach((unit) => {
     if (!unit.actedThisTurn && unit.lastMovedDistance === 0) unit.fatigue = clamp(unit.fatigue - 4, 0, 100);
     const tile = getBattleTile(battle, unit.position);
     if (tile?.status.some((status) => status.id === "burning")) applyDamage(battle, unit, 7, 5, "延焼", "fatigue_status");
@@ -1701,11 +1714,13 @@ function fatigueAndStatusPhase(battle) {
     }, 0);
     if (moraleRecovery > 0) unit.morale = clamp(unit.morale + moraleRecovery, 0, 100);
     unit.statusEffects = unit.statusEffects.map((status) => ({ ...status, duration: status.duration - 1 })).filter((status) => status.duration > 0);
-    unit.plannedPosition = null;
-    unit.plannedAction = null;
-    unit.targetId = null;
-    unit.playerInstructions = {};
-    unit.turnChargeBonus = 0;
+    if (unit.actionReadyThisPulse) {
+      unit.plannedPosition = null;
+      unit.plannedAction = null;
+      unit.targetId = null;
+      unit.playerInstructions = {};
+      unit.turnChargeBonus = 0;
+    }
   });
   deliveryTotals.forEach(({ name, delivered, source, sourceType }) => {
     const remaining = supplySourceStockpile(source, sourceType);
@@ -1783,9 +1798,21 @@ const PHASE_SYSTEMS = Object.freeze({
   fatigue_status: fatigueAndStatusPhase,
 });
 
+function actionAbilityScoreFor(unit) {
+  return Number.isFinite(Number(unit.actionAbilityScore))
+    ? Number(unit.actionAbilityScore)
+    : clamp(Math.round(3 + Number(unit.experience ?? 35) * 0.2), 3, 18);
+}
+
 export function executeBattleTurn(battle) {
   const next = structuredClone(battle);
   if (next.winner) return next;
+  next.actionTimingConfig = resolveActionTimingConfig(next.actionTimingConfig ?? {});
+  next.actionTime = Number.isInteger(next.actionTime) ? next.actionTime : 0;
+  next.units.forEach((unit) => {
+    unit.nextActionAt = Number.isInteger(unit.nextActionAt) ? unit.nextActionAt : next.actionTime;
+  });
+  if (next.turn > 0) next.actionTime = nextActionTime(next.units.filter(activeForCombat), next.actionTime);
   next.turn += 1;
   for (const phase of BATTLE_PHASES) {
     next.phase = phase;
@@ -1793,7 +1820,33 @@ export function executeBattleTurn(battle) {
   }
   refreshEngagements(next);
   resolveVictory(next);
+  next.units.filter((unit) => unit.actionReadyThisPulse).forEach((unit) => {
+    const abilityScore = actionAbilityScoreFor(unit);
+    unit.actionInterval = deriveActionInterval({
+      actorType: unit.actionActorType,
+      actorId: unit.id,
+      abilityScore,
+    }, next.actionTimingConfig);
+    unit.lastActionAt = next.actionTime;
+    unit.nextActionAt = next.actionTime + unit.actionInterval;
+    unit.actionReadyThisPulse = false;
+  });
   next.phase = next.winner ? "complete" : "command";
+  return next;
+}
+
+export function setBattleActionTimingConfig(battle, overrides = {}) {
+  const next = structuredClone(battle);
+  next.actionTimingConfig = resolveActionTimingConfig({ ...(next.actionTimingConfig ?? {}), ...overrides });
+  const currentTime = Number.isInteger(next.actionTime) ? next.actionTime : 0;
+  next.units.forEach((unit) => {
+    unit.actionInterval = deriveActionInterval({
+      actorType: unit.actionActorType,
+      actorId: unit.id,
+      abilityScore: actionAbilityScoreFor(unit),
+    }, next.actionTimingConfig);
+    if (Number(unit.nextActionAt) > currentTime) unit.nextActionAt = currentTime + unit.actionInterval;
+  });
   return next;
 }
 
@@ -1826,7 +1879,7 @@ export function getBattleSummary(battle) {
       maxStockpile: Math.round(maxStockpile),
     };
   };
-  return { turn: battle.turn, phase: battle.phase, winner: battle.winner, player: side("player"), enemy: side("enemy") };
+  return { turn: battle.turn, actionTime: battle.actionTime ?? 0, phase: battle.phase, winner: battle.winner, player: side("player"), enemy: side("enemy") };
 }
 
 export const tacticalBattleInternals = Object.freeze({ distance, positionKey, activeForCombat });
