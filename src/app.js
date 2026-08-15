@@ -416,6 +416,7 @@ let suppressGeneratedMapClickUntil = 0;
 const view = {
   launchOpen: true,
   ledgerDrawerOpen: false,
+  mobileMoreOpen: false,
   characterCreationOpen: false,
   characterDraft: null,
   goddessPrologue: createGoddessPrologueState(),
@@ -479,6 +480,7 @@ const view = {
   atlasMode: "generated",
   generatedMapScale: "region",
   generatedMapLegendOpen: true,
+  generatedMapLegendInitialized: false,
   generatedPanX: 0,
   generatedPanY: 0,
   generatedConfirmOffsetX: 0,
@@ -576,7 +578,11 @@ const elements = {
   leftPanel: document.querySelector("#leftPanel"),
   ledgerDrawer: document.querySelector("#ledgerDrawer"),
   closeLedgerDrawer: document.querySelector("#closeLedgerDrawer"),
+  ledgerDrawerScrim: document.querySelector("#ledgerDrawerScrim"),
   primaryTabs: document.querySelector("#primaryTabs"),
+  mobileMoreMenu: document.querySelector("#mobileMoreMenu"),
+  mobileMoreToggle: document.querySelector("[data-mobile-more-toggle]"),
+  mobileTimeLabel: document.querySelector("#mobileTimeLabel"),
   characterDetailModal: document.querySelector("#characterDetailModal"),
   characterDetailContent: document.querySelector("#characterDetailContent"),
   characterDetailTitle: document.querySelector("#characterDetailTitle"),
@@ -846,6 +852,10 @@ function renderResources() {
 
 function renderTimeControls() {
   elements.dateLabel.textContent = formatDate(state);
+  if (elements.mobileTimeLabel) {
+    const worldTime = getGeneratedWorldTimeView(state);
+    elements.mobileTimeLabel.textContent = `第${worldTime.day}日 ${worldTime.timeLabel}`;
+  }
   const season = deriveCityMetrics(state, view.selectedCityId).season.name;
   elements.dateHint.textContent = state.player ? "月を進める" : state.phase === "event" ? "事件対応が必要" : state.centralizationCampaign?.ending ? "完全集権化 · 継続統治" : state.council.pending ? `${season}季評定を決定` : "月を終える";
   elements.endMonthButton.classList.toggle("is-blocked", !state.player && (state.phase === "event" || state.council.pending));
@@ -858,34 +868,61 @@ function renderAnalysisMode() {
   elements.analysisToggle.querySelector("small").textContent = view.expertMode ? "閉じる" : "表示";
 }
 
+function isCompactMobileShell() {
+  return typeof window.matchMedia === "function" && window.matchMedia("(max-width: 980px) and (orientation: landscape)").matches;
+}
+
+let lastLedgerDrawerTrigger = null;
+
 function renderTabs() {
   const stage = getCareerStage(state);
   const allowed = state.player
     ? new Set(["career", "people", "world", "village", "location", ...(stage?.governance ? ["governance"] : [])])
     : null;
   if (allowed && !allowed.has(view.panel)) view.panel = stage?.governance ? "governance" : "career";
+  const compact = isCompactMobileShell();
   elements.primaryTabs.querySelectorAll("[data-panel]").forEach((button) => {
-    button.hidden = Boolean(allowed && !allowed.has(button.dataset.panel));
-    button.classList.toggle("is-active", button.dataset.panel === view.panel);
+    const unavailable = Boolean(allowed && !allowed.has(button.dataset.panel));
+    button.hidden = unavailable && !(compact && button.hasAttribute("data-mobile-primary"));
+    button.setAttribute("aria-disabled", String(unavailable));
+    const active = button.dataset.panel === view.panel;
+    button.classList.toggle("is-active", active);
+    if (active) button.setAttribute("aria-current", "page");
+    else button.removeAttribute("aria-current");
   });
   elements.primaryTabs.querySelectorAll("[data-shortcut-tab]").forEach((button) => {
     button.hidden = false;
-    button.classList.toggle("is-active", view.panel === "world" && button.dataset.shortcutTab === view.shortcutTab);
+    button.setAttribute("aria-disabled", "false");
+    const active = view.panel === "world" && button.dataset.shortcutTab === view.shortcutTab;
+    button.classList.toggle("is-active", active);
+    if (active) button.setAttribute("aria-current", "page");
+    else button.removeAttribute("aria-current");
   });
   elements.ledgerDrawer.classList.toggle("is-open", view.ledgerDrawerOpen);
   elements.ledgerDrawer.setAttribute("aria-hidden", String(!view.ledgerDrawerOpen));
-  elements.primaryTabs.querySelectorAll("button").forEach((button) => {
+  if (elements.ledgerDrawerScrim) elements.ledgerDrawerScrim.hidden = !view.ledgerDrawerOpen || !compact;
+  if (elements.mobileMoreMenu) elements.mobileMoreMenu.hidden = compact && !view.mobileMoreOpen;
+  if (elements.mobileMoreToggle) {
+    elements.mobileMoreToggle.setAttribute("aria-expanded", String(view.mobileMoreOpen));
+    elements.mobileMoreToggle.classList.toggle("is-active", view.mobileMoreOpen);
+  }
+  elements.primaryTabs.querySelectorAll("[data-panel], [data-shortcut-tab]").forEach((button) => {
     button.setAttribute("aria-expanded", String(view.ledgerDrawerOpen && button.classList.contains("is-active")));
   });
 }
 
 function openLedgerDrawer() {
+  lastLedgerDrawerTrigger = document.activeElement?.closest?.("button") ?? null;
   view.ledgerDrawerOpen = true;
+  view.mobileMoreOpen = false;
+  if (isCompactMobileShell()) requestAnimationFrame(() => elements.closeLedgerDrawer?.focus());
 }
 
 function closeLedgerDrawer() {
   view.ledgerDrawerOpen = false;
   renderTabs();
+  lastLedgerDrawerTrigger?.focus?.();
+  lastLedgerDrawerTrigger = null;
 }
 
 function campaignObjectiveItems(campaign, compact = false) {
@@ -931,7 +968,7 @@ function renderCampaignBar() {
     }[player.stage];
     elements.campaignBar.innerHTML = `
       <div class="campaign-bar-goal"><small>立身段階 ${stage.order + 1}/${CAREER_STAGE_ROUTE.length}</small><strong>${stage.name} · ${player.title}</strong><span>${stage.description}</span></div>
-      <div class="campaign-bar-next"><small>現在の目標</small><strong>${next}</strong><span>武勲 ${player.metrics.martialMerit} · 政績 ${player.metrics.civilMerit} · 家臣支持 ${player.metrics.householdSupport}</span></div>
+      <button class="campaign-bar-next" type="button" data-panel="${stage.governance ? "governance" : "career"}"><small>現在の目標</small><strong>${next}</strong><span>武勲 ${player.metrics.martialMerit} · 政績 ${player.metrics.civilMerit} · 家臣支持 ${player.metrics.householdSupport}</span></button>
       <div class="campaign-bar-actions"><button class="campaign-primary-action" type="button" data-panel="${stage.governance ? "governance" : "career"}">${stage.governance ? "統治画面を開く" : "人物行動を開く"}</button></div>`;
     return;
   }
@@ -1273,7 +1310,7 @@ async function resetChronicle(options = {}, flow = {}) {
       selectedType: null, selectedId: null, selectedTileName: null, selectedTerrain: null, selectedTerrainType: null, tileWindowOpen: false,
       selectedCityId: "selene", cityTab: "overview", selectedTownId: "mugiwano", townTab: "overview", selectedVillageId: null, selectedVillageFacilityId: "inn", villageFacilityOpen: false, tavernSection: "requests", villageConversation: null, locationScene: null, selectedLocationZoneId: null, locationSceneResult: null, adventureOpen: false, selectedAuthorityDomain: "justice", selectedNationalReformSystem: "population_land_knowledge",
       selectedFacilityId: "farmland", selectedCountryId: "valka", objectiveId: "transit", warMapView: "atlas", warRegionId: null, selectedWarHexId: null, warCouncilOpen: false, assignmentOpen: false,
-      pendingTownId: null, guideOpen: false, endingOpen: false, resetOpen: false, offlineReport: null, offlineReportOpen: false, expertMode: false, atlasMode: "generated", generatedMapScale: "region", generatedMapLegendOpen: true, generatedPanX: 0, generatedPanY: 0, generatedConfirmOffsetX: 0, generatedConfirmOffsetY: 0, pendingGeneratedDestinationId: null, pendingGeneratedTravelMode: "route",
+      pendingTownId: null, guideOpen: false, endingOpen: false, resetOpen: false, offlineReport: null, offlineReportOpen: false, expertMode: false, mobileMoreOpen: false, atlasMode: "generated", generatedMapScale: "region", generatedMapLegendOpen: true, generatedMapLegendInitialized: false, generatedPanX: 0, generatedPanY: 0, generatedConfirmOffsetX: 0, generatedConfirmOffsetY: 0, pendingGeneratedDestinationId: null, pendingGeneratedTravelMode: "route",
       selectedGeneratedNationId: nextState.generatedWorld.playerNationId, worldNationFilter: "all", focusedTownCommandId: null,
       characterCreationOpen: Boolean(flow.deferLaunch), characterDraft: flow.deferLaunch ? view.characterDraft : null,
     });
@@ -5242,6 +5279,10 @@ function renderGeneratedWorldMapLayer() {
 
 function paintGeneratedMapLegend() {
   if (!elements.generatedWorldMapHelp || !elements.generatedMapLegendToggle) return;
+  if (!view.generatedMapLegendInitialized) {
+    view.generatedMapLegendOpen = !isCompactMobileShell();
+    view.generatedMapLegendInitialized = true;
+  }
   const open = view.generatedMapLegendOpen !== false;
   elements.generatedWorldMapHelp.classList.toggle("is-collapsed", !open);
   elements.generatedMapLegendToggle.setAttribute("aria-expanded", String(open));
@@ -8094,10 +8135,28 @@ document.addEventListener("click", async (event) => {
     renderPanelFromTop();
     return;
   }
+  const mobileMoreToggle = event.target.closest("[data-mobile-more-toggle]");
+  if (mobileMoreToggle) {
+    view.mobileMoreOpen = !view.mobileMoreOpen;
+    renderTabs();
+    return;
+  }
+  const mobileMoreAction = event.target.closest("[data-mobile-more-action]");
+  if (mobileMoreAction) {
+    view.mobileMoreOpen = false;
+    if (mobileMoreAction.dataset.mobileMoreAction === "analysis") {
+      view.expertMode = !view.expertMode;
+      render();
+    } else if (mobileMoreAction.dataset.mobileMoreAction === "back-menu") {
+      elements.backMenu.open = true;
+      renderTabs();
+    }
+    return;
+  }
   const shortcutTab = event.target.closest("[data-shortcut-tab]");
   if (shortcutTab) {
     openLedgerDrawer();
-    clearTileDetailSelection();
+    if (!isCompactMobileShell()) clearTileDetailSelection();
     view.panel = "world";
     view.shortcutTab = shortcutTab.dataset.shortcutTab;
     view.atlasMode = "generated";
@@ -8125,8 +8184,12 @@ document.addEventListener("click", async (event) => {
   }
   const panelButton = event.target.closest("[data-panel]");
   if (panelButton) {
+    if (panelButton.getAttribute("aria-disabled") === "true") {
+      showToast(panelButton.dataset.panel === "governance" ? "領主就任後に統治が解放されます。" : "キャリア進行によって解放されます。", "ui");
+      return;
+    }
     openLedgerDrawer();
-    clearTileDetailSelection();
+    if (!isCompactMobileShell()) clearTileDetailSelection();
     view.panel = panelButton.dataset.panel;
     if (view.panel === "world") {
       view.atlasMode = "generated";
@@ -8679,6 +8742,7 @@ document.querySelector("#realmHome").addEventListener("click", () => {
   renderPanelFromTop();
 });
 elements.closeLedgerDrawer.addEventListener("click", closeLedgerDrawer);
+document.querySelector("[data-close-ledger-drawer]")?.addEventListener("click", closeLedgerDrawer);
 document.querySelector("#requestLandscape")?.addEventListener("click", async () => {
   try {
     if (!document.fullscreenElement) await document.documentElement.requestFullscreen?.();
@@ -8686,6 +8750,13 @@ document.querySelector("#requestLandscape")?.addEventListener("click", async () 
   } catch {
     showToast("横向きに回転するとゲーム画面を開けます。", "ui");
   }
+});
+const compactShellMedia = window.matchMedia("(max-width: 980px) and (orientation: landscape)");
+compactShellMedia.addEventListener?.("change", () => {
+  view.mobileMoreOpen = false;
+  view.generatedMapLegendInitialized = false;
+  renderTabs();
+  paintGeneratedMapLegend();
 });
 document.querySelector("#saveButton").addEventListener("click", () => persist(true));
 document.querySelector("#resetButton").addEventListener("click", (event) => {
@@ -8701,6 +8772,12 @@ elements.guideModal.addEventListener("click", (event) => {
   }
 });
 document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && view.mobileMoreOpen) {
+    view.mobileMoreOpen = false;
+    renderTabs();
+    elements.mobileMoreToggle?.focus();
+    return;
+  }
   if (event.key === "Escape" && view.ledgerDrawerOpen) {
     closeLedgerDrawer();
     return;

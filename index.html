@@ -198,6 +198,7 @@
               </button>
               <button class="date-button month-end-button" id="endMonthButton" type="button">
                 <strong id="dateLabel">誓暦317年 青月</strong>
+                <span class="mobile-time-label" id="mobileTimeLabel">第1日 08:00</span>
                 <small id="dateHint">月を終える</small>
               </button>
             </div>
@@ -245,17 +246,22 @@
             </footer>
           </details>
         </div>
-        <nav class="primary-tabs" id="primaryTabs">
-          <button class="is-active" type="button" data-shortcut-tab="world"><span>界</span>世界</button>
-          <button type="button" data-shortcut-tab="characters"><span>人</span>人物</button>
-          <button type="button" data-panel="governance" hidden><span>領</span>統治</button>
-          <button type="button" data-panel="centralization" hidden><span>冠</span>国制</button>
-          <button type="button" data-panel="council" hidden><span>♜</span>評定</button>
-          <button type="button" data-panel="spending" hidden><span>¤</span>支出</button>
-          <button type="button" data-panel="city" hidden><span>城</span>都市</button>
-          <button type="button" data-panel="town" hidden><span>町</span>町政</button>
-          <button type="button" data-panel="diplomacy" hidden><span>⚖</span>外交</button>
-          <button type="button" data-panel="military" hidden><span>⚔</span>軍事</button>
+        <nav class="primary-tabs" id="primaryTabs" aria-label="主要画面">
+          <button class="is-active" type="button" data-mobile-primary data-shortcut-tab="world"><span>界</span>世界</button>
+          <button type="button" data-mobile-primary data-shortcut-tab="characters"><span>人</span>人物</button>
+          <button type="button" data-mobile-primary data-panel="governance" hidden><span>領</span>統治</button>
+          <button type="button" data-mobile-primary data-panel="centralization" hidden><span>冠</span>国制</button>
+          <button type="button" data-mobile-primary data-panel="council" hidden><span>♜</span>評定</button>
+          <button type="button" data-mobile-more-toggle aria-expanded="false" aria-controls="mobileMoreMenu"><span>⋯</span>その他</button>
+          <div class="mobile-more-menu" id="mobileMoreMenu" hidden>
+            <button type="button" data-panel="spending" hidden><span>¤</span>支出</button>
+            <button type="button" data-panel="city" hidden><span>城</span>都市</button>
+            <button type="button" data-panel="town" hidden><span>町</span>町政</button>
+            <button type="button" data-panel="diplomacy" hidden><span>⚖</span>外交</button>
+            <button type="button" data-panel="military" hidden><span>⚔</span>軍事</button>
+            <button type="button" data-mobile-more-action="analysis"><span>⌘</span>専門台帳</button>
+            <button type="button" data-mobile-more-action="back-menu"><span>録</span>設定・情報</button>
+          </div>
         </nav>
         <section class="ledger-drawer" id="ledgerDrawer" aria-hidden="true" aria-label="選択中の操作パネル">
           <header class="ledger-drawer-bar">
@@ -265,6 +271,8 @@
           <section class="ledger-panel" id="leftPanel" aria-live="polite"></section>
         </section>
       </aside>
+
+      <button class="ledger-drawer-scrim" id="ledgerDrawerScrim" type="button" data-close-ledger-drawer aria-label="操作パネルを閉じる" hidden></button>
 
       <main class="map-stage">
         <div class="alert-rack" id="alertRack" aria-label="重要通知"></div>
