@@ -169,3 +169,9 @@ test("crime controls avoid false disclosure state and enforce local support prer
   assert.match(appSource, /allUnderworldRolesKnown/);
   assert.match(appSource, /metrics\.wealth\s*<\s*1|metrics\?\.wealth\s*<\s*1/);
 });
+
+test("career crime status and recovery resolve the live generated-world region jurisdiction", () => {
+  assert.match(appSource, /function currentCrimeJurisdictionId\(\)[\s\S]*currentAdventureContext\(\)\.region\.id/);
+  assert.equal((appSource.match(/const jurisdictionId = currentCrimeJurisdictionId\(\);/g) ?? []).length, 2);
+  assert.doesNotMatch(appSource, /jurisdictionId = activeVillageContext\(\)\?\.regionId \?\? state\.player\.locationId/);
+});

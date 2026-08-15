@@ -4203,9 +4203,14 @@ function renderStrategicCrimeSection(context) {
   return `<section class="crime-context-section"><header><div><small>ILLEGAL / STRATEGIC TARGET</small><h2>非合法</h2></div><p>実在する施設状態へ損害が反映されます。</p></header>${sabotageCard(target, context.regionName, "strategic")}</section>`;
 }
 
+function currentCrimeJurisdictionId() {
+  try { return currentAdventureContext().region.id; }
+  catch { return activeVillageContext()?.regionId ?? state.player.locationId; }
+}
+
 function renderCrimeStatusBoard() {
   const crime = state.player.crime ?? {};
-  const jurisdictionId = activeVillageContext()?.regionId ?? state.player.locationId;
+  const jurisdictionId = currentCrimeJurisdictionId();
   const status = getCrimeStatusView(state, { jurisdictionId });
   const governedJurisdictionIds = governedCrimeJurisdictionIds();
   const canPardonHere = governedJurisdictionIds.includes(jurisdictionId);
@@ -7605,7 +7610,7 @@ document.addEventListener("click", async (event) => {
   const recoveryButton = event.target.closest("[data-crime-recovery]");
   if (recoveryButton && !recoveryButton.disabled) {
     const action = recoveryButton.dataset.crimeRecovery;
-    const jurisdictionId = activeVillageContext()?.regionId ?? state.player.locationId;
+    const jurisdictionId = currentCrimeJurisdictionId();
     const incident = state.player.crime?.incidents?.find((entry) => !entry.resolved && (entry.jurisdiction?.id ?? entry.jurisdictionId) === jurisdictionId)
       ?? state.player.crime?.incidents?.find((entry) => !entry.resolved);
     const destinationJurisdictionId = crimeRecoveryDestination(jurisdictionId);
