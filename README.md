@@ -30,7 +30,8 @@ ver2では、平民・浪人・傭兵から従士、騎士、城主、地方領�
 
 - 公開リポジトリ: <https://github.com/Rune-markar/oathbound-chronicle-island-prototype>
 - ゲームマニュアル: [MANUAL.md](./MANUAL.md)
-- 更新履歴: <https://github.com/Rune-markar/oathbound-chronicle-island-prototype/blob/main/CHANGELOG.md>
+- 仕様変更・更新履歴: <https://app.notion.com/p/3bd01092fbe2817cbb32d221ab42f6d7>
+- 実装更新履歴: <https://github.com/Rune-markar/oathbound-chronicle-island-prototype/blob/main/CHANGELOG.md>
 
 ## 実装範囲
 
