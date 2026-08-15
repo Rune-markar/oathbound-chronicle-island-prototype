@@ -35,3 +35,33 @@ test("現状台帳のローカル出典と開始画面の導線が存在する",
   const statusPage = await readFile(new URL("project-status.html", projectRoot), "utf8");
   assert.match(statusPage, /src="\.\/src\/project-status\.js"/);
 });
+
+test("犯罪プレーの通常導線、六行動、帰結を実装済みとして追跡する", async () => {
+  assert.equal(STATUS_LEDGER_META.lastAuditedAt, "2026-08-16");
+  const crime = STATUS_ENTRIES.find((item) => item.id === "criminal-play-flow");
+  assert.ok(crime, "criminal-play-flow ledger entry is required");
+  assert.equal(crime.category, "implemented");
+  ["窃盗", "恐喝", "強盗", "密輸", "破壊工作", "暗殺"].forEach((action) => {
+    assert.match(`${crime.summary} ${crime.evidence}`, new RegExp(action));
+  });
+  assert.ok(crime.sources.some((item) => item.href === "./src/crime-system.js" && /getCrimeStatusView/.test(item.ref)));
+  assert.ok(crime.sources.some((item) => item.href === "./src/app.js" && /renderSettlementCrimeSection/.test(item.ref)));
+  assert.ok(crime.sources.some((item) => item.href === "./tests/criminal-ui.test.mjs"));
+
+  const projectRoot = new URL("../", import.meta.url);
+  const [readme, manual, changelog] = await Promise.all([
+    readFile(new URL("README.md", projectRoot), "utf8"),
+    readFile(new URL("MANUAL.md", projectRoot), "utf8"),
+    readFile(new URL("CHANGELOG.md", projectRoot), "utf8"),
+  ]);
+  assert.match(readme, /通常のキャリア.*非合法/s);
+  ["窃盗", "恐喝", "強盗", "密輸", "破壊工作", "暗殺"].forEach((action) => assert.match(readme, new RegExp(action)));
+  assert.match(manual, /犯罪プレー/);
+  assert.match(manual, /対象.*管轄.*準備.*見込報酬.*最大刑罰/s);
+  assert.match(manual, /同行者.*承諾.*拒否.*通報.*離脱/s);
+  assert.match(manual, /盗品.*故買屋.*手配.*隠れ家.*出頭.*服役.*逃亡.*亡命.*追放.*恩赦/s);
+  assert.match(manual, /主権者.*権力濫用/s);
+  assert.match(manual, /暗殺.*拘束.*ゲーム終了/s);
+  assert.match(changelog, /Unreleased — 2026-08-16/);
+  assert.match(changelog, /犯罪.*保存.*移行.*政治.*歴史.*テスト/s);
+});
