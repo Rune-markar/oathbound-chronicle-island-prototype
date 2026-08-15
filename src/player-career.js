@@ -82,6 +82,13 @@ export const CAREER_STAGE_ROUTE = Object.freeze([
   "multi_lord", "governor", "duke", "regent", "independent_ruler",
 ].map((id) => CAREER_STAGES[id]));
 
+// The data model retains the full aspirational ten-rank ladder for save and
+// future-content compatibility. These are the milestones that normal UI play
+// can actually enter today; optional multi_lord may be skipped on independence.
+export const PLAYABLE_CAREER_STAGE_ROUTE = Object.freeze([
+  "individual", "retainer", "commander", "lord", "multi_lord", "independent_ruler",
+].map((id) => CAREER_STAGES[id]));
+
 export function getGovernmentTitleSystem(governmentFormId) {
   return GOVERNMENT_TITLE_SYSTEMS[governmentFormId] ?? null;
 }
@@ -235,6 +242,13 @@ export function normalizeCareerState(state) {
     history: [...(state.player.history ?? baseline.history)],
   };
   state.player.schemaVersion = CAREER_SCHEMA_VERSION;
+  if (state.scenarioMode === "generated") {
+    const appointedRegionId = Object.entries(state.generatedWorld?.regionalDomains?.regionStates ?? {})
+      .find(([, region]) => region?.lordId === state.player.id)?.[0];
+    const generatedFiefRegionId = appointedRegionId ?? state.generatedWorld?.expeditionRegionId;
+    const legacyFrontierFief = state.player.holdings.find((holding) => holding.territoryId === "orta" && !holding.generatedRegionId);
+    if (legacyFrontierFief && generatedFiefRegionId) legacyFrontierFief.generatedRegionId = generatedFiefRegionId;
+  }
   if (!getGovernmentTitleSystem(state.player.governmentFormId)) state.player.governmentFormId = null;
   if (priorSchemaVersion < CAREER_SCHEMA_VERSION || !state.player.title) {
     state.player.title = getTitleForCareerStage(state.player.stage, state.player.governmentFormId);

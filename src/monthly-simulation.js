@@ -161,6 +161,7 @@ import {
   PERSONAL_CHRONICLE_RECENT_LIMIT,
   PERSONAL_CHRONICLE_TICKER_LIMIT,
   CAREER_STAGE_ROUTE,
+  PLAYABLE_CAREER_STAGE_ROUTE,
   CAREER_STAGES,
   GOVERNMENT_TITLE_SYSTEMS,
   GOVERNANCE_COMMANDS,
@@ -381,6 +382,7 @@ export {
   PERSONAL_CHRONICLE_RECENT_LIMIT,
   PERSONAL_CHRONICLE_TICKER_LIMIT,
   CAREER_STAGE_ROUTE,
+  PLAYABLE_CAREER_STAGE_ROUTE,
   CAREER_STAGES,
   DELEGATABLE_ROLES,
   DELEGATION_AUTHORITY_LEVELS,
@@ -988,6 +990,14 @@ export function performCareerAction(state, actionId, delegation = {}) {
   }
   const activeRegionId = next.generatedWorld?.expeditionRegionId;
   if (next.scenarioMode === "generated" && activeRegionId && actionId === "request_second_fief") {
+    next = appointGeneratedRegionalLord(next, activeRegionId, {
+      lordId: next.player.id,
+      lordName: next.player.name,
+    });
+  }
+  if (next.scenarioMode === "generated" && activeRegionId && actionId === "command_campaign") {
+    const holding = next.player.holdings.find((entry) => entry.territoryId === "orta");
+    if (holding) holding.generatedRegionId = activeRegionId;
     next = appointGeneratedRegionalLord(next, activeRegionId, {
       lordId: next.player.id,
       lordName: next.player.name,

@@ -12,6 +12,7 @@ import {
   AUTHORITY_TRANSFER_METHODS,
   CENTRALIZATION_STAGES,
   CAREER_STAGE_ROUTE,
+  PLAYABLE_CAREER_STAGE_ROUTE,
   CAREER_STAGES,
   PERSONAL_CHRONICLE_TICKER_LIMIT,
   COMMANDS,
@@ -434,6 +435,7 @@ function cityArt(cityId) {
 }
 
 const loadedChronicle = loadState();
+let chronicleReady = Boolean(loadedChronicle);
 const offlineResume = loadedChronicle
   ? resumeDelegatedChronicle(loadedChronicle, advanceCareerMonth)
   : { state: createCareerInitialState(), report: null };
@@ -448,6 +450,7 @@ let adventureAdvanceTimer = null;
 let goddessSequenceToken = 0;
 let equipmentOfferTimer = null;
 let informationalCloseTimer = null;
+let villageConversationReturnFocus = null;
 let generatedMapPanGesture = null;
 let floatingWindowGesture = null;
 let suppressGeneratedMapClickUntil = 0;
@@ -537,6 +540,8 @@ const view = {
   focusedTownCommandId: null,
   guideOpen: false,
   endingOpen: Boolean(
+    state.player?.crime?.runEnded
+    ||
     (state.centralizationCampaign?.ending && state.lastViewedCentralizationEndingId !== state.centralizationCampaign.ending.id)
     || (state.campaign?.ending && state.lastViewedEndingId !== state.campaign.ending.id)
   ),
@@ -716,12 +721,14 @@ function loadState() {
 }
 
 function persist(showMessage = false) {
+  if (!chronicleReady) return false;
   state = markChronicleSaved(state);
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   if (showMessage) {
     audio.play("save");
     showToast("年代記をこの端末に記録しました。");
   }
+  return true;
 }
 
 function commit(nextState, message = "", cue = "confirm") {
@@ -738,6 +745,7 @@ function commit(nextState, message = "", cue = "confirm") {
   }
   if (state.centralizationCampaign?.ending && state.phase !== "event" && state.lastViewedCentralizationEndingId !== state.centralizationCampaign.ending.id) view.endingOpen = true;
   else if (state.campaign?.ending && state.phase !== "event" && state.lastViewedEndingId !== state.campaign.ending.id) view.endingOpen = true;
+  if (state.player?.crime?.runEnded) view.endingOpen = true;
   persist();
   render();
   if (cue) audio.play(cue);
@@ -1095,6 +1103,16 @@ function campaignRecordLabel(value) {
 }
 
 function renderEndingModal() {
+  if (state.player?.crime?.runEnded) {
+    view.endingOpen = true;
+    elements.endingModal.classList.remove("is-hidden");
+    elements.endingContent.innerHTML = `
+      <header class="ending-header"><span>CRIMINAL CHRONICLE COMPLETE</span><h1 id="endingTitle">死刑判決</h1><p>外国での重大犯罪により身柄を拘束され、この人物の年代記は終わりました。</p></header>
+      <section class="ending-objectives"><header><h2>最終記録</h2><b>GAME OVER</b></header><p>判決と犯罪歴は保存されています。記録を確認するか、新しい人物で始めてください。</p></section>
+      <footer class="ending-actions"><button type="button" data-crime-ending-new>新しい人物で始める</button></footer>`;
+    document.querySelector(".strategy-shell")?.setAttribute("inert", "");
+    return;
+  }
   const campaign = getCampaignStatus(state);
   const finalEnding = state.centralizationCampaign?.ending ?? null;
   const displayedEnding = finalEnding ?? campaign.ending;
@@ -1343,6 +1361,8 @@ async function resetChronicle(options = {}, flow = {}) {
     }
     localStorage.removeItem(STORAGE_KEY);
     state = nextState;
+    chronicleReady = true;
+    persist();
     Object.assign(view, {
       battlePreparation: null, tacticalBattle: null, tacticalOrigin: null, tacticalResult: null, tacticalResultOpen: false, commanderDisposition: null, commanderDispositionOpen: false, selectedTacticalUnitId: null, selectedTacticalCommanderId: null, selectedTacticalFortificationId: null, tacticalInspectorDismissed: false,
       panel: "world", shortcutTab: "world", selectedShortcutCharacterId: nextState.player.id, characterDetailOpen: false, spendingCategoryId: "social_security", spendingCityId: "selene", mapMode: "political", scale: "world",
@@ -3565,21 +3585,24 @@ function regionalReputationBoard(report = currentRegionalReputationReport()) {
 }
 
 function careerStageRoute(stage) {
-  const stages = CAREER_STAGE_ROUTE;
-  const progress = stages.length > 1 ? stage.order / (stages.length - 1) * 100 : 0;
-  return `<ol class="career-stage-route" style="--career-progress:${progress}%" aria-label="立身段階 ${stage.order + 1}/${stages.length}">
+  const stages = PLAYABLE_CAREER_STAGE_ROUTE;
+  const currentIndex = Math.max(0, stages.findIndex((entry) => entry.id === stage.id));
+  const progress = stages.length > 1 ? currentIndex / (stages.length - 1) * 100 : 0;
+  return `<ol class="career-stage-route" style="--career-progress:${progress}%" aria-label="通常UIで通過できる立身段階 ${currentIndex + 1}/${stages.length}">
     ${stages.map((entry) => {
-      const stateClass = entry.order < stage.order ? "is-complete" : entry.order === stage.order ? "is-current" : "is-future";
-      return `<li class="${stateClass}" ${entry.order === stage.order ? 'aria-current="step"' : ""}><i>${entry.order < stage.order ? "✓" : entry.order + 1}</i><span>${escapeHtml(entry.name)}</span></li>`;
+      const index = stages.indexOf(entry);
+      const stateClass = index < currentIndex ? "is-complete" : index === currentIndex ? "is-current" : "is-future";
+      return `<li class="${stateClass}" ${index === currentIndex ? 'aria-current="step"' : ""}><i>${index < currentIndex ? "✓" : index + 1}</i><span>${escapeHtml(entry.name)}</span></li>`;
     }).join("")}
   </ol>`;
 }
 
 function careerIdentityCrest(player, stage, compact = false) {
   const initial = escapeHtml(player.name.trim().slice(0, 1) || "人");
-  const progress = Math.round((stage.order + 1) / CAREER_STAGE_ROUTE.length * 100);
-  return `<div class="career-identity-crest ${compact ? "is-compact" : ""}" style="--career-rank:${progress}%" aria-label="${escapeHtml(player.name)}、立身段階${stage.order + 1}">
-    <span>${initial}</span><i aria-hidden="true"></i><b>${stage.order + 1}</b>
+  const currentIndex = Math.max(0, PLAYABLE_CAREER_STAGE_ROUTE.findIndex((entry) => entry.id === stage.id));
+  const progress = Math.round((currentIndex + 1) / PLAYABLE_CAREER_STAGE_ROUTE.length * 100);
+  return `<div class="career-identity-crest ${compact ? "is-compact" : ""}" style="--career-rank:${progress}%" aria-label="${escapeHtml(player.name)}、実装済み立身段階${currentIndex + 1}">
+    <span>${initial}</span><i aria-hidden="true"></i><b>${currentIndex + 1}</b>
   </div>`;
 }
 
@@ -3953,10 +3976,19 @@ function villageActionDefinition(actionId, village = activeVillageContext()) {
     .find((entry) => entry.id === actionId) ?? null;
 }
 
+function villageConversationFocusSelector() {
+  const element = document.activeElement;
+  if (!(element instanceof HTMLElement)) return null;
+  if (element.dataset.villageAction) return `[data-village-action="${CSS.escape(element.dataset.villageAction)}"]`;
+  if (element.dataset.talkNpcCandidate) return `[data-talk-npc-candidate="${CSS.escape(element.dataset.talkNpcCandidate)}"]`;
+  return null;
+}
+
 function beginVillageConversation({ kind, id, facilityId, castId = facilityId, title, counterpartName = null, counterpart = null, otherLine = null, playerLine = null, closingLine = null }) {
   const village = activeVillageContext();
   const cast = VILLAGE_DIALOGUE_CAST[castId] ?? VILLAGE_DIALOGUE_CAST.villagers;
   if (!village) throw new Error("会話する村が選択されていません。");
+  villageConversationReturnFocus = villageConversationFocusSelector();
   const counterpartCast = { ...cast, ...(counterpart ?? {}), name: counterpart?.name ?? counterpartName ?? cast.name };
   view.villageConversation = {
     kind,
@@ -3973,6 +4005,18 @@ function beginVillageConversation({ kind, id, facilityId, castId = facilityId, t
     ],
   };
   renderPanelFromTop();
+  focusVillageConversation();
+}
+
+function focusVillageConversation() {
+  requestAnimationFrame(() => document.querySelector(".village-conversation [data-village-dialogue-cancel]")?.focus());
+}
+
+function closeVillageConversation() {
+  view.villageConversation = null;
+  renderPanelFromTop();
+  if (villageConversationReturnFocus) document.querySelector(villageConversationReturnFocus)?.focus();
+  villageConversationReturnFocus = null;
 }
 
 function beginVillageActionConversation(actionId) {
@@ -4013,6 +4057,7 @@ function beginVillageActionConversation(actionId) {
 
 function beginNpcSocialConversation(candidate, venue = "tavern") {
   const cast = VILLAGE_DIALOGUE_CAST[venue] ?? VILLAGE_DIALOGUE_CAST.tavern;
+  villageConversationReturnFocus = villageConversationFocusSelector();
   view.villageConversation = {
     kind: "npc-social",
     id: candidate.id,
@@ -4023,6 +4068,7 @@ function beginNpcSocialConversation(candidate, venue = "tavern") {
       : { ...cast, name: candidate.name, role: candidate.role },
   };
   renderPanelFromTop();
+  focusVillageConversation();
 }
 
 function renderNpcSocialConversation(conversation, village) {
@@ -4652,6 +4698,8 @@ function renderCharacterDetailModal() {
   const open = Boolean(view.characterDetailOpen && character);
   elements.characterDetailModal.classList.toggle("is-hidden", !open);
   elements.characterDetailModal.setAttribute("aria-hidden", String(!open));
+  elements.cityWorkspace.inert = open;
+  elements.cityWorkspace.setAttribute("aria-hidden", String(open));
   if (!open) return;
   elements.characterDetailTitle.textContent = `${character.name}の詳細`;
   if (character.kind === "player") {
@@ -4662,6 +4710,16 @@ function renderCharacterDetailModal() {
   elements.characterDetailContent.innerHTML = `<article class="companion-detail-sheet"><header><figure>${character.portraitImage ? `<img src="${escapeHtml(character.portraitImage)}" alt="${escapeHtml(character.name)}の立ち絵">` : `<span>${escapeHtml(character.name.slice(0, 1))}</span>`}</figure><div><small>COMPANION RECORD</small><h1>${escapeHtml(character.name)}</h1><p>${escapeHtml(character.role)} · ${character.active ? "同行中" : "待機"}</p></div></header><section><h2>状態と装備</h2><dl><div><dt>生命力</dt><dd>HP ${character.hp} / ${character.maxHp}</dd></div><div><dt>装備</dt><dd>${escapeHtml(shortcutEquipmentLabel(character))}</dd></div>${abilities}</dl></section></article>`;
 }
 
+function careerTerritoryName(territoryId) {
+  const holding = state.player?.holdings?.find((entry) => entry.territoryId === territoryId);
+  if (holding?.generatedRegionId) {
+    try {
+      return getGeneratedWorldView(state).runtime.regionById.get(holding.generatedRegionId)?.name ?? holding.generatedRegionId;
+    } catch {}
+  }
+  return WORLD.provinces[territoryId]?.name ?? territoryId;
+}
+
 function renderCareerPanel() {
   const player = state.player;
   const stage = getCareerStage(state);
@@ -4670,14 +4728,15 @@ function renderCareerPanel() {
   const positionStatus = player.sovereign ? `${government?.name ?? "自国"}元首` : player.affiliation.liegeName ? "主従あり" : "自由身分";
   const relation = player.sovereign ? `${escapeHtml(player.title)}として自国を統治しています。` : player.affiliation.liegeName ? `主君：${escapeHtml(player.affiliation.liegeName)}` : "特定の主君には仕えていません。";
   const regionalReputation = currentRegionalReputationReport();
+  const playableIndex = Math.max(0, PLAYABLE_CAREER_STAGE_ROUTE.findIndex((entry) => entry.id === stage.id));
   elements.leftPanel.innerHTML = `
     <header class="panel-heading career-heading">
       ${careerIdentityCrest(player, stage, true)}
       <div><span>PERSONAL CHRONICLE</span><h1>${escapeHtml(player.name)}</h1><p>${stage.name} · ${escapeHtml(player.title)}</p></div>
-      <div class="career-panel-rank"><small>立身段階</small><strong>${stage.order + 1}<i>/${CAREER_STAGE_ROUTE.length}</i></strong></div>
+      <div class="career-panel-rank"><small>実装済み立身段階</small><strong>${playableIndex + 1}<i>/${PLAYABLE_CAREER_STAGE_ROUTE.length}</i></strong></div>
     </header>
     <div class="panel-body">
-      <section class="panel-section career-position-card"><div class="section-heading"><h2>現在の立場</h2><small>${escapeHtml(positionStatus)}</small></div><p class="adviser-note"><strong>${stage.description}</strong><br>${relation}</p><div class="career-panel-track"><i style="--value:${(stage.order + 1) / CAREER_STAGE_ROUTE.length * 100}%"></i><span>個人</span><span>領主</span><span>君主</span></div></section>
+      <section class="panel-section career-position-card"><div class="section-heading"><h2>現在の立場</h2><small>${escapeHtml(positionStatus)}</small></div><p class="adviser-note"><strong>${stage.description}</strong><br>${relation}</p><div class="career-panel-track"><i style="--value:${(playableIndex + 1) / PLAYABLE_CAREER_STAGE_ROUTE.length * 100}%"></i><span>個人</span><span>領主</span><span>君主</span></div></section>
       <section class="panel-section"><div class="realm-facts career-facts"><div><i>⚔</i><small>武勲</small><strong>${player.metrics.martialMerit}</strong></div><div><i>政</i><small>政績</small><strong>${player.metrics.civilMerit}</strong></div><div><i>✦</i><small>${escapeHtml(regionalReputation.regionName)}の名声</small><strong>${regionalReputation.value}</strong></div><div><i>¤</i><small>財産</small><strong>${player.metrics.wealth}</strong></div></div></section>
       <section class="panel-section"><div class="section-heading"><h2>最新の年代記</h2><small>${latest.year ?? state.year}年</small></div><p class="adviser-note"><strong>${escapeHtml(latest.title)}</strong><br>${escapeHtml(latest.detail)}</p></section>
       ${renderCrimeStatusBoard()}
@@ -4687,7 +4746,7 @@ function renderCareerPanel() {
 
 function renderGovernancePanel() {
   const governance = getGovernanceView(state);
-  const names = governance.jurisdiction.territoryIds.map((id) => WORLD.provinces[id]?.name ?? id);
+  const names = governance.jurisdiction.territoryIds.map(careerTerritoryName);
   elements.leftPanel.innerHTML = `
     <header class="panel-heading governance-heading"><span>JURISDICTION GOVERNANCE</span><h1>統治</h1><p>${governance.stage.name} · ${governance.jurisdiction.sovereign ? "国家主権" : "主君の下の領主権"}</p></header>
     <div class="panel-body">
@@ -4720,6 +4779,7 @@ function renderPersonalChronicle(history) {
 function renderCareerWorkspace() {
   const player = state.player;
   const stage = getCareerStage(state);
+  const playableIndex = Math.max(0, PLAYABLE_CAREER_STAGE_ROUTE.findIndex((entry) => entry.id === stage.id));
   const government = GOVERNMENT_TITLE_SYSTEMS[player.governmentFormId];
   const affiliationLabel = player.sovereign ? `${government?.name ?? "自国"}元首` : player.affiliation.liegeName ?? "なし";
   const nextPosition = stage.order >= 9 ? "国家形態の最高位" : stage.order >= 8 ? "派閥と国家方針を担う" : "功績と政治選択で変化";
@@ -4727,14 +4787,14 @@ function renderCareerWorkspace() {
   const invitations = player.invitations.length ? `
     <section class="career-invitations"><header><div><small>SERVICE OFFERS</small><h2>仕官先を選ぶ</h2></div><p>村で積み上げた行動を契機に、具体的な主君との主従関係を結びます。</p></header><div>${player.invitations.map((invitation) => `
       <button type="button" data-accept-service="${invitation.id ?? invitation.nationId}"><strong>${escapeHtml(invitation.name)}</strong><b>${escapeHtml(invitation.offer)}</b><small>${invitation.routeName ? `経路：${escapeHtml(invitation.routeName)} · ` : ""}初期信頼 ${invitation.trust} · 俸禄と保護を得る代わりに軍役と命令への服従を負う</small></button>`).join("")}</div></section>` : "";
-  const holdings = player.holdings.length ? player.holdings.map((holding) => `<span>${WORLD.provinces[holding.territoryId]?.name ?? holding.territoryId}</span>`).join("") : "<span>所領なし</span>";
+  const holdings = player.holdings.length ? player.holdings.map((holding) => `<span>${escapeHtml(careerTerritoryName(holding.territoryId))}</span>`).join("") : "<span>所領なし</span>";
   return `
     <header class="career-workspace-header">
-      <div class="career-hero-visual">${careerIdentityCrest(player, stage)}<span class="career-hero-caption">CHRONICLE ${String(stage.order + 1).padStart(2, "0")}</span></div>
+      <div class="career-hero-visual">${careerIdentityCrest(player, stage)}<span class="career-hero-caption">CHRONICLE ${String(playableIndex + 1).padStart(2, "0")}</span></div>
       <div class="career-hero-copy"><span>PERSONAL RISE / ${stage.id.toUpperCase()}</span><h1>${escapeHtml(player.name)}の立身記</h1><p>${escapeHtml(player.origin)} · ${escapeHtml(player.specialty)}。選択と関係が、次の身分を開く。</p></div>
       <aside><small>現在の地位</small><strong>${stage.name}</strong><b>${escapeHtml(player.title)}</b></aside>
     </header>
-    <nav class="career-route-board" aria-label="個人から君主までの立身ルート"><header><span>RISE ROUTE</span><strong>${stage.order + 1} / ${CAREER_STAGE_ROUTE.length}</strong></header>${careerStageRoute(stage)}</nav>
+    <nav class="career-route-board" aria-label="通常UIで通過できる個人から君主までの立身ルート"><header><span>PLAYABLE RISE ROUTE</span><strong>${playableIndex + 1} / ${PLAYABLE_CAREER_STAGE_ROUTE.length}</strong></header>${careerStageRoute(stage)}</nav>
     <div class="career-workspace-body">
       <section class="career-status-strip"><div><small>所属</small><strong>${escapeHtml(affiliationLabel)}</strong></div><div><small>所領</small><strong>${player.holdings.length}領</strong><span>${holdings}</span></div><div><small>直属家臣</small><strong>${player.householdRetainers.length}名</strong></div><div><small>次の立場</small><strong>${nextPosition}</strong></div></section>
       <section class="career-ability-sheet"><header><div><small>D&amp;D ABILITY SCORES</small><h2>基礎6能力値</h2></div><p>作成時の4d6方式による値。役職人物も同じ尺度を持ちます。</p></header><div>${ABILITY_KEYS.map((abilityId) => `<article><small>${abilityId.slice(0, 3).toUpperCase()}</small><span>${ABILITY_LABELS[abilityId]}</span><strong>${player.abilities?.[abilityId] ?? 10}</strong><b>${formatAbilityModifier(player.abilities?.[abilityId] ?? 10)}</b></article>`).join("")}</div></section>
@@ -4752,14 +4812,14 @@ function renderCareerWorkspace() {
 }
 
 function governanceCommandCard(item) {
-  const territory = item.targetTerritoryId ? WORLD.provinces[item.targetTerritoryId]?.name ?? item.targetTerritoryId : "自国全体";
+  const territory = item.targetTerritoryId ? careerTerritoryName(item.targetTerritoryId) : "自国全体";
   return `<button type="button" data-governance-command="${item.id}" ${item.targetTerritoryId ? `data-territory-id="${item.targetTerritoryId}"` : ""}><header><strong>${item.name}</strong><b>${item.group}</b></header><p>${item.description}</p><small>対象：${territory}</small><span>権限確認済み · 実行 →</span></button>`;
 }
 
 function renderGovernanceWorkspace() {
   const player = state.player;
   const viewModel = getGovernanceView(state);
-  const jurisdictionNames = viewModel.jurisdiction.territoryIds.map((id) => WORLD.provinces[id]?.name ?? id);
+  const jurisdictionNames = viewModel.jurisdiction.territoryIds.map(careerTerritoryName);
   if (!viewModel.jurisdiction.territoryIds.includes(view.selectedCityId)) view.selectedCityId = viewModel.jurisdiction.territoryIds[0] ?? "orta";
   const territorial = viewModel.executable.filter((item) => item.scope === "territory" && item.targetTerritoryId === view.selectedCityId);
   const national = viewModel.executable.filter((item) => item.scope === "nation");
@@ -4768,10 +4828,10 @@ function renderGovernanceWorkspace() {
   const delegated = viewModel.jurisdiction.grants.map((grant) => `<li><strong>${escapeHtml(grant.reason)}</strong><span>${(grant.territoryIds ?? []).map((id) => WORLD.provinces[id]?.name ?? id).join("・") || "全国"}</span><small>${grant.expiresTurn == null ? "期限なし" : `${grant.expiresTurn}ターンまで`}</small></li>`).join("");
   return `
     <header class="governance-workspace-header"><div><span>ONE GOVERNANCE SCREEN / JURISDICTION</span><h1>${viewModel.jurisdiction.sovereign ? "国家統治" : "領地統治"}</h1><p>領地経営と国家運営は同じ画面です。地位・官職・委任に応じて対象と命令が拡張されます。</p></div><aside><small>現在の管轄</small><strong>${jurisdictionNames.join("・")}</strong><b>${viewModel.jurisdiction.sovereign ? "君主権あり" : `${player.affiliation.liegeName}の臣下`}</b></aside></header>
-    <nav class="jurisdiction-selector" aria-label="統治対象">${viewModel.jurisdiction.territoryIds.map((id) => `<button type="button" data-jurisdiction-territory="${id}" class="${id === view.selectedCityId ? "is-active" : ""}"><strong>${WORLD.provinces[id]?.name ?? id}</strong><small>${id === view.selectedCityId ? "表示中" : "自領を開く"}</small></button>`).join("")}</nav>
+    <nav class="jurisdiction-selector" aria-label="統治対象">${viewModel.jurisdiction.territoryIds.map((id) => `<button type="button" data-jurisdiction-territory="${id}" class="${id === view.selectedCityId ? "is-active" : ""}"><strong>${escapeHtml(careerTerritoryName(id))}</strong><small>${id === view.selectedCityId ? "表示中" : "自領を開く"}</small></button>`).join("")}</nav>
     <div class="governance-workspace-body">
       <section class="governance-boundary"><article><small>地位</small><strong>${viewModel.stage.name}</strong><span>${player.title}</span></article><article><small>統治領域</small><strong>${viewModel.jurisdiction.territoryIds.length}</strong><span>対象外更新を拒否</span></article><article><small>委任</small><strong>${viewModel.jurisdiction.grants.length}</strong><span>期限と発令者を保存</span></article><article><small>禁止令</small><strong>${viewModel.jurisdiction.prohibitions.length}</strong><span>委任より優先</span></article></section>
-      ${groups.map((group) => `<section class="governance-command-group"><header><div><small>LOCAL EXECUTION</small><h2>${group}</h2></div><p>${WORLD.provinces[view.selectedCityId]?.name}だけへ効果を適用</p></header><div>${territorial.filter((item) => item.group === group).map(governanceCommandCard).join("")}</div></section>`).join("")}
+      ${groups.map((group) => `<section class="governance-command-group"><header><div><small>LOCAL EXECUTION</small><h2>${group}</h2></div><p>${escapeHtml(careerTerritoryName(view.selectedCityId))}だけへ効果を適用</p></header><div>${territorial.filter((item) => item.group === group).map(governanceCommandCard).join("")}</div></section>`).join("")}
       ${national.length ? `<section class="governance-command-group is-national"><header><div><small>SOVEREIGN EXECUTION</small><h2>国家主権に基づく命令</h2></div><p>独立後、同じ画面へ追加された国家規模の決定です。</p></header><div>${national.map(governanceCommandCard).join("")}</div></section>` : ""}
       ${petitions ? `<section class="governance-command-group is-petition"><header><div><small>PETITION TO THE LIEGE</small><h2>国家政策への建議</h2></div><p>直接実行ではありません。採用後も実施者は主君または中央政府です。</p></header><div>${petitions}</div></section>` : ""}
       <section class="governance-delegations"><header><div><small>OFFICES / DELEGATION / PROHIBITIONS</small><h2>官職と委任</h2></div><p>単純な身分以外の一時権限をここで確認します。</p></header><ul>${delegated || "<li><strong>追加委任なし</strong><span>現在は地位と所領に基づく権限のみ</span></li>"}</ul></section>
@@ -5915,7 +5975,7 @@ function renderOutliner() {
     const player = state.player;
     const stage = getCareerStage(state);
     if (outlinerHeading) outlinerHeading.textContent = "人物年代記摘要";
-    const holdings = player.holdings.map((holding) => `<div class="outliner-item"><strong>${WORLD.provinces[holding.territoryId]?.name ?? holding.territoryId}</strong><small>所領 · 統治効果はこの地域内に限定</small></div>`).join("") || '<div class="outliner-item"><small>所領はまだありません。</small></div>';
+    const holdings = player.holdings.map((holding) => `<div class="outliner-item"><strong>${escapeHtml(careerTerritoryName(holding.territoryId))}</strong><small>所領 · 統治効果はこの地域内に限定</small></div>`).join("") || '<div class="outliner-item"><small>所領はまだありません。</small></div>';
     const history = player.history.slice(0, 5).map((entry) => `<div class="outliner-item"><strong>${escapeHtml(entry.title)}</strong><small>${escapeHtml(entry.detail)}</small></div>`).join("");
     elements.outlinerContent.innerHTML = `
       <section class="outliner-section campaign-outliner"><h3>${stage.name}</h3><div class="outliner-item"><strong>${escapeHtml(player.title)}</strong><small>${stage.description}</small></div></section>
@@ -6102,6 +6162,11 @@ function renderEquipmentUpgradePrompt() {
 
 function renderLaunchScreen() {
   elements.launchScreen.classList.toggle("is-hidden", !view.launchOpen);
+  const continueButton = elements.launchScreen.querySelector('[data-launch-action="continue"]');
+  if (continueButton) {
+    continueButton.hidden = !chronicleReady;
+    continueButton.disabled = !chronicleReady;
+  }
   renderCharacterCreation();
   const generation = view.generation ?? { active: false, progress: 0, stage: "idle", label: "", error: null };
   const generationVisible = generation.active || Boolean(generation.error) || generation.stage === "complete" && view.launchOpen;
@@ -7700,8 +7765,7 @@ document.addEventListener("click", async (event) => {
     return;
   }
   if (event.target.closest("[data-village-dialogue-cancel]")) {
-    view.villageConversation = null;
-    renderPanelFromTop();
+    closeVillageConversation();
     return;
   }
   if (event.target.closest("[data-village-dialogue-next]")) {
@@ -7775,6 +7839,7 @@ document.addEventListener("click", async (event) => {
       openCharacterCreation();
       return;
     }
+    if (!chronicleReady) return;
     view.launchOpen = false;
     view.panel = "world";
     view.atlasMode = "generated";
@@ -9281,6 +9346,25 @@ elements.guideModal.addEventListener("click", (event) => {
   }
 });
 document.addEventListener("keydown", (event) => {
+  if (event.key === "Tab" && view.villageConversation) {
+    const dialog = document.querySelector(".village-conversation");
+    const focusable = [...(dialog?.querySelectorAll('button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])') ?? [])];
+    if (focusable.length) {
+      const first = focusable[0];
+      const last = focusable.at(-1);
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    }
+  }
+  if (event.key === "Escape" && view.villageConversation) {
+    closeVillageConversation();
+    return;
+  }
+  if (event.target.closest("[data-crime-ending-new]")) {
+    view.endingOpen = false;
+    openCharacterCreation();
+    return;
+  }
   if (event.key === "Escape" && view.mobileMoreOpen) {
     view.mobileMoreOpen = false;
     renderTabs();

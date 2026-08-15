@@ -435,7 +435,9 @@ function requirementReason(life, actionId, villageId = null) {
   if (actionId === "complete_request" && !acceptedGuildQuest) return "先に集落の依頼窓口で依頼を受注してください";
   if (actionId === "complete_request" && acceptedGuildQuest?.dungeonId) return "地方地図に戻り、指定されたダンジョンの最奥まで到達してください";
   if (actionId === "complete_request" && !life.party.some((member) => member.active && member.alive !== false)) return "先に酒場で仲間を集め、パーティーへ編成してください";
-  if (actionId === "report_request" && !life.quests.some((quest) => quest.source === "guild" && quest.status === "completed")) return "達成済みの依頼を受注した窓口へ持ち帰ってください";
+  const completedGuildQuest = life.quests.find((quest) => quest.source === "guild" && quest.status === "completed");
+  if (actionId === "report_request" && !completedGuildQuest) return "達成済みの依頼を受注した窓口へ持ち帰ってください";
+  if (actionId === "report_request" && villageId && completedGuildQuest?.acceptedVillageId && completedGuildQuest.acceptedVillageId !== villageId) return "この依頼を受注した集落の窓口へ戻ってください";
   if (actionId === "receive_reward" && !life.quests.some((quest) => quest.status === "reported")) return "報酬を受け取れる報告済み依頼がありません";
   if (actionId === "accept_request" && unresolvedGuildQuest(life)) return "受注中の依頼を達成・報告し、報酬を受け取ってください";
   if (actionId === "seek_recommendation" && (life.villageRelations[villageId] ?? 0) < 6) return "この村で関係を6以上築いてください";
