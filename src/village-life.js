@@ -5,6 +5,8 @@ import {
 } from "./regional-reputation.js";
 import { normalizeAbilityScores } from "./character-abilities.js";
 import { discoverGeneratedWorldRumor } from "./generated-world-system.js";
+import { getTheftOpportunities } from "./theft-system.js";
+import { getExtortionOpportunities } from "./extortion-system.js";
 
 const clone = (value) => structuredClone(value);
 const clamp = (value, minimum, maximum) => Math.min(maximum, Math.max(minimum, value));
@@ -240,6 +242,14 @@ export function getSettlementFacilities(place = {}) {
       };
       return entry;
     });
+}
+
+export function getSettlementTheftOpportunities(state, settlement, context = {}) {
+  return getTheftOpportunities(state, { ...context, settlement });
+}
+
+export function getSettlementExtortionOpportunities(state, settlement, context = {}) {
+  return getExtortionOpportunities(state, { ...context, settlement });
 }
 
 const ACTION_INDEX = new Map(VILLAGE_FACILITIES.flatMap((entry) => (

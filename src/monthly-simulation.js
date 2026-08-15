@@ -195,12 +195,21 @@ import {
   getSettlementFacilities,
   getSettlementMeritGain,
   getSettlementScale,
+  getSettlementTheftOpportunities,
+  getSettlementExtortionOpportunities,
   getVillageAction,
   getVillageActionAvailability,
   normalizeVillageLifeState,
   performVillageAction,
   setPartyMemberActive,
 } from "./village-life.js";
+import { executeTheft, getTheftOpportunities, previewTheft } from "./theft-system.js";
+import {
+  collectExtortionPayment,
+  executeExtortion,
+  getExtortionOpportunities,
+  previewExtortion,
+} from "./extortion-system.js";
 import {
   REGIONAL_REPUTATION_GAINS,
   REGIONAL_REPUTATION_SCHEMA_VERSION,
@@ -253,6 +262,15 @@ export {
   recordCrimeIncident,
   resolveAccompliceDecision,
   resolveCrimeSentence,
+  getTheftOpportunities,
+  previewTheft,
+  executeTheft,
+  getExtortionOpportunities,
+  previewExtortion,
+  executeExtortion,
+  collectExtortionPayment,
+  getSettlementTheftOpportunities,
+  getSettlementExtortionOpportunities,
   ADMINISTRATION_MANDATES,
   ADMINISTRATION_MODES,
   AUTHORITY_DOMAINS,

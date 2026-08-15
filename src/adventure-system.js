@@ -11,8 +11,42 @@ import {
 import { advanceGeneratedWorldTime } from "./generated-world-system.js";
 import { NOELA_ORBIS_ID, UNIQUE_CHARACTERS, getUniqueCharacter } from "./unique-characters.js";
 import { ABILITY_LABELS, normalizeAbilityScores } from "./character-abilities.js";
+import { discoverUnderworldContacts, fenceStolenItem, normalizeCrimeState } from "./crime-system.js";
 
 const clone = (value) => structuredClone(value);
+
+function underworldJurisdiction(state, context = {}) {
+  const settlement = context.settlement ?? context.village ?? context.place;
+  const jurisdictionId = context.jurisdictionId ?? context.jurisdiction?.id ?? context.region?.id ?? settlement?.regionId ?? settlement?.id ?? state.player?.locationId;
+  if (!jurisdictionId) throw new TypeError("裏社会の管轄が必要です");
+  return {
+    jurisdictionId,
+    jurisdictionName: context.jurisdictionName ?? context.jurisdiction?.name ?? context.region?.name ?? settlement?.name ?? jurisdictionId,
+  };
+}
+
+export function getTavernUnderworldView(state, context = {}) {
+  const location = underworldJurisdiction(state, context);
+  const normalized = normalizeCrimeState(state);
+  return {
+    ...location,
+    contacts: clone(normalized.player.crime.contacts.filter((entry) => entry.jurisdictionId === location.jurisdictionId)),
+    stolenItems: clone(normalized.player.crime.stolenItems),
+    discoveryCost: 1,
+    canDiscover: (normalized.player.metrics?.wealth ?? 0) >= 1,
+    canFence: normalized.player.crime.contacts.some((entry) => entry.role === "fence" && entry.jurisdictionId === location.jurisdictionId)
+      && normalized.player.crime.stolenItems.length > 0,
+  };
+}
+
+export function discoverTavernUnderworldContacts(state, context = {}) {
+  return discoverUnderworldContacts(state, underworldJurisdiction(state, context));
+}
+
+export function fenceTavernStolenItem(state, itemId, context = {}) {
+  const location = underworldJurisdiction(state, context);
+  return fenceStolenItem(state, { itemId, jurisdictionId: location.jurisdictionId });
+}
 
 export const ADVENTURE_SCHEMA_VERSION = 5;
 
