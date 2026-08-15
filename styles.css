@@ -20,6 +20,164 @@
   font-family: "Yu Mincho", "Hiragino Mincho ProN", "Noto Serif JP", Georgia, serif;
 }
 
+.merchant-market-board {
+  display: grid;
+  gap: 14px;
+}
+
+.merchant-market-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid rgba(190, 151, 83, .32);
+  background: rgba(35, 28, 18, .58);
+}
+
+.merchant-market-toolbar button,
+.merchant-market-actions button {
+  min-height: 34px;
+  border: 1px solid rgba(219, 180, 105, .55);
+  background: rgba(92, 61, 25, .78);
+  color: #f7e9c8;
+  font-weight: 700;
+}
+
+.merchant-market-toolbar span {
+  color: #d8c9a6;
+  font-size: 12px;
+}
+
+.merchant-market-goods {
+  display: grid;
+  gap: 8px;
+}
+
+.merchant-market-good {
+  display: grid;
+  grid-template-columns: minmax(160px, 1.5fr) minmax(190px, 1fr) 76px minmax(150px, auto);
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-left: 3px solid #b88545;
+  background: rgba(15, 27, 25, .82);
+}
+
+.merchant-market-good-name strong,
+.merchant-trade-ledger h4,
+.merchant-trade-history h4 {
+  display: block;
+  color: #fff2d3;
+}
+
+.merchant-market-good-name small,
+.merchant-market-good-name p,
+.merchant-trade-ledger small,
+.merchant-trade-history small {
+  color: #bfc8bd;
+}
+
+.merchant-market-good-name p {
+  margin: 4px 0 0;
+  font-size: 11px;
+}
+
+.merchant-market-prices {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.merchant-market-prices span {
+  padding: 7px;
+  background: rgba(255, 255, 255, .06);
+}
+
+.merchant-market-prices small,
+.merchant-market-prices b {
+  display: block;
+}
+
+.merchant-market-good label {
+  display: grid;
+  gap: 4px;
+  color: #cfc5ae;
+  font-size: 11px;
+}
+
+.merchant-market-good input {
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid rgba(219, 180, 105, .4);
+  background: rgba(4, 14, 13, .86);
+  color: #fff2d3;
+  text-align: center;
+}
+
+.merchant-market-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.merchant-market-actions button:disabled,
+.merchant-market-toolbar button:disabled {
+  opacity: .42;
+}
+
+.merchant-trade-ledger,
+.merchant-trade-history {
+  padding: 12px;
+  background: rgba(5, 19, 18, .76);
+}
+
+.merchant-trade-ledger > header,
+.merchant-trade-ledger article header,
+.merchant-trade-history > header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.merchant-trade-ledger article,
+.merchant-trade-history li {
+  padding: 8px 0;
+  border-top: 1px solid rgba(255, 255, 255, .08);
+}
+
+.merchant-trade-ledger article p,
+.merchant-trade-history ul {
+  margin: 5px 0 0;
+}
+
+.merchant-trade-history ul {
+  padding: 0;
+  list-style: none;
+}
+
+.merchant-trade-history li {
+  display: grid;
+  grid-template-columns: 90px 1fr 1.5fr;
+  gap: 8px;
+}
+
+@media (max-width: 900px) and (orientation: landscape) {
+  .merchant-market-good {
+    grid-template-columns: minmax(140px, 1fr) minmax(180px, 1.2fr) 62px;
+  }
+
+  .merchant-market-actions {
+    grid-column: 1 / -1;
+  }
+
+  .merchant-market-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
 /* Continuous creed system: values remain data-first; these cards expose only readable tendencies. */
 .policy-creed {
   display: block;

@@ -225,6 +225,7 @@ import {
   setDelegationAuthority as updateDelegationAuthority,
   setDelegationMandate as updateDelegationMandate,
 } from "./role-delegation.js";
+import { advanceMerchantMarkets } from "./merchant-trade.js";
 
 export {
   ADMINISTRATION_MANDATES,
@@ -918,6 +919,7 @@ export function performCareerAction(state, actionId, delegation = {}) {
 
 export function advanceCareerMonth(state) {
   let next = advancePlayerCareerMonth(state);
+  advanceMerchantMarkets(next);
   resolveRoleDelegations(WORLD, next);
   if (next.scenarioMode === "generated") {
     next = advanceGeneratedWorldRegions(next);

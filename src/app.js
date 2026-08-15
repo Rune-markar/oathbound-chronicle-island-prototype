@@ -33,6 +33,7 @@ import {
   REFORM_CONCESSIONS,
   SPENDING_CATEGORIES,
   GUILD_PROCESSED_GOODS,
+  MERCHANT_COMMODITIES,
   VILLAGE_FACILITIES,
   WAR_OBJECTIVES,
   WAR_PLANS,
@@ -44,6 +45,7 @@ import {
   adoptDoctrine,
   answerOfficerDemand,
   appointForceOfficer,
+  buyCommodity,
   cancelOrder,
   chooseAftermathPolicy,
   chooseHistoryPolicy,
@@ -76,6 +78,8 @@ import {
   getGovernance,
   getGovernanceView,
   getGuildStanding,
+  getMerchantCargoLoad,
+  getSettlementMarket,
   getSettlementFacilities,
   getDelegationCandidates,
   getRoleDelegation,
@@ -117,10 +121,13 @@ import {
   getPersonalChronicleView,
   performCareerAction,
   performVillageAction,
+  hearMarketRumors,
+  observeSettlementMarket,
   acceptEquipmentUpgrade,
   dismissEquipmentUpgrade,
   getEquipmentUpgradeOffer,
   setPartyMemberActive,
+  sellCommodity,
   reassignDelegatedRole,
   queueOrder,
   resolveBorderNegotiation,
@@ -813,6 +820,7 @@ function renderResources() {
       { icon: "名", value: formatValue(regionalReputation.value), label: `${regionalReputation.regionName}の名声` },
       { icon: "信", value: formatValue(metrics.liegeTrust), label: player.sovereign ? "君主権" : player.affiliation.liegeName ? `${player.affiliation.liegeName}の信頼` : "主君なし" },
       { icon: "¤", value: formatValue(metrics.wealth), label: "個人財産" },
+      { icon: "荷", value: `${getMerchantCargoLoad(state)}/${player.merchantTrade.cargoCapacity}`, label: "交易積荷" },
     ];
     elements.resourceLedger.innerHTML = resources.map(({ icon, value, label }) => `<div class="resource-item career-resource"><i>${icon}</i><strong>${value}</strong><small>${label}</small></div>`).join("");
     const identity = document.querySelector("#realmHome");
@@ -2395,26 +2403,36 @@ function generatedVillageContexts(regionId = null) {
     .sort((left, right) => left.name.localeCompare(right.name, "ja"));
 }
 
+function generatedSettlementContext(object, runtime) {
+  const region = runtime.regionById.get(object.regionId);
+  const nation = runtime.nationById.get(object.nationId);
+  const tile = runtime.tiles[object.tileIndex] ?? runtime.tiles[region?.markerIndex] ?? null;
+  return {
+    id: object.id,
+    name: object.name,
+    source: "generated",
+    regionId: object.regionId,
+    regionName: region?.name ?? "地方不明",
+    nationId: object.nationId,
+    nationName: nation?.name ?? "所属不明",
+    type: object.type,
+    typeName: object.typeName,
+    settlementLevel: object.settlementLevel,
+    population: object.population,
+    tileIndex: object.tileIndex,
+    tileId: tile?.id ?? null,
+    terrain: tile?.terrain ?? region?.dominantTerrain ?? null,
+    yields: tile?.yields ?? null,
+    resourcePotential: tile?.resourcePotential ?? null,
+  };
+}
+
 function villageContextById(villageId) {
   if (!villageId) return null;
   const { runtime } = getGeneratedWorldView(state);
   const object = (runtime.nations.objects ?? []).find((entry) => entry.settlementLevel && entry.id === villageId);
   if (object) {
-    const region = runtime.regionById.get(object.regionId);
-    const nation = runtime.nationById.get(object.nationId);
-    return {
-      id: object.id,
-      name: object.name,
-      source: "generated",
-      regionId: object.regionId,
-      regionName: region?.name ?? "地方不明",
-      nationId: object.nationId,
-      nationName: nation?.name ?? "所属不明",
-      type: object.type,
-      typeName: object.typeName,
-      settlementLevel: object.settlementLevel,
-      population: object.population,
-    };
+    return generatedSettlementContext(object, runtime);
   }
   const town = WORLD.villages[villageId];
   if (!town) return null;
@@ -2429,6 +2447,16 @@ function villageContextById(villageId) {
     settlementLevel: "village",
     type: "village",
   };
+}
+
+function discoveredMerchantSettlements(currentVillage) {
+  if (!state.generatedWorld) return state.player?.merchantTrade?.knownSettlements?.filter((entry) => entry.id !== currentVillage?.id) ?? [];
+  const { runtime } = getGeneratedWorldView(state);
+  const discovered = new Set(state.generatedWorld.discoveredRegionIds ?? []);
+  return (runtime.nations.objects ?? [])
+    .filter((object) => object.settlementLevel && object.id !== currentVillage?.id && discovered.has(object.regionId))
+    .map((object) => generatedSettlementContext(object, runtime))
+    .sort((left, right) => left.name.localeCompare(right.name, "ja"));
 }
 
 function activeVillageContext() {
@@ -3841,6 +3869,11 @@ function villageFacilityActions(village, facility) {
   });
 }
 
+function villageFacilityChoiceCount(village, facility) {
+  if (facility.id === "market") return Object.keys(MERCHANT_COMMODITIES).length * 2 + 1;
+  return villageFacilityActions(village, facility).length;
+}
+
 function villageActionCostLabel(availability) {
   if (availability.deferredCost) return `財産 ${availability.chargedCost}＋後払 ${availability.deferredCost}`;
   if (!availability.cost) return "費用なし";
@@ -4031,7 +4064,7 @@ function renderVillagePanel() {
     <header class="panel-heading village-heading"><span>PERSONAL VILLAGE / ${escapeHtml(village.regionName)}</span><h1>${escapeHtml(village.name)}</h1><p>${escapeHtml(village.nationName)} · 個人行動</p></header>
     <div class="panel-body village-panel-body">
       <section class="panel-section village-vital-card"><div><small>HP</small><strong>${life.hp}<i> / ${life.maxHp}</i></strong></div><div><small>MP</small><strong>${life.mp}<i> / ${life.maxMp}</i></strong></div><p><b>${escapeHtml(villageConditionSummary(life))}</b><span>財産 ${state.player.metrics.wealth} · 食料 ${life.supplies.food} · 松明 ${life.supplies.torches}</span></p></section>
-      <section class="panel-section"><div class="section-heading"><h2>施設</h2><small>${facilities.length}か所</small></div><nav class="village-panel-facilities">${facilities.map((facility) => `<button type="button" data-village-facility="${facility.id}" class="${facility.id === selected.id ? "is-active" : ""}"><i>${facility.icon}</i><span>${facility.name}</span><small>${facility.actions.length}</small></button>`).join("")}</nav></section>
+      <section class="panel-section"><div class="section-heading"><h2>施設</h2><small>${facilities.length}か所</small></div><nav class="village-panel-facilities">${facilities.map((facility) => `<button type="button" data-village-facility="${facility.id}" class="${facility.id === selected.id ? "is-active" : ""}"><i>${facility.icon}</i><span>${facility.name}</span><small>${villageFacilityChoiceCount(village, facility)}</small></button>`).join("")}</nav></section>
       <section class="panel-section village-choice-section"><div class="section-heading"><h2>${selected.name}での行動</h2><small>会話して実行</small></div><p class="village-choice-summary">${selected.summary}</p><div class="village-choice-list">${actions}</div>${villageFacilityAdventureContent(selected.id)}</section>
       <section class="panel-section village-panel-exits"><button type="button" data-leave-village="career">人物画面へ</button><button type="button" data-leave-village="world">地方地図へ</button></section>
     </div>`;
@@ -4180,6 +4213,46 @@ function renderPartyFormationBoard() {
   </section>`;
 }
 
+function renderMerchantMarket(village) {
+  const market = getSettlementMarket(state, village);
+  const trade = state.player.merchantTrade;
+  const load = getMerchantCargoLoad(state);
+  const rumorKey = `${state.year}-${state.month}:${village.id}`;
+  const rumorCandidates = discoveredMerchantSettlements(village);
+  const goods = Object.values(market.goods).map((good) => {
+    const definition = MERCHANT_COMMODITIES[good.commodityId];
+    const cargo = trade.cargo.find((entry) => entry.commodityId === good.commodityId);
+    const owned = cargo?.quantity ?? 0;
+    const canBuy = good.stock > 0 && load < trade.cargoCapacity && state.player.metrics.wealth >= good.buyPrice;
+    return `<article class="merchant-market-good" data-market-good="${good.commodityId}">
+      <div class="merchant-market-good-name"><small>供給 ${good.supply} · 需要 ${good.demand}</small><strong>${escapeHtml(good.name)}</strong><p>${escapeHtml(definition.description)}</p></div>
+      <div class="merchant-market-prices"><span><small>仕入</small><b>¤${formatValue(good.buyPrice, 1)}</b></span><span><small>売却</small><b>¤${formatValue(good.sellPrice, 1)}</b></span><span><small>市場 / 積荷</small><b>${good.stock} / ${owned}</b></span></div>
+      <label><span>数量</span><input type="number" min="1" max="${Math.max(1, good.stock, owned)}" value="1" inputmode="numeric" data-market-quantity aria-label="${escapeHtml(good.name)}の取引数量"></label>
+      <div class="merchant-market-actions"><button type="button" data-buy-commodity="${good.commodityId}" ${canBuy ? "" : "disabled"}>仕入れる</button><button type="button" data-sell-commodity="${good.commodityId}" ${owned > 0 ? "" : "disabled"}>売る</button></div>
+    </article>`;
+  }).join("");
+  const latestReports = [...trade.marketReports].reverse().filter((report, index, reports) => (
+    report.settlementId !== village.id
+    && reports.findIndex((entry) => entry.settlementId === report.settlementId && entry.commodityId === report.commodityId) === index
+  ));
+  const reportGroups = new Map();
+  latestReports.forEach((report) => {
+    const aged = getSettlementMarket(state, { id: report.settlementId, name: report.settlementName }, { reportOnly: true }).reports[report.commodityId];
+    if (!aged) return;
+    if (!reportGroups.has(report.settlementId)) reportGroups.set(report.settlementId, { name: report.settlementName, reports: [] });
+    reportGroups.get(report.settlementId).reports.push(aged);
+  });
+  const reports = [...reportGroups.values()].map((group) => `<article><header><strong>${escapeHtml(group.name)}</strong><small>${Math.max(...group.reports.map((report) => report.ageMonths))}か月前までの情報</small></header><p>${group.reports.map((report) => `${escapeHtml(MERCHANT_COMMODITIES[report.commodityId].name)} ¤${formatValue(report.low, 1)}〜${formatValue(report.high, 1)}`).join(" · ")}</p></article>`).join("");
+  const transactions = trade.recentTransactions.slice(0, 5).map((entry) => `<li><span>${entry.year}年${entry.month}月</span><strong>${entry.type === "buy" ? "仕入" : "売却"} ${escapeHtml(MERCHANT_COMMODITIES[entry.commodityId].name)}×${entry.quantity}</strong><small>${escapeHtml(entry.settlementName)} · ¤${formatValue(entry.total, 1)}${entry.type === "sell" ? ` · 損益 ${signed(entry.profit, 1)}` : ""}</small></li>`).join("");
+  return `<section class="adventure-facility-board merchant-market-board" aria-label="${escapeHtml(village.name)}の交易市場">
+    <header><div><small>LOCAL MARKET · ${escapeHtml(market.period)}</small><h3>${escapeHtml(village.name)}の市場</h3></div><p>積荷 ${load} / ${trade.cargoCapacity} · 財産 ¤${formatValue(state.player.metrics.wealth, 1)}。現在地の価格だけが確定値です。</p></header>
+    <div class="merchant-market-toolbar"><button type="button" data-market-rumors ${trade.rumorChecks[rumorKey] || !rumorCandidates.length ? "disabled" : ""}>${trade.rumorChecks[rumorKey] ? "今月の相場は確認済み" : rumorCandidates.length ? `近隣${Math.min(2, rumorCandidates.length)}市場の相場を聞く` : "既知の近隣市場なし"}</button><span>土地の産出・集落規模・月次情勢で価格と在庫が変化します。</span></div>
+    <div class="merchant-market-goods">${goods}</div>
+    <section class="merchant-trade-ledger"><header><div><small>MARKET INTELLIGENCE</small><h4>相場帳</h4></div><span>遠隔地は価格帯のみ</span></header><div>${reports || "<p>別の市場を訪れるか、近隣相場を聞くと記録されます。</p>"}</div></section>
+    <section class="merchant-trade-history"><header><small>RECENT TRADE</small><h4>最近の取引</h4></header><ul>${transactions || "<li><small>まだ交易記録はありません。</small></li>"}</ul></section>
+  </section>`;
+}
+
 function villageFacilityAdventureContent(facilityId, village = activeVillageContext()) {
   if (facilityId === "guild") return `${renderGuildAdventureBoard()}${renderTavernAdventureBoard("guild")}`;
   if (facilityId === "tavern") {
@@ -4192,6 +4265,7 @@ function villageFacilityAdventureContent(facilityId, village = activeVillageCont
     const inventory = state.player?.villageLife?.inventory ?? [];
     return `<section class="adventure-facility-board village-shop-inventory"><header><div><small>SELECT ITEM TO SELL</small><h3>所持品を選んで売却</h3></div><p>売却前に品名と数量を確認します。</p></header><div>${inventory.length ? inventory.map((item) => `<article><span><strong>${escapeHtml(item.name)}</strong><small>所持 ${item.quantity ?? 1}</small></span><button type="button" data-sell-village-item="${escapeHtml(item.id)}">1個売却 →</button></article>`).join("") : "<p>売却できる所持品はありません。</p>"}</div></section>`;
   }
+  if (facilityId === "market") return renderMerchantMarket(village);
   return "";
 }
 
@@ -4244,17 +4318,18 @@ function renderVillageWorkspace() {
         <div class="village-central-status is-top-status" aria-label="人物と探索物資の状態">
           <article><small>HP / MP</small><strong>${life.hp} / ${life.mp}</strong><span>${escapeHtml(villageConditionSummary(life))}</span></article>
           <article><small>財産</small><strong>${player.metrics.wealth}</strong><span>村内の支払い</span></article>
+          <article><small>交易積荷</small><strong>${getMerchantCargoLoad(state)}<i> / ${player.merchantTrade.cargoCapacity}</i></strong><span>冒険用所持品とは別枠</span></article>
           <article><small>同行</small><strong>${activeParty.length}<i> / ${life.party.length}</i></strong><span>${escapeHtml(partyConditionSummary(life))}</span></article>
           <article><small>探索物資</small><strong>${life.supplies.food}<i>食</i> ${life.supplies.torches}<i>灯</i></strong><span>所持品 ${life.inventory.reduce((sum, item) => sum + (item.quantity ?? 1), 0)}</span></article>
         </div>
         ${tavernInterior ? "" : `<section class="village-choice-overlay village-facility-window ${view.villageFacilityOpen ? "has-action-window" : ""}" aria-label="${escapeHtml(village.name)}の施設">
           <header><small>VILLAGE COMMAND</small><div><h2>${escapeHtml(village.name)}</h2><button type="button" data-leave-village="world" aria-label="地方地図へ戻る">×</button></div><p>施設を選び、村人と会話して行動します。</p></header>
-          <nav class="village-overlay-facilities village-facility-menu" aria-label="集落の施設">${facilities.map((facility) => `<button type="button" data-village-facility="${facility.id}" class="${view.villageFacilityOpen && facility.id === selected.id ? "is-active" : ""}" aria-haspopup="dialog" aria-expanded="${view.villageFacilityOpen && facility.id === selected.id}"><i>${facility.icon}</i><span><strong>${escapeHtml(facility.name)}</strong><small>${escapeHtml(facility.summary)}</small></span><b>${facility.actions.length}件 <em>→</em></b></button>`).join("")}</nav>
+          <nav class="village-overlay-facilities village-facility-menu" aria-label="集落の施設">${facilities.map((facility) => `<button type="button" data-village-facility="${facility.id}" class="${view.villageFacilityOpen && facility.id === selected.id ? "is-active" : ""}" aria-haspopup="dialog" aria-expanded="${view.villageFacilityOpen && facility.id === selected.id}"><i>${facility.icon}</i><span><strong>${escapeHtml(facility.name)}</strong><small>${escapeHtml(facility.summary)}</small></span><b>${villageFacilityChoiceCount(village, facility)}件 <em>→</em></b></button>`).join("")}</nav>
         </section>`}
         ${view.villageFacilityOpen ? `<section class="village-choice-overlay village-action-window ${tavernInterior ? "is-facility-interior-window is-tavern-window" : ""}" role="dialog" aria-modal="false" aria-label="${escapeHtml(selected.name)}の行動">
           <header><div><button type="button" class="village-action-back" data-close-village-actions>← 村の施設一覧</button><button type="button" data-leave-village="world" aria-label="地方地図へ戻る">×</button></div><small>${tavernInterior ? "TAVERN / ARRIVED" : `${selected.id.toUpperCase()} / ACTIONS`}</small><h2>${escapeHtml(selected.name)}</h2><p>${tavernInterior ? "酒場へ移動しました。店内で相手と用件を選びます。" : escapeHtml(selected.summary)}</p></header>
           <div class="village-overlay-actions">
-            <div class="village-overlay-heading"><span><small>${tavernInterior ? "AFTER ARRIVAL / AVAILABLE CHOICES" : "AVAILABLE CHOICES"}</small><strong>行動を選ぶ</strong></span><b>${villageFacilityActions(village, selected).length}件</b></div>
+            <div class="village-overlay-heading"><span><small>${tavernInterior ? "AFTER ARRIVAL / AVAILABLE CHOICES" : "AVAILABLE CHOICES"}</small><strong>行動を選ぶ</strong></span><b>${villageFacilityChoiceCount(village, selected)}件</b></div>
             <div class="village-choice-list">${actions}</div>
             ${villageFacilityAdventureContent(selected.id, village)}
           </div>
@@ -7581,6 +7656,12 @@ document.addEventListener("click", async (event) => {
     view.selectedVillageFacilityId = villageFacility.dataset.villageFacility;
     if (view.selectedVillageFacilityId === "tavern") view.tavernSection = "requests";
     view.villageFacilityOpen = true;
+    if (view.selectedVillageFacilityId === "market") {
+      const village = activeVillageContext();
+      try { commit(observeSettlementMarket(state, village), `${village.name}の現在相場を相場帳へ記録しました。`, "confirm"); }
+      catch (error) { showToast(error.message, "danger"); }
+      return;
+    }
     renderPanelFromTop();
     return;
   }
@@ -7605,6 +7686,29 @@ document.addEventListener("click", async (event) => {
     try {
       const next = performVillageAction(state, village, "sell_item", { itemId });
       commit(next, next.player.villageLife.lastAction.message, "confirm");
+    } catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
+  if (event.target.closest("[data-market-rumors]")) {
+    const village = activeVillageContext();
+    try {
+      const next = hearMarketRumors(state, village, { candidates: discoveredMerchantSettlements(village) });
+      commit(next, "近隣市場の価格帯を相場帳へ書き留めました。", "confirm");
+    } catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
+  const commodityButton = event.target.closest("[data-buy-commodity], [data-sell-commodity]");
+  if (commodityButton) {
+    const village = activeVillageContext();
+    const commodityId = commodityButton.dataset.buyCommodity ?? commodityButton.dataset.sellCommodity;
+    const quantity = Number(commodityButton.closest("[data-market-good]")?.querySelector("[data-market-quantity]")?.value ?? 1);
+    const buying = Boolean(commodityButton.dataset.buyCommodity);
+    try {
+      const next = buying
+        ? buyCommodity(state, village, commodityId, quantity)
+        : sellCommodity(state, village, commodityId, quantity);
+      const commodity = MERCHANT_COMMODITIES[commodityId];
+      commit(next, `${village.name}で${commodity.name}を${quantity}個${buying ? "仕入れ" : "売却し"}ました。`, "confirm");
     } catch (error) { showToast(error.message, "danger"); }
     return;
   }

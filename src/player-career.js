@@ -1,5 +1,6 @@
 import { createVillageLifeState, normalizeVillageLifeState } from "./village-life.js";
 import { normalizeAbilityScores } from "./character-abilities.js";
+import { createMerchantTradeState, normalizeMerchantTradeState } from "./merchant-trade.js";
 import {
   REGIONAL_REPUTATION_GAINS,
   createRegionalReputationState,
@@ -182,6 +183,7 @@ function defaultPlayer(options = {}) {
     regionalReputation: createRegionalReputationState({ legacyMigrated: true }),
     progress: { contracts: 0, orders: 0, campaigns: 0, governanceActions: 0 },
     villageLife: createVillageLifeState(),
+    merchantTrade: createMerchantTradeState(),
     invitations: [],
     petitions: [],
     history: [{ turn: 0, title: "一個人として旅立つ", detail: "領地も私兵も持たず、辺境の街道へ立った。" }],
@@ -237,6 +239,7 @@ export function normalizeCareerState(state) {
     state.player.title = getTitleForCareerStage(state.player.stage, state.player.governmentFormId);
   }
   normalizeVillageLifeState(state);
+  normalizeMerchantTradeState(state);
   return state;
 }
 

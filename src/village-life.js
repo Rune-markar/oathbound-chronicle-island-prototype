@@ -166,6 +166,7 @@ export const VILLAGE_FACILITIES = Object.freeze([
     action("buy_materials", "一次素材購入", "薬草・原木・鉱石など、土地で採れる一次素材を購入する。", 1),
     action("sell_item", "アイテム売却", "所持品を一つ売却する。"),
   ]),
+  facility("market", "市場", "市", "土地ごとの相場を聞き、交易用の積荷を売買する。", []),
   facility("smithy", "鍛冶屋", "鍛", "装備の性能と状態を整える。", [
     action("enhance_equipment", "装備強化", "現在の武器を一段階強化する。", 3),
     action("repair_equipment", "装備修理", "武器と防具の耐久を回復する。", 1),
