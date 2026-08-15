@@ -1,4 +1,4 @@
-import { normalizeCrimeState, recordCrimeIncident } from "./crime-system.js";
+import { CRIME_RISK_LABELS, normalizeCrimeState, recordCrimeIncident } from "./crime-system.js";
 
 function hashString(value) {
   let hash = 2166136261;
@@ -14,6 +14,24 @@ function routeContext(context = {}) {
   const destination = context.destination ?? context.to;
   if (!origin?.id || !destination?.id) throw new TypeError("密輸には出発地と目的地が必要です");
   return { origin, destination, travel: context.travel ?? {} };
+}
+
+function activeJurisdiction(active, id) {
+  if (id === active.originJurisdiction.id) return active.originJurisdiction;
+  if (id === active.destinationJurisdiction.id) return active.destinationJurisdiction;
+  return { id, name: id, nationId: null };
+}
+
+function actualTravelContext(state, active) {
+  const travel = state.generatedWorld?.lastTravel;
+  const currentJurisdictionId = state.generatedWorld?.expeditionRegionId;
+  if (!travel?.fromRegionId || !travel?.destinationRegionId || currentJurisdictionId !== travel.destinationRegionId) {
+    throw new Error("実際の地方移動が確認できません");
+  }
+  return {
+    origin: activeJurisdiction(active, travel.fromRegionId),
+    destination: activeJurisdiction(active, travel.destinationRegionId),
+  };
 }
 
 function recordDetection(state, active, jurisdiction, outcome, cargoStatus) {
@@ -57,7 +75,7 @@ export function getSmugglingOffers(state, context = {}) {
     cargo: { id: `mission-cargo:${origin.id}:${destination.id}:${cargo.id}`, name: cargo.name, kind: cargo.id },
     reward: { wealth: cargo.reward, text: `財産+${cargo.reward}` },
     deadlineTurn: (normalized.turn ?? 0) + Math.max(2, Math.ceil((travel.travelMinutes ?? 360) / 360) + 1),
-    riskLabel: origin.nationId && destination.nationId && origin.nationId !== destination.nationId ? "高" : "中",
+    riskLabel: origin.nationId && destination.nationId && origin.nationId !== destination.nationId ? CRIME_RISK_LABELS[2] : CRIME_RISK_LABELS[1],
     maximumPenalty: "積荷没収、拘束、密輸罪の処罰",
   }));
 }
@@ -83,20 +101,20 @@ export function acceptSmugglingOffer(state, offer) {
   return next;
 }
 
-export function inspectSmugglingCheckpoint(state, context = {}, options = {}) {
+export function inspectSmugglingCheckpoint(state, _context = {}, options = {}) {
   const next = normalizeCrimeState(state);
   const active = next.player.crime.activeSmuggling;
   if (!active || active.status !== "active") throw new Error("検査対象の密輸積荷がありません");
-  const { origin, destination } = routeContext(context);
+  const { origin, destination } = actualTravelContext(next, active);
   const routeIds = active.routeJurisdictionIds ?? [active.originJurisdiction.id, active.destinationJurisdiction.id];
   const fromIndex = routeIds.indexOf(origin.id);
   const toIndex = routeIds.indexOf(destination.id);
-  const legitimateMovement = fromIndex >= 0 && toIndex >= 0 && (fromIndex === toIndex || toIndex === fromIndex + 1);
+  const legitimateMovement = fromIndex >= 0 && toIndex > fromIndex;
   if (!legitimateMovement) throw new Error("受託した密輸品の運搬経路と一致しません");
-  const crossesJurisdiction = origin.id !== destination.id || context.crossesJurisdiction === true;
-  const crossesNationalBorder = Boolean(origin.nationId && destination.nationId && origin.nationId !== destination.nationId)
-    || context.crossesNationalBorder === true;
-  if (!crossesJurisdiction && !crossesNationalBorder) return { state: next, result: { inspected: false, reason: "same_jurisdiction", outcome: null } };
+  if (active.lastCheckpointDestinationId === destination.id) {
+    return { state: next, result: { inspected: false, reason: "already_inspected", outcome: null } };
+  }
+  active.lastCheckpointDestinationId = destination.id;
   const selected = options.outcome ?? ["clear", "seizure", "escape", "capture"][hashString(`${next.generatedWorld?.seed ?? "cargo"}:${active.offerId}:${origin.id}:${destination.id}:${next.turn ?? 0}`) % 4];
   if (selected === "clear") return { state: next, result: { inspected: true, outcome: "clear", cargoStatus: "active" } };
   if (!["seizure", "escape", "capture"].includes(selected)) throw new RangeError("検査結果が不正です");
@@ -109,12 +127,12 @@ export function inspectSmugglingCheckpoint(state, context = {}, options = {}) {
   return { state: detected, result: { inspected: true, outcome: commonOutcome, checkpointOutcome: selected, cargoStatus: selected === "escape" ? "active" : "seized", captured: selected === "capture" } };
 }
 
-export function deliverSmugglingCargo(state, context = {}) {
+export function deliverSmugglingCargo(state, _context = {}) {
   const normalized = normalizeCrimeState(state);
   const active = normalized.player.crime.activeSmuggling;
   if (!active || active.status !== "active") throw new Error("届ける密輸積荷がありません");
-  const jurisdictionId = context.jurisdictionId ?? context.jurisdiction?.id ?? context.destination?.id;
-  if (jurisdictionId !== active.destinationJurisdiction.id) throw new Error("指定された目的地ではありません");
+  const jurisdictionId = normalized.generatedWorld?.expeditionRegionId;
+  if (jurisdictionId !== active.destinationJurisdiction.id) throw new Error("密輸品の目的地が現在地ではありません");
   if ((normalized.turn ?? 0) > active.deadlineTurn) throw new Error("密輸依頼の期限を過ぎています");
   const next = recordCrimeIncident(normalized, {
     id: `smuggling:${normalized.turn ?? 0}:${normalized.player.crime.incidents.length + 1}:${active.offerId}:delivery`,

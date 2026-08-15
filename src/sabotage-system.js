@@ -1,5 +1,6 @@
 import {
   CRIME_OUTCOMES,
+  CRIME_RISK_LABELS,
   normalizeCrimeState,
   recordCrimeIncident,
   resolveAccompliceDecision,
@@ -62,7 +63,7 @@ export function getSabotageTargets(state, context = {}) {
         nationId,
         condition: asset.condition,
         available: asset.available,
-        riskLabel: asset.kind === "road" ? "中" : asset.kind === "facility" ? "高" : "極高",
+        riskLabel: asset.kind === "road" ? CRIME_RISK_LABELS[1] : asset.kind === "facility" ? CRIME_RISK_LABELS[2] : CRIME_RISK_LABELS[3],
         preparationRequirements: ["巡回の間隔を調べる", "退路を確保する"],
         maximumPenalty: "拘束、国家資産破壊罪の処罰",
       };
@@ -141,7 +142,8 @@ export function executeSabotage(state, options = {}) {
     target: active.target,
     jurisdiction: { id: active.target.jurisdictionId, name: active.target.regionId },
     outcome,
-    detected: detected && !domesticSovereign,
+    detected,
+    deferWorldHistory: true,
     historyText: `${active.target.name}への破壊工作${successful ? "が実行された" : "に失敗した"}。`,
   });
   if (detected && domesticSovereign) {

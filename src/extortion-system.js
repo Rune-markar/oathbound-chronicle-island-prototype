@@ -1,6 +1,4 @@
-import { CRIME_OUTCOMES, normalizeCrimeState, recordCrimeIncident } from "./crime-system.js";
-
-const RISK_LABELS = Object.freeze(["低", "中", "高", "極高"]);
+import { CRIME_OUTCOMES, CRIME_RISK_LABELS, normalizeCrimeState, recordCrimeIncident } from "./crime-system.js";
 
 function contextOf(context = {}) {
   const settlement = context.settlement ?? context.village ?? context.place ?? context;
@@ -65,7 +63,7 @@ function buildOpportunity(location, target, mode, amount, baseRiskLevel) {
     target: { id: `${target.kind}:${location.settlementId}`, name: `${location.settlementName}の${target.name}` },
     expectedReward: { wealth: amount, text: mode === "recurring" ? `毎月 財産+${amount}` : `財産+${amount}` },
     baseRiskLevel,
-    riskLabel: RISK_LABELS[baseRiskLevel],
+    riskLabel: CRIME_RISK_LABELS[baseRiskLevel],
     preparationRequirements: mode === "recurring" ? ["相手の商売と支払日を調べる"] : ["人目の少ない場所を選ぶ"],
     maximumPenalty: "拘束、恐喝罪の処罰、相手からの報復",
   };
@@ -97,8 +95,8 @@ export function previewExtortion(state, opportunity, options = {}) {
     mode: opportunity.mode,
     pressure,
     riskLevel,
-    riskLabel: RISK_LABELS[riskLevel],
-    retaliationRiskLabel: RISK_LABELS[Math.min(3, Math.floor(pressure / 2) + opportunity.baseRiskLevel)],
+    riskLabel: CRIME_RISK_LABELS[riskLevel],
+    retaliationRiskLabel: CRIME_RISK_LABELS[Math.min(3, Math.floor(pressure / 2) + opportunity.baseRiskLevel)],
     expectedReward: structuredClone(opportunity.expectedReward),
     preparationRequirements: [...opportunity.preparationRequirements],
     maximumPenalty: opportunity.maximumPenalty,

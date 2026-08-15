@@ -85,6 +85,8 @@ test("successful sabotage persists damage, detected heat, serious history, and m
   const event = resolved.state.history.events.find((entry) => entry.type === "criminal_sabotage");
   assert.equal(event.summary.includes(target.name), true);
   assert.equal(event.severity, "serious");
+  assert.equal(resolved.state.history.events.filter((entry) => entry.id === event.id).length, 1);
+  assert.equal(resolved.state.player.history.filter((entry) => entry.incidentId === resolved.result.incidentId).length, 1);
   assert.equal(auditHistoricalEffectBindings(resolved.state).valid, true);
   const damaged = resolved.state.generatedWorld.regionalDomains.assetStates[target.id].condition;
   const recovered = advanceGeneratedWorldRegions({ ...resolved.state, month: resolved.state.month + 1 });

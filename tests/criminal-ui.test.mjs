@@ -1,10 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { resolveCrimeEvent, resolveCrimeRecovery } from "../src/crime-system.js";
+import { CRIME_RISK_LABELS, resolveCrimeEvent, resolveCrimeRecovery } from "../src/crime-system.js";
 
 const appSource = await readFile(new URL("../src/app.js", import.meta.url), "utf8");
 const stylesSource = await readFile(new URL("../styles.css", import.meta.url), "utf8");
+const manualSource = await readFile(new URL("../MANUAL.md", import.meta.url), "utf8");
 
 function stateWithCrime(overrides = {}) {
   return {
@@ -153,7 +154,7 @@ test("resisted robbery opens the existing tactical lifecycle and resolves only o
 
 test("active smuggling, extortion variants, accomplices, and backed sabotage routes are rendered", () => {
   assert.match(appSource, /renderActiveSmuggling/);
-  assert.match(appSource, /nextAction\s*=\s*atDestination\s*\?\s*["']deliver["']\s*:\s*route\s*\?\s*["']checkpoint["']/);
+  assert.match(appSource, /atDestination[\s\S]{0,500}data-smuggling-next=\"deliver\"/);
   assert.match(appSource, /data-smuggling-next=/);
   assert.match(appSource, /mode\s*===\s*["']recurring["']/);
   assert.match(appSource, /collectExtortionPayment/);
@@ -174,4 +175,23 @@ test("career crime status and recovery resolve the live generated-world region j
   assert.match(appSource, /function currentCrimeJurisdictionId\(\)[\s\S]*currentAdventureContext\(\)\.region\.id/);
   assert.equal((appSource.match(/const jurisdictionId = currentCrimeJurisdictionId\(\);/g) ?? []).length, 2);
   assert.doesNotMatch(appSource, /jurisdictionId = activeVillageContext\(\)\?\.regionId \?\? state\.player\.locationId/);
+});
+
+test("normal crime routes render every contextual target instead of selecting index zero", () => {
+  for (const collection of ["theftOpportunities", "extortionOpportunities", "robberyOpportunities", "smugglingOffers", "assassinationTargets"])
+    assert.match(appSource, new RegExp(`${collection}\\.map\\(`), collection);
+  assert.doesNotMatch(appSource, /getSettlementTheftOpportunities\([^\n]+\)\[0\]/);
+  assert.doesNotMatch(appSource, /getRobberyOpportunities\([^\n]+\)\[0\]/);
+});
+
+test("crime risk vocabulary is exact in code, UI contract, and manual", () => {
+  assert.deepEqual(CRIME_RISK_LABELS, ["有利", "互角", "危険", "極めて危険"]);
+  assert.match(manualSource, /有利・互角・危険・極めて危険/);
+  assert.doesNotMatch(manualSource, /危険度は「低・中・高・極高」/);
+});
+
+test("smuggling checkpoint is integrated into confirmed generated travel", () => {
+  assert.match(appSource, /moveGeneratedExpeditionToRegion[\s\S]{0,900}inspectSmugglingCheckpoint\(next\)/);
+  assert.doesNotMatch(appSource, /data-smuggling-next=[^>]*checkpoint/);
+  assert.match(appSource, /deliverSmugglingCargo\(state\)/);
 });

@@ -22,6 +22,13 @@ const route = {
   travel: { travelMinutes: 360 },
 };
 
+function afterTravel(state, fromRegionId = "region-a", destinationRegionId = "region-b") {
+  const next = structuredClone(state);
+  next.generatedWorld.expeditionRegionId = destinationRegionId;
+  next.generatedWorld.lastTravel = { fromRegionId, destinationRegionId };
+  return next;
+}
+
 test("a discovered local smuggler supplies stable concrete offers and acceptance stores mission cargo", () => {
   const state = baseState();
   const offers = getSmugglingOffers(state, route);
@@ -35,24 +42,19 @@ test("a discovered local smuggler supplies stable concrete offers and acceptance
   assert.equal(accepted.player.inventory, undefined);
 });
 
-test("checkpoint is skipped without a jurisdiction crossing and applies to same-nation regional borders", () => {
+test("checkpoint applies to actual regional travel, including same-nation regional borders", () => {
   const offer = getSmugglingOffers(baseState(), route)[0];
   const accepted = acceptSmugglingOffer(baseState(), offer);
-  const same = inspectSmugglingCheckpoint(accepted, {
-    from: { id: "region-a", nationId: "nation-a" }, to: { id: "region-a", nationId: "nation-a" },
-    crossesJurisdiction: false,
-  });
-  assert.equal(same.result.inspected, false);
-  assert.equal(same.result.reason, "same_jurisdiction");
-  const clear1 = inspectSmugglingCheckpoint(accepted, route, { outcome: "clear" });
-  const clear2 = inspectSmugglingCheckpoint(accepted, route, { outcome: "clear" });
+  const travelled = afterTravel(accepted);
+  const clear1 = inspectSmugglingCheckpoint(travelled, route, { outcome: "clear" });
+  const clear2 = inspectSmugglingCheckpoint(travelled, route, { outcome: "clear" });
   assert.deepEqual(clear1, clear2);
   assert.equal(clear1.result.inspected, true);
   assert.equal(clear1.state.player.crime.activeSmuggling.status, "active");
 
   const sameNationRoute = { ...route, destination: { ...route.destination, nationId: "nation-a" }, crossesJurisdiction: true, crossesNationalBorder: false };
   const sameNationOffer = getSmugglingOffers(baseState(), sameNationRoute)[0];
-  const sameNationAccepted = acceptSmugglingOffer(baseState(), sameNationOffer);
+  const sameNationAccepted = afterTravel(acceptSmugglingOffer(baseState(), sameNationOffer));
   const regionalInspection = inspectSmugglingCheckpoint(sameNationAccepted, sameNationRoute, { outcome: "clear" });
   assert.equal(regionalInspection.result.inspected, true);
   const cannotSuppressBoundary = inspectSmugglingCheckpoint(sameNationAccepted, { ...sameNationRoute, crossesJurisdiction: false }, { outcome: "clear" });
@@ -61,7 +63,7 @@ test("checkpoint is skipped without a jurisdiction crossing and applies to same-
 
 test("checkpoint rejects unrelated movement immutably and cannot forge the incident jurisdiction", () => {
   const offer = getSmugglingOffers(baseState(), route)[0];
-  const accepted = acceptSmugglingOffer(baseState(), offer);
+  const accepted = afterTravel(acceptSmugglingOffer(baseState(), offer), "region-x", "region-y");
   const snapshot = structuredClone(accepted);
   assert.throws(() => inspectSmugglingCheckpoint(accepted, {
     origin: { id: "region-x", nationId: "nation-x" },
@@ -74,7 +76,7 @@ test("checkpoint rejects unrelated movement immutably and cannot forge the incid
 
 test("seizure, escape and capture persist distinct cargo outcomes and exact heat", () => {
   const offer = getSmugglingOffers(baseState(), route)[0];
-  const accepted = acceptSmugglingOffer(baseState(), offer);
+  const accepted = afterTravel(acceptSmugglingOffer(baseState(), offer));
   const escaped = inspectSmugglingCheckpoint(accepted, route, { outcome: "escape" });
   assert.equal(escaped.state.player.crime.activeSmuggling.status, "active");
   assert.equal(escaped.state.player.crime.heatByJurisdiction["region-b"], 20);
@@ -99,7 +101,7 @@ test("delivery requires active cargo at its exact destination and raises wealth 
   const snapshot = structuredClone(accepted);
   assert.throws(() => deliverSmugglingCargo(accepted, { jurisdictionId: "region-x" }), /目的地/);
   assert.deepEqual(accepted, snapshot);
-  const delivered = deliverSmugglingCargo(accepted, { jurisdictionId: "region-b" });
+  const delivered = deliverSmugglingCargo(afterTravel(accepted), { jurisdictionId: "region-b" });
   assert.equal(delivered.state.player.metrics.wealth, 2 + offer.reward.wealth);
   assert.equal(delivered.state.player.crime.contacts[0].trust, 6);
   assert.equal(delivered.state.player.crime.activeSmuggling, null);
@@ -107,4 +109,23 @@ test("delivery requires active cargo at its exact destination and raises wealth 
   assert.equal(delivered.state.player.crime.incidents[0].outcome, "success_hidden");
   assert.equal(delivered.state.player.crime.incidents[0].detected, false);
   assert.throws(() => deliverSmugglingCargo(delivered.state, { jurisdictionId: "region-b" }), /積荷/);
+});
+
+test("checkpoint and delivery derive position from real generated travel and reject forged context", () => {
+  const offer = getSmugglingOffers(baseState(), route)[0];
+  const accepted = acceptSmugglingOffer(baseState(), offer);
+  const forged = structuredClone(accepted);
+  forged.generatedWorld.expeditionRegionId = "region-a";
+  forged.generatedWorld.lastTravel = null;
+  assert.throws(() => inspectSmugglingCheckpoint(forged, route, { outcome: "clear" }), /実際の地方移動/);
+  assert.throws(() => deliverSmugglingCargo(forged, { jurisdictionId: "region-b" }), /現在地/);
+
+  const travelled = structuredClone(accepted);
+  travelled.generatedWorld.expeditionRegionId = "region-b";
+  travelled.generatedWorld.lastTravel = { fromRegionId: "region-a", destinationRegionId: "region-b" };
+  const checked = inspectSmugglingCheckpoint(travelled, { origin: { id: "forged" }, destination: { id: "forged" } }, { outcome: "clear" });
+  assert.equal(checked.result.inspected, true);
+  assert.equal(checked.state.player.crime.activeSmuggling.lastCheckpointDestinationId, "region-b");
+  const delivered = deliverSmugglingCargo(checked.state, { jurisdictionId: "forged" });
+  assert.equal(delivered.result.cargoStatus, "delivered");
 });

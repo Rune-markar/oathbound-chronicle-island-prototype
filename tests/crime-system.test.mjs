@@ -102,6 +102,90 @@ test("all four outcomes record exactly and only detected incidents add heat", ()
   assert.notEqual(state.player.crime.incidents[0].perpetrator, incident().perpetrator);
 });
 
+test("shared crime recording appends every incident to player history and only detected serious incidents to world history", () => {
+  let state = baseState();
+  const cases = [
+    ["theft", "minor", false],
+    ["extortion", "serious", true],
+    ["robbery", "serious", true],
+    ["smuggling", "serious", false],
+  ];
+  for (const [type, severity, detected] of cases) {
+    state = recordCrimeIncident(state, incident({
+      id: `${type}-incident`,
+      type,
+      severity,
+      outcome: detected ? "success_exposed" : "success_hidden",
+      detected,
+      historyText: `${type}の個人年代記。`,
+    }));
+  }
+
+  assert.deepEqual(state.player.history.map((entry) => entry.incidentId), [
+    "smuggling-incident",
+    "robbery-incident",
+    "extortion-incident",
+    "theft-incident",
+  ]);
+  assert.deepEqual(state.player.history.map((entry) => entry.detail), [
+    "smugglingの個人年代記。",
+    "robberyの個人年代記。",
+    "extortionの個人年代記。",
+    "theftの個人年代記。",
+  ]);
+  assert.deepEqual(
+    state.history.events.filter((entry) => entry.type.startsWith("criminal_")).map((entry) => entry.id).sort(),
+    ["history-extortion-incident", "history-robbery-incident"],
+  );
+});
+
+test("live regional ownership converts detected sovereign theft extortion robbery and smuggling into domestic abuse", () => {
+  const sovereign = baseState({
+    sovereign: true,
+    stage: "independent_ruler",
+    affiliation: { nationId: "stale-nation-id" },
+    metrics: { wealth: 20, legitimacy: 100, popularSupport: 100, householdSupport: 100, liegeTrust: 0 },
+  });
+  sovereign.generatedWorld = {
+    playerNationId: "player-nation",
+    regionalDomains: {
+      regionStates: {
+        domestic_region: { nationId: "player-nation" },
+        foreign_region: { nationId: "foreign-nation" },
+      },
+    },
+  };
+
+  let domestic = sovereign;
+  for (const type of ["theft", "extortion", "robbery", "smuggling"]) {
+    domestic = recordCrimeIncident(domestic, incident({
+      id: `domestic-${type}`,
+      type,
+      severity: type === "theft" ? "minor" : "serious",
+      jurisdiction: { id: "domestic_region", name: "国内領" },
+      outcome: "success_exposed",
+      detected: true,
+    }));
+  }
+  assert.equal(domestic.player.crime.heatByJurisdiction.domestic_region ?? 0, 0);
+  assert.deepEqual(domestic.player.crime.abuses.map((entry) => entry.incidentId), [
+    "domestic-smuggling",
+    "domestic-robbery",
+    "domestic-extortion",
+    "domestic-theft",
+  ]);
+  assert.equal(domestic.history.events.filter((entry) => entry.type.startsWith("criminal_")).length, 4);
+
+  const foreign = recordCrimeIncident(sovereign, incident({
+    id: "foreign-theft",
+    jurisdiction: { id: "foreign_region", name: "国外領" },
+    outcome: "success_exposed",
+    detected: true,
+  }));
+  assert.equal(foreign.player.crime.heatByJurisdiction.foreign_region, CRIME_HEAT_GAINS.theft);
+  assert.equal(foreign.player.crime.abuses.length, 0);
+});
+
 test("recording crime is immutable and never decreases or rewrites positive reputation", () => {
   const state = baseState();
   const reputation = structuredClone(state.player.regionalReputation);
@@ -222,6 +306,32 @@ test("detected domestic sovereign crime becomes abuse of power while foreign han
   const foreign = resolveCrimeSentence(sovereign, { severity: "serious", jurisdictionId: "valka", domestic: false });
   assert.equal(foreign.player.crime.sentences.length, 1);
   assert.ok(foreign.turn >= 3);
+});
+
+test("sentence jurisdiction resolves region ownership instead of comparing a region id to a nation id", () => {
+  const sovereign = baseState({
+    sovereign: true,
+    stage: "independent_ruler",
+    affiliation: { nationId: "legacy-player-nation" },
+    metrics: { wealth: 20, legitimacy: 60, popularSupport: 50, householdSupport: 40, liegeTrust: 0 },
+  });
+  sovereign.generatedWorld = {
+    playerNationId: "player-nation",
+    regionalDomains: {
+      regionStates: {
+        crownlands: { nationId: "player-nation" },
+        borderland: { nationId: "foreign-nation" },
+      },
+    },
+  };
+
+  const domestic = resolveCrimeSentence(sovereign, { severity: "serious", jurisdictionId: "crownlands" });
+  assert.equal(domestic.player.crime.abuses.length, 1);
+  assert.equal(domestic.player.crime.sentences.length, 0);
+
+  const foreign = resolveCrimeSentence(sovereign, { severity: "serious", jurisdictionId: "borderland" });
+  assert.equal(foreign.player.crime.abuses.length, 0);
+  assert.equal(foreign.player.crime.sentences.length, 1);
 });
 
 test("career creation, career normalization, and monthly advancement preserve and update crime state", () => {

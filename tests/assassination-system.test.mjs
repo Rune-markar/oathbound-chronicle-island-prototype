@@ -140,6 +140,8 @@ test("successful assassination kills the real generated target with exact capita
   assert.equal(person.available, false);
   assert.equal(resolved.state.player.crime.heatByJurisdiction[target.jurisdictionId], 70);
   assert.ok(resolved.state.history.events.some((event) => event.type === "criminal_assassination" && event.severity === "capital" && event.destroyed.includes("generated-character:generated:target")));
+  assert.equal(resolved.state.history.events.filter((event) => event.type === "criminal_assassination").length, 1);
+  assert.equal(resolved.state.player.history.filter((entry) => entry.incidentId === resolved.result.incidentId).length, 1);
   assert.equal(auditHistoricalEffectBindings(resolved.state).valid, true);
 });
 

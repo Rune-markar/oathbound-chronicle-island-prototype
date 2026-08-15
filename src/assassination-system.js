@@ -1,5 +1,6 @@
 import {
   CRIME_OUTCOMES,
+  CRIME_RISK_LABELS,
   normalizeCrimeState,
   recordCrimeIncident,
   resolveAccompliceDecision,
@@ -83,7 +84,7 @@ export function getAssassinationTargets(state, context = {}) {
       jurisdictionId: character.regionId,
       nationId: domains.regionStates?.[character.regionId]?.nationId ?? character.nationId ?? null,
       officeRegionIds: [],
-      riskLabel: "極高",
+      riskLabel: CRIME_RISK_LABELS[3],
       preparationRequirements: ["行動時刻を調べる", "離脱経路を確保する"],
       maximumPenalty: "拘束、死刑を含む大逆罪の処罰",
     }));
@@ -109,7 +110,7 @@ export function getAssassinationTargets(state, context = {}) {
       nationId: office.nationId ?? region?.nationId ?? null,
       officeRegionIds: sortedEntries.map((entry) => entry.regionId),
       officeTitle: office.officeTitle,
-      riskLabel: "極高",
+      riskLabel: CRIME_RISK_LABELS[3],
       preparationRequirements: ["領主の公務日程を調べる", "離脱経路を確保する"],
       maximumPenalty: "拘束、死刑を含む大逆罪の処罰",
     }];
@@ -214,7 +215,8 @@ export function executeAssassination(state, options = {}) {
     target: active.target,
     jurisdiction: { id: active.target.jurisdictionId, name: active.target.regionId },
     outcome,
-    detected: detected && !domesticSovereign,
+    detected,
+    deferWorldHistory: true,
     historyText: `${active.target.name}への暗殺${successful ? "が実行された" : "に失敗した"}。`,
   });
   if (detected && domesticSovereign) {

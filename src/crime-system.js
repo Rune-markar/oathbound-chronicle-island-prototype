@@ -1,3 +1,5 @@
+import { recordCriminalHistoricalEvent } from "./history-model.js";
+
 const clone = (value) => structuredClone(value);
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
@@ -11,6 +13,7 @@ function hashCrimeEvent(value) {
 }
 
 export const CRIME_SCHEMA_VERSION = 1;
+export const CRIME_RISK_LABELS = Object.freeze(["有利", "互角", "危険", "極めて危険"]);
 export const CRIME_OUTCOMES = Object.freeze([
   "success_hidden",
   "success_exposed",
@@ -89,11 +92,83 @@ function normalizeHeat(value) {
 function unresolvedFloor(crime, jurisdictionId) {
   let floor = 0;
   for (const entry of crime.incidents) {
-    if (!entry.detected || entry.resolved === true || jurisdictionIdOf(entry.jurisdiction) !== jurisdictionId) continue;
+    if (!entry.detected || entry.abuseOfPower || entry.resolved === true || jurisdictionIdOf(entry.jurisdiction) !== jurisdictionId) continue;
     if (entry.severity === "capital" || entry.type === "assassination") floor = Math.max(floor, 70);
     else if (entry.severity === "serious") floor = Math.max(floor, 40);
   }
   return floor;
+}
+
+function jurisdictionNationId(state, jurisdictionId, jurisdiction = null) {
+  return state.generatedWorld?.regionalDomains?.regionStates?.[jurisdictionId]?.nationId
+    ?? jurisdiction?.nationId
+    ?? null;
+}
+
+function isDomesticSovereignJurisdiction(state, jurisdictionId, jurisdiction = null) {
+  if (!state.player?.sovereign) return false;
+  const playerNationId = state.generatedWorld?.playerNationId ?? state.player?.affiliation?.nationId ?? null;
+  const ownerNationId = jurisdictionNationId(state, jurisdictionId, jurisdiction);
+  return Boolean(playerNationId && ownerNationId && playerNationId === ownerNationId);
+}
+
+function applyAbuseOfPower(state, input = {}) {
+  const crime = state.player.crime;
+  const existing = input.incidentId
+    ? crime.abuses.find((entry) => entry.incidentId === input.incidentId)
+    : null;
+  if (existing) return existing;
+  ensureMetrics(state.player);
+  state.player.metrics.legitimacy = clamp((state.player.metrics.legitimacy ?? 0) - 15, 0, 100);
+  state.player.metrics.popularSupport = clamp((state.player.metrics.popularSupport ?? 0) - 10, 0, 100);
+  state.player.metrics.householdSupport = clamp((state.player.metrics.householdSupport ?? 0) - 10, 0, 100);
+  const abuse = {
+    id: input.incidentId ?? `abuse-${state.turn ?? 0}-${crime.abuses.length + 1}`,
+    incidentId: input.incidentId ?? null,
+    jurisdictionId: input.jurisdictionId,
+    kind: "abuse_of_power",
+    detected: true,
+    turn: state.turn ?? 0,
+  };
+  crime.abuses.unshift(abuse);
+  const pressureGain = input.severity === "capital" || input.crimeType === "assassination" ? 40 : 25;
+  crime.abusePressureByJurisdiction[input.jurisdictionId] = clamp((crime.abusePressureByJurisdiction[input.jurisdictionId] ?? 0) + pressureGain, 0, 100);
+  return abuse;
+}
+
+function appendPlayerCrimeHistory(state, entry) {
+  state.player.history ??= [];
+  if (state.player.history.some((record) => record.incidentId === entry.id)) return;
+  state.player.history.unshift({
+    id: `player-history-${entry.id}`,
+    incidentId: entry.id,
+    type: `criminal_${entry.type}`,
+    turn: entry.turn,
+    year: entry.year,
+    month: entry.month,
+    title: `犯罪事件：${entry.type}`,
+    detail: entry.historyText,
+  });
+}
+
+function recordSharedWorldCrimeHistory(state, entry, abuse = null) {
+  const jurisdictionId = jurisdictionIdOf(entry.jurisdiction);
+  const jurisdictionName = entry.jurisdiction?.name ?? jurisdictionId;
+  return recordCriminalHistoricalEvent(state, {
+    id: `history-${entry.id}`,
+    type: `criminal_${entry.type}`,
+    severity: entry.severity,
+    title: abuse ? `${jurisdictionName}での権力濫用` : `${jurisdictionName}の犯罪事件`,
+    summary: entry.historyText,
+    nationId: jurisdictionNationId(state, jurisdictionId, entry.jurisdiction),
+    regionId: jurisdictionId,
+    causedBy: [entry.id],
+    effects: [abuse ? `abuse-pressure:${jurisdictionId}` : `criminal-case:${entry.id}`],
+    bindings: [
+      { type: "crime_incident", id: entry.id },
+      ...(abuse ? [{ type: "crime_abuse", id: abuse.id }] : []),
+    ],
+  });
 }
 
 function heatLabel(heat) {
@@ -220,7 +295,7 @@ export function recordCrimeIncident(state, incident) {
   if (!CRIME_OUTCOMES.includes(incident.outcome)) throw new RangeError(`未知の犯罪結果です: ${incident.outcome ?? ""}`);
   const jurisdictionId = jurisdictionIdOf(incident.jurisdiction);
   if (!jurisdictionId) throw new TypeError("犯罪には管轄が必要です");
-  const next = normalizeCrimeState(state);
+  let next = normalizeCrimeState(state);
   const crime = next.player.crime;
   const entry = clone({
     id: incident.id ?? `crime-${next.turn ?? 0}-${crime.incidents.length + 1}`,
@@ -242,9 +317,25 @@ export function recordCrimeIncident(state, incident) {
     crimeMonth: crime.monthsElapsed,
   });
   crime.incidents.push(entry);
+  appendPlayerCrimeHistory(next, entry);
+  let abuse = null;
   if (entry.detected) {
-    crime.heatByJurisdiction[jurisdictionId] = normalizeHeat((crime.heatByJurisdiction[jurisdictionId] ?? 0) + CRIME_HEAT_GAINS[type]);
-    crime.quietMonthsOutside[jurisdictionId] = 0;
+    if (isDomesticSovereignJurisdiction(next, jurisdictionId, entry.jurisdiction)) {
+      entry.abuseOfPower = true;
+      abuse = applyAbuseOfPower(next, {
+        incidentId: entry.id,
+        jurisdictionId,
+        crimeType: type,
+        severity: entry.severity,
+      });
+    } else {
+      crime.heatByJurisdiction[jurisdictionId] = normalizeHeat((crime.heatByJurisdiction[jurisdictionId] ?? 0) + CRIME_HEAT_GAINS[type]);
+      crime.quietMonthsOutside[jurisdictionId] = 0;
+    }
+  }
+  const recordInWorldHistory = entry.detected && (abuse || entry.severity === "serious" || entry.severity === "capital");
+  if (recordInWorldHistory && incident.deferWorldHistory !== true) {
+    next = recordSharedWorldCrimeHistory(next, entry, abuse);
   }
   return next;
 }
@@ -330,22 +421,15 @@ export function resolveCrimeSentence(state, input = {}) {
   ensureMetrics(next.player);
   const jurisdictionId = input.jurisdictionId ?? jurisdictionIdOf(input.jurisdiction) ?? next.player.locationId;
   const domestic = input.domestic === true
-    || (input.domestic !== false && next.player.affiliation?.nationId != null && jurisdictionId === next.player.affiliation.nationId);
+    || (input.domestic !== false && isDomesticSovereignJurisdiction(next, jurisdictionId, input.jurisdiction));
 
   if (next.player.sovereign && domestic) {
-    next.player.metrics.legitimacy = clamp((next.player.metrics.legitimacy ?? 0) - 15, 0, 100);
-    next.player.metrics.popularSupport = clamp((next.player.metrics.popularSupport ?? 0) - 10, 0, 100);
-    next.player.metrics.householdSupport = clamp((next.player.metrics.householdSupport ?? 0) - 10, 0, 100);
-    crime.abuses.unshift({
-      id: input.incidentId ?? `abuse-${next.turn ?? 0}-${crime.abuses.length + 1}`,
-      incidentId: input.incidentId ?? null,
+    applyAbuseOfPower(next, {
+      incidentId: input.incidentId,
       jurisdictionId,
-      kind: "abuse_of_power",
-      detected: true,
-      turn: next.turn ?? 0,
+      crimeType: input.crimeType,
+      severity: input.severity,
     });
-    const pressureGain = input.severity === "capital" || input.crimeType === "assassination" ? 40 : 25;
-    crime.abusePressureByJurisdiction[jurisdictionId] = clamp((crime.abusePressureByJurisdiction[jurisdictionId] ?? 0) + pressureGain, 0, 100);
     return next;
   }
 

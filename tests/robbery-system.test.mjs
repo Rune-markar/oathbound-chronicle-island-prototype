@@ -43,7 +43,7 @@ test("road context produces stable concrete caravan targets and qualitative prev
   assert.match(first[0].id, /^robbery:region-a:region-b:/);
   assert.equal(first[0].target.kind, "caravan");
   const preview = previewRobbery(baseState(), first[0]);
-  assert.ok(["低", "中", "高", "極高"].includes(preview.riskLabel));
+  assert.ok(["有利", "互角", "危険", "極めて危険"].includes(preview.riskLabel));
   assert.equal(JSON.stringify(preview).includes("percent"), false);
 });
 

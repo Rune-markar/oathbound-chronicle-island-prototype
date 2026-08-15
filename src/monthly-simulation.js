@@ -262,6 +262,7 @@ import {
 import {
   CRIME_HEAT_GAINS,
   CRIME_OUTCOMES,
+  CRIME_RISK_LABELS,
   CRIME_SCHEMA_VERSION,
   advanceCrimeMonth,
   discoverUnderworldContacts,
@@ -279,6 +280,7 @@ import {
 export {
   CRIME_HEAT_GAINS,
   CRIME_OUTCOMES,
+  CRIME_RISK_LABELS,
   CRIME_SCHEMA_VERSION,
   advanceCrimeMonth,
   discoverUnderworldContacts,

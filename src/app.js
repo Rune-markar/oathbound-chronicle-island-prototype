@@ -139,6 +139,7 @@ import {
   setOccupationGarrison,
   setOccupationPolicy,
   setWarPlan,
+  CRIME_RISK_LABELS,
   getSettlementTheftOpportunities,
   previewTheft,
   executeTheft,
@@ -4086,7 +4087,7 @@ function crimePreviewCard(action, opportunity, preview, jurisdictionName, label)
   const targetName = preview.targetName ?? opportunity.target?.name ?? opportunity.cargo?.name ?? opportunity.name;
   const penalty = preview.maximumPenalty ?? opportunity.maximumPenalty ?? "拘束と法令に基づく処罰";
   return `<article class="crime-opportunity" data-crime-preview="${action}">
-    <header><span><small>${escapeHtml(label)}</small><strong>${escapeHtml(targetName)}</strong></span><b>危険 ${escapeHtml(preview.riskLabel ?? opportunity.riskLabel ?? "不明")}</b></header>
+    <header><span><small>${escapeHtml(label)}</small><strong>${escapeHtml(targetName)}</strong></span><b>危険度 ${escapeHtml(preview.riskLabel ?? opportunity.riskLabel ?? CRIME_RISK_LABELS[2])}</b></header>
     <dl><div><dt>対象</dt><dd>${escapeHtml(targetName)}</dd></div><div><dt>管轄</dt><dd>${escapeHtml(jurisdictionName)}</dd></div><div><dt>準備</dt><dd>${requirements.map(escapeHtml).join("・")}</dd></div><div><dt>見込報酬</dt><dd>${escapeHtml(reward)}</dd></div><div><dt>最大刑罰</dt><dd>${escapeHtml(penalty)}</dd></div></dl>
     <button type="button" data-crime-action="${action}" data-crime-target="${escapeHtml(opportunity.id)}">${escapeHtml(label)}を実行</button>
   </article>`;
@@ -4095,10 +4096,8 @@ function crimePreviewCard(action, opportunity, preview, jurisdictionName, label)
 function renderSettlementCrimeSection(village) {
   if (!village) return "";
   const context = { ...currentAdventureContext(), settlement: village, jurisdictionId: village.regionId, jurisdictionName: village.regionName };
-  const theft = getSettlementTheftOpportunities(state, village, context)[0];
+  const theftOpportunities = getSettlementTheftOpportunities(state, village, context);
   const extortionOpportunities = getSettlementExtortionOpportunities(state, village, context);
-  const extortionOneOff = extortionOpportunities.find((entry) => entry.mode === "one_off");
-  const extortionRecurring = extortionOpportunities.find((entry) => entry.mode === "recurring");
   const stolen = state.player.crime?.stolenItems ?? [];
   const contacts = state.player.crime?.contacts?.filter((entry) => entry.jurisdictionId === village.regionId) ?? [];
   const hasLocalFence = contacts.some((entry) => entry.role === "fence");
@@ -4111,9 +4110,8 @@ function renderSettlementCrimeSection(village) {
   return `<section class="crime-context-section" aria-labelledby="settlementCrimeTitle">
     <header><div><small>ILLEGAL / LOCAL</small><h2 id="settlementCrimeTitle">非合法</h2></div><p>対象と管轄を確かめてから実行します。</p></header>
     <div class="crime-opportunity-grid">
-      ${crimePreviewCard("theft", theft, previewTheft(state, theft), village.regionName, "窃盗")}
-      ${crimePreviewCard("extortion", extortionOneOff, previewExtortion(state, extortionOneOff), village.regionName, "一度限りの恐喝")}
-      ${crimePreviewCard("extortion", extortionRecurring, previewExtortion(state, extortionRecurring), village.regionName, "継続的なみかじめ")}
+      ${theftOpportunities.map((theft) => crimePreviewCard("theft", theft, previewTheft(state, theft), village.regionName, "窃盗")).join("")}
+      ${extortionOpportunities.map((extortion) => crimePreviewCard("extortion", extortion, previewExtortion(state, extortion), village.regionName, extortion.mode === "recurring" ? "継続的なみかじめ" : "一度限りの恐喝")).join("")}
       ${arrangements.map((entry) => `<article class="crime-opportunity"><header><span><small>みかじめ料</small><strong>${escapeHtml(entry.targetName)}</strong></span><b>圧力 ${entry.pressure}</b></header><dl><div><dt>対象</dt><dd>${escapeHtml(entry.targetName)}</dd></div><div><dt>管轄</dt><dd>${escapeHtml(entry.jurisdictionName)}</dd></div><div><dt>準備</dt><dd>次回 ${entry.nextDueTurn}ターン</dd></div><div><dt>見込報酬</dt><dd>財産+${entry.amount}</dd></div><div><dt>最大刑罰</dt><dd>恐喝罪と報復</dd></div></dl><button type="button" data-extortion-collect="${escapeHtml(entry.id)}" ${(state.turn ?? 0) < entry.nextDueTurn ? "disabled" : ""} title="${(state.turn ?? 0) < entry.nextDueTurn ? "まだ支払日ではありません" : "みかじめ料を徴収"}">みかじめ料を徴収</button></article>`).join("")}
     </div>
     <nav class="crime-support-actions" aria-label="裏社会の行動">
@@ -4141,25 +4139,25 @@ function renderActiveSmuggling(active, route) {
   let currentJurisdictionId = state.player.locationId;
   try { currentJurisdictionId = getGeneratedWorldView(state).expeditionRegion.id; } catch {}
   const atDestination = currentJurisdictionId === active.destinationJurisdiction.id;
-  const nextAction = atDestination ? "deliver" : route ? "checkpoint" : "route";
-  const disabled = nextAction === "route";
-  const label = atDestination ? "密輸品を納品" : route ? "次の管轄の検問へ進む" : "次の移動先を選ぶ";
-  return `<article class="crime-opportunity" data-crime-preview="smuggling-active"><header><span><small>運搬中の密輸</small><strong>${escapeHtml(active.cargo.name)}</strong></span><b>${escapeHtml(active.destinationJurisdiction.name)}行き</b></header><dl><div><dt>対象</dt><dd>${escapeHtml(active.cargo.name)}</dd></div><div><dt>管轄</dt><dd>${escapeHtml(active.destinationJurisdiction.name)}</dd></div><div><dt>準備</dt><dd>受託経路と期限 ${active.deadlineTurn}ターン</dd></div><div><dt>見込報酬</dt><dd>${escapeHtml(active.reward.text)}</dd></div><div><dt>最大刑罰</dt><dd>積荷没収、拘束、密輸罪の処罰</dd></div></dl><button type="button" data-crime-action="smuggling" data-smuggling-next="${nextAction}" data-crime-target="${escapeHtml(active.offerId)}" ${disabled ? "disabled" : ""} title="${escapeHtml(label)}">${escapeHtml(label)}</button></article>`;
+  const label = atDestination ? "密輸品を納品" : route ? "選択した地方へ実際に移動する" : "地方地図で目的地方を選ぶ";
+  const action = atDestination
+    ? `<button type="button" data-crime-action="smuggling" data-smuggling-next="deliver" data-crime-target="${escapeHtml(active.offerId)}" title="${escapeHtml(label)}">${escapeHtml(label)}</button>`
+    : `<button type="button" disabled title="${escapeHtml(label)}">${escapeHtml(label)}</button>`;
+  return `<article class="crime-opportunity" data-crime-preview="smuggling-active"><header><span><small>運搬中の密輸</small><strong>${escapeHtml(active.cargo.name)}</strong></span><b>${escapeHtml(active.destinationJurisdiction.name)}行き</b></header><dl><div><dt>対象</dt><dd>${escapeHtml(active.cargo.name)}</dd></div><div><dt>管轄</dt><dd>${escapeHtml(active.destinationJurisdiction.name)}</dd></div><div><dt>準備</dt><dd>実際の地方移動と期限 ${active.deadlineTurn}ターン</dd></div><div><dt>見込報酬</dt><dd>${escapeHtml(active.reward.text)}</dd></div><div><dt>最大刑罰</dt><dd>積荷没収、拘束、密輸罪の処罰</dd></div></dl>${action}</article>`;
 }
 
 function renderTravelCrimeSection() {
   const route = currentCrimeTravelContext();
   const activeSmuggling = state.player.crime?.activeSmuggling;
   if (!route && !activeSmuggling) return `<section class="crime-context-section is-compact"><header><div><small>ILLEGAL / ROAD</small><h2>非合法</h2></div><p>移動先を選ぶと街道の対象が現れます。</p></header><div class="crime-opportunity-grid"><button type="button" data-crime-action="robbery" disabled title="街道の移動先を選んでください">強盗</button><button type="button" data-crime-action="smuggling" disabled title="街道の移動先を選んでください">密輸</button></div></section>`;
-  const robbery = route ? getRobberyOpportunities(state, route)[0] : null;
-  const robberyPreview = robbery ? previewRobbery(state, robbery) : null;
-  if (activeSmuggling) return `<section class="crime-context-section"><header><div><small>ILLEGAL / ROAD &amp; BORDER</small><h2>非合法</h2></div><p>新しい依頼ではなく、受託済みの積荷を完遂します。</p></header><div class="crime-opportunity-grid">${robbery ? crimePreviewCard("robbery", robbery, robberyPreview, robbery.jurisdictionName, "街道強盗") : ""}${renderActiveSmuggling(activeSmuggling, route)}${renderTravelSabotage(route)}</div><p class="crime-feedback" aria-live="polite">検問は管轄境界を越える時だけ発生します。</p></section>`;
-  const offers = route ? getSmugglingOffers(state, route) : [];
-  const smuggling = offers[0];
+  const robberyOpportunities = route ? getRobberyOpportunities(state, route) : [];
+  const robberyCards = robberyOpportunities.map((robbery) => crimePreviewCard("robbery", robbery, previewRobbery(state, robbery), robbery.jurisdictionName, "街道強盗")).join("");
+  if (activeSmuggling) return `<section class="crime-context-section"><header><div><small>ILLEGAL / ROAD &amp; BORDER</small><h2>非合法</h2></div><p>新しい依頼ではなく、受託済みの積荷を完遂します。</p></header><div class="crime-opportunity-grid">${robberyCards}${renderActiveSmuggling(activeSmuggling, route)}${renderTravelSabotage(route)}</div><p class="crime-feedback" aria-live="polite">検問は実際に管轄境界を越えた移動で発生します。</p></section>`;
+  const smugglingOffers = route ? getSmugglingOffers(state, route) : [];
   const activeLabel = activeSmuggling ? `${activeSmuggling.cargo.name} → ${activeSmuggling.destinationJurisdiction.name}` : null;
   return `<section class="crime-context-section"><header><div><small>ILLEGAL / ROAD &amp; BORDER</small><h2>非合法</h2></div><p>${activeLabel ? escapeHtml(`密輸中：${activeLabel}`) : "街道上の具体的な対象だけを表示します。"}</p></header><div class="crime-opportunity-grid">
-    ${robbery ? crimePreviewCard("robbery", robbery, robberyPreview, robbery.jurisdictionName, "街道強盗") : ""}
-    ${smuggling ? crimePreviewCard("smuggling", smuggling, { riskLabel: smuggling.riskLabel, targetName: smuggling.cargo.name, expectedReward: smuggling.reward, preparationRequirements: ["密輸人との接触", "国境経路の確認"], maximumPenalty: smuggling.maximumPenalty }, smuggling.destinationJurisdiction.name, "密輸を受託") : `<button type="button" data-crime-action="smuggling" ${activeSmuggling ? "" : "disabled"} data-crime-stage="${activeSmuggling ? "checkpoint" : "offer"}" title="${activeSmuggling ? "検問を通過する" : "現地の密輸人との接触が必要です"}">${activeSmuggling ? "密輸の検問・納品" : "密輸依頼なし"}</button>`}
+    ${robberyCards}
+    ${smugglingOffers.map((smuggling) => crimePreviewCard("smuggling", smuggling, { riskLabel: smuggling.riskLabel, targetName: smuggling.cargo.name, expectedReward: smuggling.reward, preparationRequirements: ["密輸人との接触", "国境経路の確認"], maximumPenalty: smuggling.maximumPenalty }, smuggling.destinationJurisdiction.name, "密輸を受託")).join("") || `<button type="button" data-crime-action="smuggling" disabled data-crime-stage="offer" title="現地の密輸人との接触が必要です">密輸依頼なし</button>`}
     ${renderTravelSabotage(route)}
   </div><p class="crime-feedback" aria-live="polite">検問は管轄境界を越える時だけ発生します。</p></section>`;
 }
@@ -4245,15 +4243,17 @@ function governedCrimeJurisdictionIds() {
 }
 
 function renderPersonCrimeSection() {
-  let targets = [];
-  try { targets = getAssassinationTargets(state, { regionId: currentAdventureContext().region.id }); } catch { targets = []; }
+  let assassinationTargets = [];
+  try { assassinationTargets = getAssassinationTargets(state, { regionId: currentAdventureContext().region.id }); } catch { assassinationTargets = []; }
   const active = state.player.crime?.activeAssassination;
-  const target = active?.target ?? targets[0];
-  if (!target) return `<section class="crime-context-section is-compact"><header><div><small>ILLEGAL / PERSON</small><h2>非合法</h2></div><p>保護対象や対象化されていない人物は暗殺対象にできません。</p></header><button type="button" data-crime-action="assassination" disabled title="対象化可能な人物がいません">暗殺対象なし</button></section>`;
+  const visibleTargets = active?.target ? [active.target] : assassinationTargets;
+  if (!visibleTargets.length) return `<section class="crime-context-section is-compact"><header><div><small>ILLEGAL / PERSON</small><h2>非合法</h2></div><p>保護対象や対象化されていない人物は暗殺対象にできません。</p></header><button type="button" data-crime-action="assassination" disabled title="対象化可能な人物がいません">暗殺対象なし</button></section>`;
   const stage = active?.stage ?? "start";
   const companions = (state.player.villageLife?.party ?? []).filter((entry) => entry.active !== false && entry.alive !== false);
   const companionField = stage === "start" ? `<label class="crime-accomplice-field"><span>同行者の参加</span><select data-crime-accomplice><option value="">単独で行う</option>${companions.map((entry) => `<option value="${escapeHtml(entry.id)}">${escapeHtml(entry.name)}</option>`).join("")}</select><small>選んだ同行者は準備時に承諾・拒否・通報を判断します。</small></label>` : active?.selectedAccomplice ? `<p>参加打診：${escapeHtml(active.selectedAccomplice.name)}</p>` : "";
-  return `<section class="crime-context-section"><header><div><small>ILLEGAL / PERSON &amp; COMPANION</small><h2>非合法</h2></div><p>同行者は参加を拒否・通報・離脱する場合があります。</p></header>${companionField}${crimePreviewCard("assassination", target, { riskLabel: target.riskLabel, targetName: target.name, expectedReward: { text: "政治的障害の排除" }, preparationRequirements: target.preparationRequirements, maximumPenalty: target.maximumPenalty }, target.regionId, stage === "start" ? "暗殺計画を開始" : stage === "started" ? "暗殺計画を準備" : "暗殺を実行").replace('data-crime-action="assassination"', `data-crime-action="assassination" data-crime-stage="${stage}"`)}</section>`;
+  const renderAssassinationTarget = (target) => crimePreviewCard("assassination", target, { riskLabel: target.riskLabel, targetName: target.name, expectedReward: { text: "政治的障害の排除" }, preparationRequirements: target.preparationRequirements, maximumPenalty: target.maximumPenalty }, target.regionId, stage === "start" ? "暗殺計画を開始" : stage === "started" ? "暗殺計画を準備" : "暗殺を実行").replace('data-crime-action="assassination"', `data-crime-action="assassination" data-crime-stage="${stage}"`);
+  const targetCards = (active ? visibleTargets.map(renderAssassinationTarget) : assassinationTargets.map(renderAssassinationTarget)).join("");
+  return `<section class="crime-context-section"><header><div><small>ILLEGAL / PERSON &amp; COMPANION</small><h2>非合法</h2></div><p>同行者は参加を拒否・通報・離脱する場合があります。</p></header>${companionField}<div class="crime-opportunity-grid">${targetCards}</div></section>`;
 }
 
 function renderVillagePanel() {
@@ -7526,21 +7526,11 @@ function executeCrimeActionFromUi(button) {
       return;
     }
     if (button.dataset.smugglingNext === "deliver") {
-      const delivered = deliverSmugglingCargo(state, { jurisdictionId: active.destinationJurisdiction.id });
+      const delivered = deliverSmugglingCargo(state);
       commit(delivered.state, `${active.cargo.name}を届け、${active.reward.text}を得ました。`, "confirm");
       return;
     }
-    if (!route) throw new Error("密輸経路の次の管轄を選んでください");
-    const checkpoint = inspectSmugglingCheckpoint(state, route);
-    if (checkpoint.result.outcome && checkpoint.result.outcome !== "clear") {
-      commit(checkpoint.state, crimeOutcomeMessage("密輸検問", checkpoint.result), "event");
-      return;
-    }
-    if (route.destination.id === active.destinationJurisdiction.id) {
-      const delivered = deliverSmugglingCargo(checkpoint.state, { jurisdictionId: active.destinationJurisdiction.id });
-      commit(delivered.state, `${active.cargo.name}を届け、${active.reward.text}を得ました。`, "confirm");
-    } else commit(checkpoint.state, "検問を通過し、密輸品の運搬を続けます。", "confirm");
-    return;
+    throw new Error("密輸品は地方地図から実際に移動して運んでください");
   }
   if (action === "sabotage") {
     const target = crimeOpportunityById(getSabotageTargets(state), targetId);
@@ -8440,11 +8430,19 @@ document.addEventListener("click", async (event) => {
       const travelPlan = getGeneratedExpeditionTravelOptions(state, regionId)
         .find((option) => option.id === travelMode);
       let next = moveGeneratedExpeditionToRegion(state, regionId, { mode: travelMode });
+      let smugglingCheckpointNote = "";
+      if (next.player.crime?.activeSmuggling) {
+        const checkpoint = inspectSmugglingCheckpoint(next);
+        next = checkpoint.state;
+        smugglingCheckpointNote = checkpoint.result.inspected
+          ? checkpoint.result.outcome === "clear" ? " 密輸検問を通過しました。" : ` ${crimeOutcomeMessage("密輸検問", checkpoint.result)}`
+          : "";
+      }
       if (next.generatedWorld?.lastTravel?.encounter) next = startGeneratedTravelEncounter(next);
       const destination = getGeneratedWorldView(next).expeditionRegion;
       view.pendingGeneratedDestinationId = null;
       view.pendingGeneratedTravelMode = "route";
-      await playGeneratedTravel(next, destination.name, `${travelPlan?.name ?? "道順"}で${destination.name}へ移動しました。${firstSelection ? " この方法を既定に設定しました。以降はバックメニューのオプションから変更できます。" : ""}`, travelPlan);
+      await playGeneratedTravel(next, destination.name, `${travelPlan?.name ?? "道順"}で${destination.name}へ移動しました。${smugglingCheckpointNote}${firstSelection ? " この方法を既定に設定しました。以降はバックメニューのオプションから変更できます。" : ""}`, travelPlan);
     } catch (error) {
       showToast(error.message, "danger");
     }

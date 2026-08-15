@@ -1,4 +1,4 @@
-import { CRIME_OUTCOMES, normalizeCrimeState, recordCrimeIncident } from "./crime-system.js";
+import { CRIME_OUTCOMES, CRIME_RISK_LABELS, normalizeCrimeState, recordCrimeIncident } from "./crime-system.js";
 import {
   createBattleMap,
   createBattleState,
@@ -7,7 +7,6 @@ import {
   setBattleTerrain,
 } from "./tactical-battle.js";
 
-const RISK_LABELS = Object.freeze(["低", "中", "高", "極高"]);
 
 function hashString(value) {
   let hash = 2166136261;
@@ -184,7 +183,7 @@ export function getRobberyOpportunities(state, context = {}) {
     target: { id: `caravan:${routeKey}:${entry.id}`, name: entry.name, kind: "caravan", guardCount: entry.guardCount + ((roll + index) % 2) },
     loot: { wealth: entry.wealth, text: `財産+${entry.wealth}` },
     baseRiskLevel: entry.risk,
-    riskLabel: RISK_LABELS[entry.risk],
+    riskLabel: CRIME_RISK_LABELS[entry.risk],
     preparationRequirements: ["退路を確認する", "隊商の護衛数を見極める"],
     maximumPenalty: "拘束、略奪品没収、強盗罪の処罰",
   }));
@@ -199,7 +198,7 @@ export function previewRobbery(state, opportunity) {
     targetId: opportunity.target.id,
     targetName: opportunity.target.name,
     riskLevel,
-    riskLabel: RISK_LABELS[riskLevel],
+    riskLabel: CRIME_RISK_LABELS[riskLevel],
     expectedReward: structuredClone(opportunity.loot),
     preparationRequirements: [...opportunity.preparationRequirements],
     maximumPenalty: opportunity.maximumPenalty,

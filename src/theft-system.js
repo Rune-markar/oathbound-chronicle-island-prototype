@@ -1,6 +1,4 @@
-import { CRIME_OUTCOMES, normalizeCrimeState, recordCrimeIncident } from "./crime-system.js";
-
-const RISK_LABELS = Object.freeze(["低", "中", "高", "極高"]);
+import { CRIME_OUTCOMES, CRIME_RISK_LABELS, normalizeCrimeState, recordCrimeIncident } from "./crime-system.js";
 
 function contextOf(context = {}) {
   const settlement = context.settlement ?? context.village ?? context.place ?? context;
@@ -54,7 +52,7 @@ export function getTheftOpportunities(_state, context = {}) {
       target: { id: `merchant:${location.settlementId}`, name: `${location.settlementName}の商人` },
       stolenItem: { id: `stolen:${location.settlementId}:merchant-goods`, name: "商人の小箱", normalValue: 5 },
       baseRiskLevel: 1,
-      riskLabel: RISK_LABELS[1],
+      riskLabel: CRIME_RISK_LABELS[1],
       expectedReward: { normalValue: 5, text: "換金可能な小箱" },
       preparationRequirements: ["商店が混み合う刻を待つ"],
       maximumPenalty: "拘束と窃盗罪の処罰",
@@ -69,7 +67,7 @@ export function getTheftOpportunities(_state, context = {}) {
       target: { id: `warehouse:${location.settlementId}`, name: `${location.settlementName}の倉庫` },
       stolenItem: { id: `stolen:${location.settlementId}:warehouse-crate`, name: "封印された荷箱", normalValue: 9 },
       baseRiskLevel: 2,
-      riskLabel: RISK_LABELS[2],
+      riskLabel: CRIME_RISK_LABELS[2],
       expectedReward: { normalValue: 9, text: "倉庫の荷箱" },
       preparationRequirements: ["倉庫番の巡回を確かめる", "荷を運ぶ手段を用意する"],
       maximumPenalty: "拘束、盗品没収、窃盗罪の処罰",
@@ -85,7 +83,7 @@ export function previewTheft(state, opportunity) {
     targetId: opportunity.target.id,
     targetName: opportunity.target.name,
     riskLevel,
-    riskLabel: RISK_LABELS[riskLevel],
+    riskLabel: CRIME_RISK_LABELS[riskLevel],
     expectedReward: structuredClone(opportunity.expectedReward),
     preparationRequirements: [...opportunity.preparationRequirements],
     maximumPenalty: opportunity.maximumPenalty,
