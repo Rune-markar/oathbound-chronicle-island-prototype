@@ -166,12 +166,52 @@ test("landscape shell keeps the map visible and moves detailed information into 
   assert.match(appSource, /function openLedgerDrawer\(\)/);
 });
 
-test("portrait screens are blocked by an explicit landscape-only orientation gate", () => {
-  assert.match(markup, /id="landscapeGuard"/);
-  assert.match(markup, /端末を横向きにしてください/);
-  assert.match(markup, /id="requestLandscape"/);
+test("compact landscape phones use a fixed top-map-bottom shell without page scrolling", () => {
+  const primaryTabs = markup.match(/<nav class="primary-tabs"[^>]*>[\s\S]*?<\/nav>/)?.[0] ?? "";
+  const expectedOrder = [
+    'data-shortcut-tab="world"',
+    'data-shortcut-tab="characters"',
+    'data-panel="governance"',
+    'data-panel="centralization"',
+    'data-panel="council"',
+    'data-mobile-more-toggle',
+  ];
+  expectedOrder.reduce((previousIndex, marker) => {
+    const index = primaryTabs.indexOf(marker);
+    assert.ok(index > previousIndex, `${marker} must keep its fixed mobile position`);
+    return index;
+  }, -1);
+  assert.match(primaryTabs, /id="mobileMoreMenu"[^>]*hidden/);
+  assert.match(primaryTabs, /data-panel="spending"/);
+  assert.match(primaryTabs, /data-panel="city"/);
+  assert.match(primaryTabs, /data-panel="town"/);
+  assert.match(primaryTabs, /data-panel="diplomacy"/);
+  assert.match(primaryTabs, /data-panel="military"/);
+  assert.match(markup, /id="ledgerDrawerScrim"[^>]*hidden/);
+  assert.match(styleSource, /@media \(max-width: 980px\) and \(orientation: landscape\)[\s\S]*?grid-template-rows: 34px minmax\(0, 1fr\) 44px;/);
+  assert.match(styleSource, /@media \(max-width: 980px\) and \(orientation: landscape\)[\s\S]*?\.primary-tabs\s*\{[^}]*grid-column: 1;[^}]*grid-row: 3;[^}]*grid-template-columns: repeat\(6, minmax\(0, 1fr\)\);/s);
+  assert.match(styleSource, /@media \(max-width: 980px\) and \(orientation: landscape\)[\s\S]*?\.ledger-drawer\s*\{[^}]*top: 34px;[^}]*bottom: 44px;[^}]*left: 0;[^}]*width: min\(45vw, 390px\);/s);
+  assert.match(styleSource, /overscroll-behavior: contain/);
+});
+
+test("compact mobile navigation preserves map state and exposes accessible locked and drawer states", () => {
+  assert.match(appSource, /mobileMoreOpen: false/);
+  assert.match(appSource, /function isCompactMobileShell\(\)/);
+  assert.match(appSource, /aria-current/);
+  assert.match(appSource, /aria-disabled/);
+  assert.match(appSource, /data-mobile-more-toggle/);
+  assert.match(appSource, /data-close-ledger-drawer/);
+  assert.match(appSource, /if \(!isCompactMobileShell\(\)\) clearTileDetailSelection\(\)/);
+  assert.match(appSource, /generatedMapLegendInitialized: false/);
+  assert.match(appSource, /view\.generatedMapLegendOpen = !isCompactMobileShell\(\)/);
+});
+
+test("portrait screens offer an app-controlled landscape start action", () => {
+  assert.match(markup, /id="landscapeGuardTitle">横画面でゲームを開始/);
+  assert.match(markup, /id="requestLandscape"[^>]*>横画面で開始/);
+  assert.match(markup, /id="landscapeGuardStatus"[^>]*role="status"[^>]*aria-live="polite"/);
+  assert.doesNotMatch(markup, /端末を横向きにしてください|横向きに回転/);
   assert.match(styleSource, /@media \(orientation: portrait\)[\s\S]*?\.landscape-guard\s*\{[\s\S]*?display: grid;/);
-  assert.match(appSource, /screen\.orientation\?\.lock\?\.\("landscape"\)/);
 });
 
 test("personal log ticker shows four rows and the full chronicle folds after ten entries", () => {
