@@ -5,6 +5,7 @@ import {
   createRegionalReputationState,
   recordRegionalAchievement,
 } from "./regional-reputation.js";
+import { advanceCrimeMonth, normalizeCrimeState } from "./crime-system.js";
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const clone = (value) => structuredClone(value);
@@ -207,6 +208,7 @@ export function initializeCareerState(baseState, options = {}) {
     title: "名もなき個人として街道へ立つ",
     text: "依頼を果たし、武勲、名声、財産、人脈を得て、自らの立場を選ぶ。", tone: "info",
   }];
+  normalizeCrimeState(next);
   return next;
 }
 
@@ -237,6 +239,7 @@ export function normalizeCareerState(state) {
     state.player.title = getTitleForCareerStage(state.player.stage, state.player.governmentFormId);
   }
   normalizeVillageLifeState(state);
+  normalizeCrimeState(state);
   return state;
 }
 
@@ -538,5 +541,5 @@ export function advanceCareerMonth(state) {
   next.player.authorityGrants = next.player.authorityGrants.filter((grant) => grant.expiresTurn == null || grant.expiresTurn >= next.turn);
   next.player.prohibitions = next.player.prohibitions.filter((item) => item.expiresTurn == null || item.expiresTurn >= next.turn);
   careerLog(next.player, next, "月が進む", "主君、諸侯、地域社会もそれぞれの利害に従って動いている。");
-  return next;
+  return advanceCrimeMonth(next);
 }

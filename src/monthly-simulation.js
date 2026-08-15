@@ -225,8 +225,34 @@ import {
   setDelegationAuthority as updateDelegationAuthority,
   setDelegationMandate as updateDelegationMandate,
 } from "./role-delegation.js";
+import {
+  CRIME_HEAT_GAINS,
+  CRIME_OUTCOMES,
+  CRIME_SCHEMA_VERSION,
+  advanceCrimeMonth,
+  discoverUnderworldContacts,
+  fenceStolenItem,
+  getCrimeStatusView,
+  normalizeCrimeState,
+  previewCrimeRisk,
+  recordCrimeIncident,
+  resolveAccompliceDecision,
+  resolveCrimeSentence,
+} from "./crime-system.js";
 
 export {
+  CRIME_HEAT_GAINS,
+  CRIME_OUTCOMES,
+  CRIME_SCHEMA_VERSION,
+  advanceCrimeMonth,
+  discoverUnderworldContacts,
+  fenceStolenItem,
+  getCrimeStatusView,
+  normalizeCrimeState,
+  previewCrimeRisk,
+  recordCrimeIncident,
+  resolveAccompliceDecision,
+  resolveCrimeSentence,
   ADMINISTRATION_MANDATES,
   ADMINISTRATION_MODES,
   AUTHORITY_DOMAINS,
@@ -2229,7 +2255,7 @@ function finalizeMonth(state, report) {
   }
   getServingOfficers(WORLD, state).forEach((officer) => { if (!state.officers[officer.id].assignment) state.officers[officer.id].stamina = clamp(state.officers[officer.id].stamina + 8, 0, 100); });
   logEntry(state, "月次", `${report.season} ${report.monthName}の月次報告`, `都市金 ${report.realm.money >= 0 ? "+" : ""}${report.realm.money.toFixed(1)}、食料 ${report.realm.food >= 0 ? "+" : ""}${Math.round(report.realm.food).toLocaleString("ja-JP")}。`, "info");
-  return state;
+  return state.player ? advanceCrimeMonth(state) : state;
 }
 
 function refreshReportTotals(state, report) {
