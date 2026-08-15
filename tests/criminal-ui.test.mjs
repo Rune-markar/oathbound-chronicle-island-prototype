@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { resolveCrimeRecovery } from "../src/crime-system.js";
+import { resolveCrimeEvent, resolveCrimeRecovery } from "../src/crime-system.js";
 
 const appSource = await readFile(new URL("../src/app.js", import.meta.url), "utf8");
 const stylesSource = await readFile(new URL("../styles.css", import.meta.url), "utf8");
@@ -115,12 +115,57 @@ test("surrender, escape, pardon, and asylum are real immutable transitions", () 
   assert.equal(escaped.generatedWorld.expeditionRegionId, "east");
   assert.equal(escaped.player.crime.recoveries[0].action, "escape");
 
-  const pardoned = resolveCrimeRecovery(stateWithCrime(), { action: "pardon", jurisdictionId: "west", authorized: true });
+  const sovereign = stateWithCrime();
+  sovereign.player.sovereign = true;
+  sovereign.player.governedJurisdictionIds = ["west"];
+  const pardoned = resolveCrimeRecovery(sovereign, { action: "pardon", jurisdictionId: "west", governedJurisdictionIds: ["west"] });
   assert.equal(pardoned.player.crime.heatByJurisdiction.west, 0);
   assert.equal(pardoned.player.crime.incidents[0].resolved, true);
+  assert.throws(() => resolveCrimeRecovery(sovereign, { action: "pardon", jurisdictionId: "east", governedJurisdictionIds: ["west"] }), /管轄/);
+  assert.throws(() => resolveCrimeRecovery(stateWithCrime(), { action: "pardon", jurisdictionId: "west", governedJurisdictionIds: ["west"] }), /主権/);
 
   const asylum = resolveCrimeRecovery(stateWithCrime(), { action: "asylum", jurisdictionId: "west", destinationJurisdictionId: "north" });
   assert.equal(asylum.player.locationId, "north");
   assert.equal(asylum.generatedWorld.selectedRegionId, "north");
   assert.equal(asylum.player.crime.recoveries[0].status, "exile");
+});
+
+test("seeded crime events expose every outcome and accomplice decision without hidden defaults", () => {
+  const outcomes = new Set();
+  const decisions = new Set();
+  for (let seed = 0; seed < 800; seed += 1) {
+    const event = resolveCrimeEvent({ seed: `campaign-${seed}`, turn: 12, targetId: "target-1", preparation: 2, accompliceId: "ally" });
+    outcomes.add(event.outcome);
+    decisions.add(event.accompliceDecision);
+  }
+  assert.deepEqual([...outcomes].sort(), ["captured", "failed_escaped", "success_exposed", "success_hidden"]);
+  assert.deepEqual([...decisions].sort(), ["accept", "refuse", "report"]);
+  assert.match(appSource, /executeSabotage\(state,\s*\{\s*outcome:\s*currentCrimeEvent\(active\)\.outcome/);
+  assert.match(appSource, /executeAssassination\(state,\s*\{\s*outcome:\s*currentCrimeEvent\(active\)\.outcome/);
+  assert.match(appSource, /decision:\s*event\.accompliceDecision/);
+});
+
+test("resisted robbery opens the existing tactical lifecycle and resolves only on real result exit", () => {
+  assert.match(appSource, /type:\s*["']robbery["']/);
+  assert.match(appSource, /resolveRobberyBattle\(state,\s*battleResult/);
+  assert.doesNotMatch(appSource, /autoResolveBattle\(threatened\.result\.battle\)/);
+});
+
+test("active smuggling, extortion variants, accomplices, and backed sabotage routes are rendered", () => {
+  assert.match(appSource, /renderActiveSmuggling/);
+  assert.match(appSource, /nextAction\s*=\s*atDestination\s*\?\s*["']deliver["']\s*:\s*route\s*\?\s*["']checkpoint["']/);
+  assert.match(appSource, /data-smuggling-next=/);
+  assert.match(appSource, /mode\s*===\s*["']recurring["']/);
+  assert.match(appSource, /collectExtortionPayment/);
+  assert.match(appSource, /data-extortion-collect/);
+  assert.match(appSource, /data-sabotage-accomplice/);
+  assert.match(appSource, /renderTravelSabotage/);
+  assert.match(appSource, /renderSettlementSabotage/);
+});
+
+test("crime controls avoid false disclosure state and enforce local support prerequisites", () => {
+  assert.doesNotMatch(appSource, /data-crime-action=[^>]*aria-expanded/);
+  assert.match(appSource, /hasLocalFence/);
+  assert.match(appSource, /allUnderworldRolesKnown/);
+  assert.match(appSource, /metrics\.wealth\s*<\s*1|metrics\?\.wealth\s*<\s*1/);
 });

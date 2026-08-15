@@ -1,6 +1,15 @@
 const clone = (value) => structuredClone(value);
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
+function hashCrimeEvent(value) {
+  let hash = 2166136261;
+  for (const character of String(value)) {
+    hash ^= character.codePointAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
 export const CRIME_SCHEMA_VERSION = 1;
 export const CRIME_OUTCOMES = Object.freeze([
   "success_hidden",
@@ -189,6 +198,18 @@ export function previewCrimeRisk(input = {}) {
     projectedHeat,
     currentHeatLabel: heatLabel(currentHeat),
     projectedHeatLabel: heatLabel(projectedHeat),
+  };
+}
+
+export function resolveCrimeEvent(input = {}) {
+  if (!input.targetId) throw new TypeError("犯罪イベントには具体的な対象IDが必要です");
+  const key = `${input.seed ?? "crime"}:${input.turn ?? 0}:${input.targetId}:${input.preparation ?? 0}:${input.accompliceId ?? "solo"}`;
+  const outcomeHash = hashCrimeEvent(`${key}:outcome`);
+  const decisionHash = hashCrimeEvent(`${key}:accomplice`);
+  return {
+    outcome: CRIME_OUTCOMES[outcomeHash % CRIME_OUTCOMES.length],
+    accompliceDecision: input.accompliceId ? ["accept", "refuse", "report"][decisionHash % 3] : null,
+    eventKey: key,
   };
 }
 
@@ -404,10 +425,8 @@ export function resolveCrimeRecovery(state, input = {}) {
     recovery.destinationJurisdictionId = destinationJurisdictionId;
     recovery.status = action === "asylum" ? "exile" : "escaped";
   } else if (action === "pardon") {
-    const authorized = input.authorized === true
-      || next.player.sovereign === true
-      || crime.contacts.some((entry) => entry.jurisdictionId === jurisdictionId && entry.role === "broker" && (entry.trust ?? 0) >= 40);
-    if (!authorized) throw new Error("恩赦には君主権、正式な許可、または信頼40の仲介人が必要です");
+    const governedJurisdictionIds = new Set(input.governedJurisdictionIds ?? []);
+    if (!next.player.sovereign || !governedJurisdictionIds.has(jurisdictionId)) throw new Error("恩赦は自ら主権統治する管轄にしか適用できません");
     crime.incidents.forEach((entry) => {
       if (jurisdictionIdOf(entry.jurisdiction) === jurisdictionId) entry.resolved = true;
     });
