@@ -46,12 +46,14 @@ export function getSmugglingOffers(state, context = {}) {
     { id: "sealed-tonic", name: "禁制の薬酒", reward: 8 },
   ];
   const offset = hashString(`${seed}:${origin.id}:${destination.id}`) % cargoTypes.length;
+  const routeJurisdictionIds = [...new Set([origin.id, ...(travel.pathRegionIds ?? []), destination.id])];
   return cargoTypes.map((_, index) => cargoTypes[(index + offset) % cargoTypes.length]).map((cargo) => ({
     id: `smuggling:${origin.id}:${destination.id}:${cargo.id}`,
     type: "smuggling",
     contactId: contact.id,
     originJurisdiction: { id: origin.id, name: origin.name ?? origin.id, nationId: origin.nationId ?? null },
     destinationJurisdiction: { id: destination.id, name: destination.name ?? destination.id, nationId: destination.nationId ?? null },
+    routeJurisdictionIds,
     cargo: { id: `mission-cargo:${origin.id}:${destination.id}:${cargo.id}`, name: cargo.name, kind: cargo.id },
     reward: { wealth: cargo.reward, text: `財産+${cargo.reward}` },
     deadlineTurn: (normalized.turn ?? 0) + Math.max(2, Math.ceil((travel.travelMinutes ?? 360) / 360) + 1),
@@ -74,6 +76,7 @@ export function acceptSmugglingOffer(state, offer) {
     cargo: structuredClone(offer.cargo),
     reward: structuredClone(offer.reward),
     deadlineTurn: offer.deadlineTurn,
+    routeJurisdictionIds: [...new Set(offer.routeJurisdictionIds ?? [offer.originJurisdiction.id, offer.destinationJurisdiction.id])],
     status: "active",
     acceptedTurn: next.turn ?? 0,
   };
@@ -85,13 +88,22 @@ export function inspectSmugglingCheckpoint(state, context = {}, options = {}) {
   const active = next.player.crime.activeSmuggling;
   if (!active || active.status !== "active") throw new Error("検査対象の密輸積荷がありません");
   const { origin, destination } = routeContext(context);
-  const sameJurisdiction = origin.id === destination.id || (origin.nationId && destination.nationId && origin.nationId === destination.nationId);
-  if (sameJurisdiction) return { state: next, result: { inspected: false, reason: "same_jurisdiction", outcome: null } };
+  const routeIds = active.routeJurisdictionIds ?? [active.originJurisdiction.id, active.destinationJurisdiction.id];
+  const fromIndex = routeIds.indexOf(origin.id);
+  const toIndex = routeIds.indexOf(destination.id);
+  const legitimateMovement = fromIndex >= 0 && toIndex >= 0 && (fromIndex === toIndex || toIndex === fromIndex + 1);
+  if (!legitimateMovement) throw new Error("受託した密輸品の運搬経路と一致しません");
+  const crossesJurisdiction = origin.id !== destination.id || context.crossesJurisdiction === true;
+  const crossesNationalBorder = Boolean(origin.nationId && destination.nationId && origin.nationId !== destination.nationId)
+    || context.crossesNationalBorder === true;
+  if (!crossesJurisdiction && !crossesNationalBorder) return { state: next, result: { inspected: false, reason: "same_jurisdiction", outcome: null } };
   const selected = options.outcome ?? ["clear", "seizure", "escape", "capture"][hashString(`${next.generatedWorld?.seed ?? "cargo"}:${active.offerId}:${origin.id}:${destination.id}:${next.turn ?? 0}`) % 4];
   if (selected === "clear") return { state: next, result: { inspected: true, outcome: "clear", cargoStatus: "active" } };
   if (!["seizure", "escape", "capture"].includes(selected)) throw new RangeError("検査結果が不正です");
   const commonOutcome = selected === "capture" ? "captured" : "failed_escaped";
-  const jurisdiction = { id: destination.id, name: destination.name ?? destination.id };
+  const jurisdiction = destination.id === active.destinationJurisdiction.id
+    ? active.destinationJurisdiction
+    : destination.id === active.originJurisdiction.id ? active.originJurisdiction : { id: destination.id, name: destination.id };
   const detected = recordDetection(next, active, jurisdiction, commonOutcome, selected === "escape" ? "active" : "seized");
   if (selected !== "escape") detected.player.crime.activeSmuggling = null;
   return { state: detected, result: { inspected: true, outcome: commonOutcome, checkpointOutcome: selected, cargoStatus: selected === "escape" ? "active" : "seized", captured: selected === "capture" } };

@@ -35,11 +35,12 @@ test("a discovered local smuggler supplies stable concrete offers and acceptance
   assert.equal(accepted.player.inventory, undefined);
 });
 
-test("checkpoint is skipped inside one jurisdiction and deterministic across a border", () => {
+test("checkpoint is skipped without a jurisdiction crossing and applies to same-nation regional borders", () => {
   const offer = getSmugglingOffers(baseState(), route)[0];
   const accepted = acceptSmugglingOffer(baseState(), offer);
   const same = inspectSmugglingCheckpoint(accepted, {
-    from: { id: "region-a", nationId: "nation-a" }, to: { id: "region-c", nationId: "nation-a" },
+    from: { id: "region-a", nationId: "nation-a" }, to: { id: "region-a", nationId: "nation-a" },
+    crossesJurisdiction: false,
   });
   assert.equal(same.result.inspected, false);
   assert.equal(same.result.reason, "same_jurisdiction");
@@ -48,6 +49,27 @@ test("checkpoint is skipped inside one jurisdiction and deterministic across a b
   assert.deepEqual(clear1, clear2);
   assert.equal(clear1.result.inspected, true);
   assert.equal(clear1.state.player.crime.activeSmuggling.status, "active");
+
+  const sameNationRoute = { ...route, destination: { ...route.destination, nationId: "nation-a" }, crossesJurisdiction: true, crossesNationalBorder: false };
+  const sameNationOffer = getSmugglingOffers(baseState(), sameNationRoute)[0];
+  const sameNationAccepted = acceptSmugglingOffer(baseState(), sameNationOffer);
+  const regionalInspection = inspectSmugglingCheckpoint(sameNationAccepted, sameNationRoute, { outcome: "clear" });
+  assert.equal(regionalInspection.result.inspected, true);
+  const cannotSuppressBoundary = inspectSmugglingCheckpoint(sameNationAccepted, { ...sameNationRoute, crossesJurisdiction: false }, { outcome: "clear" });
+  assert.equal(cannotSuppressBoundary.result.inspected, true);
+});
+
+test("checkpoint rejects unrelated movement immutably and cannot forge the incident jurisdiction", () => {
+  const offer = getSmugglingOffers(baseState(), route)[0];
+  const accepted = acceptSmugglingOffer(baseState(), offer);
+  const snapshot = structuredClone(accepted);
+  assert.throws(() => inspectSmugglingCheckpoint(accepted, {
+    origin: { id: "region-x", nationId: "nation-x" },
+    destination: { id: "region-y", nationId: "nation-y" },
+    crossesJurisdiction: true,
+  }, { outcome: "capture" }), /運搬経路/);
+  assert.deepEqual(accepted, snapshot);
+  assert.equal(accepted.player.crime.heatByJurisdiction?.["region-y"], undefined);
 });
 
 test("seizure, escape and capture persist distinct cargo outcomes and exact heat", () => {
@@ -67,6 +89,7 @@ test("seizure, escape and capture persist distinct cargo outcomes and exact heat
   assert.equal(captured.result.outcome, "captured");
   assert.equal(captured.state.player.crime.activeSmuggling, null);
   assert.equal(captured.state.player.metrics.wealth, 2);
+  assert.equal(captured.state.player.crime.incidents.at(-1).jurisdiction.id, "region-b");
 });
 
 test("delivery requires active cargo at its exact destination and raises wealth and contact trust", () => {

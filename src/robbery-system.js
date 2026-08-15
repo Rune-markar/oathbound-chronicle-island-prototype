@@ -25,21 +25,108 @@ function travelContext(context = {}) {
   return { origin, destination, travel: context.travel ?? {} };
 }
 
-function buildRobberyBattle(active, seed) {
+function unitClassForRole(role = "") {
+  if (/治療|僧侶|神官|術|魔/.test(role)) return "mage";
+  if (/弓|斥候|射/.test(role)) return "archer";
+  if (/騎/.test(role)) return "light_cavalry";
+  if (/槍/.test(role)) return "spearman";
+  return "infantry";
+}
+
+function robberyParticipants(state, active) {
+  const life = state.player?.villageLife;
+  const playerMaxHp = Math.max(1, Number(life?.maxHp) || 100);
+  const requestedIds = new Set((active.accomplices ?? []).map((entry) => entry.id ?? entry.memberId).filter(Boolean));
+  const party = (life?.party ?? []).filter((member) => (
+    member.active !== false
+    && member.alive !== false
+    && (requestedIds.size === 0 || requestedIds.has(member.id))
+  ));
+  return [
+    {
+      id: state.player?.id ?? "player",
+      name: state.player?.name ?? "主人公",
+      role: state.player?.title ?? state.player?.specialty ?? "冒険者",
+      hp: Math.max(0, Number.isFinite(Number(life?.hp)) ? Number(life.hp) : playerMaxHp),
+      maxHp: playerMaxHp,
+      player: true,
+    },
+    ...party.map((member) => ({
+      id: member.id,
+      name: member.name,
+      role: member.role ?? "冒険者",
+      hp: Math.max(0, Number(member.hp) || 0),
+      maxHp: Math.max(1, Number(member.maxHp) || 48),
+      player: false,
+    })),
+  ];
+}
+
+function buildRobberyBattle(state, active, seed) {
   const map = createBattleMap({ width: 8, height: 6, terrainType: "plain" });
   for (let x = 0; x < map.width; x += 1) setBattleTerrain(map, { x, y: 3 }, "road");
   const commanders = [
     createCommander({ id: "robbery-player", name: "襲撃側", side: "player", position: { x: 0, y: 3 } }),
     createCommander({ id: "robbery-caravan", name: "隊商護衛", side: "enemy", position: { x: 7, y: 3 } }),
   ];
+  const positions = [{ x: 1, y: 3 }, { x: 1, y: 1 }, { x: 1, y: 5 }, { x: 2, y: 2 }];
+  const playerUnits = robberyParticipants(state, active).map((member, index) => createCombatUnit({
+    id: `unit:${active.id}:player:${member.id}`,
+    name: member.name,
+    side: "player",
+    commanderId: "robbery-player",
+    soldierCount: 1,
+    maxSoldierCount: 1,
+    hp: member.hp,
+    maxHp: member.maxHp,
+    position: positions[index] ?? { x: 2, y: index % map.height },
+    unitClassId: unitClassForRole(member.role),
+    tags: ["PERSONAL_COMBATANT", member.player ? "PLAYER_CHARACTER" : "PARTY_MEMBER", `MEMBER_ID:${member.id}`, ...(member.player ? [] : [`PARTY_ID:${member.id}`])],
+    actionActorType: member.player ? "local_player" : "ai",
+  }));
   const units = [
-    createCombatUnit({ id: "robber-party", name: "襲撃者", side: "player", commanderId: "robbery-player", soldierCount: 1, maxSoldierCount: 1, position: { x: 1, y: 3 }, unitClassId: "infantry" }),
+    ...playerUnits,
     createCombatUnit({ id: "caravan-guard", name: "隊商護衛", side: "enemy", commanderId: "robbery-caravan", soldierCount: Math.max(1, active.target.guardCount), maxSoldierCount: Math.max(1, active.target.guardCount), position: { x: 6, y: 3 }, unitClassId: "infantry" }),
   ];
   const battle = createBattleState({ id: active.battleId, name: `${active.target.name}襲撃`, map, commanders, units, seed });
   battle.combatScale = "personal-units";
   battle.sideLabels = { player: "襲撃者", enemy: "隊商護衛" };
   return battle;
+}
+
+function persistParticipantResult(next, active, battleResult) {
+  const life = next.player?.villageLife;
+  const allowed = new Set(active.participantIds ?? []);
+  const members = battleResult.player?.members ?? [];
+  for (const memberResult of members) {
+    const memberId = memberResult.tags?.find((tag) => tag.startsWith("MEMBER_ID:"))?.slice("MEMBER_ID:".length);
+    if (!memberId || !allowed.has(memberId)) continue;
+    const remainingHp = Math.max(0, Number(memberResult.remainingHp) || 0);
+    const maxHp = Math.max(1, Number(memberResult.maxHp) || 1);
+    const alive = memberResult.state !== "DESTROYED" && remainingHp > 0;
+    if (memberResult.tags?.includes("PLAYER_CHARACTER")) {
+      if (!life || memberId !== (next.player.id ?? "player")) continue;
+      life.maxHp = Math.max(1, Number(life.maxHp) || maxHp);
+      life.hp = Math.min(life.maxHp, remainingHp);
+      life.injuries ??= [];
+      if (life.hp < life.maxHp && !life.injuries.some((entry) => String(entry).startsWith("戦闘負傷"))) {
+        life.injuries.push(`戦闘負傷（${life.hp <= 0 ? "瀕死" : life.hp < 35 ? "重傷" : "軽傷"}）`);
+      }
+      continue;
+    }
+    const updateParty = (party) => {
+      const member = party?.find((entry) => entry.id === memberId);
+      if (!member) return;
+      member.maxHp = maxHp;
+      member.hp = Math.min(maxHp, remainingHp);
+      member.battleState = memberResult.state;
+      member.lastBattleOutcome = battleResult.winner;
+      member.alive = alive;
+      if (!alive) member.active = false;
+    };
+    updateParty(life?.party);
+    updateParty(next.adventure?.party);
+  }
 }
 
 function finishRobbery(state, active, outcome, detected, casualtyRecord = null) {
@@ -149,7 +236,11 @@ export function resolveRobberyThreat(state, options = {}) {
   }
   if (outcome !== "resist") throw new RangeError("威圧結果が不正です");
   active.stage = "battle";
-  const battle = buildRobberyBattle(active, hashString(`${next.generatedWorld?.seed ?? "road"}:${active.battleId}`));
+  const battle = buildRobberyBattle(next, active, hashString(`${next.generatedWorld?.seed ?? "road"}:${active.battleId}`));
+  active.participantIds = battle.units
+    .filter((unit) => unit.side === "player")
+    .map((unit) => unit.tags.find((tag) => tag.startsWith("MEMBER_ID:"))?.slice("MEMBER_ID:".length))
+    .filter(Boolean);
   return { state: next, result: { outcome: "resist", battle } };
 }
 
@@ -166,6 +257,7 @@ export function resolveRobberyBattle(state, battleResult, options = {}) {
     target: Number(battleResult.enemy?.casualties) || 0,
   };
   const finished = finishRobbery(normalized, active, outcome, detected || outcome === "captured", casualties);
+  persistParticipantResult(finished.state, active, battleResult);
   finished.state.player.crime.robberyResults[0].participants = {
     player: structuredClone(battleResult.player?.members ?? []),
     target: structuredClone(battleResult.enemy?.members ?? []),
