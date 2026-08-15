@@ -37,11 +37,11 @@ import {
 } from "./world-intelligence.js";
 
 export const GENERATED_WORLD_DEFAULTS = Object.freeze({
-  version: 13,
+  version: 14,
   seed: "eldoria-317",
-  width: 160,
-  height: 100,
-  plateCount: 22,
+  width: 192,
+  height: 120,
+  plateCount: 28,
   nationCount: 7,
   playerNationId: "nation-1",
   selectedRegionId: null,
@@ -86,7 +86,7 @@ function normalizedTravelModePreference(value) {
 }
 
 function generatedWorldRuntimeKey(generatedState) {
-  return ["regional-hd-v8-barbarian-frontier", generatedState.seed, generatedState.width, generatedState.height, generatedState.plateCount, generatedState.nationCount].join("|");
+  return ["regional-hd-v9-continental-scale", generatedState.seed, generatedState.width, generatedState.height, generatedState.plateCount, generatedState.nationCount].join("|");
 }
 
 function cloneGeneratedWorldState(value) {
@@ -567,13 +567,17 @@ export function createGeneratedWorldState(options = {}, dateState = null) {
     && Number(options.width) === 120
     && Number(options.height) === 80
     && Number(options.plateCount) === 16;
-  const upgradeResolution = upgradeLegacyResolution || upgradePreviousResolution;
+  const upgradeContinentalResolution = Number(options.version ?? 0) < 14
+    && Number(options.width) === 160
+    && Number(options.height) === 100
+    && Number(options.plateCount) === 22;
+  const upgradeResolution = upgradeLegacyResolution || upgradePreviousResolution || upgradeContinentalResolution;
   return {
     ...GENERATED_WORLD_DEFAULTS,
     seed: String(options.seed ?? GENERATED_WORLD_DEFAULTS.seed).slice(0, 80) || GENERATED_WORLD_DEFAULTS.seed,
-    width: clampInteger(upgradeResolution ? GENERATED_WORLD_DEFAULTS.width : options.width, GENERATED_WORLD_DEFAULTS.width, 24, 160),
-    height: clampInteger(upgradeResolution ? GENERATED_WORLD_DEFAULTS.height : options.height, GENERATED_WORLD_DEFAULTS.height, 16, 100),
-    plateCount: clampInteger(upgradeResolution ? GENERATED_WORLD_DEFAULTS.plateCount : options.plateCount, GENERATED_WORLD_DEFAULTS.plateCount, 3, 32),
+    width: clampInteger(upgradeResolution ? GENERATED_WORLD_DEFAULTS.width : options.width, GENERATED_WORLD_DEFAULTS.width, 24, 192),
+    height: clampInteger(upgradeResolution ? GENERATED_WORLD_DEFAULTS.height : options.height, GENERATED_WORLD_DEFAULTS.height, 16, 120),
+    plateCount: clampInteger(upgradeResolution ? GENERATED_WORLD_DEFAULTS.plateCount : options.plateCount, GENERATED_WORLD_DEFAULTS.plateCount, 3, 36),
     nationCount: clampInteger(options.nationCount, GENERATED_WORLD_DEFAULTS.nationCount, 3, 12),
     playerNationId: typeof options.playerNationId === "string" ? options.playerNationId : GENERATED_WORLD_DEFAULTS.playerNationId,
     selectedRegionId: typeof options.selectedRegionId === "string" ? options.selectedRegionId : null,

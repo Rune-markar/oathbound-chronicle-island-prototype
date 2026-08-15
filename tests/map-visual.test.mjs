@@ -117,8 +117,10 @@ test("normal play generates the whole world, then zooms to region-level movement
   assert.match(generatedWorldSource, /tile\.regionId/);
   assert.doesNotMatch(appSource, /function renderGeneratedRegionCells/);
   assert.doesNotMatch(appSource, /generated-region-layer/);
-  assert.match(generatedWorldSource, /width: 160/);
-  assert.match(generatedWorldSource, /height: 100/);
+  assert.match(generatedWorldSource, /width: 192/);
+  assert.match(generatedWorldSource, /height: 120/);
+  assert.match(appSource, /clientWidth/);
+  assert.match(appSource, /clientHeight/);
   assert.match(generatedWorldSource, /expeditionRegionId/);
   assert.match(generatedWorldSource, /pathRegionIds/);
   assert.match(appSource, /pixelsPerTile: 12/);

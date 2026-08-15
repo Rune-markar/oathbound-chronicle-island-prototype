@@ -116,6 +116,9 @@ import {
   getPersonalChronicleView,
   performCareerAction,
   performVillageAction,
+  acceptEquipmentUpgrade,
+  dismissEquipmentUpgrade,
+  getEquipmentUpgradeOffer,
   setPartyMemberActive,
   reassignDelegatedRole,
   queueOrder,
@@ -135,6 +138,11 @@ import {
   setOccupationPolicy,
   setWarPlan,
 } from "./simulation.js";
+import {
+  AUTOSAVE_INTERVAL_MS,
+  markChronicleSaved,
+  resumeDelegatedChronicle,
+} from "./offline-delegation.js";
 import {
   NOTION_OTHER_RACE_IDS,
   EXTREME_CREATURES,
@@ -386,7 +394,11 @@ function cityArt(cityId) {
   return CITY_ART[cityId] ?? CITY_ART.selene;
 }
 
-let state = normalizeAdventureState(refreshGeneratedWorldForDate(loadState() ?? createCareerInitialState()));
+const loadedChronicle = loadState();
+const offlineResume = loadedChronicle
+  ? resumeDelegatedChronicle(loadedChronicle, advanceCareerMonth)
+  : { state: createCareerInitialState(), report: null };
+let state = normalizeAdventureState(refreshGeneratedWorldForDate(offlineResume.state));
 if (state.centralizationCampaign?.ending) state.council.pending = false;
 let toastTimer = null;
 let previewCache = { state: null, value: null };
@@ -395,6 +407,8 @@ let tacticalEffectTimer = null;
 let tacticalEffectsPlaying = false;
 let adventureAdvanceTimer = null;
 let goddessSequenceToken = 0;
+let equipmentOfferTimer = null;
+let singleChoiceTimer = null;
 let generatedMapPanGesture = null;
 let floatingWindowGesture = null;
 let suppressGeneratedMapClickUntil = 0;
@@ -485,6 +499,8 @@ const view = {
     || (state.campaign?.ending && state.lastViewedEndingId !== state.campaign.ending.id)
   ),
   resetOpen: false,
+  offlineReport: offlineResume.report,
+  offlineReportOpen: Boolean(offlineResume.report),
   expertMode: false,
 };
 
@@ -610,6 +626,9 @@ const elements = {
   eventArt: document.querySelector("#eventArt"),
   eventLocation: document.querySelector("#eventLocation"),
   eventChoices: document.querySelector("#eventChoices"),
+  offlineReportModal: document.querySelector("#offlineReportModal"),
+  offlineReportContent: document.querySelector("#offlineReportContent"),
+  equipmentUpgradePrompt: document.querySelector("#equipmentUpgradePrompt"),
   guideModal: document.querySelector("#guideModal"),
   endingModal: document.querySelector("#endingModal"),
   endingContent: document.querySelector("#endingContent"),
@@ -635,6 +654,7 @@ function loadState() {
 }
 
 function persist(showMessage = false) {
+  state = markChronicleSaved(state);
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   if (showMessage) {
     audio.play("save");
@@ -1192,6 +1212,7 @@ async function resetChronicle(options = {}, flow = {}) {
   view.resetOpen = false;
   view.generation = { active: true, progress: 1, stage: "seed", label: "新しい世界の生成を開始します", error: null };
   renderLaunchScreen();
+  await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
   try {
     const generatedState = createGeneratedWorldState({ ...options, seed });
     const generatedWorldRuntime = await buildGeneratedWorldAsync(generatedState, ({ progress, stage, label }) => {
@@ -1220,7 +1241,7 @@ async function resetChronicle(options = {}, flow = {}) {
       selectedType: null, selectedId: null, selectedTileName: null, selectedTerrain: null, selectedTerrainType: null, tileWindowOpen: false,
       selectedCityId: "selene", cityTab: "overview", selectedTownId: "mugiwano", townTab: "overview", selectedVillageId: null, selectedVillageFacilityId: "inn", villageFacilityOpen: false, tavernSection: "requests", villageConversation: null, locationScene: null, selectedLocationZoneId: null, locationSceneResult: null, adventureOpen: false, selectedAuthorityDomain: "justice", selectedNationalReformSystem: "population_land_knowledge",
       selectedFacilityId: "farmland", selectedCountryId: "valka", objectiveId: "transit", warMapView: "atlas", warRegionId: null, selectedWarHexId: null, warCouncilOpen: false, assignmentOpen: false,
-      pendingTownId: null, guideOpen: false, endingOpen: false, resetOpen: false, expertMode: false, atlasMode: "generated", generatedMapScale: "region", generatedMapLegendOpen: true, generatedPanX: 0, generatedPanY: 0, generatedConfirmOffsetX: 0, generatedConfirmOffsetY: 0, pendingGeneratedDestinationId: null, pendingGeneratedTravelMode: "route",
+      pendingTownId: null, guideOpen: false, endingOpen: false, resetOpen: false, offlineReport: null, offlineReportOpen: false, expertMode: false, atlasMode: "generated", generatedMapScale: "region", generatedMapLegendOpen: true, generatedPanX: 0, generatedPanY: 0, generatedConfirmOffsetX: 0, generatedConfirmOffsetY: 0, pendingGeneratedDestinationId: null, pendingGeneratedTravelMode: "route",
       selectedGeneratedNationId: nextState.generatedWorld.playerNationId, worldNationFilter: "all", focusedTownCommandId: null,
       characterCreationOpen: Boolean(flow.deferLaunch), characterDraft: flow.deferLaunch ? view.characterDraft : null,
     });
@@ -1266,6 +1287,11 @@ async function beginGoddessReincarnation(draft) {
     generationReady: false,
   };
   renderLaunchScreen();
+  const goddessPortrait = elements.characterCreation?.querySelector(".goddess-portrait img, .goddess-prologue img, img");
+  if (goddessPortrait && !goddessPortrait.complete) {
+    await Promise.race([goddessPortrait.decode?.().catch(() => undefined), delay(800)]);
+  }
+  await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
   const options = {
     seed: draft.worldSeed,
     name: draft.name,
@@ -4623,9 +4649,13 @@ function generatedRegionViewport(region, expeditionTile, runtime) {
   const maxY = Math.max(...points.map((point) => point.y));
   let width = Math.min(runtime.terrain.width, Math.max(28, maxX - minX + 9));
   let height = Math.min(runtime.terrain.height, Math.max(18, maxY - minY + 7));
-  const targetAspect = 1.58;
+  const mapWidth = elements.generatedWorldStrip?.clientWidth ?? 0;
+  const mapHeight = elements.generatedWorldStrip?.clientHeight ?? 0;
+  const targetAspect = mapWidth > 0 && mapHeight > 0 ? Math.min(2.4, Math.max(0.55, mapWidth / mapHeight)) : 1.58;
   if (width / height < targetAspect) width = Math.min(runtime.terrain.width, height * targetAspect);
   else height = Math.min(runtime.terrain.height, width / targetAspect);
+  if (width >= runtime.terrain.width) height = Math.min(runtime.terrain.height, width / targetAspect);
+  if (height >= runtime.terrain.height) width = Math.min(runtime.terrain.width, height * targetAspect);
   let expeditionX = expeditionTile.x;
   const expeditionDx = expeditionX - anchor.x;
   if (runtime.terrain.config.wrapX && Math.abs(expeditionDx) > runtime.terrain.width / 2) {
@@ -5657,6 +5687,8 @@ function renderAssignmentModal() {
 }
 
 function renderEventModal() {
+  clearTimeout(singleChoiceTimer);
+  singleChoiceTimer = null;
   const open = state.phase === "event" && state.pendingEvent;
   elements.eventModal.classList.toggle("is-hidden", !open);
   if (!open) return;
@@ -5671,6 +5703,38 @@ function renderEventModal() {
       <strong>${choice.name}</strong><span>${choice.detail}</span><small>この選択で月次報告を確定</small>
     </button>
   `).join("");
+  if (definition.choices.length === 1) {
+    elements.eventLocation.textContent += " · 一択のため3秒後に自動決定";
+    singleChoiceTimer = setTimeout(() => elements.eventChoices.querySelector("button:not(:disabled)")?.click(), 3000);
+  }
+}
+
+function renderOfflineReport() {
+  const report = view.offlineReport;
+  const open = Boolean(view.offlineReportOpen && report);
+  elements.offlineReportModal?.classList.toggle("is-hidden", !open);
+  if (!open || !elements.offlineReportContent) return;
+  elements.offlineReportContent.innerHTML = `<header><small>RETURN CHRONICLE</small><h2>留守中の年代記</h2></header>
+    <p>不在中の${report.monthsAdvanced}か月を、任命済みの役職・方針に従って進行しました。</p>
+    <dl><div><dt>経過</dt><dd>${report.monthsAdvanced}か月</dd></div><div><dt>重大判断</dt><dd>${report.pendingDecisions.join("・") || "保留なし"}</dd></div></dl>
+    ${report.events.length ? `<ul>${report.events.map((event) => `<li>${escapeHtml(event)}</li>`).join("")}</ul>` : ""}
+    <button type="button" data-close-offline-report>年代記を閉じる</button>`;
+}
+
+function renderEquipmentUpgradePrompt() {
+  clearTimeout(equipmentOfferTimer);
+  equipmentOfferTimer = null;
+  const offer = getEquipmentUpgradeOffer(state);
+  elements.equipmentUpgradePrompt?.classList.toggle("is-visible", Boolean(offer));
+  if (!offer || !elements.equipmentUpgradePrompt) {
+    if (elements.equipmentUpgradePrompt) elements.equipmentUpgradePrompt.innerHTML = "";
+    return;
+  }
+  elements.equipmentUpgradePrompt.innerHTML = `<small>BETTER EQUIPMENT</small><strong>${escapeHtml(offer.item.name)}</strong><span>${escapeHtml(offer.equipped?.name ?? "装備なし")}より強力です</span><div><button type="button" data-accept-equipment-upgrade>装備する</button><button type="button" data-dismiss-equipment-upgrade>保留</button></div>`;
+  equipmentOfferTimer = setTimeout(() => {
+    if (!getEquipmentUpgradeOffer(state)) return;
+    commit(dismissEquipmentUpgrade(state), "装備候補を所持品へ保管しました。", null);
+  }, 6000);
 }
 
 function renderLaunchScreen() {
@@ -6780,6 +6844,8 @@ function render() {
   renderWarCouncil();
   renderAssignmentModal();
   renderEventModal();
+  renderOfflineReport();
+  renderEquipmentUpgradePrompt();
   renderGuideModal();
   renderEndingModal();
   renderResetModal();
@@ -8654,7 +8720,24 @@ elements.warBoard.addEventListener("keydown", (event) => {
 });
 elements.tacticalMapScroll?.addEventListener("scroll", positionTacticalInspector, { passive: true });
 window.addEventListener("resize", positionTacticalInspector);
+window.addEventListener("resize", () => {
+  generatedMapVisualCache.key = null;
+  renderMap();
+});
 window.addEventListener("beforeunload", () => persist());
+window.addEventListener("pagehide", () => persist());
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") persist(); });
+setInterval(() => persist(), AUTOSAVE_INTERVAL_MS);
+elements.offlineReportModal?.addEventListener("click", (event) => {
+  if (event.target === elements.offlineReportModal || event.target.closest("[data-close-offline-report]")) {
+    view.offlineReportOpen = false;
+    renderOfflineReport();
+  }
+});
+elements.equipmentUpgradePrompt?.addEventListener("click", (event) => {
+  if (event.target.closest("[data-accept-equipment-upgrade]")) commit(acceptEquipmentUpgrade(state), "より強力な装備へ入れ替えました。");
+  if (event.target.closest("[data-dismiss-equipment-upgrade]")) commit(dismissEquipmentUpgrade(state), "装備候補を所持品へ保管しました。", null);
+});
 
 subdivideTerritoryTiles(elements.strategyMap);
 render();

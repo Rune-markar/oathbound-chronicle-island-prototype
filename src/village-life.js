@@ -265,8 +265,8 @@ function defaultVillageLife() {
       { id: "iron-fragment", name: "鉄片", category: "material", quantity: 1 },
     ],
     equipment: {
-      weapon: { id: "traveler-sword", name: "旅人の剣", category: "equipment", slot: "weapon", enhancement: 0, durability: 100, identified: true },
-      armor: { id: "traveler-coat", name: "旅人の外套", category: "equipment", slot: "armor", enhancement: 0, durability: 100, identified: true },
+      weapon: { id: "traveler-sword", name: "旅人の剣", category: "equipment", slot: "weapon", power: 1, enhancement: 0, durability: 100, identified: true },
+      armor: { id: "traveler-coat", name: "旅人の外套", category: "equipment", slot: "armor", power: 1, enhancement: 0, durability: 100, identified: true },
     },
     storage: { items: [], equipment: [], materials: [] },
     party: [],
@@ -289,6 +289,7 @@ function defaultVillageLife() {
     serviceRoutes: {},
     actionHistory: [],
     lastAction: null,
+    equipmentUpgradeOffer: null,
   };
 }
 
@@ -330,6 +331,57 @@ export function createVillageLifeState(source = {}) {
     serviceRoutes: clone(source?.serviceRoutes ?? {}),
     actionHistory: arrayCopy(source?.actionHistory),
     lastAction: source?.lastAction ? clone(source.lastAction) : null,
+    equipmentUpgradeOffer: source?.equipmentUpgradeOffer ? clone(source.equipmentUpgradeOffer) : null,
+  };
+}
+
+export function equipmentStrength(item) {
+  if (!item) return 0;
+  return Math.max(0, Number(item.power) || 0) + Math.max(0, Number(item.enhancement) || 0);
+}
+
+export function getEquipmentUpgradeOffer(state) {
+  const life = state?.player?.villageLife;
+  const offer = life?.equipmentUpgradeOffer;
+  if (!offer) return null;
+  const item = life.inventory.find((entry) => entry.id === offer.itemId && (entry.quantity ?? 1) > 0);
+  const equipped = life.equipment?.[offer.slot];
+  if (!item || equipmentStrength(item) <= equipmentStrength(equipped)) return null;
+  return { ...offer, item, equipped };
+}
+
+export function acceptEquipmentUpgrade(state) {
+  const next = clone(state);
+  normalizeVillageLifeState(next);
+  const life = next.player.villageLife;
+  const offer = getEquipmentUpgradeOffer(next);
+  if (!offer) throw new Error("入れ替え可能な装備が見つかりません。");
+  const index = life.inventory.findIndex((entry) => entry.id === offer.item.id);
+  const replacement = removeOneInventoryItem(life, index);
+  const previous = life.equipment[offer.slot];
+  life.equipment[offer.slot] = replacement;
+  if (previous) addInventory(life, { ...previous, quantity: 1 });
+  life.equipmentUpgradeOffer = null;
+  return next;
+}
+
+export function dismissEquipmentUpgrade(state) {
+  const next = clone(state);
+  normalizeVillageLifeState(next);
+  next.player.villageLife.equipmentUpgradeOffer = null;
+  return next;
+}
+
+function queueBestEquipmentUpgrade(life, candidates) {
+  const best = candidates
+    .filter((item) => item.category === "equipment" && item.identified !== false)
+    .filter((item) => equipmentStrength(item) > equipmentStrength(life.equipment?.[item.slot ?? "weapon"]))
+    .sort((left, right) => equipmentStrength(right) - equipmentStrength(left))[0];
+  if (!best) return;
+  life.equipmentUpgradeOffer = {
+    id: `${best.id}-${life.actionHistory.length + 1}`,
+    itemId: best.id,
+    slot: best.slot ?? "weapon",
   };
 }
 
@@ -568,6 +620,9 @@ export function performVillageAction(state, villageInput, actionId, options = {}
   normalizeVillageLifeState(next);
   const player = next.player;
   const life = player.villageLife;
+  const equipmentCountsBefore = new Map(life.inventory
+    .filter((item) => item.category === "equipment")
+    .map((item) => [item.id, item.quantity ?? 1]));
   player.metrics.wealth = Math.max(0, (player.metrics.wealth ?? 0) - (access.chargedCost ?? access.cost));
   if (access.deferredCost) life.templeDebt = Number(((life.templeDebt ?? 0) + access.deferredCost).toFixed(1));
   let message = definition.description;
@@ -591,11 +646,11 @@ export function performVillageAction(state, villageInput, actionId, options = {}
       message = "酒場で温かい食事を取り、周囲の客と同じ卓を囲んだ。土地で名が知られていれば、同行の誘いを受けることがある。";
       break;
     case "buy_weapon":
-      addInventory(life, { id: "village-steel-sword", name: "村鍛冶の鋼剣", category: "equipment", slot: "weapon", enhancement: 0, durability: 100, identified: true, quantity: 1 });
+      addInventory(life, { id: "village-steel-sword", name: "村鍛冶の鋼剣", category: "equipment", slot: "weapon", power: 3, enhancement: 0, durability: 100, identified: true, quantity: 1 });
       message = "村鍛冶の鋼剣を購入した。";
       break;
     case "buy_armor":
-      addInventory(life, { id: "reinforced-travel-coat", name: "補強旅装", category: "equipment", slot: "armor", enhancement: 0, durability: 100, identified: true, quantity: 1 });
+      addInventory(life, { id: "reinforced-travel-coat", name: "補強旅装", category: "equipment", slot: "armor", power: 3, enhancement: 0, durability: 100, identified: true, quantity: 1 });
       message = "補強旅装を購入した。";
       break;
     case "buy_tools": addInventory(life, { id: "healing-herb", name: "薬草", category: "item", quantity: 2 }); message = "薬草を2個購入した。"; break;
@@ -823,6 +878,11 @@ export function performVillageAction(state, villageInput, actionId, options = {}
   if (access.companionDiscountRate > 0) message += " カティアの「街道相場帳」により購入費が12%軽減された。";
   const unlockedRoutes = issueServiceInvitations(next, village);
   if (unlockedRoutes.length) message += ` ${unlockedRoutes.map((route) => `「${route.name}」`).join("・")}の士官経路が開いた。`;
+  const newlyAvailableEquipment = life.inventory.filter((item) => item.category === "equipment" && (
+    actionId === "appraise_equipment"
+    || (item.quantity ?? 1) > (equipmentCountsBefore.get(item.id) ?? 0)
+  ));
+  queueBestEquipmentUpgrade(life, newlyAvailableEquipment);
   recordVillageAction(next, village, definition, message);
   return next;
 }

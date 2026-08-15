@@ -10,11 +10,11 @@ import {
 const clamp = (value, min = 0, max = 1) => Math.min(max, Math.max(min, value));
 
 export const TERRAIN_GENERATION_DEFAULTS = Object.freeze({
-  width: 160,
-  height: 100,
+  width: 192,
+  height: 120,
   seed: "eldoria",
   wrapX: true,
-  plateCount: 22,
+  plateCount: 28,
   landRatio: 0.44,
   worldAge: 0.58,
   rainfall: 1,

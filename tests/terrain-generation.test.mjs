@@ -13,9 +13,9 @@ import { renderTerrainSvg } from "../src/terrain-renderer.js";
 const TEST_SIZE = { width: 48, height: 32, plateCount: 9, erosionIterations: 4 };
 
 test("production terrain defaults use the high-resolution world grid", () => {
-  assert.equal(TERRAIN_GENERATION_DEFAULTS.width, 160);
-  assert.equal(TERRAIN_GENERATION_DEFAULTS.height, 100);
-  assert.equal(TERRAIN_GENERATION_DEFAULTS.plateCount, 22);
+  assert.equal(TERRAIN_GENERATION_DEFAULTS.width, 192);
+  assert.equal(TERRAIN_GENERATION_DEFAULTS.height, 120);
+  assert.equal(TERRAIN_GENERATION_DEFAULTS.plateCount, 28);
   assert.equal(TERRAIN_GENERATION_DEFAULTS.templateCount, 14);
 });
 

@@ -15172,3 +15172,51 @@ body.is-location-focus .village-central-status article > strong { font-size: cla
   .world-arrival-rings i,
   .world-arrival-copy > span i { animation: none; }
 }
+.offline-report-board {
+  width: min(540px, calc(100vw - 32px));
+  max-height: min(720px, calc(100dvh - 32px));
+  overflow: auto;
+  padding: 28px;
+  border: 1px solid rgba(201, 176, 112, .55);
+  background: linear-gradient(145deg, rgba(22, 27, 31, .98), rgba(38, 31, 25, .98));
+  color: #f3ead5;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, .6);
+}
+
+.offline-report-board header small,
+.equipment-upgrade-prompt > small { color: #d2b872; letter-spacing: .16em; }
+.offline-report-board h2 { margin: 5px 0 18px; font-family: serif; font-size: clamp(1.65rem, 5vw, 2.3rem); }
+.offline-report-board dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.offline-report-board dl div { padding: 12px; border: 1px solid rgba(255,255,255,.12); }
+.offline-report-board dt { color: #bdb5a6; font-size: .75rem; }
+.offline-report-board dd { margin: 5px 0 0; font-weight: 700; }
+.offline-report-board button { margin-top: 18px; width: 100%; }
+
+.equipment-upgrade-prompt {
+  position: fixed;
+  z-index: 140;
+  top: 78px;
+  right: 18px;
+  display: grid;
+  gap: 5px;
+  width: min(340px, calc(100vw - 28px));
+  padding: 16px;
+  border: 1px solid rgba(210, 184, 114, .7);
+  background: rgba(19, 24, 28, .96);
+  color: #f4ead1;
+  box-shadow: 0 16px 50px rgba(0,0,0,.55);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(calc(100% + 30px));
+  transition: opacity .2s ease, transform .25s ease;
+}
+.equipment-upgrade-prompt.is-visible { opacity: 1; pointer-events: auto; transform: translateX(0); }
+.equipment-upgrade-prompt strong { font-size: 1.15rem; }
+.equipment-upgrade-prompt span { color: #c9c3b5; font-size: .85rem; }
+.equipment-upgrade-prompt div { display: flex; gap: 8px; margin-top: 8px; }
+.equipment-upgrade-prompt button { flex: 1; }
+
+@media (max-width: 640px) {
+  .equipment-upgrade-prompt { top: auto; right: 14px; bottom: calc(76px + env(safe-area-inset-bottom)); }
+  .offline-report-board { padding: 20px; }
+}

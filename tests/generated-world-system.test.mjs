@@ -50,8 +50,8 @@ function establishColonizationReputation(state) {
 test("a new campaign stores a compact reproducible generated-world state", () => {
   const state = createInitialState();
   assert.equal(state.generatedWorld.version, GENERATED_WORLD_DEFAULTS.version);
-  assert.equal(state.generatedWorld.width, 160);
-  assert.equal(state.generatedWorld.height, 100);
+  assert.equal(state.generatedWorld.width, 192);
+  assert.equal(state.generatedWorld.height, 120);
   assert.equal(state.generatedWorld.nationCount, 7);
   assert.equal(state.generatedWorld.expeditionClockMinutes, 8 * 60);
   assert.deepEqual(getGeneratedWorldTimeView(state), {
@@ -69,7 +69,7 @@ test("a new campaign stores a compact reproducible generated-world state", () =>
   assert.equal(saved.includes("terrain"), false);
   assert.deepEqual(generatedWorldSaveSummary(state), {
     seed: "eldoria-317",
-    size: "160x100",
+    size: "192x120",
     nationCount: 7,
     playerNationId: "nation-1",
     expeditionRegionId: null,
@@ -189,9 +189,9 @@ test("legacy default-resolution worlds upgrade to the high-resolution grid witho
   };
   const normalized = normalizeWarState(state);
   assert.equal(normalized.generatedWorld.version, GENERATED_WORLD_DEFAULTS.version);
-  assert.equal(normalized.generatedWorld.width, 160);
-  assert.equal(normalized.generatedWorld.height, 100);
-  assert.equal(normalized.generatedWorld.plateCount, 22);
+  assert.equal(normalized.generatedWorld.width, 192);
+  assert.equal(normalized.generatedWorld.height, 120);
+  assert.equal(normalized.generatedWorld.plateCount, 28);
   assert.equal(normalized.generatedWorld.expeditionRegionId, null);
   assert.equal(normalized.generatedWorld.selectedRegionId, null);
   assert.deepEqual(normalized.generatedWorld.discoveredRegionIds, []);
@@ -223,7 +223,7 @@ test("runtime reconstruction joins terrain, rivers, nations, and gameplay onto o
   const view = getGeneratedWorldView(state);
   assert.equal(first, second);
   assert.equal(first.terrain.gridType, "square");
-  assert.equal(first.tiles.length, 160 * 100);
+  assert.equal(first.tiles.length, 192 * 120);
   assert.equal(first.nations.tileNationIds.length, first.tiles.length);
   assert.ok(view.playerNation.regionIds.includes(view.expeditionRegion.id));
   assert.equal(view.selectedRegion.id, view.expeditionRegion.id);

@@ -2,15 +2,30 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
+  acceptEquipmentUpgrade,
   VILLAGE_FACILITIES,
   createCareerInitialState,
   getSettlementFacilities,
   getSettlementMeritGain,
   getServiceRouteProgress,
   getGuildStanding,
+  getEquipmentUpgradeOffer,
   getVillageActionAvailability,
   performVillageAction,
 } from "../src/simulation.js";
+
+test("a stronger purchased item opens a replace-or-keep offer", () => {
+  const state = createCareerInitialState();
+  state.player.metrics.wealth = 99;
+  const next = performVillageAction(state, { id: "town-test", name: "試験町", settlementLevel: "town" }, "buy_weapon");
+  const offer = getEquipmentUpgradeOffer(next);
+  assert.equal(offer.item.id, "village-steel-sword");
+  assert.equal(offer.equipped.id, "traveler-sword");
+  const equipped = acceptEquipmentUpgrade(next);
+  assert.equal(equipped.player.villageLife.equipment.weapon.id, "village-steel-sword");
+  assert.equal(getEquipmentUpgradeOffer(equipped), null);
+  assert.ok(equipped.player.villageLife.inventory.some((item) => item.id === "traveler-sword"));
+});
 
 const EXPECTED_ACTIONS = Object.freeze({
   "宿屋": ["HP・MP回復", "状態異常回復", "休息", "セーブ"],

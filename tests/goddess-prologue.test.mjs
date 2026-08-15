@@ -87,6 +87,8 @@ test("世界生成中も女神界を閉じず、画面上部の進捗バーへ�
   const styles = await readFile(new URL("../styles.css", import.meta.url), "utf8");
   assert.match(app, /view\.characterCreationOpen = Boolean\(flow\.deferLaunch\)/);
   assert.match(app, /--generation-progress/);
+  assert.match(app, /goddessPortrait\.decode/);
+  assert.match(app, /requestAnimationFrame\(\(\) => requestAnimationFrame\(resolve\)\)/);
   assert.match(styles, /launch-screen:has\(\.goddess-prologue:not\(\[hidden\]\)\) \.launch-generation/);
   assert.match(styles, /width: var\(--generation-progress, 0%\) !important/);
   assert.match(styles, /top:\s*14px/);
