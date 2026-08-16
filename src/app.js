@@ -2655,6 +2655,7 @@ function currentAdventureSites() {
 function enterVillage(villageId) {
   const context = villageContextById(villageId);
   if (!context) throw new Error("入れる村が見つかりません");
+  view.characterDetailOpen = false;
   view.selectedGeneratedSite = null;
   view.generatedSiteInfoOpen = false;
   view.selectedVillageId = context.id;
@@ -3759,7 +3760,7 @@ function renderCompanionQuestBoard() {
 }
 
 function renderEstatePoliticsBoard() {
-  if (!state.player.holdings?.length || !getCareerStage(state)?.governance) return "";
+  if (!state.player.holdings?.length) return "";
   const holding = state.player.holdings[0]; const model = getEstatePoliticsView(state, holding.territoryId);
   const debate = model.activeDebate ? `<article><header><h3>${escapeHtml(model.activeDebate.projectName ?? model.activeDebate.projectId)}の領地評議</h3><b>決裁待ち</b></header><div>${model.options.map((option) => `<button type="button" data-estate-decision="${option.id}">${escapeHtml(option.name)}</button>`).join("")}</div></article>` : "<p>所領事業の「着工」を選ぶと、四身分の利害を先に評議します。</p>";
   return `<details class="life-loop-section"><summary><span>領地政治</span><strong>領民・名望家・商人・家臣</strong><small>反乱圧力 ${model.region.rebellionPressure}</small></summary><div class="life-loop-content">${debate}<div class="realm-facts">${model.factions.map((faction) => `<div><small>${escapeHtml(faction.name)}</small><strong>${faction.support}</strong><span>${escapeHtml(faction.concern)}</span></div>`).join("")}</div></div></details>`;
@@ -5392,7 +5393,7 @@ function positionGeneratedRegionMoveTargets(copy, runtime, expeditionRegion, exp
   layer.innerHTML = expeditionRegion.neighborIds.map((regionId) => {
     const region = runtime.regionById.get(regionId);
     if (!region) return "";
-    const visibleTiles = region.tileIndices.map((index) => runtime.tiles[index]).map((tile) => {
+    const positionedTiles = region.tileIndices.map((index) => runtime.tiles[index]).map((tile) => {
       const x = visibleUnwrappedTileX(tile.x, viewport, runtime.terrain.width);
       return {
         tile,
@@ -5400,18 +5401,20 @@ function positionGeneratedRegionMoveTargets(copy, runtime, expeditionRegion, exp
         left: (x + 0.5 - viewport.x) / viewport.width * 100,
         top: (tile.y + 0.5 - viewport.y) / viewport.height * 100,
       };
-    }).filter((entry) => entry.left >= 2 && entry.left <= 98 && entry.top >= 4 && entry.top <= 96)
-      .sort((left, right) => (
-        Math.hypot(left.x - expeditionX, left.tile.y - expeditionTile.y)
-        - Math.hypot(right.x - expeditionX, right.tile.y - expeditionTile.y)
-      ));
-    const target = visibleTiles[0];
+    }).sort((left, right) => (
+      Math.hypot(left.x - expeditionX, left.tile.y - expeditionTile.y)
+      - Math.hypot(right.x - expeditionX, right.tile.y - expeditionTile.y)
+    ));
+    const target = positionedTiles.find((entry) => entry.left >= 2 && entry.left <= 98 && entry.top >= 4 && entry.top <= 96)
+      ?? positionedTiles[0];
     if (!target) return "";
+    const targetLeft = Math.max(2, Math.min(98, target.left));
+    const targetTop = Math.max(4, Math.min(96, target.top));
     const reachable = reachableById.get(region.id);
     const cost = Math.max(1, Math.ceil(region.movementCost));
     const disabled = !reachable;
     const label = disabled ? `${region.name}（移動力 ${cost} 必要）` : `${region.name}へ移動（移動力 ${reachable.cost}）`;
-    return `<button type="button" class="generated-region-move-target${disabled ? " is-disabled" : ""}" style="left:${target.left}%;top:${target.top}%" data-generated-map-move-region="${region.id}" ${disabled ? "disabled" : ""} aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}"><span>${escapeHtml(region.name)}</span><small>${disabled ? `移動力 ${cost} 必要` : `進む · ${reachable.cost}`}</small></button>`;
+    return `<button type="button" class="generated-region-move-target${disabled ? " is-disabled" : ""}" style="left:${targetLeft}%;top:${targetTop}%" data-generated-map-move-region="${region.id}" ${disabled ? "disabled" : ""} aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}"><span>${escapeHtml(region.name)}</span><small>${disabled ? `移動力 ${cost} 必要` : `進む · ${reachable.cost}`}</small></button>`;
   }).join("");
 }
 
@@ -6444,12 +6447,13 @@ function tacticalOriginLabels() {
     };
   }
   if (view.tacticalOrigin?.type === "dungeon") {
+    const travelEncounter = view.tacticalOrigin.runMode === "travel";
     return {
-      player: "探索隊",
+      player: travelEncounter ? "旅の一行" : "探索隊",
       enemy: view.tacticalOrigin.enemyName,
-      playerVictory: "探索隊勝利",
+      playerVictory: travelEncounter ? "旅の一行勝利" : "探索隊勝利",
       enemyVictory: `${view.tacticalOrigin.enemyName}優勢`,
-      exit: "ダンジョンへ戻る",
+      exit: travelEncounter ? "地方地図へ戻る" : "ダンジョンへ戻る",
     };
   }
   if (view.tacticalOrigin?.type === "imperial-princess") {
@@ -6596,7 +6600,7 @@ function openDungeonTacticalBattle() {
   if (!run || run.phase !== "battle" || !run.combat) throw new Error("戦術戦闘を開始できる遭遇がありません。");
   const battle = createDungeonTacticalBattle(state);
   const personalUnitBattle = battle.combatScale === "personal-units";
-  const origin = { type: run.mode === "personal-map" ? "personal-map" : "dungeon", personalUnitBattle, runId: run.id, enemyName: run.combat.enemyName, dungeonName: run.dungeonName };
+  const origin = { type: run.mode === "personal-map" ? "personal-map" : "dungeon", runMode: run.mode, personalUnitBattle, runId: run.id, enemyName: run.combat.enemyName, dungeonName: run.dungeonName };
   if (personalUnitBattle) {
     stopTacticalBattleEffects();
     view.launchOpen = false;
@@ -6645,7 +6649,12 @@ function prepareTacticalResult({ open = true } = {}) {
       ? "探索パーティー勝利"
       : view.tacticalResult.winner === "enemy" ? `${view.tacticalOrigin.enemyName}側勝利` : "双方戦闘不能";
   } else if (view.tacticalOrigin?.type === "dungeon") {
-    view.tacticalResult.title = view.tacticalResult.winner === "player" ? "探索隊勝利" : view.tacticalResult.winner === "enemy" ? "探索隊撤退" : "相討ち・探索中断";
+    const travelEncounter = view.tacticalOrigin.runMode === "travel";
+    view.tacticalResult.title = view.tacticalResult.winner === "player"
+      ? travelEncounter ? "旅の一行勝利" : "探索隊勝利"
+      : view.tacticalResult.winner === "enemy"
+        ? travelEncounter ? "旅の一行撤退" : "探索隊撤退"
+        : travelEncounter ? "相討ち・移動中断" : "相討ち・探索中断";
   } else if (view.tacticalOrigin?.type === "military-career") {
     view.tacticalResult.title = view.tacticalResult.winner === "player" ? "軍務達成" : view.tacticalResult.winner === "enemy" ? "軍務敗北" : "軍務中断";
   }
@@ -6776,7 +6785,7 @@ function skipActiveDungeonBattle() {
   }
   battle = autoResolveBattle(battle);
   clearTacticalBattleView();
-  view.tacticalOrigin = { type: run.mode === "personal-map" ? "personal-map" : "dungeon", personalUnitBattle: personalEncounter, runId: run.id, enemyName: run.combat.enemyName, dungeonName: run.dungeonName, autoResolved: true, continuedFromManual: continuingBattle, manualTurns };
+  view.tacticalOrigin = { type: run.mode === "personal-map" ? "personal-map" : "dungeon", runMode: run.mode, personalUnitBattle: personalEncounter, runId: run.id, enemyName: run.combat.enemyName, dungeonName: run.dungeonName, autoResolved: true, continuedFromManual: continuingBattle, manualTurns };
   view.launchOpen = false;
   view.adventureOpen = true;
   view.tacticalBattle = battle;

@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import {
   advanceEstatePoliticsMonth,
   getEstatePoliticsView,
@@ -74,4 +75,12 @@ test("forcing a project is faster but creates opposition accidents and rebellion
   assert.ok(state.generatedWorld.regionalDomains.events.some((entry) => entry.type === "estate_politics" && entry.tone === "danger"));
   state = advanceEstatePoliticsMonth(state);
   assert.ok(state.player.estatePolitics.history.some((entry) => ["accident", "opposition"].includes(entry.outcome)));
+});
+
+test("castellans with a stewardship holding can see and resolve the estate debate required for lordship", () => {
+  const appSource = fs.readFileSync(new URL("../src/app.js", import.meta.url), "utf8");
+  const renderer = appSource.match(/function renderEstatePoliticsBoard\(\)[\s\S]*?function renderGeneratedCampaignBoard/)?.[0] ?? "";
+  assert.match(renderer, /if \(!state\.player\.holdings\?\.length\) return ""/);
+  assert.doesNotMatch(renderer, /getCareerStage\(state\)\?\.governance/);
+  assert.match(renderer, /data-estate-decision/);
 });

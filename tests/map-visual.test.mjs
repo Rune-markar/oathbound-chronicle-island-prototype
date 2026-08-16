@@ -84,6 +84,9 @@ test("normal play generates the whole world, then zooms to region-level movement
   assert.match(appSource, /data-generated-map-move-cancel/);
   assert.match(appSource, /data-generated-map-move-region/);
   assert.match(appSource, /positionGeneratedRegionMoveTargets\(copy, runtime, expeditionRegion, expeditionTile, viewport\)/);
+  assert.match(appSource, /const positionedTiles = region\.tileIndices/);
+  assert.match(appSource, /\?\? positionedTiles\[0\]/);
+  assert.match(appSource, /Math\.max\(2, Math\.min\(98, target\.left\)\)/);
   assert.match(appSource, /renderGeneratedRegionMoveConfirmation\(copy, runtime, viewport\)/);
   assert.match(appSource, /移動を実行すると世界時刻が進みます/);
   assert.match(appSource, /pendingGeneratedTravelMode: "route"/);
@@ -100,6 +103,9 @@ test("normal play generates the whole world, then zooms to region-level movement
   assert.match(mapMoveConfirmation, /moveGeneratedExpeditionToRegion\(state, regionId, \{ mode: travelMode \}\)/);
   assert.match(mapMoveConfirmation, /await playGeneratedTravel\(next, destination\.name/);
   assert.match(styleSource, /\.generated-region-move-target\s*\{[^}]*touch-action: manipulation;[^}]*pointer-events: auto;/s);
+  assert.match(styleSource, /\.generated-region-move-layer\s*\{[^}]*z-index:\s*8;/s);
+  assert.match(styleSource, /\.generated-site-marker-layer,[\s\S]*?z-index:\s*7;/);
+  assert.match(styleSource, /\.map-caption\s*\{[^}]*pointer-events:\s*none;/s);
   assert.doesNotMatch(appSource, /data-generated-region-destination-id/);
   assert.match(appSource, /function generatedRegionViewport\(/);
   assert.match(appSource, /generatedRegionViewport\(expeditionRegion, expeditionTile, runtime\)/);
@@ -343,6 +349,8 @@ test("map landmarks stay clear while local actions live in the left panel withou
   assert.match(styleSource, /\.generated-site-marker\.is-town\s*\{\s*z-index:\s*3;/);
   assert.match(styleSource, /\.generated-site-marker\.is-city\s*\{\s*z-index:\s*4;/);
   assert.match(styleSource, /\.generated-site-marker\.is-castle\s*\{\s*z-index:\s*5;/);
+  const enterVillageSection = appSource.match(/function enterVillage\(villageId\)[\s\S]*?function renderVillageEntrySection/)?.[0] ?? "";
+  assert.match(enterVillageSection, /view\.characterDetailOpen = false/);
 });
 
 test("castle, dungeon, and fort open dedicated background-led command scenes only after arrival", () => {

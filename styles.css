@@ -2683,7 +2683,7 @@ a:focus-visible,
 
 .generated-region-move-layer {
   position: absolute;
-  z-index: 6;
+  z-index: 8;
   inset: 0;
   pointer-events: none;
 }
@@ -4369,6 +4369,7 @@ a:focus-visible,
   border-left: 3px solid #dbc06d;
   background: rgba(19, 43, 46, 0.77);
   box-shadow: var(--shadow);
+  pointer-events: none;
 }
 
 .map-caption span {

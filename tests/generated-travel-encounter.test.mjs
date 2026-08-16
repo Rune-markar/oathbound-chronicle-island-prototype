@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import { getGeneratedExpeditionReachableRegions, moveGeneratedExpeditionToRegion } from "../src/generated-world-system.js";
 import { createCareerInitialState } from "../src/simulation.js";
 import { createDungeonTacticalBattle, startGeneratedTravelEncounter } from "../src/adventure-system.js";
@@ -24,4 +25,12 @@ test("a rare route-following encounter uses the weak-monster profile", () => {
   const encountered = startGeneratedTravelEncounter(moved);
   assert.equal(encountered.adventure.activeRun.enemyUnitLimit, 1);
   assert.equal(encountered.adventure.activeRun.combat.enemyMaxHp, 24);
+});
+
+test("travel encounters return to the regional map instead of claiming to be a dungeon", () => {
+  const appSource = fs.readFileSync(new URL("../src/app.js", import.meta.url), "utf8");
+  const labels = appSource.match(/function tacticalOriginLabels\(\)[\s\S]*?function renderBattlePreparationMap/)?.[0] ?? "";
+  assert.match(labels, /view\.tacticalOrigin\.runMode === "travel"/);
+  assert.match(labels, /travelEncounter \? "地方地図へ戻る" : "ダンジョンへ戻る"/);
+  assert.match(appSource, /runMode: run\.mode/);
 });
