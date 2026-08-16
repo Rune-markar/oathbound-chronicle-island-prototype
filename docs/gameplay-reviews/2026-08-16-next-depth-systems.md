@@ -2,7 +2,7 @@
 
 ## 条件
 
-- 対象: `codex/next-depth-systems` 作業版
+- 対象: 実装コミット `918fe8a`
 - ブラウザ: Chromium / Playwright CLI、ローカルHTTP
 - 画面: 1366×768、横向き844×390
 - 開始条件: localStorageを消去した新規年代記

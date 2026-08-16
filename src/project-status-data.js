@@ -5,9 +5,9 @@ export const STATUS_LEDGER_META = Object.freeze({
   auditScope: Object.freeze({
     codexPrimaryTasks: 80,
     codexRange: "2026-08-02 — 2026-08-16",
-    gitCommits: 80,
-    gitRange: "initial — next-depth-systems working tree",
-    workingTreeIncluded: true,
+    gitCommits: 68,
+    gitRange: "initial — 918fe8a",
+    workingTreeIncluded: false,
   }),
   maintenanceRule: "仕様・導入状態・廃止方針を変更する際は、実装と同じ変更でこの台帳を更新し、一次出典を最低1件付ける。",
 });
