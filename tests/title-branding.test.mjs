@@ -11,8 +11,9 @@ const proposalFiles = [
 ];
 
 test("正式タイトルは主要な利用者向け画面と資料で統一される", async () => {
-  const [index, readme, manualMarkdown, manualHtml, statusHtml] = await Promise.all([
+  const [index, styles, readme, manualMarkdown, manualHtml, statusHtml] = await Promise.all([
     readFile(new URL("index.html", root), "utf8"),
+    readFile(new URL("styles.css", root), "utf8"),
     readFile(new URL("README.md", root), "utf8"),
     readFile(new URL("MANUAL.md", root), "utf8"),
     readFile(new URL("manual.html", root), "utf8"),
@@ -23,7 +24,9 @@ test("正式タイトルは主要な利用者向け画面と資料で統一さ�
     assert.match(content, new RegExp(title));
     assert.doesNotMatch(content, /誓界記|OATHBOUND CHRONICLE/);
   }
-  assert.match(index, /<h1 id="launchTitle">LEVIATHAN <small>COVENANT<\/small><\/h1>/);
+  assert.match(index, /<h1 id="launchTitle"><img class="launch-title-logo"[^>]+alt="LEVIATHAN COVENANT"/);
+  assert.match(index, /rel="preload" as="image" href="\.\/assets\/branding\/proposals\/leviathan-covenant-b-sovereign-compact\.png"/);
+  assert.match(styles, /\.launch-title-logo\s*\{[\s\S]*width: clamp\(300px, 34vw, 420px\);/);
 });
 
 test("比較用のタイトルロゴ3案を透過PNGとして保持する", async () => {
@@ -31,7 +34,7 @@ test("比較用のタイトルロゴ3案を透過PNGとして保持する", asyn
   assert.match(proposal, /Abyssal Seal/);
   assert.match(proposal, /Sovereign Compact/);
   assert.match(proposal, /Covenant Ledger/);
-  assert.match(proposal, /B｜Sovereign Compact（主権者の盟約）— 推薦/);
+  assert.match(proposal, /B｜Sovereign Compact（主権者の盟約）— 正式採用/);
 
   for (const relativePath of proposalFiles) {
     const url = new URL(relativePath, root);

@@ -10316,8 +10316,14 @@ body:not(.is-expert-mode) .selection-card { bottom: 48px; }
   letter-spacing: .23em;
 }
 
-.launch-brand h1 { margin: 7px 0 9px; color: #fff2d2; font-size: clamp(36px, 5.5vw, 74px); font-weight: 500; letter-spacing: .025em; line-height: .9; text-shadow: 0 7px 30px rgba(0, 0, 0, .7); }
-.launch-brand h1 small { display: block; margin-top: 11px; color: #d7aa4f; font: 800 clamp(13px, 1.6vw, 19px) system-ui, sans-serif; letter-spacing: .55em; }
+.launch-brand h1 { margin: 5px 0 4px; line-height: 0; }
+.launch-title-logo {
+  display: block;
+  width: clamp(300px, 34vw, 420px);
+  max-width: 100%;
+  height: auto;
+  filter: drop-shadow(0 10px 24px rgba(0, 0, 0, .64));
+}
 .launch-brand p { margin: 0; color: #b9c5bd; font: 12px/1.7 system-ui, sans-serif; letter-spacing: .06em; }
 .launch-brand p strong { color: #e6d6ad; font-weight: 700; }
 
