@@ -18,6 +18,8 @@ export const MERCHANT_COMMODITIES = Object.freeze({
   salt: commodity("salt", "塩", 3.8, "沿岸で得やすく、内陸ほど保存用の需要が高い。", "salt"),
 });
 
+export const MERCHANT_COMMODITY_WEIGHTS = Object.freeze({ grain: 1, timber: 2.5, herbs: 0.5, iron: 3, wool: 1.2, salt: 1.5 });
+
 function hashUnit(...parts) {
   let hash = 2166136261;
   for (const character of parts.join("|") ) {
@@ -31,6 +33,7 @@ function emptyMerchantTradeState() {
   return {
     schemaVersion: MERCHANT_TRADE_SCHEMA_VERSION,
     cargoCapacity: 12,
+    cargoWeightCapacity: 24,
     cargo: [],
     marketReports: [],
     rumorChecks: {},
@@ -54,6 +57,7 @@ export function normalizeMerchantTradeState(state) {
     ...source,
     schemaVersion: MERCHANT_TRADE_SCHEMA_VERSION,
     cargoCapacity: Math.max(1, Number(source.cargoCapacity) || baseline.cargoCapacity),
+    cargoWeightCapacity: Math.max(1, Number(source.cargoWeightCapacity) || baseline.cargoWeightCapacity),
     cargo: [...(source.cargo ?? [])],
     marketReports: [...(source.marketReports ?? [])],
     rumorChecks: { ...(source.rumorChecks ?? {}) },
@@ -150,6 +154,12 @@ export function getMerchantCargoLoad(state) {
   return round1(state.player.merchantTrade.cargo.reduce((sum, entry) => sum + (Number(entry.quantity) || 0), 0));
 }
 
+export function getMerchantCargoLoadDetails(state) {
+  const units = getMerchantCargoLoad(state);
+  const weight = round1(state.player.merchantTrade.cargo.reduce((sum, entry) => sum + (Number(entry.quantity) || 0) * (MERCHANT_COMMODITY_WEIGHTS[entry.commodityId] ?? 1), 0));
+  return { units, weight, unitCapacity: state.player.merchantTrade.cargoCapacity, weightCapacity: state.player.merchantTrade.cargoWeightCapacity };
+}
+
 export function observeSettlementMarket(state, settlement) {
   normalizeMerchantTradeState(state);
   if (!atSettlement(state, settlement)) throw new Error("現在地の市場でだけ相場を確認できます");
@@ -207,6 +217,8 @@ export function buyCommodity(state, settlement, commodityId, quantity) {
   const good = market.goods[commodityId];
   if (quantity > good.stock) throw new Error(`市場在庫は${good.stock}個です`);
   if (getMerchantCargoLoad(next) + quantity > next.player.merchantTrade.cargoCapacity) throw new Error("積載量を超えています");
+  const addedWeight = quantity * (MERCHANT_COMMODITY_WEIGHTS[commodityId] ?? 1);
+  if (getMerchantCargoLoadDetails(next).weight + addedWeight > next.player.merchantTrade.cargoWeightCapacity) throw new Error("積荷の重量上限を超えています");
   const cost = round1(good.buyPrice * quantity);
   if (cost > Number(next.player.metrics.wealth)) throw new Error("個人財産が不足しています");
   next.player.metrics.wealth = round1(next.player.metrics.wealth - cost);

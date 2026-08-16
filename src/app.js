@@ -81,6 +81,7 @@ import {
   getGovernanceView,
   getGuildStanding,
   getMerchantCargoLoad,
+  getMerchantCargoLoadDetails,
   getSettlementMarket,
   getSettlementFacilities,
   getDelegationCandidates,
@@ -145,6 +146,32 @@ import {
   performLifeAction,
   startFiefProject,
   startRealmCampaign,
+  PROPERTY_TYPES,
+  acquireProperty,
+  getPropertyEnterpriseView,
+  normalizePropertyEnterpriseState,
+  openPlayerShop,
+  closePlayerShop,
+  priceShopCommodity,
+  stockPlayerShop,
+  transferCargoToWarehouse,
+  withdrawWarehouseCargo,
+  getCompanionQuestView,
+  normalizeCompanionQuestState,
+  respondToCompanionQuest,
+  completeCompanionQuest,
+  getEstatePoliticsView,
+  normalizeEstatePoliticsState,
+  startEstateProjectDebate,
+  resolveEstateProjectDebate,
+  getGeneratedCampaignView,
+  normalizeGeneratedCampaignState,
+  requestAlliedContingent,
+  startGeneratedCampaign,
+  advanceGeneratedCampaign,
+  decideGeneratedSiege,
+  retreatGeneratedCampaign,
+  settleGeneratedCampaign,
   performVillageAction,
   hearMarketRumors,
   observeSettlementMarket,
@@ -737,7 +764,12 @@ function loadState() {
     parsed.fiscal ??= { publicDebt: 24, totalDebtRepaid: 0 };
     parsed.fiscal.publicDebt = Number.isFinite(parsed.fiscal.publicDebt) ? parsed.fiscal.publicDebt : 24;
     parsed.fiscal.totalDebtRepaid = Number.isFinite(parsed.fiscal.totalDebtRepaid) ? parsed.fiscal.totalDebtRepaid : 0;
-    return normalizeLifeToRealmState(normalizeWarState(parsed));
+    const loaded = normalizeLifeToRealmState(normalizeWarState(parsed));
+    normalizePropertyEnterpriseState(loaded);
+    normalizeCompanionQuestState(loaded);
+    normalizeEstatePoliticsState(loaded);
+    normalizeGeneratedCampaignState(loaded);
+    return loaded;
   } catch {
     return null;
   }
@@ -757,6 +789,10 @@ function persist(showMessage = false) {
 function commit(nextState, message = "", cue = "confirm") {
   const wasAtWar = Boolean(state.war);
   state = normalizeLifeToRealmState(normalizeAdventureState(refreshGeneratedWorldForDate(nextState)));
+  normalizePropertyEnterpriseState(state);
+  normalizeCompanionQuestState(state);
+  normalizeEstatePoliticsState(state);
+  normalizeGeneratedCampaignState(state);
   if (!wasAtWar && state.war) {
     view.warMapView = "theater";
     view.warRegionId = state.war.theater?.activeRegionId ?? null;
@@ -3697,6 +3733,45 @@ function lifeClockLabel(minutes) {
   return `第${day}日 ${String(Math.floor(minuteOfDay / 60)).padStart(2, "0")}:${String(minuteOfDay % 60).padStart(2, "0")}`;
 }
 
+function renderPropertyEnterpriseBoard() {
+  const model = getPropertyEnterpriseView(state);
+  const settlement = activeVillageContext();
+  const localProperties = settlement ? model.properties.filter((entry) => entry.settlementId === settlement.id) : [];
+  const stock = settlement ? model.warehouseStock[settlement.id] ?? {} : {};
+  const shop = settlement ? model.shops[settlement.id] : null;
+  const cargo = state.player.merchantTrade.cargo;
+  const load = getMerchantCargoLoadDetails(state);
+  const acquisition = settlement ? Object.values(PROPERTY_TYPES).map((property) => `<button type="button" data-property-acquire="${property.id}" data-property-settlement="${settlement.id}" ${localProperties.some((entry) => entry.typeId === property.id) ? "disabled" : ""}><strong>${escapeHtml(property.name)} · 財産${property.cost}</strong><small>保管${property.storageCapacity}重量・月費${property.monthlyCost}</small></button>`).join("") : "<p>集落に入り、人物画面を開くと物件を取得できます。</p>";
+  const transfer = settlement && localProperties.length && cargo.length ? `<div class="enterprise-transfer-grid">${cargo.map((item) => `<button type="button" data-warehouse-deposit="${item.commodityId}" data-property-settlement="${settlement.id}">${escapeHtml(item.name)}を1個預ける</button>`).join("")}</div>` : "";
+  const warehouse = Object.values(stock).map((item) => `<li><strong>${escapeHtml(item.name)} ×${item.quantity}</strong><button type="button" data-warehouse-withdraw="${item.commodityId}" data-property-settlement="${settlement?.id ?? ""}">1個取り出す</button>${shop?.status === "open" ? `<button type="button" data-shop-stock="${item.commodityId}" data-property-settlement="${settlement.id}">1個を店頭へ</button>` : ""}</li>`).join("");
+  const shopInventory = shop?.status === "open" ? Object.values(shop.inventory).map((item) => `<li><strong>${escapeHtml(item.name)} ×${item.quantity}</strong><span>価格倍率 ${shop.priceMultipliers[item.commodityId] ?? 1}</span><button type="button" data-shop-price="${item.commodityId}" data-shop-multiplier="0.8" data-property-settlement="${settlement.id}">安売り</button><button type="button" data-shop-price="${item.commodityId}" data-shop-multiplier="1" data-property-settlement="${settlement.id}">標準</button><button type="button" data-shop-price="${item.commodityId}" data-shop-multiplier="1.2" data-property-settlement="${settlement.id}">高値</button></li>`).join("") : "";
+  const shopArea = settlement && localProperties.some((entry) => entry.typeId === "shop_house") ? shop?.status === "open" ? `<article><strong>${escapeHtml(shop.name)}</strong><small>未払い ${shop.arrearsMonths}か月</small><ul>${shopInventory || "<li>店頭在庫なし</li>"}</ul><button type="button" data-shop-close data-property-settlement="${settlement.id}">店を閉じ、在庫を倉庫へ戻す</button></article>` : `<button type="button" data-shop-open data-property-settlement="${settlement.id}">個人商店を開く</button>` : "";
+  return `<details class="life-loop-section"><summary><span>住居・倉庫・商店</span><strong>現地資産と重量物流</strong><small>${load.weight}/${load.weightCapacity}重量 · 物件${model.properties.length}件</small></summary><div class="life-loop-content"><div class="life-action-grid">${acquisition}</div>${transfer}<ul>${warehouse}</ul>${shopArea}<ol>${model.monthlyLedger.slice(0, 3).map((entry) => `<li>${escapeHtml(entry.period)} 売上${entry.revenue}・費用${entry.costs}・損益${entry.profit}</li>`).join("")}</ol></div></details>`;
+}
+
+function renderCompanionQuestBoard() {
+  const model = getCompanionQuestView(state);
+  const cards = model.companions.map((companion) => {
+    if (companion.active) return `<article><header><h3>${escapeHtml(companion.name)}：${escapeHtml(companion.active.name)}</h3><b>${companion.active.status === "held" ? "保留" : "進行中"}</b></header><p>${escapeHtml(companion.active.description)}</p>${companion.active.status === "held" ? `<button type="button" data-companion-quest-response="accept" data-companion-quest-member="${companion.memberId}" data-companion-quest-offer="${companion.active.id}">引き受ける</button>` : `<button type="button" data-companion-quest-complete="${companion.memberId}" ${companion.eligibleBattleId ? `data-companion-battle-evidence="${escapeHtml(companion.eligibleBattleId)}"` : ""} ${companion.active.kind === "battle" && !companion.eligibleBattleId ? "disabled title=\"受諾後の実戦勝利が必要です\"" : ""}>${companion.active.kind === "battle" ? "実戦勝利を報告" : "現地条件を確認して完了"}</button>`}</article>`;
+    return `<article><header><h3>${escapeHtml(companion.name)}の個人的な頼み</h3><b>3案</b></header>${companion.offers.map((offer) => `<section><strong>${escapeHtml(offer.name)}</strong><small>${escapeHtml(offer.targetRegionName)}・期限 ${escapeHtml(lifeClockLabel(offer.deadlineMinutes))}</small><div><button type="button" data-companion-quest-response="accept" data-companion-quest-member="${companion.memberId}" data-companion-quest-offer="${offer.id}">受諾</button><button type="button" data-companion-quest-response="hold" data-companion-quest-member="${companion.memberId}" data-companion-quest-offer="${offer.id}">保留</button><button type="button" data-companion-quest-response="refuse" data-companion-quest-member="${companion.memberId}" data-companion-quest-offer="${offer.id}">断る</button></div></section>`).join("")}</article>`;
+  }).join("") || "<p>同行中の仲間が加わると個人的な依頼が発生します。</p>";
+  return `<details class="life-loop-section"><summary><span>仲間の物語</span><strong>旅・届け物・実戦</strong><small>達成 ${model.history.filter((entry) => entry.outcome === "completed").length}件</small></summary><div class="life-loop-content companion-agency-grid">${cards}</div></details>`;
+}
+
+function renderEstatePoliticsBoard() {
+  if (!state.player.holdings?.length || !getCareerStage(state)?.governance) return "";
+  const holding = state.player.holdings[0]; const model = getEstatePoliticsView(state, holding.territoryId);
+  const debate = model.activeDebate ? `<article><header><h3>${escapeHtml(model.activeDebate.projectName ?? model.activeDebate.projectId)}の領地評議</h3><b>決裁待ち</b></header><div>${model.options.map((option) => `<button type="button" data-estate-decision="${option.id}">${escapeHtml(option.name)}</button>`).join("")}</div></article>` : "<p>所領事業の「着工」を選ぶと、四身分の利害を先に評議します。</p>";
+  return `<details class="life-loop-section"><summary><span>領地政治</span><strong>領民・名望家・商人・家臣</strong><small>反乱圧力 ${model.region.rebellionPressure}</small></summary><div class="life-loop-content">${debate}<div class="realm-facts">${model.factions.map((faction) => `<div><small>${escapeHtml(faction.name)}</small><strong>${faction.support}</strong><span>${escapeHtml(faction.concern)}</span></div>`).join("")}</div></div></details>`;
+}
+
+function renderGeneratedCampaignBoard() {
+  if (!state.player.sovereign) return ""; const model = getGeneratedCampaignView(state); const active = model.active;
+  const phaseNames = { mustering: "動員", marching: "行軍", siege_decision: "攻城軍議", siege: "攻城", peace_decision: "講和評議", rebuilding: "再建" };
+  const content = active ? `<article><header><h3>${escapeHtml(active.targetRegionName ?? active.targetRegionId)}方面戦役</h3><b>${escapeHtml(phaseNames[active.phase] ?? active.phase)}</b></header><p>${escapeHtml(active.objectiveName ?? active.objectiveId)} · 兵站費${active.supplyCost ?? 0}</p><p>二正面 ${active.fronts.map((front) => `${escapeHtml(front.name)} ${front.progress}%`).join(" / ")}</p><p>兵站 ${active.armies.map((army) => `${army.id}:${army.supplies}`).join(" / ")}</p>${active.phase === "siege_decision" ? `<div>${model.siegeDecisions.map((decision) => `<button type="button" data-generated-siege="${decision.id}">${escapeHtml(decision.name)}</button>`).join("")}</div>` : active.phase === "peace_decision" ? `<div><button type="button" data-generated-peace="status_quo">原状回復</button><button type="button" data-generated-peace="ceasefire">停戦</button><button type="button" class="is-danger" data-generated-peace="limited_annexation">限定割譲</button></div>` : `<button type="button" data-generated-campaign-advance>戦役を一段階進める</button><button type="button" data-generated-campaign-retreat>撤退して再建へ</button>`}</article>` : `<article data-generated-campaign-form><label>侵攻先<select data-generated-campaign-target>${model.targets.map((target) => `<option value="${target.regionId}">${escapeHtml(target.name)}</option>`).join("")}</select></label><label>目的<select data-generated-campaign-objective>${model.objectives.map((objective) => `<option value="${objective.id}">${escapeHtml(objective.name)} · 兵站費${objective.supplyCost}</option>`).join("")}</select></label><label>第二指揮官<select data-generated-campaign-commander>${(state.player.householdRetainers ?? []).map((id) => `<option value="${id}">${escapeHtml(WORLD.characters[id]?.name ?? id)}</option>`).join("")}</select></label><button type="button" data-generated-campaign-start ${model.targets.length && state.player.householdRetainers?.length ? "" : "disabled"}>二正面戦役を準備</button><div>${model.allies.map((ally) => `<button type="button" data-generated-ally="${ally.nationId}">${escapeHtml(ally.name)}へ援軍要請</button>`).join("")}</div></article>`;
+  return `<details class="life-loop-section"><summary><span>生成世界大戦役</span><strong>同盟・二正面・攻城・講和</strong><small>${active ? escapeHtml(active.phase) : "軍議"}</small></summary><div class="life-loop-content">${content}</div></details>`;
+}
+
 function renderLifeToRealmBoard() {
   const model = getLifeToRealmView(state);
   const body = model.body;
@@ -3722,7 +3797,7 @@ function renderLifeToRealmBoard() {
     : `<article data-realm-campaign-form><p>二つの軍団へ別々の指揮官と補給を割り当て、集結・行軍・会戦を順番に処理します。</p><label>対象地方<select data-campaign-target>${model.campaign.options.map((option) => `<option value="${option.targetRegionId}">${escapeHtml(option.targetRegionName)} · ${option.borderType === "foreign" ? "国外" : "国内"}</option>`).join("")}</select></label><label>政治目的<select data-campaign-objective>${model.campaign.objectives.map((objective) => `<option value="${objective.id}">${escapeHtml(objective.name)}</option>`).join("")}</select></label><label>主力軍<select data-campaign-commander="first">${model.campaign.commanders.map((commander) => `<option value="${commander.id}">${escapeHtml(WORLD.characters[commander.id]?.name ?? commander.name)}</option>`).join("")}</select></label><label>支援軍<select data-campaign-commander="second">${model.campaign.commanders.map((commander, index) => `<option value="${commander.id}" ${index === 1 ? "selected" : ""}>${escapeHtml(WORLD.characters[commander.id]?.name ?? commander.name)}</option>`).join("")}</select></label><button type="button" data-realm-campaign-start>二軍団を集結させる（財産5）</button></article>`}</div></details>` : "";
   const lifePath = `<details class="life-loop-section"><summary><span>生き方</span><strong>${escapeHtml(model.lifePath.active?.name ?? "人生目標を選ぶ")}</strong><small>${model.lifePath.epithets.length ? escapeHtml(model.lifePath.epithets.join("・")) : "二つ名なし"}</small></summary><div class="life-loop-content life-path-grid">${model.lifePath.paths.map((path) => `<article class="${path.id === model.lifePath.active?.id ? "is-active" : ""}"><header><h3>${escapeHtml(path.name)}</h3><b>${path.claimed ? "達成済" : path.complete ? "達成" : "進行中"}</b></header><p>${escapeHtml(path.description)}</p><ul>${path.checks.map((check) => `<li>${escapeHtml(check.label)} ${Math.min(check.value, check.target)}/${check.target}</li>`).join("")}</ul><button type="button" data-life-path="${path.id}">${path.id === model.lifePath.active?.id ? "選択中" : "この生き方を追う"}</button>${path.id === model.lifePath.active?.id && path.complete && !path.claimed ? `<button type="button" data-life-path-claim>二つ名「${escapeHtml(path.epithet)}」を受ける</button>` : ""}</article>`).join("")}</div></details>`;
   const succession = model.succession.available ? `<details class="life-loop-section"><summary><span>継承</span><strong>第${model.succession.generation}代</strong><small>${model.succession.heirId ? "後継指名済み" : "後継未定"}</small></summary><div class="life-loop-content" data-succession-form><p>現君主を退位させ、同じ世界・国家・所領・年代記を次代へ渡します。</p><label>後継者<select data-succession-heir>${model.succession.candidates.map((candidate) => `<option value="${candidate.id}" ${candidate.id === model.succession.heirId ? "selected" : ""}>${escapeHtml(WORLD.characters[candidate.id]?.name ?? candidate.name)} · ${escapeHtml(candidate.role)}</option>`).join("")}</select></label><button type="button" data-designate-heir>後継者として公示する</button><label>継ぐ遺産<select data-succession-legacy>${model.succession.choices.map((choice) => `<option value="${choice.id}">${escapeHtml(choice.name)} — ${escapeHtml(choice.description)}</option>`).join("")}</select></label><button class="is-danger" type="button" data-execute-succession ${model.succession.heirId ? "" : "disabled"}>退位し、次代の年代記を始める</button></div></details>` : "";
-  return `<section class="life-to-realm-board"><header><div><small>LIFE TO REALM</small><h2>生活から国家へ</h2></div><p>時間、身体、仕事、仲間、所領、家中、戦役、継承を同じ人物状態で扱います。</p></header><section class="life-vitals"><article><small>世界時刻</small><strong>${escapeHtml(lifeClockLabel(model.clockMinutes))}</strong><span>移動と生活行動で進行</span></article><article><small>身体</small><strong>HP ${body.hp}/${body.maxHp}</strong><span>空腹${body.hunger}・疲労${body.fatigue}</span></article><article><small>生活基盤</small><strong>${escapeHtml(model.home.name)}</strong><span>家賃${model.home.monthlyRent}・負債${model.home.debt}</span></article>${warning}</section><details class="life-loop-section" open><summary><span>一日</span><strong>食事・労働・休養</strong><small>財産${state.player.metrics.wealth}・食料${body.food}</small></summary><div class="life-loop-content life-action-grid">${lifeActions}</div></details><details class="life-loop-section" open><summary><span>生計</span><strong>${activeContract ? escapeHtml(activeContract.title) : `${escapeHtml(livelihood.currentRegionName)}の仕事3件`}</strong><small>期限と移動を比較</small></summary><div class="life-loop-content">${contractArea}</div></details><details class="life-loop-section"><summary><span>仲間</span><strong>賃金・忠誠・要望</strong><small>${model.companions.length}名</small></summary><div class="life-loop-content companion-agency-grid">${companions}</div></details>${fief}${household}${campaign}${lifePath}${succession}</section>`;
+  return `<section class="life-to-realm-board"><header><div><small>LIFE TO REALM</small><h2>生活から国家へ</h2></div><p>時間、身体、仕事、仲間、所領、家中、戦役、継承を同じ人物状態で扱います。</p></header><section class="life-vitals"><article><small>世界時刻</small><strong>${escapeHtml(lifeClockLabel(model.clockMinutes))}</strong><span>移動と生活行動で進行</span></article><article><small>身体</small><strong>HP ${body.hp}/${body.maxHp}</strong><span>空腹${body.hunger}・疲労${body.fatigue}</span></article><article><small>生活基盤</small><strong>${escapeHtml(model.home.name)}</strong><span>家賃${model.home.monthlyRent}・負債${model.home.debt}</span></article>${warning}</section><details class="life-loop-section" open><summary><span>一日</span><strong>食事・労働・休養</strong><small>財産${state.player.metrics.wealth}・食料${body.food}</small></summary><div class="life-loop-content life-action-grid">${lifeActions}</div></details><details class="life-loop-section" open><summary><span>生計</span><strong>${activeContract ? escapeHtml(activeContract.title) : `${escapeHtml(livelihood.currentRegionName)}の仕事3件`}</strong><small>期限と移動を比較</small></summary><div class="life-loop-content">${contractArea}</div></details>${renderPropertyEnterpriseBoard()}<details class="life-loop-section"><summary><span>仲間</span><strong>賃金・忠誠・要望</strong><small>${model.companions.length}名</small></summary><div class="life-loop-content companion-agency-grid">${companions}</div></details>${renderCompanionQuestBoard()}${fief}${renderEstatePoliticsBoard()}${household}${campaign}${renderGeneratedCampaignBoard()}${lifePath}${succession}</section>`;
 }
 
 function careerActionButtons(player) {
@@ -8435,11 +8510,34 @@ document.addEventListener("click", async (event) => {
     catch (error) { showToast(error.message, "danger"); }
     return;
   }
+  const propertyAcquire = event.target.closest("[data-property-acquire]");
+  if (propertyAcquire) {
+    try { const settlement = activeVillageContext(); commit(acquireProperty(state, settlement, propertyAcquire.dataset.propertyAcquire), "現地の物件を取得し、生活と物流の拠点にしました。", "event"); }
+    catch (error) { showToast(error.message, "danger"); } return;
+  }
+  const warehouseDeposit = event.target.closest("[data-warehouse-deposit]");
+  if (warehouseDeposit) { try { commit(transferCargoToWarehouse(state, warehouseDeposit.dataset.propertySettlement, warehouseDeposit.dataset.warehouseDeposit, 1), "積荷を現地倉庫へ移しました。", "confirm"); } catch (error) { showToast(error.message, "danger"); } return; }
+  const warehouseWithdraw = event.target.closest("[data-warehouse-withdraw]");
+  if (warehouseWithdraw) { try { commit(withdrawWarehouseCargo(state, warehouseWithdraw.dataset.propertySettlement, warehouseWithdraw.dataset.warehouseWithdraw, 1), "現地倉庫から積荷を取り出しました。", "confirm"); } catch (error) { showToast(error.message, "danger"); } return; }
+  const shopOpen = event.target.closest("[data-shop-open]");
+  if (shopOpen) { try { commit(openPlayerShop(state, shopOpen.dataset.propertySettlement, `${activeVillageContext()?.name ?? "街道"}商店`), "個人商店を開業しました。月次に売上と維持費を決算します。", "event"); } catch (error) { showToast(error.message, "danger"); } return; }
+  const shopStock = event.target.closest("[data-shop-stock]");
+  if (shopStock) { try { commit(stockPlayerShop(state, shopStock.dataset.propertySettlement, shopStock.dataset.shopStock, 1), "倉庫から商品を店頭へ並べました。", "confirm"); } catch (error) { showToast(error.message, "danger"); } return; }
+  const shopPrice = event.target.closest("[data-shop-price]");
+  if (shopPrice) { try { commit(priceShopCommodity(state, shopPrice.dataset.propertySettlement, shopPrice.dataset.shopPrice, Number(shopPrice.dataset.shopMultiplier)), "個人商店の販売価格を変更しました。", "confirm"); } catch (error) { showToast(error.message, "danger"); } return; }
+  const shopClose = event.target.closest("[data-shop-close]");
+  if (shopClose) { try { commit(closePlayerShop(state, shopClose.dataset.propertySettlement), "個人商店を閉じ、店頭在庫を倉庫へ戻しました。", "cancel"); } catch (error) { showToast(error.message, "danger"); } return; }
+  const companionQuestResponse = event.target.closest("[data-companion-quest-response]");
+  if (companionQuestResponse) { try { commit(respondToCompanionQuest(state, companionQuestResponse.dataset.companionQuestMember, companionQuestResponse.dataset.companionQuestOffer, companionQuestResponse.dataset.companionQuestResponse), "仲間の個人的な頼みに返答しました。", "event"); } catch (error) { showToast(error.message, "danger"); } return; }
+  const companionQuestComplete = event.target.closest("[data-companion-quest-complete]");
+  if (companionQuestComplete) { try { commit(completeCompanionQuest(state, companionQuestComplete.dataset.companionQuestComplete, { battleId: companionQuestComplete.dataset.companionBattleEvidence || null }), "現地条件を満たし、仲間の個人的な頼みを達成しました。", "confirm"); } catch (error) { showToast(error.message, "danger"); } return; }
+  const estateDecision = event.target.closest("[data-estate-decision]");
+  if (estateDecision) { try { commit(resolveEstateProjectDebate(state, estateDecision.dataset.estateDecision), "四身分への方針を決裁し、所領事業を着工しました。", "event"); } catch (error) { showToast(error.message, "danger"); } return; }
   const fiefProject = event.target.closest("[data-fief-project]");
   if (fiefProject) {
     try {
       const card = fiefProject.closest("[data-fief-project-card]");
-      commit(startFiefProject(state, { projectId: fiefProject.dataset.fiefProject, territoryId: card.querySelector("[data-fief-territory]")?.value, officerId: card.querySelector("[data-fief-officer]")?.value }), "所領金庫から予算を確保し、担当者付き事業を着工しました。", "event");
+      commit(startEstateProjectDebate(state, { projectId: fiefProject.dataset.fiefProject, territoryId: card.querySelector("[data-fief-territory]")?.value, officerId: card.querySelector("[data-fief-officer]")?.value }), "領民・名望家・商人・家臣団の評議を開始しました。", "event");
     } catch (error) { showToast(error.message, "danger"); }
     return;
   }
@@ -8462,6 +8560,17 @@ document.addEventListener("click", async (event) => {
     catch (error) { showToast(error.message, "danger"); }
     return;
   }
+  const generatedAlly = event.target.closest("[data-generated-ally]");
+  if (generatedAlly) { try { commit(requestAlliedContingent(state, generatedAlly.dataset.generatedAlly), "同盟国から援軍派遣の約束を取り付けました。", "event"); } catch (error) { showToast(error.message, "danger"); } return; }
+  if (event.target.closest("[data-generated-campaign-start]")) {
+    try { const form = event.target.closest("[data-generated-campaign-form]"); const allyNationIds = getGeneratedCampaignView(state).promisedAllies.map((entry) => entry.nationId); commit(startGeneratedCampaign(state, { targetRegionId: form.querySelector("[data-generated-campaign-target]")?.value, objectiveId: form.querySelector("[data-generated-campaign-objective]")?.value, commanderIds: ["player", form.querySelector("[data-generated-campaign-commander]")?.value], allyNationIds }), "二正面・兵站・同盟軍を持つ生成世界戦役を開始しました。", "event"); } catch (error) { showToast(error.message, "danger"); } return;
+  }
+  if (event.target.closest("[data-generated-campaign-advance]")) { try { commit(advanceGeneratedCampaign(state), "生成世界戦役を一段階進めました。", "event"); } catch (error) { showToast(error.message, "danger"); } return; }
+  const generatedSiege = event.target.closest("[data-generated-siege]");
+  if (generatedSiege) { try { commit(decideGeneratedSiege(state, generatedSiege.dataset.generatedSiege), "攻城方針を決裁しました。", "event"); } catch (error) { showToast(error.message, "danger"); } return; }
+  if (event.target.closest("[data-generated-campaign-retreat]")) { try { commit(retreatGeneratedCampaign(state), "損失を負って撤退し、再建段階へ移りました。", "cancel"); } catch (error) { showToast(error.message, "danger"); } return; }
+  const generatedPeace = event.target.closest("[data-generated-peace]");
+  if (generatedPeace) { try { const settlementId = generatedPeace.dataset.generatedPeace; const confirmIrreversible = settlementId !== "limited_annexation" || window.confirm("対象地方の支配を移す限定割譲を確定しますか？"); commit(settleGeneratedCampaign(state, settlementId, { confirmIrreversible }), "講和を確定し、戦役を年代記へ記録しました。", "event"); } catch (error) { showToast(error.message, "danger"); } return; }
   const lifePath = event.target.closest("[data-life-path]");
   if (lifePath) {
     try { commit(chooseLifePath(state, lifePath.dataset.lifePath), "次に追う人生目標を選びました。既存の実績が進捗になります。", "confirm"); }

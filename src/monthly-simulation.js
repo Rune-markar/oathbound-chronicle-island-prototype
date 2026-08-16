@@ -280,6 +280,13 @@ import {
 } from "./crime-system.js";
 import { advanceMerchantMarkets } from "./merchant-trade.js";
 import {
+  PROPERTY_TYPES, acquireProperty, advancePropertyEnterpriseMonth, closePlayerShop, getPropertyEnterpriseView,
+  normalizePropertyEnterpriseState, openPlayerShop, priceShopCommodity, stockPlayerShop, transferCargoToWarehouse, withdrawWarehouseCargo,
+} from "./property-enterprise-system.js";
+import { advanceCompanionQuests, completeCompanionQuest, getCompanionQuestView, normalizeCompanionQuestState, respondToCompanionQuest } from "./companion-quest-system.js";
+import { ESTATE_DEBATE_OPTIONS, ESTATE_FACTIONS, advanceEstatePoliticsMonth, getEstatePoliticsView, normalizeEstatePoliticsState, resolveEstateProjectDebate, startEstateProjectDebate } from "./estate-politics-system.js";
+import { GENERATED_CAMPAIGN_OBJECTIVES, GENERATED_SIEGE_DECISIONS, advanceGeneratedCampaign, advanceGeneratedCampaignMonth, decideGeneratedSiege, getGeneratedCampaignView, normalizeGeneratedCampaignState, requestAlliedContingent, retreatGeneratedCampaign, settleGeneratedCampaign, startGeneratedCampaign } from "./generated-campaign-system.js";
+import {
   MILITARY_MISSION_APPROACHES,
   MILITARY_MISSION_LOGISTICS,
   advanceMilitaryCareerMissionMonth,
@@ -359,6 +366,40 @@ export {
   executeAssassination,
   getSettlementTheftOpportunities,
   getSettlementExtortionOpportunities,
+  PROPERTY_TYPES,
+  acquireProperty,
+  advancePropertyEnterpriseMonth,
+  closePlayerShop,
+  getPropertyEnterpriseView,
+  normalizePropertyEnterpriseState,
+  openPlayerShop,
+  priceShopCommodity,
+  stockPlayerShop,
+  transferCargoToWarehouse,
+  withdrawWarehouseCargo,
+  advanceCompanionQuests,
+  completeCompanionQuest,
+  getCompanionQuestView,
+  normalizeCompanionQuestState,
+  respondToCompanionQuest,
+  ESTATE_DEBATE_OPTIONS,
+  ESTATE_FACTIONS,
+  advanceEstatePoliticsMonth,
+  getEstatePoliticsView,
+  normalizeEstatePoliticsState,
+  resolveEstateProjectDebate,
+  startEstateProjectDebate,
+  GENERATED_CAMPAIGN_OBJECTIVES,
+  GENERATED_SIEGE_DECISIONS,
+  advanceGeneratedCampaign,
+  advanceGeneratedCampaignMonth,
+  decideGeneratedSiege,
+  getGeneratedCampaignView,
+  normalizeGeneratedCampaignState,
+  requestAlliedContingent,
+  retreatGeneratedCampaign,
+  settleGeneratedCampaign,
+  startGeneratedCampaign,
   ADMINISTRATION_MANDATES,
   ADMINISTRATION_MODES,
   AUTHORITY_DOMAINS,
@@ -1016,7 +1057,12 @@ export function createCareerInitialState(options = {}) {
     seed,
   }), creationOptions.player ?? creationOptions));
   const normalized = normalizeWarState(state);
-  return normalizeLifeToRealmState(normalizeMilitaryCareerState(setGeneratedPlayerNation(normalized, normalized.generatedWorld.playerNationId, generatedWorldRuntime)));
+  const career = normalizeLifeToRealmState(normalizeMilitaryCareerState(setGeneratedPlayerNation(normalized, normalized.generatedWorld.playerNationId, generatedWorldRuntime)));
+  normalizePropertyEnterpriseState(career);
+  normalizeCompanionQuestState(career);
+  normalizeEstatePoliticsState(career);
+  normalizeGeneratedCampaignState(career);
+  return career;
 }
 
 export function getDelegationCandidates(state, roleId) {
@@ -1115,6 +1161,10 @@ export function reportMilitaryCareerMission(state, delegation = {}) {
 
 export function advanceCareerMonth(state) {
   let next = advanceLifeToRealmMonth(advanceMilitaryCareerMissionMonth(advancePlayerCareerMonth(state)));
+  next = advancePropertyEnterpriseMonth(next);
+  next = advanceCompanionQuests(next);
+  next = advanceEstatePoliticsMonth(next);
+  next = advanceGeneratedCampaignMonth(next);
   advanceMerchantMarkets(next);
   resolveRoleDelegations(WORLD, next);
   if (next.scenarioMode === "generated") {
