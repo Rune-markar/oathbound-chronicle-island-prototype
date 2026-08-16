@@ -65,3 +65,29 @@ test("犯罪プレーの通常導線、六行動、帰結を実装済みとし�
   assert.match(changelog, /Unreleased — 2026-08-16/);
   assert.match(changelog, /犯罪.*保存.*移行.*政治.*歴史.*テスト/s);
 });
+
+test("生活から国家と10段階出世を通常導線の実装として追跡する", async () => {
+  const life = STATUS_ENTRIES.find((item) => item.id === "life-to-realm-gameplay");
+  const career = STATUS_ENTRIES.find((item) => item.id === "career-delegation");
+  assert.equal(life?.category, "implemented");
+  assert.equal(career?.category, "implemented");
+  assert.match(career.title, /10段階/);
+  ["日次生活", "期限付き生業", "同行者", "所領事業", "家中恩賞", "二軍団", "生涯目標", "世代継承"].forEach((term) => {
+    assert.match(`${life.summary} ${life.evidence}`, new RegExp(term));
+  });
+  assert.ok(life.sources.some((item) => item.href === "./src/life-to-realm-system.js"));
+  assert.ok(life.sources.some((item) => item.href === "./src/app.js" && /renderLifeToRealmBoard/.test(item.ref)));
+  assert.ok(life.sources.some((item) => item.href === "./tests/life-to-realm-system.test.mjs"));
+  assert.ok(life.sources.some((item) => item.href === "./docs/gameplay-reviews/2026-08-16-life-to-realm-playthrough.md"));
+
+  const projectRoot = new URL("../", import.meta.url);
+  const [readme, manual, changelog] = await Promise.all([
+    readFile(new URL("README.md", projectRoot), "utf8"),
+    readFile(new URL("MANUAL.md", projectRoot), "utf8"),
+    readFile(new URL("CHANGELOG.md", projectRoot), "utf8"),
+  ]);
+  assert.match(readme, /10位階すべて/);
+  assert.match(manual, /生活から国家へ/);
+  assert.match(manual, /日雇い.*運送.*護衛/s);
+  assert.match(changelog, /所領事業.*家中恩賞.*二軍団.*継承/s);
+});

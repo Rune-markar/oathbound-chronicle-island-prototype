@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   acceptServiceInvitation,
   advanceCareerMonth,
+  advanceLifeToRealmMonth,
   createCareerInitialState,
   getDelegationCandidates,
   getRoleDelegation,
@@ -11,6 +12,7 @@ import {
   performCareerAction,
   performVillageAction,
   reassignDelegatedRole,
+  startFiefProject,
 } from "../src/simulation.js";
 
 function reachCommander() {
@@ -28,11 +30,14 @@ function reachCommander() {
 }
 
 function reachLord(options = {}) {
-  return performCareerAction(reachCommander(), "command_campaign", {
+  let state = performCareerAction(reachCommander(), "command_campaign", {
     successorId: options.successorId ?? "dario",
     mandateId: options.mandateId ?? "defensive",
     authorityId: options.authorityId ?? "standard",
   });
+  state = startFiefProject(state, { projectId: "patrol", territoryId: "orta", officerId: "player" });
+  state = advanceLifeToRealmMonth(state);
+  return performCareerAction(state, "earn_lordship");
 }
 
 test("昇進時に旧役割を仲間と担当組織へ引き継ぐ", () => {

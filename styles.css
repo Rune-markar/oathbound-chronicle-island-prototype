@@ -15913,3 +15913,36 @@ body.is-location-focus .village-central-status article > strong { font-size: cla
 .military-mission-companions label { display:flex; gap:6px; align-items:center; }
 .military-mission-plan,.military-mission-result { display:flex; justify-content:space-between; gap:12px; padding:10px; border-left:3px solid var(--accent, #d5b36a); background:rgba(0,0,0,.18); }
 @media (max-width: 720px) { .military-mission-route { grid-template-columns:1fr; } .military-mission-plan,.military-mission-result { flex-direction:column; } }
+.life-to-realm-board { display:grid; gap:12px; margin:18px 0; }
+.life-to-realm-board > header { display:flex; align-items:end; justify-content:space-between; gap:16px; padding:16px; border:1px solid rgba(213,179,106,.32); background:linear-gradient(120deg,rgba(37,31,25,.96),rgba(18,27,30,.92)); }
+.life-to-realm-board > header small,.life-loop-section > summary > span { color:var(--accent,#d5b36a); font-weight:800; letter-spacing:.12em; }
+.life-to-realm-board > header h2 { margin:3px 0 0; }
+.life-to-realm-board > header p { max-width:54ch; margin:0; opacity:.78; }
+.life-vitals { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)) auto; gap:8px; }
+.life-vitals article,.life-vitals > b { display:grid; gap:2px; align-content:center; padding:10px 12px; border:1px solid rgba(214,190,132,.2); background:rgba(10,16,18,.72); }
+.life-vitals small,.life-loop-content small { opacity:.68; }
+.life-vitals .is-warning { color:#f2b081; border-color:rgba(213,94,70,.52); }
+.life-loop-section { border:1px solid rgba(214,190,132,.22); background:rgba(10,16,18,.5); }
+.life-loop-section > summary { display:grid; grid-template-columns:minmax(72px,.55fr) minmax(180px,2fr) auto; gap:12px; align-items:center; padding:12px 14px; cursor:pointer; }
+.life-loop-section > summary small { text-align:right; opacity:.66; }
+.life-loop-content { display:grid; gap:12px; padding:0 14px 14px; }
+.life-action-grid,.livelihood-offer-grid,.companion-agency-grid,.fief-project-grid,.household-merit-grid,.life-path-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:10px; }
+.life-action-grid > button,.livelihood-offer-grid > article,.companion-agency-card,.fief-project-grid > article,.household-merit-grid > article,.life-path-grid > article,.life-active-contract,.realm-campaign-active,[data-realm-campaign-form] { display:grid; gap:9px; padding:12px; border:1px solid rgba(214,190,132,.22); background:rgba(25,30,32,.78); }
+.life-action-grid > button { min-height:78px; text-align:left; }
+.livelihood-offer-grid header,.companion-agency-card header,.fief-project-grid header,.household-merit-grid header,.life-path-grid header,.life-active-contract header,.realm-campaign-active header { display:flex; justify-content:space-between; gap:10px; align-items:start; }
+.livelihood-offer-grid h3,.companion-agency-card h3,.fief-project-grid h3,.household-merit-grid h3,.life-path-grid h3,.life-active-contract h3,.realm-campaign-active h3 { margin:2px 0 0; }
+.livelihood-offer-grid dl,.companion-agency-card dl,.life-active-contract dl { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; margin:0; }
+.livelihood-offer-grid dl div,.companion-agency-card dl div,.life-active-contract dl div { padding:6px; background:rgba(0,0,0,.2); }
+.livelihood-offer-grid dt,.livelihood-offer-grid dd,.companion-agency-card dt,.companion-agency-card dd,.life-active-contract dt,.life-active-contract dd { margin:0; }
+.livelihood-offer-grid dt,.companion-agency-card dt,.life-active-contract dt { font-size:.7rem; opacity:.65; }
+.companion-agency-card.is-departed { opacity:.58; border-color:rgba(190,70,65,.45); }
+.companion-request { display:grid; grid-template-columns:1fr auto auto; gap:7px; align-items:center; padding:8px; border-left:3px solid #d69b54; background:rgba(96,55,28,.22); }
+.companion-request span { grid-column:1/-1; }
+.fief-project-grid label,[data-realm-campaign-form] label,[data-succession-form] label { display:grid; gap:4px; }
+.fief-project-progress { display:flex; justify-content:space-between; gap:12px; padding:9px; border-left:3px solid var(--accent,#d5b36a); background:rgba(0,0,0,.18); }
+.household-merit-grid article > div { display:flex; flex-wrap:wrap; gap:6px; }
+.realm-campaign-active > div { display:grid; grid-template-columns:repeat(2,1fr); gap:8px; }
+.realm-campaign-active > div p { display:grid; gap:4px; padding:10px; background:rgba(0,0,0,.2); }
+.life-path-grid article.is-active { border-color:var(--accent,#d5b36a); box-shadow:inset 0 0 0 1px rgba(213,179,106,.22); }
+.life-path-grid ul { margin:0; padding-left:18px; }
+@media (max-width:720px) { .life-to-realm-board > header { align-items:start; flex-direction:column; } .life-vitals { grid-template-columns:1fr 1fr; } .life-loop-section > summary { grid-template-columns:70px 1fr; } .life-loop-section > summary small { grid-column:2; text-align:left; } .realm-campaign-active > div { grid-template-columns:1fr; } }

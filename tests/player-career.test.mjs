@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   CAREER_STAGE_ROUTE,
+  advanceCareerMonth,
+  advanceLifeToRealmMonth,
   GOVERNMENT_TITLE_SYSTEMS,
   PERSONAL_CHRONICLE_RECENT_LIMIT,
   PERSONAL_CHRONICLE_TICKER_LIMIT,
@@ -18,6 +20,7 @@ import {
   imposeProhibition,
   performCareerAction,
   performVillageAction,
+  startFiefProject,
   queueOrder,
   submitPetition,
 } from "../src/simulation.js";
@@ -86,7 +89,10 @@ function reachCommander() {
 }
 
 function reachLord() {
-  return performCareerAction(reachCommander(), "command_campaign");
+  let state = performCareerAction(reachCommander(), "command_campaign");
+  state = startFiefProject(state, { projectId: "patrol", territoryId: "orta", officerId: "player" });
+  state = advanceLifeToRealmMonth(state);
+  return performCareerAction(state, "earn_lordship");
 }
 
 test("a new game starts as an individual without a nation, fief, or governance screen", () => {
@@ -102,18 +108,24 @@ test("a new game starts as an individual without a nation, fief, or governance s
   assert.throws(() => performCareerAction(state, "take_contract"), /現在の地位/);
 });
 
-test("the playable vertical slice reaches service, command, and a frontier fief", () => {
+test("the playable vertical slice reaches service, command, castellanship, and a frontier fief", () => {
   const commander = reachCommander();
   assert.equal(commander.player.stage, "commander");
   assert.equal(commander.player.title, "部隊長");
   assert.equal(authorizePlayerAction(commander, { authority: "local_logistics", scope: "territory", targetTerritoryId: "orta" }).allowed, true);
   assert.equal(authorizePlayerAction(commander, { authority: "local_logistics", scope: "territory", targetTerritoryId: "nereia" }).allowed, false);
 
-  const lord = performCareerAction(commander, "command_campaign");
+  const castellan = performCareerAction(commander, "command_campaign");
+  assert.equal(castellan.player.stage, "castellan");
+  assert.equal(castellan.player.title, "城将");
+  assert.deepEqual(deriveJurisdiction(castellan).territoryIds, ["orta"]);
+  assert.ok(castellan.player.householdRetainers.includes("dario"));
+  assert.throws(() => performCareerAction(castellan, "earn_lordship"), /所領事業/);
+
+  const lord = reachLord();
   assert.equal(lord.player.stage, "lord");
   assert.equal(lord.player.title, "城主");
-  assert.deepEqual(deriveJurisdiction(lord).territoryIds, ["orta"]);
-  assert.ok(lord.player.householdRetainers.includes("dario"));
+  assert.equal(lord.player.holdings[0].tenure, "feudal");
 });
 
 test("a lord sees local execution and national petitions, never national direct commands", () => {

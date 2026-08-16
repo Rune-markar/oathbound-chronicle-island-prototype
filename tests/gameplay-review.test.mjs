@@ -9,6 +9,7 @@ import {
   performVillageAction,
   normalizeCareerState,
 } from "../src/simulation.js";
+import { getGeneratedWorldView } from "../src/generated-world-system.js";
 
 const appSource = await readFile(new URL("../src/app.js", import.meta.url), "utf8");
 const manualSource = await readFile(new URL("../MANUAL.md", import.meta.url), "utf8");
@@ -27,7 +28,7 @@ test("completed character generation is persisted before the launch screen close
 
 test("the displayed playable career route only claims milestones reachable from normal UI", () => {
   assert.deepEqual(PLAYABLE_CAREER_STAGE_ROUTE.map((stage) => stage.id), [
-    "individual", "retainer", "commander", "lord", "multi_lord", "independent_ruler",
+    "individual", "retainer", "commander", "castellan", "lord", "multi_lord", "governor", "duke", "regent", "independent_ruler",
   ]);
   assert.match(appSource, /PLAYABLE_CAREER_STAGE_ROUTE/);
   assert.match(manualSource, /通常UIで通過できる立身段階/);
@@ -52,6 +53,26 @@ test("a legacy generated-world frontier fief gains a display binding", () => {
   state.player.holdings = [{ id: "fief-orta", territoryId: "orta" }];
   normalizeCareerState(state);
   assert.equal(state.player.holdings[0].generatedRegionId, regionId);
+});
+
+test("a second fief is a selected distinct live region rather than the legacy placeholder", () => {
+  let state = createCareerInitialState({ seed: "second-generated-fief" });
+  const firstRegionId = state.generatedWorld.expeditionRegionId;
+  state.player.stage = "lord";
+  state.player.title = "男爵・城主";
+  state.player.affiliation = { nationId: state.generatedWorld.playerNationId, liegeId: "review-liege", liegeName: "検証主君" };
+  state.player.metrics.liegeTrust = 70;
+  state.player.metrics.civilMerit = 20;
+  state.player.holdings = [{ id: "fief-orta", territoryId: "orta", generatedRegionId: firstRegionId }];
+  const runtime = getGeneratedWorldView(state).runtime;
+  const firstRegion = runtime.regionById.get(firstRegionId);
+  const selected = [...runtime.regionById.values()].find((region) => region.nationId === firstRegion.nationId && region.id !== firstRegionId);
+  assert.ok(selected, "generated liege realm needs a distinct fief candidate");
+  state = performCareerAction(state, "request_second_fief", { generatedRegionId: selected.id });
+  assert.equal(state.player.holdings.find((holding) => holding.territoryId === "nereia")?.generatedRegionId, selected.id);
+  assert.notEqual(selected.id, firstRegionId);
+  assert.match(appSource, /data-second-fief-region/);
+  assert.doesNotMatch(appSource, /加増された場合、東境州/);
 });
 
 test("village conversation has keyboard close and modal focus restoration wiring", () => {

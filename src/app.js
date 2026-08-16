@@ -128,6 +128,23 @@ import {
   reportMilitaryCareerMission,
   resolveMilitaryCareerBattle,
   startMilitaryCareerMission,
+  acceptLivelihoodContract,
+  advanceRealmCampaign,
+  answerCompanionRequest,
+  chooseLifePath,
+  claimLifePathMilestone,
+  completeLivelihoodContract,
+  designateHeir,
+  executeSuccession,
+  getCareerAdvancementView,
+  getSecondFiefCandidates,
+  getLifeToRealmView,
+  grantHouseholdReward,
+  normalizeLifeToRealmState,
+  payCompanionWages,
+  performLifeAction,
+  startFiefProject,
+  startRealmCampaign,
   performVillageAction,
   hearMarketRumors,
   observeSettlementMarket,
@@ -720,7 +737,7 @@ function loadState() {
     parsed.fiscal ??= { publicDebt: 24, totalDebtRepaid: 0 };
     parsed.fiscal.publicDebt = Number.isFinite(parsed.fiscal.publicDebt) ? parsed.fiscal.publicDebt : 24;
     parsed.fiscal.totalDebtRepaid = Number.isFinite(parsed.fiscal.totalDebtRepaid) ? parsed.fiscal.totalDebtRepaid : 0;
-    return normalizeWarState(parsed);
+    return normalizeLifeToRealmState(normalizeWarState(parsed));
   } catch {
     return null;
   }
@@ -739,7 +756,7 @@ function persist(showMessage = false) {
 
 function commit(nextState, message = "", cue = "confirm") {
   const wasAtWar = Boolean(state.war);
-  state = normalizeAdventureState(refreshGeneratedWorldForDate(nextState));
+  state = normalizeLifeToRealmState(normalizeAdventureState(refreshGeneratedWorldForDate(nextState)));
   if (!wasAtWar && state.war) {
     view.warMapView = "theater";
     view.warRegionId = state.war.theater?.activeRegionId ?? null;
@@ -1012,9 +1029,11 @@ function renderCampaignBar() {
       individual: "村へ入り、依頼・救命・大会・紹介から仕官の縁を得る",
       retainer: "主君の命令で功績と信用を得る",
       commander: "委任された部隊を率い、辺境を救援する",
+      castellan: "城下事業を完成させ、預かった城を正式な所領にする",
       lord: "自領を治め、忠誠・建議・独立の道を選ぶ",
       multi_lord: "複数領の利害を束ね、中央政治へ関与する",
       governor: "委任地方を治め、主君との権限境界を保つ",
+      duke: "大戦役と論功を背景に、地方諸侯を束ねる",
       regent: "代行政権と正統性の反発を両立させる",
       independent_ruler: "同じ統治画面で新国家全体を統治する",
       centralized_ruler: "全国への直接命令と反動を統治する",
@@ -3672,18 +3691,61 @@ function renderMilitaryCareerMission(player) {
   return `<article class="career-promotion-action military-mission-card" data-military-mission-card>${brief}<p class="military-mission-result"><strong>${resultText}</strong><span>味方損害 ${result?.friendlyCasualties ?? 0} · 敵損害 ${result?.enemyCasualties ?? 0}</span></p>${action}</article>`;
 }
 
+function lifeClockLabel(minutes) {
+  const day = Math.floor(minutes / 1440) + 1;
+  const minuteOfDay = minutes % 1440;
+  return `第${day}日 ${String(Math.floor(minuteOfDay / 60)).padStart(2, "0")}:${String(minuteOfDay % 60).padStart(2, "0")}`;
+}
+
+function renderLifeToRealmBoard() {
+  const model = getLifeToRealmView(state);
+  const body = model.body;
+  const warning = body.warnings.length ? `<b class="is-warning">${escapeHtml(body.warnings.join("・"))}</b>` : "<b>行動可能</b>";
+  const lifeActions = model.lifeActions.map((action) => `<button type="button" data-life-action="${action.id}"><strong>${escapeHtml(action.name)}</strong><small>${escapeHtml(action.description)}</small></button>`).join("");
+  const livelihood = model.livelihood;
+  const activeContract = livelihood.activeContract;
+  const contractArea = activeContract
+    ? `<article class="life-active-contract"><header><div><small>ACTIVE WORK</small><h3>${escapeHtml(activeContract.title)}</h3></div><b>${escapeHtml(activeContract.risk)}</b></header><p>${escapeHtml(activeContract.description)}</p><dl><div><dt>目的地</dt><dd>${escapeHtml(activeContract.targetRegionName)}</dd></div><div><dt>期限</dt><dd>${escapeHtml(lifeClockLabel(activeContract.deadlineMinutes))}</dd></div><div><dt>報酬</dt><dd>財産${activeContract.reward.wealth}・名声${activeContract.reward.renown}</dd></div></dl>${livelihood.currentRegionId === activeContract.targetRegionId
+      ? `<button type="button" data-livelihood-complete><strong>仕事を完了・報告する</strong><small>時間、疲労、報酬を確定</small></button>`
+      : `<button type="button" data-livelihood-target="${activeContract.targetRegionId}"><strong>${escapeHtml(activeContract.targetRegionName)}を地図で選ぶ</strong><small>通常の地方移動で目的地へ向かう</small></button>`}</article>`
+    : `<div class="livelihood-offer-grid">${livelihood.offers.map((offer) => `<article><header><div><small>${escapeHtml(offer.kind.toUpperCase())}</small><h3>${escapeHtml(offer.title)}</h3></div><b>${escapeHtml(offer.risk)}</b></header><p>${escapeHtml(offer.description)}</p><dl><div><dt>目的地</dt><dd>${escapeHtml(offer.targetRegionName)}</dd></div><div><dt>期限</dt><dd>${escapeHtml(lifeClockLabel(offer.deadlineMinutes))}</dd></div><div><dt>報酬</dt><dd>財産${offer.reward.wealth}・名声${offer.reward.renown}</dd></div></dl><button type="button" data-livelihood-accept="${offer.id}">この仕事を受ける</button></article>`).join("")}</div>`;
+  const companions = model.companions.map((member) => {
+    const memberName = WORLD.characters[member.id]?.name ?? member.name;
+    const request = member.request ? `<p class="companion-request"><strong>要望</strong><span>${escapeHtml(member.request.text)}</span><button type="button" data-companion-request="${member.id}" data-companion-decision="accept">応じる</button><button type="button" data-companion-request="${member.id}" data-companion-decision="refuse">断る</button></p>` : "";
+    const wage = member.wageArrears > 0 && member.status !== "departed" ? `<button type="button" data-companion-wages="${member.id}">未払い${member.wageArrears}か月を払う（財産${member.wageArrears * member.monthlyWage}）</button>` : "";
+    return `<article class="companion-agency-card is-${member.status}"><header><div><small>${escapeHtml(member.role)}</small><h3>${escapeHtml(memberName)}</h3></div><b>${member.status === "departed" ? "離脱" : `忠誠${member.loyalty}`}</b></header><p>${escapeHtml(member.aspiration)}</p><dl><div><dt>士気</dt><dd>${member.morale}</dd></div><div><dt>恐怖</dt><dd>${member.fear}</dd></div><div><dt>月給</dt><dd>${member.monthlyWage}</dd></div></dl>${request}${wage}</article>`;
+  }).join("") || "<p>同行者を酒場で迎えると、賃金・忠誠・要望がここに現れます。</p>";
+  const fief = model.fief.available ? `<details class="life-loop-section"><summary><span>所領</span><strong>担当者・予算・工期</strong><small>進行中 ${model.fief.projects.length}件</small></summary><div class="life-loop-content">${model.fief.projects.map((project) => `<article class="fief-project-progress"><strong>${escapeHtml(project.name)}</strong><span>${escapeHtml(careerTerritoryName(project.territoryId))} · 担当 ${escapeHtml(WORLD.characters[project.officerId]?.name ?? project.officerId)} · 残り${project.remainingMonths}か月</span></article>`).join("") || "<p>今月着手する事業を選べます。効果は完成月まで発生しません。</p>"}<div class="fief-project-grid">${model.fief.definitions.map((project) => `<article data-fief-project-card><header><h3>${escapeHtml(project.name)}</h3><b>${project.duration}か月</b></header><p>${escapeHtml(project.description)}</p><small>所領金庫${project.cost} · ${escapeHtml(project.effect)}</small><label>所領<select data-fief-territory>${model.fief.holdings.map((holding) => `<option value="${holding.territoryId}">${escapeHtml(careerTerritoryName(holding.territoryId))}</option>`).join("")}</select></label><label>担当<select data-fief-officer>${model.fief.officers.map((officer) => `<option value="${officer.id}">${escapeHtml(WORLD.characters[officer.id]?.name ?? officer.name)}</option>`).join("")}</select></label><button type="button" data-fief-project="${project.id}">着工する</button></article>`).join("")}</div></div></details>` : "";
+  const household = model.household.available ? `<details class="life-loop-section"><summary><span>家中</span><strong>功績・恩賞・忠誠</strong><small>派閥緊張 ${model.household.factionTension}</small></summary><div class="life-loop-content household-merit-grid">${model.household.members.map((member) => `<article data-household-member="${member.id}"><header><div><small>${escapeHtml(member.rank ?? "家臣")}</small><h3>${escapeHtml(WORLD.characters[member.id]?.name ?? member.name)}</h3></div><b>忠誠${member.loyalty}</b></header><p>功績 ${member.merit}${member.demand ? ` · ${escapeHtml(member.demand.text)}` : " · 現状に大きな不満なし"}</p><div>${model.household.rewards.map((reward) => `<button type="button" data-household-reward="${reward.id}" data-household-officer="${member.id}" title="${escapeHtml(reward.description)}">${escapeHtml(reward.name)}</button>`).join("")}</div></article>`).join("") || "<p>直属家臣ができると功績と恩賞要求が現れます。</p>"}</div></details>` : "";
+  const campaign = model.campaign.available ? `<details class="life-loop-section"><summary><span>戦役</span><strong>二軍団・補給・政治目的</strong><small>${model.campaign.active ? escapeHtml(model.campaign.active.phase) : "待機"}</small></summary><div class="life-loop-content">${model.campaign.active
+    ? `<article class="realm-campaign-active"><header><div><small>${escapeHtml(model.campaign.active.objectiveName)}</small><h3>${escapeHtml(model.campaign.active.targetRegionName)}戦役</h3></div><b>${escapeHtml(model.campaign.active.phase)}</b></header><div>${model.campaign.active.armies.map((army) => `<p><strong>${escapeHtml(army.name)} · ${escapeHtml(WORLD.characters[army.commanderId]?.name ?? army.commanderName)}</strong><span>戦力${army.strength}・補給${army.supply}/${army.initialSupply}・損害${army.casualties}</span></p>`).join("")}</div><button type="button" data-realm-campaign-advance>戦役を一段階進める</button></article>`
+    : `<article data-realm-campaign-form><p>二つの軍団へ別々の指揮官と補給を割り当て、集結・行軍・会戦を順番に処理します。</p><label>対象地方<select data-campaign-target>${model.campaign.options.map((option) => `<option value="${option.targetRegionId}">${escapeHtml(option.targetRegionName)} · ${option.borderType === "foreign" ? "国外" : "国内"}</option>`).join("")}</select></label><label>政治目的<select data-campaign-objective>${model.campaign.objectives.map((objective) => `<option value="${objective.id}">${escapeHtml(objective.name)}</option>`).join("")}</select></label><label>主力軍<select data-campaign-commander="first">${model.campaign.commanders.map((commander) => `<option value="${commander.id}">${escapeHtml(WORLD.characters[commander.id]?.name ?? commander.name)}</option>`).join("")}</select></label><label>支援軍<select data-campaign-commander="second">${model.campaign.commanders.map((commander, index) => `<option value="${commander.id}" ${index === 1 ? "selected" : ""}>${escapeHtml(WORLD.characters[commander.id]?.name ?? commander.name)}</option>`).join("")}</select></label><button type="button" data-realm-campaign-start>二軍団を集結させる（財産5）</button></article>`}</div></details>` : "";
+  const lifePath = `<details class="life-loop-section"><summary><span>生き方</span><strong>${escapeHtml(model.lifePath.active?.name ?? "人生目標を選ぶ")}</strong><small>${model.lifePath.epithets.length ? escapeHtml(model.lifePath.epithets.join("・")) : "二つ名なし"}</small></summary><div class="life-loop-content life-path-grid">${model.lifePath.paths.map((path) => `<article class="${path.id === model.lifePath.active?.id ? "is-active" : ""}"><header><h3>${escapeHtml(path.name)}</h3><b>${path.claimed ? "達成済" : path.complete ? "達成" : "進行中"}</b></header><p>${escapeHtml(path.description)}</p><ul>${path.checks.map((check) => `<li>${escapeHtml(check.label)} ${Math.min(check.value, check.target)}/${check.target}</li>`).join("")}</ul><button type="button" data-life-path="${path.id}">${path.id === model.lifePath.active?.id ? "選択中" : "この生き方を追う"}</button>${path.id === model.lifePath.active?.id && path.complete && !path.claimed ? `<button type="button" data-life-path-claim>二つ名「${escapeHtml(path.epithet)}」を受ける</button>` : ""}</article>`).join("")}</div></details>`;
+  const succession = model.succession.available ? `<details class="life-loop-section"><summary><span>継承</span><strong>第${model.succession.generation}代</strong><small>${model.succession.heirId ? "後継指名済み" : "後継未定"}</small></summary><div class="life-loop-content" data-succession-form><p>現君主を退位させ、同じ世界・国家・所領・年代記を次代へ渡します。</p><label>後継者<select data-succession-heir>${model.succession.candidates.map((candidate) => `<option value="${candidate.id}" ${candidate.id === model.succession.heirId ? "selected" : ""}>${escapeHtml(WORLD.characters[candidate.id]?.name ?? candidate.name)} · ${escapeHtml(candidate.role)}</option>`).join("")}</select></label><button type="button" data-designate-heir>後継者として公示する</button><label>継ぐ遺産<select data-succession-legacy>${model.succession.choices.map((choice) => `<option value="${choice.id}">${escapeHtml(choice.name)} — ${escapeHtml(choice.description)}</option>`).join("")}</select></label><button class="is-danger" type="button" data-execute-succession ${model.succession.heirId ? "" : "disabled"}>退位し、次代の年代記を始める</button></div></details>` : "";
+  return `<section class="life-to-realm-board"><header><div><small>LIFE TO REALM</small><h2>生活から国家へ</h2></div><p>時間、身体、仕事、仲間、所領、家中、戦役、継承を同じ人物状態で扱います。</p></header><section class="life-vitals"><article><small>世界時刻</small><strong>${escapeHtml(lifeClockLabel(model.clockMinutes))}</strong><span>移動と生活行動で進行</span></article><article><small>身体</small><strong>HP ${body.hp}/${body.maxHp}</strong><span>空腹${body.hunger}・疲労${body.fatigue}</span></article><article><small>生活基盤</small><strong>${escapeHtml(model.home.name)}</strong><span>家賃${model.home.monthlyRent}・負債${model.home.debt}</span></article>${warning}</section><details class="life-loop-section" open><summary><span>一日</span><strong>食事・労働・休養</strong><small>財産${state.player.metrics.wealth}・食料${body.food}</small></summary><div class="life-loop-content life-action-grid">${lifeActions}</div></details><details class="life-loop-section" open><summary><span>生計</span><strong>${activeContract ? escapeHtml(activeContract.title) : `${escapeHtml(livelihood.currentRegionName)}の仕事3件`}</strong><small>期限と移動を比較</small></summary><div class="life-loop-content">${contractArea}</div></details><details class="life-loop-section"><summary><span>仲間</span><strong>賃金・忠誠・要望</strong><small>${model.companions.length}名</small></summary><div class="life-loop-content companion-agency-grid">${companions}</div></details>${fief}${household}${campaign}${lifePath}${succession}</section>`;
+}
+
 function careerActionButtons(player) {
+  const advancement = getCareerAdvancementView(state);
+  const secondFiefCandidates = player.stage === "lord" ? getSecondFiefCandidates(state) : [];
+  const advancementCard = advancement ? `<article class="career-promotion-action" data-career-action-card>
+    ${player.stage === "multi_lord" ? promotionDelegationFields("multi_lord") : ""}
+    ${advancement.actionId === "assume_crown" ? governmentFormFields() : ""}
+    <button type="button" data-career-action="${advancement.actionId}" ${advancement.ready ? "" : "disabled"}><strong>${escapeHtml(advancement.name)}</strong><small>${advancement.requirements.map((entry) => `${escapeHtml(entry.label)} ${Math.min(entry.value, entry.target)}/${entry.target}`).join("・")}</small></button>
+  </article>` : "";
   if (player.stage === "individual" && !player.invitations.length) {
     return `<button class="career-primary-action career-village-route" type="button" data-panel="world"><strong>地方地図で村を探す</strong><small>村の酒場で依頼を受け、仲間を集めてから出発する</small></button>`;
   }
   if (player.stage === "individual") return "";
   if (["retainer", "commander"].includes(player.stage)) return renderMilitaryCareerMission(player);
-  if (["lord", "multi_lord", "governor", "duke"].includes(player.stage)) {
+  if (player.stage === "castellan") return advancementCard;
+  if (["lord", "multi_lord", "governor", "duke", "regent"].includes(player.stage)) {
     const independenceHandoff = ["lord", "multi_lord"].includes(player.stage) ? promotionDelegationFields(player.stage) : "";
     return `
-      <button type="button" data-career-action="consolidate_power"><strong>領内基盤を固める</strong><small>家臣・領民・地方豪族の支持と正統性を積む。中央の警戒も強まる</small></button>
-      ${player.stage === "lord" ? `<article class="career-promotion-action" data-career-action-card>${promotionDelegationFields("lord")}<button type="button" data-career-action="request_second_fief"><strong>第二の所領を願い出る</strong><small>加増された場合、東境州の日常統治を選んだ代官へ引き継ぐ</small></button></article>` : ""}
-      <article class="career-promotion-action government-form-action" data-career-action-card>${independenceHandoff}${governmentFormFields()}<button class="is-danger" type="button" data-career-action="declare_independence"><strong>辺境に新国家を建てる</strong><small>家臣支持55・領民支持50・正統性30が必要。現在の実務は後任へ委任し、旧主君との関係を失う</small></button></article>`;
+      ${["lord", "multi_lord", "governor", "duke"].includes(player.stage) ? `<button type="button" data-career-action="consolidate_power"><strong>領内基盤を固める</strong><small>家臣・領民・地方豪族の支持と正統性を積む。中央の警戒も強まる</small></button>` : ""}
+      ${player.stage === "lord" ? `<article class="career-promotion-action" data-career-action-card>${promotionDelegationFields("lord")}<label>加増を願う地方<select data-second-fief-region>${secondFiefCandidates.map((region) => `<option value="${region.id}">${escapeHtml(region.name)}</option>`).join("")}</select></label><button type="button" data-career-action="request_second_fief" ${secondFiefCandidates.length ? "" : "disabled"}><strong>第二の所領を願い出る</strong><small>${secondFiefCandidates.length ? "主君領内の別地方を選び、旧所領の日常統治を代官へ引き継ぐ" : "主君領内に加増可能な別地方がない"}</small></button></article>` : ""}
+      ${advancementCard}
+      ${player.stage !== "regent" ? `<article class="career-promotion-action government-form-action" data-career-action-card>${independenceHandoff}${governmentFormFields()}<button class="is-danger" type="button" data-career-action="declare_independence"><strong>辺境に新国家を建てる</strong><small>家臣支持55・領民支持50・正統性30が必要。現在の実務は後任へ委任し、旧主君との関係を失う</small></button></article>` : ""}`;
   }
   return "";
 }
@@ -4846,6 +4908,7 @@ function renderCareerWorkspace() {
       ${renderTravelCrimeSection()}
       ${renderPersonCrimeSection()}
       ${renderCrimeStatusBoard()}
+      ${renderLifeToRealmBoard()}
       <section class="career-actions"><header><div><small>CURRENT CHOICES</small><h2>今できること</h2></div><p>権限を得ていない国家命令は表示しません。</p></header><div>${careerActionButtons(player) || (stage.governance ? `<button type="button" data-panel="governance"><strong>統治画面を開く</strong><small>現在の管轄と委任権限で実行可能な命令だけを表示</small></button>` : `<p class="career-action-note">上の仕官先を選び、具体的な主君との主従関係を結んでください。</p>`)}</div></section>
       ${roleDelegationSection()}
       ${renderPersonalChronicle(player.history)}
@@ -4877,7 +4940,7 @@ function renderGovernanceWorkspace() {
       ${petitions ? `<section class="governance-command-group is-petition"><header><div><small>PETITION TO THE LIEGE</small><h2>国家政策への建議</h2></div><p>直接実行ではありません。採用後も実施者は主君または中央政府です。</p></header><div>${petitions}</div></section>` : ""}
       <section class="governance-delegations"><header><div><small>OFFICES / DELEGATION / PROHIBITIONS</small><h2>官職と委任</h2></div><p>単純な身分以外の一時権限をここで確認します。</p></header><ul>${delegated || "<li><strong>追加委任なし</strong><span>現在は地位と所領に基づく権限のみ</span></li>"}</ul></section>
       ${roleDelegationSection()}
-      ${["lord", "multi_lord", "governor", "duke"].includes(player.stage) ? `<section class="career-actions governance-politics"><header><div><small>LOYALTY / INTRIGUE / INDEPENDENCE</small><h2>領主としての政治選択</h2></div><p>国家命令の代替ではなく、地位そのものを変える政治行動です。</p></header><div>${careerActionButtons(player)}</div></section>` : ""}
+      ${["lord", "multi_lord", "governor", "duke", "regent"].includes(player.stage) ? `<section class="career-actions governance-politics"><header><div><small>LOYALTY / INTRIGUE / INDEPENDENCE</small><h2>領主としての政治選択</h2></div><p>国家命令の代替ではなく、地位そのものを変える政治行動です。</p></header><div>${careerActionButtons(player)}</div></section>` : ""}
     </div>`;
 }
 
@@ -8329,6 +8392,101 @@ document.addEventListener("click", async (event) => {
     renderPanelFromTop();
     return;
   }
+  const lifeAction = event.target.closest("[data-life-action]");
+  if (lifeAction) {
+    try { commit(performLifeAction(state, lifeAction.dataset.lifeAction), "時間と生活資源を進めました。", "confirm"); }
+    catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
+  const livelihoodAccept = event.target.closest("[data-livelihood-accept]");
+  if (livelihoodAccept) {
+    try { commit(acceptLivelihoodContract(state, livelihoodAccept.dataset.livelihoodAccept), "期限と目的地を持つ仕事を受けました。", "event"); }
+    catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
+  const livelihoodTarget = event.target.closest("[data-livelihood-target]");
+  if (livelihoodTarget) {
+    try {
+      const next = selectGeneratedWorldRegion(state, livelihoodTarget.dataset.livelihoodTarget);
+      view.characterDetailOpen = false;
+      view.ledgerDrawerOpen = false;
+      view.panel = "world";
+      view.shortcutTab = "world";
+      view.atlasMode = "generated";
+      view.generatedMapScale = "region";
+      commit(next, "仕事の目的地を選択しました。通常の地方移動で向かってください。", "info");
+    } catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
+  if (event.target.closest("[data-livelihood-complete]")) {
+    try { commit(completeLivelihoodContract(state), "仕事を完了し、時間・疲労・報酬を確定しました。", "confirm"); }
+    catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
+  const companionWages = event.target.closest("[data-companion-wages]");
+  if (companionWages) {
+    try { commit(payCompanionWages(state, companionWages.dataset.companionWages), "同行者へ未払い賃金を支給しました。", "confirm"); }
+    catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
+  const companionRequest = event.target.closest("[data-companion-request]");
+  if (companionRequest) {
+    try { commit(answerCompanionRequest(state, companionRequest.dataset.companionRequest, companionRequest.dataset.companionDecision), companionRequest.dataset.companionDecision === "accept" ? "同行者の要望に応じました。" : "同行者の要望を断り、関係へ影響が残りました。", companionRequest.dataset.companionDecision === "accept" ? "confirm" : "cancel"); }
+    catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
+  const fiefProject = event.target.closest("[data-fief-project]");
+  if (fiefProject) {
+    try {
+      const card = fiefProject.closest("[data-fief-project-card]");
+      commit(startFiefProject(state, { projectId: fiefProject.dataset.fiefProject, territoryId: card.querySelector("[data-fief-territory]")?.value, officerId: card.querySelector("[data-fief-officer]")?.value }), "所領金庫から予算を確保し、担当者付き事業を着工しました。", "event");
+    } catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
+  const householdReward = event.target.closest("[data-household-reward]");
+  if (householdReward) {
+    try { commit(grantHouseholdReward(state, householdReward.dataset.householdOfficer, householdReward.dataset.householdReward), "家臣の功績へ恩賞を与えました。", "confirm"); }
+    catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
+  if (event.target.closest("[data-realm-campaign-start]")) {
+    try {
+      const form = event.target.closest("[data-realm-campaign-form]");
+      const commanders = [...form.querySelectorAll("[data-campaign-commander]")].map((select) => select.value);
+      commit(startRealmCampaign(state, { targetRegionId: form.querySelector("[data-campaign-target]")?.value, objectiveId: form.querySelector("[data-campaign-objective]")?.value, commanderIds: commanders }), "政治目的と二軍団の指揮官・補給を確定しました。", "event");
+    } catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
+  if (event.target.closest("[data-realm-campaign-advance]")) {
+    try { commit(advanceRealmCampaign(state), "戦役の集結・行軍・会戦を一段階進めました。", "event"); }
+    catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
+  const lifePath = event.target.closest("[data-life-path]");
+  if (lifePath) {
+    try { commit(chooseLifePath(state, lifePath.dataset.lifePath), "次に追う人生目標を選びました。既存の実績が進捗になります。", "confirm"); }
+    catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
+  if (event.target.closest("[data-life-path-claim]")) {
+    try { commit(claimLifePathMilestone(state), "歩みが認められ、二つ名と報酬を得ました。", "confirm"); }
+    catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
+  if (event.target.closest("[data-designate-heir]")) {
+    try {
+      const form = event.target.closest("[data-succession-form]");
+      commit(designateHeir(state, form.querySelector("[data-succession-heir]")?.value), "後継者を正式に公示しました。", "event");
+    } catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
+  if (event.target.closest("[data-execute-succession]")) {
+    try {
+      const form = event.target.closest("[data-succession-form]");
+      commit(executeSuccession(state, form.querySelector("[data-succession-legacy]")?.value), "世界と国家を保ったまま、次代の年代記が始まりました。", "event");
+    } catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
   const militaryMissionAction = event.target.closest("[data-military-mission-action]");
   if (militaryMissionAction) {
     try {
@@ -8396,11 +8554,12 @@ document.addEventListener("click", async (event) => {
         mandateId: actionCard.querySelector("[data-promotion-mandate]")?.value,
         authorityId: actionCard.querySelector("[data-promotion-authority]")?.value,
         governmentFormId: actionCard.querySelector("[data-government-form]")?.value,
+        generatedRegionId: actionCard.querySelector("[data-second-fief-region]")?.value,
       } : {};
       const next = performCareerAction(state, careerAction.dataset.careerAction, delegation);
       const becameLord = getCareerStage(next)?.governance && !getCareerStage(state)?.governance;
       if (becameLord) view.panel = "governance";
-      commit(next, becameLord ? "領主に任じられました。同じ統治画面が自領限定で解放されます。" : "人物の年代記を更新しました。", careerAction.dataset.careerAction === "declare_independence" ? "event" : "confirm");
+      commit(next, becameLord ? "領主に任じられました。同じ統治画面が自領限定で解放されます。" : "人物の年代記を更新しました。", ["declare_independence", "assume_crown"].includes(careerAction.dataset.careerAction) ? "event" : "confirm");
     } catch (error) { showToast(error.message, "danger"); }
     return;
   }

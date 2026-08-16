@@ -99,6 +99,7 @@ import {
   createCharacterWorldSeed,
   createGeneratedWorldState,
   declareGeneratedRegionIndependence,
+  getGeneratedWorldView,
   normalizeGeneratedWorldState,
   setGeneratedPlayerNation,
 } from "./generated-world-system.js";
@@ -290,6 +291,31 @@ import {
   resolveMilitaryCareerBattle,
   startMilitaryCareerMission,
 } from "./military-career-system.js";
+import {
+  FIEF_PROJECT_DEFINITIONS,
+  HOUSEHOLD_REWARDS,
+  LEGACY_CHOICES,
+  LIFE_ACTIONS,
+  LIFE_PATHS,
+  REALM_CAMPAIGN_OBJECTIVES,
+  acceptLivelihoodContract,
+  advanceLifeToRealmMonth,
+  advanceRealmCampaign,
+  answerCompanionRequest,
+  chooseLifePath,
+  claimLifePathMilestone,
+  completeLivelihoodContract,
+  designateHeir,
+  executeSuccession,
+  getCareerAdvancementView,
+  getLifeToRealmView,
+  grantHouseholdReward,
+  normalizeLifeToRealmState,
+  payCompanionWages,
+  performLifeAction,
+  startFiefProject,
+  startRealmCampaign,
+} from "./life-to-realm-system.js";
 
 export {
   CRIME_HEAT_GAINS,
@@ -447,6 +473,29 @@ export {
   prepareMilitaryCareerMission,
   resolveMilitaryCareerBattle,
   startMilitaryCareerMission,
+  FIEF_PROJECT_DEFINITIONS,
+  HOUSEHOLD_REWARDS,
+  LEGACY_CHOICES,
+  LIFE_ACTIONS,
+  LIFE_PATHS,
+  REALM_CAMPAIGN_OBJECTIVES,
+  acceptLivelihoodContract,
+  advanceLifeToRealmMonth,
+  advanceRealmCampaign,
+  answerCompanionRequest,
+  chooseLifePath,
+  claimLifePathMilestone,
+  completeLivelihoodContract,
+  designateHeir,
+  executeSuccession,
+  getCareerAdvancementView,
+  getLifeToRealmView,
+  grantHouseholdReward,
+  normalizeLifeToRealmState,
+  payCompanionWages,
+  performLifeAction,
+  startFiefProject,
+  startRealmCampaign,
 };
 
 export const FORCED_ORDER_RULES = {
@@ -967,11 +1016,23 @@ export function createCareerInitialState(options = {}) {
     seed,
   }), creationOptions.player ?? creationOptions));
   const normalized = normalizeWarState(state);
-  return normalizeMilitaryCareerState(setGeneratedPlayerNation(normalized, normalized.generatedWorld.playerNationId, generatedWorldRuntime));
+  return normalizeLifeToRealmState(normalizeMilitaryCareerState(setGeneratedPlayerNation(normalized, normalized.generatedWorld.playerNationId, generatedWorldRuntime)));
 }
 
 export function getDelegationCandidates(state, roleId) {
   return getRoleDelegationCandidates(WORLD, state, roleId);
+}
+
+export function getSecondFiefCandidates(state) {
+  if (state.scenarioMode !== "generated") return [];
+  const { runtime } = getGeneratedWorldView(state);
+  const heldRegionIds = new Set((state.player?.holdings ?? []).map((holding) => holding.generatedRegionId).filter(Boolean));
+  const firstHeldRegion = [...heldRegionIds].map((regionId) => runtime.regionById.get(regionId)).find(Boolean);
+  const liegeNationId = firstHeldRegion?.nationId ?? state.player?.affiliation?.nationId;
+  return [...runtime.regionById.values()]
+    .filter((region) => region.nationId === liegeNationId && !heldRegionIds.has(region.id))
+    .sort((left, right) => left.name.localeCompare(right.name, "ja"))
+    .map((region) => ({ id: region.id, name: region.name, nationId: region.nationId }));
 }
 
 export function getRoleDelegation(state) {
@@ -992,6 +1053,11 @@ export function setDelegationAuthority(state, assignmentId, authorityId) {
 
 export function performCareerAction(state, actionId, delegation = {}) {
   const fromRoleId = state.player?.stage;
+  const secondFiefCandidates = actionId === "request_second_fief" ? getSecondFiefCandidates(state) : [];
+  const requestedSecondFiefId = delegation.generatedRegionId ?? secondFiefCandidates[0]?.id;
+  if (actionId === "request_second_fief" && state.scenarioMode === "generated" && !secondFiefCandidates.some((region) => region.id === requestedSecondFiefId)) {
+    throw new Error("主君の領内に加増できる別の生成地方がありません");
+  }
   let next = performPlayerCareerAction(state, actionId, delegation);
   const toRoleId = next.player?.stage;
   const role = DELEGATABLE_ROLES[fromRoleId];
@@ -1009,8 +1075,10 @@ export function performCareerAction(state, actionId, delegation = {}) {
     });
   }
   const activeRegionId = next.generatedWorld?.expeditionRegionId;
-  if (next.scenarioMode === "generated" && activeRegionId && actionId === "request_second_fief") {
-    next = appointGeneratedRegionalLord(next, activeRegionId, {
+  if (next.scenarioMode === "generated" && requestedSecondFiefId && actionId === "request_second_fief") {
+    const holding = next.player.holdings.find((entry) => entry.territoryId === "nereia");
+    if (holding) holding.generatedRegionId = requestedSecondFiefId;
+    next = appointGeneratedRegionalLord(next, requestedSecondFiefId, {
       lordId: next.player.id,
       lordName: next.player.name,
     });
@@ -1023,7 +1091,7 @@ export function performCareerAction(state, actionId, delegation = {}) {
       lordName: next.player.name,
     });
   }
-  if (next.scenarioMode === "generated" && activeRegionId && actionId === "declare_independence") {
+  if (next.scenarioMode === "generated" && activeRegionId && ["declare_independence", "assume_crown"].includes(actionId)) {
     const government = GOVERNMENT_TITLE_SYSTEMS[next.player.governmentFormId];
     next = declareGeneratedRegionIndependence(next, activeRegionId, {
       polityId: "player_realm",
@@ -1046,7 +1114,7 @@ export function reportMilitaryCareerMission(state, delegation = {}) {
 }
 
 export function advanceCareerMonth(state) {
-  let next = advanceMilitaryCareerMissionMonth(advancePlayerCareerMonth(state));
+  let next = advanceLifeToRealmMonth(advanceMilitaryCareerMissionMonth(advancePlayerCareerMonth(state)));
   advanceMerchantMarkets(next);
   resolveRoleDelegations(WORLD, next);
   if (next.scenarioMode === "generated") {
