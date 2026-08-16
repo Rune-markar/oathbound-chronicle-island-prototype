@@ -1,7 +1,15 @@
 import { deriveGeopoliticalProfiles } from "./geopolitical-world.js";
-import { createRegionalDomainState, transferRegionControl } from "./regional-domain-system.js";
+import { createRegionalDomainState, declareRegionIndependence, transferRegionControl } from "./regional-domain-system.js";
+import {
+  GENERATED_WAR_MAX_FRONTS,
+  createGeneratedWarFronts,
+  normalizeGeneratedWarForce,
+  normalizeGeneratedWarFront,
+  resolveGeneratedWarFronts,
+} from "./generated-war-core.js";
+import { createGeneratedResistanceState, registerGeneratedOccupation } from "./generated-resistance-system.js";
 
-export const GENERATED_WORLD_WAR_SCHEMA_VERSION = 1;
+export const GENERATED_WORLD_WAR_SCHEMA_VERSION = 2;
 
 export const GENERATED_WORLD_WAR_DOCTRINES = Object.freeze({
   decisive_breakthrough: Object.freeze({ id: "decisive_breakthrough", name: "決戦突破", role: "attacker", description: "高い動員と攻勢意図を一正面へ集中し、損害を受け入れて短期突破を狙う。" }),
@@ -51,32 +59,9 @@ function hashUnit(...parts) {
   return hashText(parts.join("|")) / 4294967295;
 }
 
-function safeForce(source = {}) {
-  const initialStrength = Math.max(1, Math.round(Number(source.initialStrength) || Number(source.strength) || 1));
-  const storedStrength = Number(source.strength);
-  return {
-    initialStrength,
-    strength: Math.max(0, Math.round(Number.isFinite(storedStrength) ? storedStrength : initialStrength)),
-    supply: Math.round(clamp(source.supply ?? 50)),
-    morale: Math.round(clamp(source.morale ?? 50)),
-    casualties: Math.max(0, Math.round(Number(source.casualties) || 0)),
-  };
-}
+const safeForce = normalizeGeneratedWarForce;
 
-function safeFront(source = {}, index = 0) {
-  return {
-    id: typeof source.id === "string" ? source.id : `front-${index + 1}`,
-    name: typeof source.name === "string" ? source.name : index ? "支援正面" : "主攻正面",
-    originRegionId: typeof source.originRegionId === "string" ? source.originRegionId : null,
-    targetRegionId: typeof source.targetRegionId === "string" ? source.targetRegionId : null,
-    progress: Math.round(clamp(source.progress ?? 0)),
-    status: typeof source.status === "string" ? source.status : "forming",
-    attackerLosses: Math.max(0, Math.round(Number(source.attackerLosses) || 0)),
-    defenderLosses: Math.max(0, Math.round(Number(source.defenderLosses) || 0)),
-    attackerActionId: typeof source.attackerActionId === "string" ? source.attackerActionId : null,
-    defenderActionId: typeof source.defenderActionId === "string" ? source.defenderActionId : null,
-  };
-}
+const safeFront = normalizeGeneratedWarFront;
 
 function safeWar(source = {}) {
   if (!source || typeof source !== "object" || typeof source.id !== "string") return null;
@@ -99,8 +84,10 @@ function safeWar(source = {}) {
     targetRegionId: typeof source.targetRegionId === "string" ? source.targetRegionId : null,
     attacker: safeForce(source.attacker),
     defender: safeForce(source.defender),
-    fronts: (Array.isArray(source.fronts) ? source.fronts : []).map(safeFront).filter((front) => front.targetRegionId).slice(0, 2),
+    fronts: (Array.isArray(source.fronts) ? source.fronts : []).map(safeFront).filter((front) => front.targetRegionId).slice(0, GENERATED_WAR_MAX_FRONTS),
     requiresPlayerDecision: Boolean(source.requiresPlayerDecision),
+    playerCommanded: Boolean(source.playerCommanded),
+    interveners: (Array.isArray(source.interveners) ? source.interveners : []).filter((entry) => entry && typeof entry.nationId === "string" && ["attacker", "defender"].includes(entry.side)).slice(0, 8).map((entry) => ({ nationId: entry.nationId, side: entry.side, strength: Math.max(0, Math.round(Number(entry.strength) || 0)), joinedPeriod: entry.joinedPeriod ?? null })),
     log: (Array.isArray(source.log) ? source.log : []).filter((entry) => entry && typeof entry.summary === "string").slice(-24).map((entry) => ({ ...entry })),
   };
 }
@@ -117,7 +104,7 @@ function baseline(dateState = null) {
 }
 
 export function preserveGeneratedWorldWarState(source) {
-  if (!source || typeof source !== "object" || Number(source.schemaVersion) !== GENERATED_WORLD_WAR_SCHEMA_VERSION) return null;
+  if (!source || typeof source !== "object" || ![1, GENERATED_WORLD_WAR_SCHEMA_VERSION].includes(Number(source.schemaVersion))) return null;
   return {
     schemaVersion: GENERATED_WORLD_WAR_SCHEMA_VERSION,
     establishedPeriod: typeof source.establishedPeriod === "string" ? source.establishedPeriod : null,
@@ -182,14 +169,7 @@ function objectiveFor(profile, condition) {
 }
 
 function createFronts(targets) {
-  return targets.slice(0, 2).map((entry, index) => safeFront({
-    id: index ? "support" : "main",
-    name: index ? "支援正面" : "主攻正面",
-    originRegionId: entry.origin.id,
-    targetRegionId: entry.target.id,
-    progress: 0,
-    status: "forming",
-  }, index));
+  return createGeneratedWarFronts(targets, { maximum: GENERATED_WAR_MAX_FRONTS });
 }
 
 function createWar(runtime, regionalDomains, geopolitics, event, dateState, protectedNationIds) {
@@ -278,11 +258,6 @@ function chooseDefenderAction(war) {
   return "elastic_defense";
 }
 
-const ATTACK_PROGRESS = Object.freeze({ probe: 1, advance: 6, cut_supply: 3, assault: 11, pause: -4 });
-const ATTACK_LOSS = Object.freeze({ probe: -2, advance: 1, cut_supply: 0, assault: 8, pause: -5 });
-const DEFENSE_PROGRESS = Object.freeze({ fortify: -5, counterattack: -7, elastic_defense: -4, scorched_delay: -6 });
-const DEFENSE_LOSS = Object.freeze({ fortify: -3, counterattack: 4, elastic_defense: -2, scorched_delay: 1 });
-
 function applyGeopoliticalWarCost(geopolitics, war, attackerLoss, defenderLoss) {
   const attacker = geopolitics.nationStates[war.attackerNationId];
   const defender = geopolitics.nationStates[war.defenderNationId];
@@ -305,29 +280,22 @@ function campaignStep(runtime, war, geopolitics, period) {
   const defenderActionId = chooseDefenderAction(war);
   const doctrineAttack = { decisive_breakthrough: 8, corridor_warfare: 4, resource_pressure: 5, limited_pressure: 2 }[war.attackerDoctrineId] ?? 0;
   const doctrineDefense = { fortress_network: 8, mobile_defense: 5, defense_in_depth: 4 }[war.defenderDoctrineId] ?? 0;
-  let totalAttackerLoss = 0;
-  let totalDefenderLoss = 0;
   const strengthRatio = war.attacker.strength / Math.max(1, war.defender.strength);
-  for (const [index, front] of war.fronts.entries()) {
-    const target = runtime.regionById.get(front.targetRegionId);
-    const terrainDefense = Math.min(14, (Number(target?.movementCost) || 1) * 3 + (target?.frontier ? 2 : 0));
-    const jitter = (hashUnit(runtime.terrain.seed, war.id, period, front.id) - 0.5) * 10;
-    const progressDelta = Math.round(clamp(10 + (strengthRatio - 1) * 24 + doctrineAttack - doctrineDefense - terrainDefense
-      + ATTACK_PROGRESS[attackerActionId] + DEFENSE_PROGRESS[defenderActionId] + jitter, -8, 34));
-    const intensity = 14 + Math.abs(progressDelta) * 0.38 + (index ? -2 : 2);
-    const attackerLoss = Math.max(3, Math.round(intensity + ATTACK_LOSS[attackerActionId] + DEFENSE_LOSS[defenderActionId]
-      + Math.max(0, 1 - strengthRatio) * 12));
-    const defenderLoss = Math.max(3, Math.round(intensity + Math.max(0, strengthRatio - 0.85) * 14
-      + (attackerActionId === "assault" ? 5 : 0) - (defenderActionId === "elastic_defense" ? 3 : 0)));
-    front.progress = Math.round(clamp(front.progress + progressDelta));
-    front.status = front.progress >= 100 ? "breached" : front.progress >= 65 ? "pressured" : front.progress >= 30 ? "contested" : "holding";
-    front.attackerLosses += attackerLoss;
-    front.defenderLosses += defenderLoss;
-    front.attackerActionId = attackerActionId;
-    front.defenderActionId = defenderActionId;
-    totalAttackerLoss += attackerLoss;
-    totalDefenderLoss += defenderLoss;
-  }
+  const resolved = resolveGeneratedWarFronts(war.fronts, {
+    strengthRatio,
+    attackerActionId,
+    defenderActionId,
+    doctrineAttack,
+    doctrineDefense,
+    terrainDefense: (front) => {
+      const target = runtime.regionById.get(front.targetRegionId);
+      return (Number(target?.movementCost) || 1) * 3 + (target?.frontier ? 2 : 0);
+    },
+    jitter: (front) => (hashUnit(runtime.terrain.seed, war.id, period, front.id) - 0.5) * 10,
+  });
+  war.fronts = resolved.fronts;
+  const totalAttackerLoss = resolved.attackerLosses;
+  const totalDefenderLoss = resolved.defenderLosses;
   war.attacker.strength = Math.max(0, war.attacker.strength - totalAttackerLoss);
   war.defender.strength = Math.max(0, war.defender.strength - totalDefenderLoss);
   war.attacker.casualties += totalAttackerLoss;
@@ -402,24 +370,43 @@ function closeRelation(geopolitics, war, settlementId) {
   relation.ceasefireOffer = null;
 }
 
-function settlementStep(runtime, regionalDomains, war, geopolitics, period) {
+function settlementStep(runtime, regionalDomains, resistanceSource, war, geopolitics, period) {
   let domains = regionalDomains;
+  let resistance = createGeneratedResistanceState(resistanceSource);
   let settlementId = war.outcome === "attacker_victory" ? "limited_annexation"
     : war.outcome === "defender_victory" ? "invasion_repelled"
       : war.outcome === "attacker_retreat" ? "attacker_withdrawal" : "status_quo";
   const target = runtime.regionById.get(war.targetRegionId);
-  if (settlementId === "limited_annexation" && target && regionOwner(domains, target) === war.defenderNationId) {
-    domains = transferRegionControl(runtime, domains, target.id, war.attackerNationId, {
+  const defenderRegions = runtime.nations.regions.filter((region) => regionOwner(domains, region) === war.defenderNationId);
+  const capitalRegionId = runtime.nationById.get(war.defenderNationId)?.capitalRegionId;
+  const capitalFell = target?.id === capitalRegionId;
+  const defenderCondition = geopolitics.nationStates?.[war.defenderNationId] ?? {};
+  const catastrophicDefeat = war.defender.strength <= war.defender.initialStrength * 0.18 || (defenderCondition.cohesion ?? 100) <= 18;
+  if (settlementId === "limited_annexation" && capitalFell && catastrophicDefeat) settlementId = defenderRegions.length <= 4 ? "full_annexation" : "nation_collapse";
+  const transferToAttacker = (region, flags = {}) => {
+    domains = transferRegionControl(runtime, domains, region.id, war.attackerNationId, {
       cause: "ai_world_war_settlement",
       actorId: war.attackerNationId,
       status: "transferred",
     }, { year: Number(period.split("-")[0]), month: Number(period.split("-")[1]) });
+    resistance = registerGeneratedOccupation(resistance, region.id, war.attackerNationId, war.defenderNationId, { warId: war.id, ...flags }, { year: Number(period.split("-")[0]), month: Number(period.split("-")[1]) });
+  };
+  if (settlementId === "limited_annexation" && target && regionOwner(domains, target) === war.defenderNationId) transferToAttacker(target);
+  else if (settlementId === "full_annexation") defenderRegions.forEach((region) => transferToAttacker(region, { fullAnnexation: true, capitalFall: region.id === capitalRegionId }));
+  else if (settlementId === "nation_collapse") {
+    if (target) transferToAttacker(target, { capitalFall: true });
+    defenderRegions.filter((region) => region.id !== target?.id).forEach((region, index) => {
+      if (index === 0) transferToAttacker(region, { capitalFall: true });
+      else domains = declareRegionIndependence(runtime, domains, region.id, { polityId: `postwar-${war.id.replace(/[^a-z0-9-]/gi, "-")}-${index}`, name: `${region.name.replace(/地方$/, "")}臨時政府`, government: "戦後自治政府", cause: "nation_collapse" }, { year: Number(period.split("-")[0]), month: Number(period.split("-")[1]) });
+    });
   } else if (settlementId === "limited_annexation") settlementId = "status_quo";
   war.settlementId = settlementId;
   war.phase = "complete";
   war.endedPeriod = period;
   closeRelation(geopolitics, war, settlementId);
-  const resultText = settlementId === "limited_annexation" ? `${regionName(runtime, war.targetRegionId)}を${nationName(runtime, war.attackerNationId)}へ限定割譲`
+  const resultText = settlementId === "full_annexation" ? `${nationName(runtime, war.defenderNationId)}全土を${nationName(runtime, war.attackerNationId)}へ併合`
+    : settlementId === "nation_collapse" ? `${nationName(runtime, war.defenderNationId)}が崩壊し、首都占領地と戦後自治政府へ再編`
+      : settlementId === "limited_annexation" ? `${regionName(runtime, war.targetRegionId)}を${nationName(runtime, war.attackerNationId)}へ限定割譲`
     : settlementId === "invasion_repelled" ? `${nationName(runtime, war.defenderNationId)}が侵攻を撃退`
       : settlementId === "attacker_withdrawal" ? `${nationName(runtime, war.attackerNationId)}が損耗と補給不足から撤退` : "国境を変えず停戦";
   const event = warEvent(runtime, war, period, "settlement", `${nationName(runtime, war.attackerNationId)}・${nationName(runtime, war.defenderNationId)}講和`, `${resultText}。12か月の休戦に入り、戦争による損耗と支配変更を保存した。`, settlementId === "limited_annexation" ? "danger" : "positive", [
@@ -428,10 +415,10 @@ function settlementStep(runtime, regionalDomains, war, geopolitics, period) {
     driver("戦争期間", war.elapsedMonths * 10),
   ]);
   war.log.push({ period, phase: "settlement", settlementId, summary: event.summary });
-  return { domains, event };
+  return { domains, resistance, event };
 }
 
-function advanceWar(runtime, regionalDomains, war, geopolitics, period) {
+function advanceWar(runtime, regionalDomains, resistanceSource, war, geopolitics, period) {
   const relation = geopolitics.relations[war.relationKey];
   if (!relation?.atWar) {
     war.outcome ??= "stalemate";
@@ -440,9 +427,9 @@ function advanceWar(runtime, regionalDomains, war, geopolitics, period) {
     war.endedPeriod = period;
     const event = warEvent(runtime, war, period, "ceasefire", `${nationName(runtime, war.attackerNationId)}・${nationName(runtime, war.defenderNationId)}停戦`, "両国の停戦判断が成立し、国境を変えず戦闘を終えた。", "positive");
     war.log.push({ period, phase: "ceasefire", summary: event.summary });
-    return { war, domains: regionalDomains, event, complete: true };
+    return { war, domains: regionalDomains, resistance: resistanceSource, event, complete: true };
   }
-  if (war.requiresPlayerDecision || war.phase === "awaiting_player") return { war, domains: regionalDomains, event: null, complete: false };
+  if (war.requiresPlayerDecision || war.phase === "awaiting_player") return { war, domains: regionalDomains, resistance: resistanceSource, event: null, complete: false };
   war.elapsedMonths += 1;
   if (war.phase === "mobilizing") {
     war.phase = "campaigning";
@@ -451,24 +438,25 @@ function advanceWar(runtime, regionalDomains, war, geopolitics, period) {
     war.defender.supply = Math.round(clamp(war.defender.supply - 2));
     const event = warEvent(runtime, war, period, "mobilized", `${nationName(runtime, war.attackerNationId)}軍が国境へ集結`, `${war.fronts.map((front) => `${regionName(runtime, front.targetRegionId)}正面`).join("と")}で進軍を開始。${nationName(runtime, war.defenderNationId)}は${GENERATED_WORLD_WAR_DOCTRINES[war.defenderDoctrineId].name}で迎撃する。`, "danger");
     war.log.push({ period, phase: "mobilizing", summary: event.summary });
-    return { war, domains: regionalDomains, event, complete: false };
+    return { war, domains: regionalDomains, resistance: resistanceSource, event, complete: false };
   }
-  if (war.phase === "campaigning") return { war, domains: regionalDomains, event: campaignStep(runtime, war, geopolitics, period), complete: false };
-  if (war.phase === "siege") return { war, domains: regionalDomains, event: siegeStep(runtime, war, geopolitics, period), complete: false };
+  if (war.phase === "campaigning") return { war, domains: regionalDomains, resistance: resistanceSource, event: campaignStep(runtime, war, geopolitics, period), complete: false };
+  if (war.phase === "siege") return { war, domains: regionalDomains, resistance: resistanceSource, event: siegeStep(runtime, war, geopolitics, period), complete: false };
   if (war.phase === "settlement") {
-    const settled = settlementStep(runtime, regionalDomains, war, geopolitics, period);
-    return { war, domains: settled.domains, event: settled.event, complete: true };
+    const settled = settlementStep(runtime, regionalDomains, resistanceSource, war, geopolitics, period);
+    return { war, domains: settled.domains, resistance: settled.resistance, event: settled.event, complete: true };
   }
-  return { war, domains: regionalDomains, event: null, complete: war.phase === "complete" };
+  return { war, domains: regionalDomains, resistance: resistanceSource, event: null, complete: war.phase === "complete" };
 }
 
 export function advanceGeneratedWorldWars(runtime, source, regionalDomainSource, previousGeopolitics, advancedGeopolitics, dateState, options = {}) {
   const period = periodFor(dateState);
   const worldWars = createGeneratedWorldWarState(runtime, source, dateState);
   if (worldWars.lastAdvancedPeriod === period) {
-    return { worldWars, regionalDomains: createRegionalDomainState(runtime, regionalDomainSource, dateState), geopolitics: clone(advancedGeopolitics), pendingStrategicDecisions: [] };
+    return { worldWars, regionalDomains: createRegionalDomainState(runtime, regionalDomainSource, dateState), resistance: createGeneratedResistanceState(options.resistance), geopolitics: clone(advancedGeopolitics), pendingStrategicDecisions: [] };
   }
   let regionalDomains = createRegionalDomainState(runtime, regionalDomainSource, dateState);
+  let resistance = createGeneratedResistanceState(options.resistance);
   const geopolitics = clone(advancedGeopolitics);
   const protectedNationIds = new Set(options.protectedNationIds ?? []);
   const excludedRelationKeys = new Set(options.excludedRelationKeys ?? []);
@@ -476,8 +464,9 @@ export function advanceGeneratedWorldWars(runtime, source, regionalDomainSource,
   const activeWars = [];
   const completedWars = [];
   for (const sourceWar of worldWars.activeWars) {
-    const result = advanceWar(runtime, regionalDomains, clone(sourceWar), geopolitics, period);
+    const result = advanceWar(runtime, regionalDomains, resistance, clone(sourceWar), geopolitics, period);
     regionalDomains = result.domains;
+    resistance = result.resistance;
     if (result.event) currentEvents.push(result.event);
     if (result.complete) completedWars.push(result.war); else activeWars.push(result.war);
   }
@@ -548,6 +537,7 @@ export function advanceGeneratedWorldWars(runtime, source, regionalDomainSource,
       events: [...worldWars.events, ...currentEvents].slice(-MAX_WAR_EVENTS),
     },
     regionalDomains,
+    resistance,
     geopolitics,
     pendingStrategicDecisions,
   };

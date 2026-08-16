@@ -165,6 +165,8 @@ import {
   startEstateProjectDebate,
   resolveEstateProjectDebate,
   getGeneratedCampaignView,
+  interveneGeneratedWorldWar,
+  respondGeneratedWorldWar,
   normalizeGeneratedCampaignState,
   requestAlliedContingent,
   startGeneratedCampaign,
@@ -273,6 +275,7 @@ import {
   getGeneratedShippingDestinations,
   getGeneratedWorldIntelligenceView,
   getKnownGeneratedWorldWarView,
+  getGeneratedResistanceView,
   getGeneratedRecognitionView,
   getGeneratedWorldSiteView,
   getGeneratedWorldTimeView,
@@ -284,6 +287,8 @@ import {
   selectGeneratedWorldRegion,
   setGeneratedPlayerNation,
   setGeneratedTravelModePreference,
+  setGeneratedResistancePolicy,
+  resolveGeneratedResistanceResponse,
 } from "./generated-world-system.js";
 import {
   ADVENTURE_ART,
@@ -3253,6 +3258,11 @@ function renderOccupationGovernance() {
 }
 
 function renderMilitaryPanel() {
+  if (state.scenarioMode === "generated") {
+    const knownWars = getKnownGeneratedWorldWarView(state);
+    elements.leftPanel.innerHTML = `<header class="panel-heading"><span>GENERATED WAR COMMAND</span><h1>生成世界軍議</h1><p>実在する生成地方・国境・国家だけを戦域として使用</p></header><div class="panel-body">${renderGeneratedCampaignBoard()}<section class="panel-section"><div class="section-heading"><h2>既知の戦争</h2><small>${knownWars.activeWars.length}件</small></div>${knownWars.activeWars.map((war) => `<article class="adviser-note"><strong>${escapeHtml(war.attackerName)} 対 ${escapeHtml(war.defenderName)}</strong><br>${war.fronts.length}正面 · ${escapeHtml(war.targetRegionName)}${war.requiresPlayerDecision ? `<div><button type="button" data-generated-war-response="mobilize" data-generated-war-id="${war.id}">動員して戦う</button><button type="button" data-generated-war-response="negotiate" data-generated-war-id="${war.id}">停戦交渉</button>${war.attackerNationId === state.generatedWorld.playerNationId ? `<button type="button" data-generated-war-response="withdraw" data-generated-war-id="${war.id}">撤兵</button>` : ""}</div>` : ""}</article>`).join("") || "<p>現在把握している戦争はありません。</p>"}</section></div>`;
+    return;
+  }
   const metrics = deriveMetrics(state);
   const military = getMilitarySummary(state);
   const ledger = deriveRealmLedger(state);
@@ -3800,10 +3810,17 @@ function renderEstatePoliticsBoard() {
 }
 
 function renderGeneratedCampaignBoard() {
-  if (!state.player.sovereign) return ""; const model = getGeneratedCampaignView(state); const active = model.active;
+  if (!state.player.sovereign) return "";
+  const model = getGeneratedCampaignView(state);
+  const resistance = getGeneratedResistanceView(state);
+  const active = model.active;
   const phaseNames = { mustering: "動員", marching: "行軍", siege_decision: "攻城軍議", siege: "攻城", peace_decision: "講和評議", rebuilding: "再建" };
-  const content = active ? `<article><header><h3>${escapeHtml(active.targetRegionName ?? active.targetRegionId)}方面戦役</h3><b>${escapeHtml(phaseNames[active.phase] ?? active.phase)}</b></header><p>${escapeHtml(active.objectiveName ?? active.objectiveId)} · 兵站費${active.supplyCost ?? 0}</p><p>二正面 ${active.fronts.map((front) => `${escapeHtml(front.name)} ${front.progress}%`).join(" / ")}</p><p>兵站 ${active.armies.map((army) => `${army.id}:${army.supplies}`).join(" / ")}</p>${active.phase === "siege_decision" ? `<div>${model.siegeDecisions.map((decision) => `<button type="button" data-generated-siege="${decision.id}">${escapeHtml(decision.name)}</button>`).join("")}</div>` : active.phase === "peace_decision" ? `<div><button type="button" data-generated-peace="status_quo">原状回復</button><button type="button" data-generated-peace="ceasefire">停戦</button><button type="button" class="is-danger" data-generated-peace="limited_annexation">限定割譲</button></div>` : `<button type="button" data-generated-campaign-advance>戦役を一段階進める</button><button type="button" data-generated-campaign-retreat>撤退して再建へ</button>`}</article>` : `<article data-generated-campaign-form><label>侵攻先<select data-generated-campaign-target>${model.targets.map((target) => `<option value="${target.regionId}">${escapeHtml(target.name)}</option>`).join("")}</select></label><label>目的<select data-generated-campaign-objective>${model.objectives.map((objective) => `<option value="${objective.id}">${escapeHtml(objective.name)} · 兵站費${objective.supplyCost}</option>`).join("")}</select></label><label>第二指揮官<select data-generated-campaign-commander>${(state.player.householdRetainers ?? []).map((id) => `<option value="${id}">${escapeHtml(WORLD.characters[id]?.name ?? id)}</option>`).join("")}</select></label><button type="button" data-generated-campaign-start ${model.targets.length && state.player.householdRetainers?.length ? "" : "disabled"}>二正面戦役を準備</button><div>${model.allies.map((ally) => `<button type="button" data-generated-ally="${ally.nationId}">${escapeHtml(ally.name)}へ援軍要請</button>`).join("")}</div></article>`;
-  return `<details class="life-loop-section"><summary><span>生成世界大戦役</span><strong>同盟・二正面・攻城・講和</strong><small>${active ? escapeHtml(active.phase) : "軍議"}</small></summary><div class="life-loop-content">${content}</div></details>`;
+  const content = active
+    ? `<article><header><h3>${escapeHtml(active.targetRegionName ?? active.targetRegionId)}方面戦役</h3><b>${escapeHtml(phaseNames[active.phase] ?? active.phase)}</b></header><p>${escapeHtml(active.objectiveName ?? active.objectiveId)} · 兵站費${active.supplyCost ?? 0}</p><p>${active.fronts.length}正面 ${active.fronts.map((front) => `${escapeHtml(front.name)} ${front.progress}%`).join(" / ")}</p><p>兵站 ${active.armies.map((army) => `${army.id}:${army.supplies}`).join(" / ")}</p>${active.phase === "siege_decision" ? `<div>${model.siegeDecisions.map((decision) => `<button type="button" data-generated-siege="${decision.id}">${escapeHtml(decision.name)}</button>`).join("")}</div>` : active.phase === "peace_decision" ? `<div><button type="button" data-generated-peace="status_quo">原状回復</button><button type="button" data-generated-peace="ceasefire">停戦</button><button type="button" class="is-danger" data-generated-peace="limited_annexation">限定割譲</button>${active.objectiveId === "full_annexation" ? '<button type="button" class="is-danger" data-generated-peace="full_annexation">完全併合</button>' : ""}</div>` : `<button type="button" data-generated-campaign-advance>戦役を一段階進める</button><button type="button" data-generated-campaign-retreat>撤退して再建へ</button>`}</article>`
+    : `<article data-generated-campaign-form><label>侵攻先<select data-generated-campaign-target>${model.targets.map((target) => `<option value="${target.regionId}">${escapeHtml(target.name)}</option>`).join("")}</select></label><label>目的<select data-generated-campaign-objective>${model.objectives.map((objective) => `<option value="${objective.id}">${escapeHtml(objective.name)} · 兵站費${objective.supplyCost}</option>`).join("")}</select></label><label>副将<select data-generated-campaign-commander>${(state.player.householdRetainers ?? []).map((id) => `<option value="${id}">${escapeHtml(WORLD.characters[id]?.name ?? id)}</option>`).join("")}</select></label><button type="button" data-generated-campaign-start ${model.targets.length && state.player.householdRetainers?.length ? "" : "disabled"}>最大5正面の戦役を準備</button><div>${model.allies.map((ally) => `<button type="button" data-generated-ally="${ally.nationId}">${escapeHtml(ally.name)}へ援軍要請</button>`).join("")}</div></article>`;
+  const interventions = model.interventionWars.length ? `<section><h3>進行中の他国戦争へ介入</h3>${model.interventionWars.map((war) => `<article><strong>${escapeHtml(war.attackerName)} 対 ${escapeHtml(war.defenderName)}</strong><small>${war.fronts.length}正面 · ${escapeHtml(war.targetRegionName)}</small><div><button type="button" data-generated-war-intervention="support_attacker" data-generated-war-id="${war.id}">攻撃側へ援軍</button><button type="button" data-generated-war-intervention="support_defender" data-generated-war-id="${war.id}">防衛側へ援軍</button><button type="button" data-generated-war-intervention="mediate" data-generated-war-id="${war.id}">停戦仲介</button></div></article>`).join("")}</section>` : "";
+  const occupations = resistance.occupations.filter((entry) => entry.status === "active" && entry.occupierNationId === state.generatedWorld.playerNationId).map((entry) => `<article><header><h3>${escapeHtml(entry.regionName)}の併合統治</h3><b>抵抗 ${entry.resistance}</b></header><p>順応 ${entry.compliance} · 地下細胞 ${entry.cells} · 駐屯 ${entry.garrison}</p><div>${resistance.policies.map((policy) => `<button type="button" data-generated-resistance-policy="${policy.id}" data-generated-occupation-id="${entry.id}" ${entry.policyId === policy.id ? 'class="is-active"' : ""}>${escapeHtml(policy.name)}</button>`).join("")}</div>${entry.pendingResponse ? `<p><strong>${escapeHtml(entry.pendingResponse.title)}</strong></p><div>${resistance.responses.map((response) => `<button type="button" data-generated-resistance-response="${response.id}" data-generated-occupation-id="${entry.id}">${escapeHtml(response.name)}${response.cost ? `（財産${response.cost}）` : ""}</button>`).join("")}</div>` : ""}</article>`).join("");
+  return `<details class="life-loop-section"><summary><span>生成世界大戦役</span><strong>共通戦争コア・最大5正面・併合統治</strong><small>${active ? escapeHtml(active.phase) : "軍議"}</small></summary><div class="life-loop-content">${content}${interventions}${occupations}</div></details>`;
 }
 
 function renderLifeToRealmBoard() {
@@ -8605,14 +8622,22 @@ document.addEventListener("click", async (event) => {
   const generatedAlly = event.target.closest("[data-generated-ally]");
   if (generatedAlly) { try { commit(requestAlliedContingent(state, generatedAlly.dataset.generatedAlly), "同盟国から援軍派遣の約束を取り付けました。", "event"); } catch (error) { showToast(error.message, "danger"); } return; }
   if (event.target.closest("[data-generated-campaign-start]")) {
-    try { const form = event.target.closest("[data-generated-campaign-form]"); const allyNationIds = getGeneratedCampaignView(state).promisedAllies.map((entry) => entry.nationId); commit(startGeneratedCampaign(state, { targetRegionId: form.querySelector("[data-generated-campaign-target]")?.value, objectiveId: form.querySelector("[data-generated-campaign-objective]")?.value, commanderIds: ["player", form.querySelector("[data-generated-campaign-commander]")?.value], allyNationIds }), "二正面・兵站・同盟軍を持つ生成世界戦役を開始しました。", "event"); } catch (error) { showToast(error.message, "danger"); } return;
+    try { const form = event.target.closest("[data-generated-campaign-form]"); const allyNationIds = getGeneratedCampaignView(state).promisedAllies.map((entry) => entry.nationId); commit(startGeneratedCampaign(state, { targetRegionId: form.querySelector("[data-generated-campaign-target]")?.value, objectiveId: form.querySelector("[data-generated-campaign-objective]")?.value, commanderIds: ["player", form.querySelector("[data-generated-campaign-commander]")?.value], allyNationIds }), "最大五正面・兵站・同盟軍を持つ生成世界戦役を開始しました。", "event"); } catch (error) { showToast(error.message, "danger"); } return;
   }
   if (event.target.closest("[data-generated-campaign-advance]")) { try { commit(advanceGeneratedCampaign(state), "生成世界戦役を一段階進めました。", "event"); } catch (error) { showToast(error.message, "danger"); } return; }
   const generatedSiege = event.target.closest("[data-generated-siege]");
   if (generatedSiege) { try { commit(decideGeneratedSiege(state, generatedSiege.dataset.generatedSiege), "攻城方針を決裁しました。", "event"); } catch (error) { showToast(error.message, "danger"); } return; }
   if (event.target.closest("[data-generated-campaign-retreat]")) { try { commit(retreatGeneratedCampaign(state), "損失を負って撤退し、再建段階へ移りました。", "cancel"); } catch (error) { showToast(error.message, "danger"); } return; }
   const generatedPeace = event.target.closest("[data-generated-peace]");
-  if (generatedPeace) { try { const settlementId = generatedPeace.dataset.generatedPeace; const confirmIrreversible = settlementId !== "limited_annexation" || window.confirm("対象地方の支配を移す限定割譲を確定しますか？"); commit(settleGeneratedCampaign(state, settlementId, { confirmIrreversible }), "講和を確定し、戦役を年代記へ記録しました。", "event"); } catch (error) { showToast(error.message, "danger"); } return; }
+  if (generatedPeace) { try { const settlementId = generatedPeace.dataset.generatedPeace; const irreversible = ["limited_annexation", "full_annexation"].includes(settlementId); const confirmIrreversible = !irreversible || window.confirm(settlementId === "full_annexation" ? "敵国の全地方を併合し、各地で占領統治と抵抗が始まります。確定しますか？" : "対象地方の支配を移し、占領統治を開始しますか？"); commit(settleGeneratedCampaign(state, settlementId, { confirmIrreversible }), "講和を確定し、戦役を年代記へ記録しました。", "event"); } catch (error) { showToast(error.message, "danger"); } return; }
+  const intervention = event.target.closest("[data-generated-war-intervention]");
+  if (intervention) { try { commit(interveneGeneratedWorldWar(state, intervention.dataset.generatedWarId, intervention.dataset.generatedWarIntervention), "他国戦争への介入方針を確定しました。", "event"); } catch (error) { showToast(error.message, "danger"); } return; }
+  const warResponse = event.target.closest("[data-generated-war-response]");
+  if (warResponse) { try { commit(respondGeneratedWorldWar(state, warResponse.dataset.generatedWarId, warResponse.dataset.generatedWarResponse), "自国戦争への対応を確定しました。", "event"); } catch (error) { showToast(error.message, "danger"); } return; }
+  const resistancePolicy = event.target.closest("[data-generated-resistance-policy]");
+  if (resistancePolicy) { try { commit(setGeneratedResistancePolicy(state, resistancePolicy.dataset.generatedOccupationId, resistancePolicy.dataset.generatedResistancePolicy), "併合地の統治政策を更新しました。", "event"); } catch (error) { showToast(error.message, "danger"); } return; }
+  const resistanceResponse = event.target.closest("[data-generated-resistance-response]");
+  if (resistanceResponse) { try { const responseId = resistanceResponse.dataset.generatedResistanceResponse; if (responseId === "withdraw" && !window.confirm("併合地を旧国へ返還し、撤兵しますか？")) return; commit(resolveGeneratedResistanceResponse(state, resistanceResponse.dataset.generatedOccupationId, responseId), "レジスタンス事件への対応を実行しました。", "event"); } catch (error) { showToast(error.message, "danger"); } return; }
   const lifePath = event.target.closest("[data-life-path]");
   if (lifePath) {
     try { commit(chooseLifePath(state, lifePath.dataset.lifePath), "次に追う人生目標を選びました。既存の実績が進捗になります。", "confirm"); }

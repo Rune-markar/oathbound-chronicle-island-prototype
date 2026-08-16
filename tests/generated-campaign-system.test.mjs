@@ -5,8 +5,10 @@ import {
   advanceGeneratedCampaignMonth,
   decideGeneratedSiege,
   getGeneratedCampaignView,
+  interveneGeneratedWorldWar,
   normalizeGeneratedCampaignState,
   requestAlliedContingent,
+  respondGeneratedWorldWar,
   retreatGeneratedCampaign,
   settleGeneratedCampaign,
   startGeneratedCampaign,
@@ -47,15 +49,16 @@ test("campaign opportunities are real foreign borders and allied aid is explicit
   assert.equal(state.player.generatedCampaign.promisedAllies[0].nationId, ally.id);
 });
 
-test("a generated campaign stores two fronts routes supplies and a real siege decision", () => {
+test("a generated campaign uses the shared core for three to five fronts, supplies, and a real siege decision", () => {
   let { state, target, ally } = sovereignState("campaign-siege");
   state = requestAlliedContingent(state, ally.id);
   const wealthBefore = state.player.metrics.wealth;
   state = startGeneratedCampaign(state, { targetRegionId: target.id, objectiveId: "limited_annexation", commanderIds: ["player", "dario"], allyNationIds: [ally.id] });
   const active = state.player.generatedCampaign.active;
   assert.equal(active.targetRegionId, target.id);
-  assert.equal(active.fronts.length, 2);
-  assert.ok(active.fronts.every((front) => front.routeRegionIds.includes(target.id)));
+  assert.ok(active.fronts.length >= 3 && active.fronts.length <= 5);
+  assert.equal(active.engineId, "generated-war-core-v1");
+  assert.ok(active.fronts.every((front) => front.routeRegionIds.length >= 2));
   assert.ok(active.armies.some((army) => army.allyNationId === ally.id));
   assert.equal(state.player.metrics.wealth, wealthBefore - 34);
   assert.equal(active.targetRegionName, target.name);
@@ -110,4 +113,31 @@ test("monthly AI queues player irreversible war choices instead of executing the
   const next = advanceGeneratedCampaignMonth(state);
   assert.equal(next.player.generatedCampaign.active, null);
   assert.ok(next.generatedWorld.pendingStrategicDecisions.some((entry) => entry.type === "generated_campaign_proposal"));
+});
+
+test("a sovereign can reinforce or mediate a known AI war through the shared war ledger", () => {
+  const { state } = sovereignState("campaign-intervention");
+  const world = getGeneratedWorldView(state);
+  const participants = world.runtime.nations.nations.filter((nation) => nation.id !== state.generatedWorld.playerNationId).slice(0, 2);
+  const target = world.runtime.nations.regions.find((region) => region.nationId === participants[1].id);
+  const war = { id: "world-war:intervention", attackerNationId: participants[0].id, defenderNationId: participants[1].id, relationKey: [participants[0].id, participants[1].id].sort().join(":"), phase: "campaigning", targetRegionId: target.id, attacker: { strength: 500, initialStrength: 500, supply: 50, morale: 50 }, defender: { strength: 500, initialStrength: 500, supply: 50, morale: 50 }, fronts: [{ id: "main", originRegionId: target.neighborIds[0] ?? target.id, targetRegionId: target.id }], log: [] };
+  const event = { id: "known-intervention-war", worldWarId: war.id, type: "generated_world_war", nationId: war.attackerNationId, targetNationId: war.defenderNationId, regionId: target.id, period: "317-4", title: "既知の戦争", summary: "戦争中" };
+  state.generatedWorld.worldWars = { schemaVersion: 2, activeWars: [war], history: [], events: [event] };
+  state.generatedWorld.intelligence.entries.push({ eventId: event.id, learnedPeriod: "317-4", type: "rumor", label: "噂" });
+  const before = state.player.metrics.wealth;
+  const next = interveneGeneratedWorldWar(state, war.id, "support_defender");
+  assert.equal(next.player.metrics.wealth, before - 12);
+  assert.equal(next.generatedWorld.worldWars.activeWars[0].interveners[0].side, "defender");
+  assert.ok(next.generatedWorld.worldWars.activeWars[0].defender.strength > 500);
+});
+
+test("a protected sovereign war leaves awaiting-player state only after an explicit response", () => {
+  const { state, target } = sovereignState("campaign-war-response");
+  const playerId = state.generatedWorld.playerNationId;
+  state.generatedWorld.worldWars = { schemaVersion: 2, activeWars: [{ id: "world-war:player-response", attackerNationId: target.nationId, defenderNationId: playerId, relationKey: [target.nationId, playerId].sort().join(":"), phase: "awaiting_player", requiresPlayerDecision: true, targetRegionId: state.generatedWorld.expeditionRegionId, attacker: { strength: 500 }, defender: { strength: 500 }, fronts: [{ id: "main", originRegionId: target.id, targetRegionId: state.generatedWorld.expeditionRegionId }], log: [] }], history: [], events: [] };
+  state.generatedWorld.pendingStrategicDecisions.push({ id: "decision", worldWarId: "world-war:player-response" });
+  const next = respondGeneratedWorldWar(state, "world-war:player-response", "mobilize");
+  assert.equal(next.generatedWorld.worldWars.activeWars[0].phase, "mobilizing");
+  assert.equal(next.generatedWorld.worldWars.activeWars[0].requiresPlayerDecision, false);
+  assert.equal(next.generatedWorld.pendingStrategicDecisions.some((entry) => entry.worldWarId === "world-war:player-response"), false);
 });

@@ -578,3 +578,12 @@ test("regeneration changes only the compact source state and remains determinist
   assert.equal(regenerated.generatedWorld.expeditionRegionId, null);
   assert.equal(Object.hasOwn(regenerated.generatedWorld, "tiles"), false);
 });
+
+test("repeated UI reads reuse one effective generated-world view until the state revision changes", () => {
+  const state = createCareerInitialState({ seed: "generated-view-cache", width: 48, height: 32, plateCount: 9, nationCount: 7 });
+  const first = getGeneratedWorldView(state);
+  const second = getGeneratedWorldView(state);
+  assert.equal(second, first);
+  const changed = { ...state, month: state.month + 1 };
+  assert.notEqual(getGeneratedWorldView(changed), first);
+});

@@ -1,4 +1,6 @@
-import { getGeneratedWorldView, transferGeneratedRegionControl } from "./generated-world-system.js";
+import { getGeneratedWorldView, getKnownGeneratedWorldWarView, transferGeneratedRegionControl } from "./generated-world-system.js";
+import { createGeneratedWarFronts, resolveGeneratedWarFronts } from "./generated-war-core.js";
+import { registerGeneratedOccupation } from "./generated-resistance-system.js";
 
 const clone = (value) => structuredClone(value);
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
@@ -9,6 +11,7 @@ export const GENERATED_CAMPAIGN_OBJECTIVES = Object.freeze({
   limited_annexation: Object.freeze({ id: "limited_annexation", name: "限定割譲", supplyCost: 34 }),
   secure_route: Object.freeze({ id: "secure_route", name: "通商路確保", supplyCost: 25 }),
   relieve_border: Object.freeze({ id: "relieve_border", name: "辺境救援", supplyCost: 22 }),
+  full_annexation: Object.freeze({ id: "full_annexation", name: "首都攻略・完全併合", supplyCost: 55 }),
 });
 export const GENERATED_SIEGE_DECISIONS = Object.freeze([
   Object.freeze({ id: "assault", name: "強襲", description: "短期決着。損害が大きい。" }),
@@ -38,7 +41,9 @@ function alliedNations(state, targetNationId = null) {
 }
 export function getGeneratedCampaignView(state) {
   const next = prepared(state); const targets = next.player.sovereign ? foreignTargets(next) : []; const targetNationId = next.player.generatedCampaign.active?.targetNationId ?? null;
-  return { targets, allies: alliedNations(next, targetNationId), objectives: Object.values(GENERATED_CAMPAIGN_OBJECTIVES), siegeDecisions: GENERATED_SIEGE_DECISIONS, active: clone(next.player.generatedCampaign.active), history: clone(next.player.generatedCampaign.history.slice(0, 12)), promisedAllies: clone(next.player.generatedCampaign.promisedAllies) };
+  const playerId = playerNationId(next);
+  const interventionWars = getKnownGeneratedWorldWarView(next).activeWars.filter((war) => ![war.attackerNationId, war.defenderNationId].includes(playerId));
+  return { targets, allies: alliedNations(next, targetNationId), objectives: Object.values(GENERATED_CAMPAIGN_OBJECTIVES), siegeDecisions: GENERATED_SIEGE_DECISIONS, active: clone(next.player.generatedCampaign.active), history: clone(next.player.generatedCampaign.history.slice(0, 12)), promisedAllies: clone(next.player.generatedCampaign.promisedAllies), interventionWars };
 }
 export function requestAlliedContingent(state, nationId) {
   const next = prepared(state); assertSovereign(next); const ally = alliedNations(next).find((entry) => entry.nationId === nationId); if (!ally) throw new Error("同盟国ではありません");
@@ -58,12 +63,15 @@ export function startGeneratedCampaign(state, { targetRegionId, objectiveId, com
   const target = foreignTargets(next).find((entry) => entry.regionId === targetRegionId); const objective = GENERATED_CAMPAIGN_OBJECTIVES[objectiveId]; const commanders = realCommanders(next, commanderIds);
   if (!target || !objective) throw new Error("実在する外国境界と戦役目的を選んでください"); if (commanders.length < 2) throw new Error("二正面を率いる指揮官が二名必要です");
   if ((Number(next.player.metrics.wealth) || 0) < objective.supplyCost) throw new Error("戦役兵站費が不足しています"); next.player.metrics.wealth -= objective.supplyCost;
-  const world = getGeneratedWorldView(next); const originId = target.originRegionIds[0] ?? world.expeditionRegion.id; const approvedAllies = [...new Set(allyNationIds)].filter((id) => next.player.generatedCampaign.promisedAllies.some((entry) => entry.nationId === id) && alliedNations(next, target.nationId).some((entry) => entry.nationId === id));
-  const fronts = [{ id: "main", name: "主攻正面", routeRegionIds: [originId, target.regionId], commanderId: commanders[0], progress: 0 }, { id: "support", name: "支援正面", routeRegionIds: alternateRoute(world, originId, target.regionId), commanderId: commanders[1], progress: 0 }];
+  const world = getGeneratedWorldView(next); if (objectiveId === "full_annexation" && world.runtime.nationById.get(target.nationId)?.capitalRegionId !== target.regionId) throw new Error("完全併合戦役は敵国首都を対象にしてください"); const originId = target.originRegionIds[0] ?? world.expeditionRegion.id; const approvedAllies = [...new Set(allyNationIds)].filter((id) => next.player.generatedCampaign.promisedAllies.some((entry) => entry.nationId === id) && alliedNations(next, target.nationId).some((entry) => entry.nationId === id));
+  const relatedTargets = foreignTargets(next).filter((entry) => entry.nationId === target.nationId);
+  const frontTargets = [target, ...relatedTargets.filter((entry) => entry.regionId !== target.regionId)].slice(0, 5).map((entry, index) => ({ originRegionId: entry.originRegionIds[0] ?? originId, targetRegionId: entry.regionId, routeRegionIds: index === 1 ? alternateRoute(world, entry.originRegionIds[0] ?? originId, entry.regionId) : [entry.originRegionIds[0] ?? originId, entry.regionId] }));
+  while (frontTargets.length < Math.min(3, commanders.length + 1)) frontTargets.push({ originRegionId: originId, targetRegionId: target.regionId, routeRegionIds: alternateRoute(world, originId, target.regionId) });
+  const fronts = createGeneratedWarFronts(frontTargets, { maximum: 5, commanderIds: commanders });
   const armies = [{ id: "army-main", nationId: playerNationId(next), commanderId: commanders[0], troops: 520, supplies: 55, casualties: 0 }, { id: "army-support", nationId: playerNationId(next), commanderId: commanders[1], troops: 420, supplies: 46, casualties: 0 }, ...approvedAllies.map((id, index) => ({ id: `army-ally-${index}`, nationId: id, allyNationId: id, commanderId: null, troops: 280, supplies: 36, casualties: 0 }))];
-  next.player.generatedCampaign.active = { id: `campaign:${period(next)}:${target.regionId}`, phase: "mustering", outcome: null, originRegionId: originId, targetRegionId: target.regionId, targetRegionName: target.name, targetNationId: target.nationId, objectiveId, objectiveName: objective.name, supplyCost: objective.supplyCost, commanderIds: commanders, allyNationIds: approvedAllies, fronts, armies, siegeDecisionId: null, rebuildingMonths: 0, startedPeriod: period(next), elapsedSteps: 0 };
+  next.player.generatedCampaign.active = { id: `campaign:${period(next)}:${target.regionId}`, engineId: "generated-war-core-v1", phase: "mustering", outcome: null, originRegionId: originId, targetRegionId: target.regionId, targetRegionName: target.name, targetNationId: target.nationId, objectiveId, objectiveName: objective.name, supplyCost: objective.supplyCost, commanderIds: commanders, allyNationIds: approvedAllies, fronts, armies, siegeDecisionId: null, rebuildingMonths: 0, startedPeriod: period(next), elapsedSteps: 0 };
   const relation = next.generatedWorld.geopolitics.relations[pairKey(playerNationId(next), target.nationId)]; if (relation) { relation.atWar = true; relation.allied = false; relation.tension = Math.max(90, relation.tension); }
-  next.player.generatedCampaign.promisedAllies = next.player.generatedCampaign.promisedAllies.filter((entry) => !approvedAllies.includes(entry.nationId)); recordWorld(next, `${target.name}方面戦役を開始`, `${objective.name}を掲げ、二正面と兵站線を編成した。`); return next;
+  next.player.generatedCampaign.promisedAllies = next.player.generatedCampaign.promisedAllies.filter((entry) => !approvedAllies.includes(entry.nationId)); recordWorld(next, `${target.name}方面戦役を開始`, `${objective.name}を掲げ、${fronts.length}正面と兵站線を編成した。`); return next;
 }
 function applyAttrition(active, ratio) { active.armies.forEach((army) => { const loss = Math.max(1, Math.round(army.troops * ratio)); army.troops -= loss; army.casualties += loss; army.supplies = Math.max(0, army.supplies - Math.round(10 + ratio * 100)); }); }
 function finishRebuilding(state) {
@@ -73,7 +81,7 @@ function finishRebuilding(state) {
 export function advanceGeneratedCampaign(state) {
   const next = prepared(state); const active = next.player.generatedCampaign.active; if (!active) throw new Error("進行中の生成世界戦役がありません"); active.elapsedSteps += 1;
   if (active.phase === "mustering") { active.phase = "marching"; active.fronts.forEach((front) => { front.progress = 50; }); active.armies.forEach((army) => { army.supplies -= 5; }); return next; }
-  if (active.phase === "marching") { active.phase = "siege_decision"; active.fronts.forEach((front) => { front.progress = 100; }); active.armies.forEach((army) => { army.supplies -= 8; }); return next; }
+  if (active.phase === "marching") { const totalStrength = active.armies.reduce((sum, army) => sum + army.troops, 0); const resolved = resolveGeneratedWarFronts(active.fronts, { strengthRatio: totalStrength / 850, attackerActionId: "advance", defenderActionId: "fortify", doctrineAttack: 7, doctrineDefense: 3, terrainDefense: () => 2, jitter: () => 0 }); active.fronts = resolved.fronts.map((front) => ({ ...front, progress: 100, status: "besieging" })); applyAttrition(active, Math.min(0.04, resolved.attackerLosses / Math.max(1, totalStrength))); active.phase = "siege_decision"; active.armies.forEach((army) => { army.supplies -= 8; }); return next; }
   if (active.phase === "siege_decision") throw new Error("攻城方針を決めてください");
   if (active.phase === "siege") {
     const ratio = active.siegeDecisionId === "assault" ? 0.13 : active.siegeDecisionId === "blockade" ? 0.07 : 0.04; applyAttrition(active, ratio);
@@ -86,11 +94,54 @@ export function advanceGeneratedCampaign(state) {
 export function decideGeneratedSiege(state, decisionId) { const next = prepared(state); const active = next.player.generatedCampaign.active; if (!active || active.phase !== "siege_decision") throw new Error("攻城方針を選ぶ段階ではありません"); if (!GENERATED_SIEGE_DECISIONS.some((entry) => entry.id === decisionId)) throw new Error("攻城方針が不正です"); active.siegeDecisionId = decisionId; active.phase = "siege"; return next; }
 export function retreatGeneratedCampaign(state) { const next = prepared(state); const active = next.player.generatedCampaign.active; if (!active || ["peace_decision", "rebuilding"].includes(active.phase)) throw new Error("この段階では撤退できません"); applyAttrition(active, 0.08); active.outcome = "retreat"; active.phase = "rebuilding"; active.rebuildingMonths = 1; return next; }
 export function settleGeneratedCampaign(state, settlementId, { confirmIrreversible = false } = {}) {
-  let next = prepared(state); const active = next.player.generatedCampaign.active; if (!active || active.phase !== "peace_decision" || active.outcome !== "victory") throw new Error("講和できる勝利戦役がありません"); if (!['status_quo', 'ceasefire', 'limited_annexation'].includes(settlementId)) throw new Error("講和条件が不正です");
-  if (settlementId === "limited_annexation" && !confirmIrreversible) throw new Error("領土変更の確認が必要です");
-  if (settlementId === "limited_annexation") next = transferGeneratedRegionControl(next, active.targetRegionId, playerNationId(next), { reason: "生成世界戦役の限定割譲", actorId: next.player.id });
+  let next = prepared(state); const active = next.player.generatedCampaign.active; if (!active || active.phase !== "peace_decision" || active.outcome !== "victory") throw new Error("講和できる勝利戦役がありません");
+  if (!["status_quo", "ceasefire", "limited_annexation", "full_annexation"].includes(settlementId)) throw new Error("講和条件が不正です");
+  if (["limited_annexation", "full_annexation"].includes(settlementId) && !confirmIrreversible) throw new Error("領土変更の確認が必要です");
+  const world = getGeneratedWorldView(next);
+  const targetCapital = world.runtime.nationById.get(active.targetNationId)?.capitalRegionId;
+  if (settlementId === "full_annexation" && (active.objectiveId !== "full_annexation" || active.targetRegionId !== targetCapital)) throw new Error("首都攻略目的を達成した戦役だけが完全併合できます");
+  const transferredRegionIds = settlementId === "full_annexation" ? world.runtime.nations.regions.filter((region) => liveOwner(next, region) === active.targetNationId).map((region) => region.id) : settlementId === "limited_annexation" ? [active.targetRegionId] : [];
+  for (const regionId of transferredRegionIds) {
+    next = transferGeneratedRegionControl(next, regionId, playerNationId(next), { reason: settlementId === "full_annexation" ? "生成世界戦役の完全併合" : "生成世界戦役の限定割譲", actorId: next.player.id });
+    next.generatedWorld.resistance = registerGeneratedOccupation(next.generatedWorld.resistance, regionId, playerNationId(next), active.targetNationId, { warId: active.id, fullAnnexation: settlementId === "full_annexation", capitalFall: regionId === targetCapital }, next);
+  }
   normalizeGeneratedCampaignState(next); const current = next.player.generatedCampaign.active; const relation = next.generatedWorld.geopolitics.relations[pairKey(playerNationId(next), current.targetNationId)]; if (relation) { relation.atWar = false; relation.truceMonths = Math.max(12, relation.truceMonths); relation.tension = clamp(relation.tension - 25, 0, 100); }
-  next.player.generatedCampaign.history.unshift({ ...clone(current), endedPeriod: period(next), settlementId }); next.player.generatedCampaign.active = null; recordWorld(next, "生成世界戦役が講和", `${settlementId === "limited_annexation" ? "限定割譲" : settlementId === "ceasefire" ? "停戦" : "原状回復"}で戦役を終えた。`, "success"); return next;
+  next.player.generatedCampaign.history.unshift({ ...clone(current), endedPeriod: period(next), settlementId }); next.player.generatedCampaign.active = null; recordWorld(next, "生成世界戦役が講和", `${settlementId === "full_annexation" ? "完全併合" : settlementId === "limited_annexation" ? "限定割譲" : settlementId === "ceasefire" ? "停戦" : "原状回復"}で戦役を終えた。`, "success"); return next;
+}
+
+export function interveneGeneratedWorldWar(state, warId, actionId) {
+  const next = prepared(state); assertSovereign(next);
+  if (!["support_attacker", "support_defender", "mediate"].includes(actionId)) throw new RangeError("不明な介入方針です");
+  const known = getKnownGeneratedWorldWarView(next).activeWars.find((war) => war.id === warId);
+  if (!known || [known.attackerNationId, known.defenderNationId].includes(playerNationId(next))) throw new Error("介入できる既知の第三国戦争ではありません");
+  const cost = actionId === "mediate" ? 8 : 12;
+  if ((next.player.metrics.wealth ?? 0) < cost) throw new Error("介入資金が不足しています");
+  const war = next.generatedWorld.worldWars.activeWars.find((entry) => entry.id === warId);
+  next.player.metrics.wealth -= cost;
+  if (actionId === "mediate") {
+    if ((next.player.metrics.renown ?? 0) >= 50 || (next.player.metrics.legitimacy ?? 0) >= 55) { war.phase = "settlement"; war.outcome = "stalemate"; }
+    else { war.attacker.morale = Math.max(0, war.attacker.morale - 5); war.defender.morale = Math.max(0, war.defender.morale - 5); }
+  } else {
+    const side = actionId === "support_attacker" ? "attacker" : "defender";
+    war.interveners ??= [];
+    if (!war.interveners.some((entry) => entry.nationId === playerNationId(next))) war.interveners.push({ nationId: playerNationId(next), side, strength: 320, joinedPeriod: period(next) });
+    war[side].strength += 320; war[side].initialStrength += 320; war[side].supply = Math.min(100, war[side].supply + 12);
+  }
+  recordWorld(next, "第三国戦争へ介入", actionId === "mediate" ? "停戦仲介団を派遣した。" : `${actionId === "support_attacker" ? "攻撃側" : "防衛側"}へ援軍と補給を送った。`, "warning");
+  return next;
+}
+
+export function respondGeneratedWorldWar(state, warId, responseId) {
+  const next = prepared(state); assertSovereign(next);
+  if (!["mobilize", "negotiate", "withdraw"].includes(responseId)) throw new RangeError("不明な戦争対応です");
+  const war = next.generatedWorld.worldWars?.activeWars?.find((entry) => entry.id === warId);
+  const playerId = playerNationId(next);
+  if (!war || ![war.attackerNationId, war.defenderNationId].includes(playerId) || !war.requiresPlayerDecision) throw new Error("プレイヤー判断待ちの自国戦争ではありません");
+  if (responseId === "mobilize") { war.phase = "mobilizing"; war.requiresPlayerDecision = false; war.playerCommanded = true; }
+  else { war.phase = "settlement"; war.requiresPlayerDecision = false; war.playerCommanded = true; war.outcome = responseId === "withdraw" && war.attackerNationId === playerId ? "attacker_retreat" : "stalemate"; }
+  next.generatedWorld.pendingStrategicDecisions = (next.generatedWorld.pendingStrategicDecisions ?? []).filter((entry) => entry.worldWarId !== warId);
+  recordWorld(next, "自国戦争への対応", responseId === "mobilize" ? "動員と防衛／攻勢継続を承認した。" : responseId === "withdraw" ? "撤兵と講和を命じた。" : "停戦交渉を命じた。", responseId === "mobilize" ? "danger" : "warning");
+  return next;
 }
 export function advanceGeneratedCampaignMonth(state) {
   const next = prepared(state); if (next.player.generatedCampaign.active || !next.player.sovereign) return next; const condition = next.generatedWorld.geopolitics?.nationStates?.[playerNationId(next)];

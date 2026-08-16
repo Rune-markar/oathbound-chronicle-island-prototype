@@ -285,7 +285,7 @@ import {
 } from "./property-enterprise-system.js";
 import { advanceCompanionQuests, completeCompanionQuest, getCompanionQuestView, normalizeCompanionQuestState, respondToCompanionQuest } from "./companion-quest-system.js";
 import { ESTATE_DEBATE_OPTIONS, ESTATE_FACTIONS, advanceEstatePoliticsMonth, getEstatePoliticsView, normalizeEstatePoliticsState, resolveEstateProjectDebate, startEstateProjectDebate } from "./estate-politics-system.js";
-import { GENERATED_CAMPAIGN_OBJECTIVES, GENERATED_SIEGE_DECISIONS, advanceGeneratedCampaign, advanceGeneratedCampaignMonth, decideGeneratedSiege, getGeneratedCampaignView, normalizeGeneratedCampaignState, requestAlliedContingent, retreatGeneratedCampaign, settleGeneratedCampaign, startGeneratedCampaign } from "./generated-campaign-system.js";
+import { GENERATED_CAMPAIGN_OBJECTIVES, GENERATED_SIEGE_DECISIONS, advanceGeneratedCampaign, advanceGeneratedCampaignMonth, decideGeneratedSiege, getGeneratedCampaignView, interveneGeneratedWorldWar, normalizeGeneratedCampaignState, requestAlliedContingent, respondGeneratedWorldWar, retreatGeneratedCampaign, settleGeneratedCampaign, startGeneratedCampaign } from "./generated-campaign-system.js";
 import {
   MILITARY_MISSION_APPROACHES,
   MILITARY_MISSION_LOGISTICS,
@@ -395,6 +395,8 @@ export {
   advanceGeneratedCampaignMonth,
   decideGeneratedSiege,
   getGeneratedCampaignView,
+  interveneGeneratedWorldWar,
+  respondGeneratedWorldWar,
   normalizeGeneratedCampaignState,
   requestAlliedContingent,
   retreatGeneratedCampaign,

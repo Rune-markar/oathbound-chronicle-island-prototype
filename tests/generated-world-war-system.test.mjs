@@ -60,7 +60,7 @@ test("an AI war opens on a real border with explicit attack and defense doctrine
   const war = result.worldWars.activeWars[0];
   assert.equal(war.attackerNationId, source.attackerNationId);
   assert.equal(war.defenderNationId, source.defenderNationId);
-  assert.ok(war.fronts.length >= 1 && war.fronts.length <= 2);
+  assert.ok(war.fronts.length >= 1 && war.fronts.length <= 5);
   assert.ok(war.fronts.every((front) => (
     source.runtime.regionById.get(front.originRegionId).neighborIds.includes(front.targetRegionId)
   )));
@@ -126,8 +126,29 @@ test("an AI victory transfers the actual target region and closes the war with a
   assert.equal(result.worldWars.activeWars.length, 0);
   assert.equal(result.worldWars.history[0].settlementId, "limited_annexation");
   assert.equal(result.regionalDomains.regionStates[targetRegionId].nationId, source.attackerNationId);
+  assert.ok(result.resistance.occupations.some((entry) => entry.regionId === targetRegionId && entry.status === "active"));
   assert.equal(result.geopolitics.relations[source.key].atWar, false);
   assert.ok(result.geopolitics.relations[source.key].truceMonths >= 12);
+});
+
+test("catastrophic capital fall produces full annexation or national collapse instead of a fixed-city outcome", () => {
+  const source = fixture("ai-war-capital-collapse");
+  let result = openWar(source);
+  const capitalRegionId = source.runtime.nationById.get(source.defenderNationId).capitalRegionId;
+  result.worldWars.activeWars[0] = {
+    ...result.worldWars.activeWars[0],
+    phase: "siege",
+    targetRegionId: capitalRegionId,
+    attacker: { ...result.worldWars.activeWars[0].attacker, strength: 6000, supply: 100, morale: 100 },
+    defender: { ...result.worldWars.activeWars[0].defender, strength: 1, supply: 0, morale: 0 },
+    fronts: [{ ...result.worldWars.activeWars[0].fronts[0], targetRegionId: capitalRegionId, progress: 100 }],
+  };
+  result.geopolitics.nationStates[source.defenderNationId].cohesion = 0;
+  result = advanceGeneratedWorldWars(source.runtime, result.worldWars, result.regionalDomains, result.geopolitics, result.geopolitics, { year: 317, month: 6 });
+  result = advanceGeneratedWorldWars(source.runtime, result.worldWars, result.regionalDomains, result.geopolitics, result.geopolitics, { year: 317, month: 7 }, { resistance: result.resistance });
+  assert.match(result.worldWars.history[0].settlementId, /full_annexation|nation_collapse/);
+  assert.equal(Object.values(result.regionalDomains.regionStates).some((entry) => entry.nationId === source.defenderNationId), false);
+  assert.ok(result.resistance.occupations.some((entry) => entry.regionId === capitalRegionId));
 });
 
 test("wars involving a protected nation wait for the player and never auto-transfer territory", () => {
@@ -251,7 +272,7 @@ test("the normal geopolitical monthly pulse opens an AI-vs-AI war after a sustai
     advanced = advanceGeneratedWorldGeopolitics({ ...advanced, year, month });
     const participants = advanced.generatedWorld.worldWars.activeWars.flatMap((entry) => [entry.attackerNationId, entry.defenderNationId]);
     assert.equal(new Set(participants).size, participants.length, "one nation cannot fight two autonomous wars simultaneously");
-    assert.ok(advanced.generatedWorld.worldWars.activeWars.every((entry) => entry.fronts.length >= 1 && entry.fronts.length <= 2));
+    assert.ok(advanced.generatedWorld.worldWars.activeWars.every((entry) => entry.fronts.length >= 1 && entry.fronts.length <= 5));
   }
   assert.ok(advanced.generatedWorld.worldWars.history.some((entry) => entry.id === war.id));
   assert.equal(new Set(advanced.generatedWorld.worldWars.events.map((event) => event.id)).size, advanced.generatedWorld.worldWars.events.length);
