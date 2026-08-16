@@ -94,6 +94,7 @@ import {
   getAftermathDecisionStatus,
   getForeignDispatches,
   getMilitarySummary,
+  getMilitaryCareerMissionView,
   getLeviathanStatus,
   getPeaceOptions,
   getCityCreedReport,
@@ -122,6 +123,11 @@ import {
   getCareerStage,
   getPersonalChronicleView,
   performCareerAction,
+  prepareMilitaryCareerMission,
+  createMilitaryCareerBattle,
+  reportMilitaryCareerMission,
+  resolveMilitaryCareerBattle,
+  startMilitaryCareerMission,
   performVillageAction,
   hearMarketRumors,
   observeSettlementMarket,
@@ -3630,13 +3636,48 @@ function governmentTitleCatalog() {
   return `<details class="government-title-catalog"><summary>国家形態別の称号体系</summary><div>${systems}</div></details>`;
 }
 
+function renderMilitaryCareerMission(player) {
+  const missionView = getMilitaryCareerMissionView(state);
+  if (!missionView.active) {
+    const commander = player.stage === "commander";
+    return `<button class="career-primary-action" type="button" data-military-mission-action="start"><strong>${commander ? "辺境救援命令を受ける" : "主君の討伐命令を受ける"}</strong><small>期限・目的地・禁止事項を確認し、準備、実移動、戦術戦闘、帰還報告を行う</small></button>`;
+  }
+  const mission = missionView.mission;
+  const constraints = mission.constraints.map((entry) => `<li>${escapeHtml(entry.label)}</li>`).join("");
+  const brief = `<header><div><small>LIEGE MISSION · TURN ${mission.acceptedTurn}—${mission.deadlineTurn}</small><h3>${escapeHtml(mission.title)}</h3></div><b>${escapeHtml(mission.targetRegion.name)}</b></header>
+    <p>${escapeHtml(mission.politicalReason)}</p>
+    <dl class="military-mission-route"><div><dt>受命・報告</dt><dd>${escapeHtml(mission.originRegion.name)}</dd></div><div><dt>作戦地域</dt><dd>${escapeHtml(mission.targetRegion.name)}</dd></div><div><dt>期限</dt><dd>${mission.deadlineTurn}ターンまで</dd></div></dl>
+    <ul class="military-mission-constraints">${constraints}</ul>`;
+  if (mission.stage === "accepted") {
+    const approachOptions = missionView.approaches.map((entry) => `<option value="${entry.id}">${escapeHtml(entry.name)} — ${escapeHtml(entry.description)}</option>`).join("");
+    const logisticsOptions = missionView.logistics.map((entry) => `<option value="${entry.id}" ${entry.id === "standard" ? "selected" : ""}>${escapeHtml(entry.name)} — 財産${entry.wealthCost}・保存食${entry.foodCost}</option>`).join("");
+    const companions = missionView.companions.map((member) => `<label><input type="checkbox" data-military-companion value="${member.id}"> ${escapeHtml(member.name)} <small>${escapeHtml(member.role)}</small></label>`).join("");
+    return `<article class="career-promotion-action military-mission-card" data-military-mission-card>${brief}
+      <fieldset class="promotion-delegation"><legend>軍議と編成</legend><label>作戦<select data-military-approach>${approachOptions}</select></label><label>兵站<select data-military-logistics>${logisticsOptions}</select></label><div class="military-mission-companions"><span>参陣者</span>${companions || "<small>同行可能な仲間はいません</small>"}</div><p>選択した物資は準備時に消費され、戦力と継戦力へ反映されます。</p></fieldset>
+      <button class="career-primary-action" type="button" data-military-mission-action="prepare"><strong>軍議を確定して出発準備を終える</strong><small>確定後は実際の地方地図から対象地域へ移動する</small></button></article>`;
+  }
+  if (mission.stage === "prepared") {
+    const forecast = missionView.forecast;
+    const action = missionView.atTarget
+      ? `<button class="career-primary-action is-danger" type="button" data-military-mission-action="battle"><strong>戦術戦闘を開始する</strong><small>保存された参加者・兵站・作戦で実戦へ移る</small></button>`
+      : `<button class="career-primary-action" type="button" data-military-mission-action="target"><strong>${escapeHtml(mission.targetRegion.name)}を地図で確認</strong><small>通常の地方移動で到着しなければ戦闘は開始できない</small></button>`;
+    return `<article class="career-promotion-action military-mission-card" data-military-mission-card>${brief}<p class="military-mission-plan"><strong>${escapeHtml(mission.preparation.approachName)} · ${escapeHtml(mission.preparation.logisticsName)}</strong><span>自軍評価 ${forecast.playerStrength} / 敵推定 ${forecast.enemyStrength} / 補給 ${forecast.supply}</span></p>${action}</article>`;
+  }
+  const result = mission.battleResult;
+  const resultText = mission.outcome === "victory" ? "勝利" : mission.outcome === "deadline_missed" ? "期限切れ" : mission.outcome === "withdrawal" ? "撤退" : "敗北";
+  const delegation = mission.outcome === "victory" && player.stage === "commander" ? promotionDelegationFields("commander") : "";
+  const action = missionView.atOrigin
+    ? `<article data-career-action-card>${delegation}<button class="career-primary-action" type="button" data-military-mission-action="report"><strong>主君へ帰還報告する</strong><small>勝敗・期限・味方損害を評価し、恩賞・昇進または叱責を確定</small></button></article>`
+    : `<button class="career-primary-action" type="button" data-military-mission-action="origin"><strong>${escapeHtml(mission.originRegion.name)}へ帰還する</strong><small>報告と評価は受命地点でのみ行える</small></button>`;
+  return `<article class="career-promotion-action military-mission-card" data-military-mission-card>${brief}<p class="military-mission-result"><strong>${resultText}</strong><span>味方損害 ${result?.friendlyCasualties ?? 0} · 敵損害 ${result?.enemyCasualties ?? 0}</span></p>${action}</article>`;
+}
+
 function careerActionButtons(player) {
   if (player.stage === "individual" && !player.invitations.length) {
     return `<button class="career-primary-action career-village-route" type="button" data-panel="world"><strong>地方地図で村を探す</strong><small>村の酒場で依頼を受け、仲間を集めてから出発する</small></button>`;
   }
   if (player.stage === "individual") return "";
-  if (player.stage === "retainer") return `<button class="career-primary-action" type="button" data-career-action="fulfill_order"><strong>主君の討伐命令を果たす</strong><small>命令への服従、成果、損耗が信頼と昇進へ影響する</small></button>`;
-  if (player.stage === "commander") return `<article class="career-promotion-action" data-career-action-card>${promotionDelegationFields("commander")}<button class="career-primary-action" type="button" data-career-action="command_campaign"><strong>辺境救援軍を指揮する</strong><small>昇進した場合、国境隊と実務を選んだ後任へ引き継ぐ</small></button></article>`;
+  if (["retainer", "commander"].includes(player.stage)) return renderMilitaryCareerMission(player);
   if (["lord", "multi_lord", "governor", "duke"].includes(player.stage)) {
     const independenceHandoff = ["lord", "multi_lord"].includes(player.stage) ? promotionDelegationFields(player.stage) : "";
     return `
@@ -6237,6 +6278,15 @@ function battlePreparationDefaults(roster) {
 }
 
 function tacticalOriginLabels() {
+  if (view.tacticalOrigin?.type === "military-career") {
+    return {
+      player: "主君軍",
+      enemy: "軍務対象勢力",
+      playerVictory: "主君軍勝利",
+      enemyVictory: "軍務対象勢力勝利",
+      exit: "作戦地域へ戻る",
+    };
+  }
   if (view.tacticalOrigin?.type === "robbery") {
     return {
       player: "襲撃側",
@@ -6458,10 +6508,12 @@ function prepareTacticalResult({ open = true } = {}) {
       : view.tacticalResult.winner === "enemy" ? `${view.tacticalOrigin.enemyName}側勝利` : "双方戦闘不能";
   } else if (view.tacticalOrigin?.type === "dungeon") {
     view.tacticalResult.title = view.tacticalResult.winner === "player" ? "探索隊勝利" : view.tacticalResult.winner === "enemy" ? "探索隊撤退" : "相討ち・探索中断";
+  } else if (view.tacticalOrigin?.type === "military-career") {
+    view.tacticalResult.title = view.tacticalResult.winner === "player" ? "軍務達成" : view.tacticalResult.winner === "enemy" ? "軍務敗北" : "軍務中断";
   }
   view.tacticalResultOpen = open;
   view.commanderDispositionOpen = false;
-  if (["dungeon", "personal-map", "robbery"].includes(view.tacticalOrigin?.type)) {
+  if (["dungeon", "personal-map", "robbery", "military-career"].includes(view.tacticalOrigin?.type)) {
     view.commanderDisposition = null;
     return;
   }
@@ -6488,8 +6540,8 @@ function clearTacticalBattleView() {
 function exitTacticalBattle({ applyDungeonResult = false } = {}) {
   const origin = view.tacticalOrigin;
   const battleResult = view.tacticalResult;
-  if (origin?.type === "robbery" && !battleResult) {
-    showToast("強盗戦闘の決着後に街道へ戻れます。", "danger");
+  if (["robbery", "military-career"].includes(origin?.type) && !battleResult) {
+    showToast(origin.type === "military-career" ? "軍務戦闘の決着後に作戦地域へ戻れます。" : "強盗戦闘の決着後に街道へ戻れます。", "danger");
     return;
   }
   clearTacticalBattleView();
@@ -6498,6 +6550,18 @@ function exitTacticalBattle({ applyDungeonResult = false } = {}) {
     if (battleResult) {
       const resolved = resolveRobberyBattle(state, battleResult, { detected: true });
       commit(resolved.state, crimeOutcomeMessage("隊商との強盗戦闘", resolved.result), "event");
+    } else render();
+    return;
+  }
+  if (origin?.type === "military-career") {
+    view.launchOpen = false;
+    view.panel = "career";
+    view.shortcutTab = "characters";
+    view.characterDetailOpen = Boolean(battleResult);
+    view.selectedShortcutCharacterId = state.player?.id ?? view.selectedShortcutCharacterId;
+    if (battleResult) {
+      const next = resolveMilitaryCareerBattle(state, battleResult);
+      commit(next, battleResult.winner === "player" ? "軍務戦闘に勝利しました。受命地点へ帰還して報告してください。" : "軍務戦闘に敗れました。損害を保持したまま主君へ報告できます。", battleResult.winner === "player" ? "confirm" : "danger");
     } else render();
     return;
   }
@@ -7102,14 +7166,15 @@ function renderTacticalBattle() {
   const dungeonBattle = view.tacticalOrigin?.type === "dungeon";
   const adventureBattle = ["dungeon", "personal-map"].includes(view.tacticalOrigin?.type);
   const robberyBattle = view.tacticalOrigin?.type === "robbery";
+  const militaryCareerBattle = view.tacticalOrigin?.type === "military-career";
   const labels = tacticalOriginLabels();
   elements.tacticalBattleTitle.textContent = battle.name;
-  elements.tacticalBattleReset.textContent = dungeonBattle ? "探索隊を再編成" : view.tacticalOrigin?.type === "personal-map" ? "個人戦をやり直す" : robberyBattle ? "強盗戦闘は再編成不可" : "再編成";
-  elements.tacticalBattleReset.disabled = robberyBattle;
-  elements.tacticalBattleSkip.hidden = !adventureBattle || robberyBattle;
-  elements.tacticalMoreActions.hidden = adventureBattle || robberyBattle;
-  elements.tacticalBattleExit.textContent = robberyBattle ? (battle.winner ? "戦果を確定" : "決着後に戻る") : adventureBattle ? "遭遇地点へ戻る" : "開発メニュー";
-  elements.tacticalBattleExit.disabled = robberyBattle && !battle.winner;
+  elements.tacticalBattleReset.textContent = dungeonBattle ? "探索隊を再編成" : view.tacticalOrigin?.type === "personal-map" ? "個人戦をやり直す" : robberyBattle ? "強盗戦闘は再編成不可" : militaryCareerBattle ? "受命済み編成は変更不可" : "再編成";
+  elements.tacticalBattleReset.disabled = robberyBattle || militaryCareerBattle;
+  elements.tacticalBattleSkip.hidden = !adventureBattle || robberyBattle || militaryCareerBattle;
+  elements.tacticalMoreActions.hidden = adventureBattle || robberyBattle || militaryCareerBattle;
+  elements.tacticalBattleExit.textContent = robberyBattle ? (battle.winner ? "戦果を確定" : "決着後に戻る") : militaryCareerBattle ? (battle.winner ? "軍務結果を確定" : "決着後に戻る") : adventureBattle ? "遭遇地点へ戻る" : "開発メニュー";
+  elements.tacticalBattleExit.disabled = (robberyBattle || militaryCareerBattle) && !battle.winner;
   elements.tacticalPlayerLegend.textContent = labels.player;
   elements.tacticalEnemyLegend.textContent = labels.enemy;
   renderTacticalSummary(battle);
@@ -8262,6 +8327,64 @@ document.addEventListener("click", async (event) => {
     view.panel = "town";
     view.townTab = "overview";
     renderPanelFromTop();
+    return;
+  }
+  const militaryMissionAction = event.target.closest("[data-military-mission-action]");
+  if (militaryMissionAction) {
+    try {
+      const action = militaryMissionAction.dataset.militaryMissionAction;
+      if (action === "start") {
+        commit(startMilitaryCareerMission(state), "主君から期限と作戦地域を持つ軍務を受命しました。", "event");
+      } else if (action === "prepare") {
+        const card = militaryMissionAction.closest("[data-military-mission-card]");
+        const companionIds = [...card.querySelectorAll("[data-military-companion]:checked")].map((input) => input.value);
+        commit(prepareMilitaryCareerMission(state, {
+          approachId: card.querySelector("[data-military-approach]")?.value,
+          logisticsId: card.querySelector("[data-military-logistics]")?.value,
+          companionIds,
+        }), "作戦・兵站・参陣者を確定しました。地方地図から対象地域へ移動してください。", "confirm");
+      } else if (["target", "origin"].includes(action)) {
+        const mission = getMilitaryCareerMissionView(state).mission;
+        const regionId = action === "target" ? mission.targetRegion.id : mission.originRegion.id;
+        const next = selectGeneratedWorldRegion(state, regionId);
+        view.characterDetailOpen = false;
+        view.ledgerDrawerOpen = false;
+        view.panel = "world";
+        view.shortcutTab = "world";
+        view.atlasMode = "generated";
+        view.generatedMapScale = "region";
+        commit(next, `${action === "target" ? "作戦地域" : "帰還先"}を地図で選択しました。通常の移動操作で進んでください。`, "info");
+      } else if (action === "battle") {
+        const battle = createMilitaryCareerBattle(state);
+        stopTacticalBattleEffects();
+        view.launchOpen = false;
+        view.characterDetailOpen = false;
+        view.tacticalOrigin = { type: "military-career", missionId: state.player.militaryCareer.activeMission.id };
+        view.battlePreparation = null;
+        view.tacticalBattle = battle;
+        view.tacticalResult = null;
+        view.tacticalResultOpen = false;
+        view.commanderDisposition = null;
+        view.commanderDispositionOpen = false;
+        view.selectedTacticalUnitId = null;
+        view.selectedTacticalCommanderId = null;
+        view.selectedTacticalFortificationId = null;
+        view.tacticalInspectorDismissed = false;
+        render();
+      } else if (action === "report") {
+        const actionCard = militaryMissionAction.closest("[data-career-action-card]");
+        const delegation = actionCard ? {
+          successorId: actionCard.querySelector("[data-promotion-successor]")?.value,
+          mandateId: actionCard.querySelector("[data-promotion-mandate]")?.value,
+          authorityId: actionCard.querySelector("[data-promotion-authority]")?.value,
+        } : {};
+        const previousStage = state.player.stage;
+        const next = reportMilitaryCareerMission(state, delegation);
+        const promoted = next.player.stage !== previousStage;
+        if (getCareerStage(next)?.governance && !getCareerStage(state)?.governance) view.panel = "governance";
+        commit(next, promoted ? "軍務の戦果を認められ、昇進しました。" : "軍務の勝敗・期限・損害を主君へ報告しました。", promoted ? "confirm" : "danger");
+      }
+    } catch (error) { showToast(error.message, "danger"); }
     return;
   }
   const careerAction = event.target.closest("[data-career-action]");

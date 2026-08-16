@@ -278,6 +278,18 @@ import {
   resolveCrimeRecovery,
 } from "./crime-system.js";
 import { advanceMerchantMarkets } from "./merchant-trade.js";
+import {
+  MILITARY_MISSION_APPROACHES,
+  MILITARY_MISSION_LOGISTICS,
+  advanceMilitaryCareerMissionMonth,
+  closeMilitaryCareerMissionReport,
+  createMilitaryCareerBattle,
+  getMilitaryCareerMissionView,
+  normalizeMilitaryCareerState,
+  prepareMilitaryCareerMission,
+  resolveMilitaryCareerBattle,
+  startMilitaryCareerMission,
+} from "./military-career-system.js";
 
 export {
   CRIME_HEAT_GAINS,
@@ -427,6 +439,14 @@ export {
   getReputationSpreadRadius,
   normalizeRegionalReputationState,
   recordRegionalAchievement,
+  MILITARY_MISSION_APPROACHES,
+  MILITARY_MISSION_LOGISTICS,
+  createMilitaryCareerBattle,
+  getMilitaryCareerMissionView,
+  normalizeMilitaryCareerState,
+  prepareMilitaryCareerMission,
+  resolveMilitaryCareerBattle,
+  startMilitaryCareerMission,
 };
 
 export const FORCED_ORDER_RULES = {
@@ -947,7 +967,7 @@ export function createCareerInitialState(options = {}) {
     seed,
   }), creationOptions.player ?? creationOptions));
   const normalized = normalizeWarState(state);
-  return setGeneratedPlayerNation(normalized, normalized.generatedWorld.playerNationId, generatedWorldRuntime);
+  return normalizeMilitaryCareerState(setGeneratedPlayerNation(normalized, normalized.generatedWorld.playerNationId, generatedWorldRuntime));
 }
 
 export function getDelegationCandidates(state, roleId) {
@@ -1019,8 +1039,14 @@ export function performCareerAction(state, actionId, delegation = {}) {
   return next;
 }
 
+export function reportMilitaryCareerMission(state, delegation = {}) {
+  const report = closeMilitaryCareerMissionReport(state);
+  if (!report.promotionActionId) return report.state;
+  return performCareerAction(report.state, report.promotionActionId, delegation);
+}
+
 export function advanceCareerMonth(state) {
-  let next = advancePlayerCareerMonth(state);
+  let next = advanceMilitaryCareerMissionMonth(advancePlayerCareerMonth(state));
   advanceMerchantMarkets(next);
   resolveRoleDelegations(WORLD, next);
   if (next.scenarioMode === "generated") {

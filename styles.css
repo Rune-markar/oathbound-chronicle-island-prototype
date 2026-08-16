@@ -15899,3 +15899,17 @@ body.is-location-focus .village-central-status article > strong { font-size: cla
 @media (prefers-reduced-motion: reduce) {
   .ledger-drawer { transition: none; }
 }
+.military-mission-card > header { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; }
+.military-mission-card > header h3 { margin:3px 0 0; }
+.military-mission-card > header b { color:var(--accent, #d5b36a); }
+.military-mission-route { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin:12px 0; }
+.military-mission-route div { padding:8px; border:1px solid rgba(214,190,132,.24); background:rgba(21,25,31,.5); }
+.military-mission-route dt,.military-mission-route dd { margin:0; }
+.military-mission-route dt { font-size:.72rem; opacity:.7; }
+.military-mission-route dd { margin-top:3px; font-weight:700; }
+.military-mission-constraints { margin:8px 0 14px; padding-left:20px; }
+.military-mission-companions { display:grid; gap:6px; }
+.military-mission-companions > span { font-weight:700; }
+.military-mission-companions label { display:flex; gap:6px; align-items:center; }
+.military-mission-plan,.military-mission-result { display:flex; justify-content:space-between; gap:12px; padding:10px; border-left:3px solid var(--accent, #d5b36a); background:rgba(0,0,0,.18); }
+@media (max-width: 720px) { .military-mission-route { grid-template-columns:1fr; } .military-mission-plan,.military-mission-result { flex-direction:column; } }
