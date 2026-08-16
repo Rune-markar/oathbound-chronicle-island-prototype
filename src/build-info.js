@@ -1,6 +1,6 @@
 export const BUILD_INFO = Object.freeze({
   version: "0.4.0",
-  commit: "155eea11b7b3e3eff39966dd2c5d39437343b8fb",
+  commit: "c11d3add583e1b194f03aee74c14fa70aee0b66e",
   repositoryUrl: "https://github.com/Rune-markar/oathbound-chronicle-island-prototype",
 });
 
