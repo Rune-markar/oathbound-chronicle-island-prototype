@@ -14,6 +14,12 @@ import {
   preserveGeopoliticalState,
 } from "./geopolitical-world.js";
 import {
+  advanceGeneratedWorldWars,
+  createGeneratedWorldWarState,
+  getGeneratedWorldWarView as getWorldWarView,
+  preserveGeneratedWorldWarState,
+} from "./generated-world-war-system.js";
+import {
   advanceRegionalDomains,
   appointRegionalLord,
   createRegionalDomainState,
@@ -58,6 +64,7 @@ export const GENERATED_WORLD_DEFAULTS = Object.freeze({
   discoveredRegionIds: [],
   colonies: [],
   geopolitics: null,
+  worldWars: null,
   regionalDomains: null,
   barbarians: null,
   intelligence: null,
@@ -101,6 +108,7 @@ function cloneGeneratedWorldState(value) {
     discoveredRegionIds: [...(value.discoveredRegionIds ?? [])],
     colonies: (value.colonies ?? []).map((colony) => ({ ...colony })),
     geopolitics: preserveGeopoliticalState(value.geopolitics),
+    worldWars: preserveGeneratedWorldWarState(value.worldWars),
     regionalDomains: preserveRegionalDomainState(value.regionalDomains),
     barbarians: preserveBarbarianState(value.barbarians),
     simulationFidelity: preserveSimulationFidelityPlan(value.simulationFidelity),
@@ -606,6 +614,7 @@ export function createGeneratedWorldState(options = {}, dateState = null) {
     discoveredRegionIds: [...new Set((options.discoveredRegionIds ?? []).filter((id) => typeof id === "string"))].slice(0, 512),
     colonies: normalizedColonies(options.colonies),
     geopolitics: preserveGeopoliticalState(options.geopolitics),
+    worldWars: preserveGeneratedWorldWarState(options.worldWars),
     regionalDomains: preserveRegionalDomainState(options.regionalDomains),
     barbarians: preserveBarbarianState(options.barbarians),
     simulationFidelity: preserveSimulationFidelityPlan(options.simulationFidelity),
@@ -824,6 +833,27 @@ export function getGeneratedGeopoliticalView(state) {
   return getGeopoliticalWorldView(runtime, generatedState.geopolitics, state);
 }
 
+export function getGeneratedWorldWarView(state) {
+  const generatedState = createGeneratedWorldState(state.generatedWorld ?? {}, state);
+  const baseRuntime = buildGeneratedWorld(state);
+  const regionalDomains = createRegionalDomainState(runtimeWithColonies(baseRuntime, generatedState), generatedState.regionalDomains, state);
+  const runtime = effectiveRuntimeFor(baseRuntime, { ...generatedState, regionalDomains }, state);
+  return getWorldWarView(runtime, generatedState.worldWars, state);
+}
+
+export function getKnownGeneratedWorldWarView(state) {
+  const generatedState = createGeneratedWorldState(state.generatedWorld ?? {}, state);
+  const view = getGeneratedWorldWarView(state);
+  const knownEventIds = new Set(generatedState.intelligence.entries.map((entry) => entry.eventId));
+  const knownEvents = view.events.filter((event) => knownEventIds.has(event.id));
+  const knownWarIds = new Set(knownEvents.map((event) => event.worldWarId).filter(Boolean));
+  return {
+    activeWars: view.activeWars.filter((war) => knownWarIds.has(war.id)),
+    history: view.history.filter((war) => knownWarIds.has(war.id)),
+    events: knownEvents,
+  };
+}
+
 export function getGeneratedRegionalDomainView(state) {
   const generatedState = createGeneratedWorldState(state.generatedWorld ?? {}, state);
   return getRegionalDomainView(runtimeWithColonies(buildGeneratedWorld(state), generatedState), generatedState.regionalDomains, state);
@@ -843,7 +873,7 @@ export function initializeGeneratedWorldGeopolitics(state) {
   const regionalDomains = createRegionalDomainState(runtimeWithColonies(baseRuntime, generatedState), generatedState.regionalDomains, state);
   const runtime = effectiveRuntimeFor(baseRuntime, { ...generatedState, regionalDomains }, state);
   const barbarians = createBarbarianWorldState(runtime, generatedState.barbarians, state);
-  if (generatedState.geopolitics) return { ...state, generatedWorld: { ...generatedState, regionalDomains, barbarians } };
+  if (generatedState.geopolitics) return { ...state, generatedWorld: { ...generatedState, regionalDomains, barbarians, worldWars: createGeneratedWorldWarState(runtime, generatedState.worldWars, state) } };
   return {
     ...state,
     generatedWorld: {
@@ -851,6 +881,7 @@ export function initializeGeneratedWorldGeopolitics(state) {
       regionalDomains,
       barbarians,
       geopolitics: createGeopoliticalWorldState(runtime, null, state),
+      worldWars: createGeneratedWorldWarState(runtime, generatedState.worldWars, state),
     },
   };
 }
@@ -885,11 +916,11 @@ function locateGeopoliticalEvents(runtime, geopolitics) {
   };
 }
 
-function recordNearbyWorldEvents(state, runtime, generatedState, geopolitics) {
+function recordNearbyWorldEvents(state, runtime, generatedState, events) {
   const expeditionRegion = effectiveExpeditionRegion(runtime, generatedState);
   const nearbyRegionIds = new Set([expeditionRegion.id, ...(expeditionRegion.neighborIds ?? [])]);
-  const nearbyEvents = geopolitics.events.filter((event) => (
-    event.period === geopolitics.lastAdvancedPeriod && nearbyRegionIds.has(event.regionId)
+  const nearbyEvents = events.filter((event) => (
+    event.period === periodFor(state) && nearbyRegionIds.has(event.regionId)
   ));
   const recorded = recordKnownWorldEvents(generatedState.intelligence, nearbyEvents, {
     type: "witnessed",
@@ -911,15 +942,37 @@ export function advanceGeneratedWorldGeopolitics(state) {
   const advancedGeopolitics = advanceGeopoliticalWorld(runtime, baseline, state, {
     protectedNationIds: generatedState.simulationFidelity?.playerControlledNationIds ?? [],
   });
-  const pendingStrategicDecisions = advancedGeopolitics.pendingStrategicDecisions ?? [];
-  const geopolitics = locateGeopoliticalEvents(runtime, advancedGeopolitics);
-  const intelligence = recordNearbyWorldEvents(state, runtime, generatedState, geopolitics);
+  const playerCampaign = state.player?.generatedCampaign?.active;
+  const playerCampaignRelationKey = playerCampaign?.targetNationId && generatedState.playerNationId
+    ? [generatedState.playerNationId, playerCampaign.targetNationId].sort().join(":")
+    : null;
+  const worldWarResult = advanceGeneratedWorldWars(
+    runtime,
+    generatedState.worldWars,
+    regionalDomains,
+    baseline,
+    advancedGeopolitics,
+    state,
+    {
+      protectedNationIds: generatedState.simulationFidelity?.playerControlledNationIds ?? [],
+      excludedRelationKeys: playerCampaignRelationKey ? [playerCampaignRelationKey] : [],
+    },
+  );
+  const pendingStrategicDecisions = [
+    ...(advancedGeopolitics.pendingStrategicDecisions ?? []),
+    ...worldWarResult.pendingStrategicDecisions,
+  ];
+  const geopolitics = locateGeopoliticalEvents(runtime, worldWarResult.geopolitics);
+  const currentWarEvents = worldWarResult.worldWars.events.filter((event) => event.period === periodFor(state));
+  const currentGeopoliticalEvents = geopolitics.events.filter((event) => event.period === periodFor(state));
+  const intelligence = recordNearbyWorldEvents(state, runtime, generatedState, [...currentGeopoliticalEvents, ...currentWarEvents]);
   return {
     ...state,
     generatedWorld: {
       ...generatedState,
-      regionalDomains,
+      regionalDomains: worldWarResult.regionalDomains,
       geopolitics,
+      worldWars: worldWarResult.worldWars,
       intelligence,
       pendingStrategicDecisions: [
         ...(generatedState.pendingStrategicDecisions ?? []).filter((decision) => decision.period !== geopolitics.lastAdvancedPeriod),
@@ -936,7 +989,8 @@ export function discoverGeneratedWorldRumor(state, settlement = {}) {
   const knownIds = new Set(generatedState.intelligence.entries.map((entry) => entry.eventId));
   const localRegion = runtime.regionById.get(settlement.regionId);
   const neighboringNationIds = new Set((localRegion?.neighborIds ?? []).map((id) => runtime.regionById.get(id)?.nationId).filter(Boolean));
-  const candidates = [...geopolitics.events].reverse()
+  const worldWars = getWorldWarView(runtime, generatedState.worldWars, state);
+  const candidates = [...geopolitics.events, ...worldWars.events].reverse()
     .filter((event) => !knownIds.has(event.id))
     .map((event, order) => ({
       event,

@@ -272,6 +272,7 @@ import {
   getGeneratedExpeditionTravelOptions,
   getGeneratedShippingDestinations,
   getGeneratedWorldIntelligenceView,
+  getKnownGeneratedWorldWarView,
   getGeneratedRecognitionView,
   getGeneratedWorldSiteView,
   getGeneratedWorldTimeView,
@@ -2852,8 +2853,39 @@ function renderWorldNations() {
 
 function renderWorldGeopolitics() {
   const timeline = getGeneratedWorldIntelligenceView(state);
+  const knownWars = getKnownGeneratedWorldWarView(state);
   const rumorCount = timeline.filter((entry) => entry.source.type === "rumor").length;
   const witnessedCount = timeline.filter((entry) => entry.source.type === "witnessed").length;
+  const phaseNames = { awaiting_player: "判断待ち", mobilizing: "動員", campaigning: "野戦", siege: "攻城", settlement: "講和", complete: "終結" };
+  const settlementNames = { limited_annexation: "限定割譲", invasion_repelled: "侵攻撃退", attacker_withdrawal: "攻撃側撤退", negotiated_ceasefire: "停戦", status_quo: "国境維持" };
+  const activeWarRows = knownWars.activeWars.map((war) => `
+    <article class="known-world-war is-active">
+      <header><div><small>${escapeHtml(war.startedPeriod)}開戦 · ${escapeHtml(phaseNames[war.phase] ?? war.phase)}</small><h3>${escapeHtml(war.attackerName)} → ${escapeHtml(war.defenderName)}</h3></div><strong>${escapeHtml(war.objectiveName)}</strong></header>
+      <p class="known-world-war-target">主目標：${escapeHtml(war.targetRegionName)} · ${war.fronts.length}正面</p>
+      <div class="known-world-war-doctrines">
+        <div><small>攻撃理論</small><strong>${escapeHtml(war.attackerDoctrine.name)}</strong><p>${escapeHtml(war.attackerDoctrine.description)}</p></div>
+        <div><small>防衛理論</small><strong>${escapeHtml(war.defenderDoctrine.name)}</strong><p>${escapeHtml(war.defenderDoctrine.description)}</p></div>
+      </div>
+      <div class="known-world-war-forces">
+        <span><small>攻撃側</small><b>${formatValue(war.attacker.strength)}</b><em>補給 ${war.attacker.supply} · 損失 ${formatValue(war.attacker.casualties)}</em></span>
+        <span><small>防衛側</small><b>${formatValue(war.defender.strength)}</b><em>補給 ${war.defender.supply} · 損失 ${formatValue(war.defender.casualties)}</em></span>
+      </div>
+      <div class="known-world-war-fronts">${war.fronts.map((front) => `
+        <div class="known-world-war-front">
+          <span><strong>${escapeHtml(front.name)} · ${escapeHtml(front.targetRegionName)}</strong><b>${front.progress}%</b></span>
+          <i aria-label="侵攻進捗 ${front.progress}%"><u style="--war-progress:${front.progress}%"></u></i>
+          <small>${front.attackerAction ? escapeHtml(front.attackerAction.name) : "部隊集結中"} / ${front.defenderAction ? escapeHtml(front.defenderAction.name) : "防衛準備中"}</small>
+        </div>`).join("")}</div>
+    </article>
+  `).join("");
+  const completedWarRows = knownWars.history.slice(0, 6).map((war) => `
+    <article class="known-world-war is-complete">
+      <header><div><small>${escapeHtml(war.startedPeriod)}—${escapeHtml(war.endedPeriod ?? "時期不明")}</small><h3>${escapeHtml(war.attackerName)}・${escapeHtml(war.defenderName)}戦争</h3></div><strong>${escapeHtml(settlementNames[war.settlementId] ?? "終結")}</strong></header>
+      <p>${escapeHtml(war.targetRegionName)} · 攻撃側損失 ${formatValue(war.attacker.casualties)} / 防衛側損失 ${formatValue(war.defender.casualties)}</p>
+    </article>
+  `).join("");
+  const knownWarRows = activeWarRows || completedWarRows ? `${activeWarRows}${completedWarRows}` : `
+    <div class="world-intelligence-empty"><strong>把握済みの列国戦争はありません</strong><p>開戦や戦況の噂を得るか、戦場の近くに居合わせると、攻守の国家理論と前線状況がここへ記録されます。</p></div>`;
   const eventRows = timeline.map((entry) => `
     <article class="geopolitical-event world-intelligence-entry is-${entry.tone}">
       <header><small>${escapeHtml(entry.eventPeriod)}</small><strong>${escapeHtml(entry.title)}</strong></header>
@@ -2872,6 +2904,7 @@ function renderWorldGeopolitics() {
       <p>国家の内部判断を無条件には表示しません。住人から得た噂と、プレイヤーが近くで居合わせた出来事が時系列に蓄積されます。</p>
       <div class="generated-nation-facts geopolitical-metrics"><span><small>既知の出来事</small><strong>${timeline.length}</strong></span><span><small>住人の噂</small><strong>${rumorCount}</strong></span><span><small>現場・近傍</small><strong>${witnessedCount}</strong></span></div>
     </section>
+    <section class="panel-section geopolitical-section"><div class="section-heading"><h2>把握済みの列国戦争</h2><small>攻撃・防衛・前線</small></div><div class="known-world-war-list">${knownWarRows}</div></section>
     <section class="panel-section geopolitical-section"><div class="section-heading"><h2>世界の動き</h2><small>新しく知った順</small></div><div class="geopolitical-events world-intelligence-timeline">${eventRows}</div></section>
     <p class="world-source-note"><b>情報の入手：</b>集落で噂を聞く／情報収集を行う、または出来事が起きた地方か隣接地方に居合わせることで追加されます。</p>
   `;

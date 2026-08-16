@@ -6691,6 +6691,141 @@ a:focus-visible,
   font: 9px/1.7 system-ui, sans-serif;
 }
 
+.known-world-war-list {
+  display: grid;
+  gap: 8px;
+}
+
+.known-world-war {
+  padding: 11px;
+  border: 1px solid rgba(105, 66, 45, 0.24);
+  border-left: 3px solid #9a5345;
+  background: linear-gradient(135deg, rgba(161, 90, 76, 0.1), rgba(255, 255, 255, 0.22));
+  font-family: system-ui, sans-serif;
+}
+
+.known-world-war.is-complete {
+  border-left-color: #66766d;
+  background: rgba(255, 255, 255, 0.24);
+}
+
+.known-world-war > header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.known-world-war h3,
+.known-world-war p {
+  margin: 0;
+}
+
+.known-world-war h3 {
+  color: #3f4843;
+  font-size: 11px;
+}
+
+.known-world-war header small,
+.known-world-war header > strong,
+.known-world-war-target {
+  color: #75644d;
+  font-size: 8px;
+}
+
+.known-world-war-target {
+  margin-top: 6px !important;
+  font-weight: 800;
+}
+
+.known-world-war-doctrines,
+.known-world-war-forces {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.known-world-war-doctrines > div,
+.known-world-war-forces > span {
+  padding: 7px;
+  border: 1px solid rgba(71, 60, 41, 0.14);
+  background: rgba(255, 255, 255, 0.27);
+}
+
+.known-world-war-doctrines small,
+.known-world-war-doctrines strong,
+.known-world-war-forces small,
+.known-world-war-forces b,
+.known-world-war-forces em {
+  display: block;
+}
+
+.known-world-war-doctrines small,
+.known-world-war-forces small,
+.known-world-war-forces em,
+.known-world-war-front small {
+  color: #77705f;
+  font-size: 8px;
+  font-style: normal;
+}
+
+.known-world-war-doctrines strong,
+.known-world-war-forces b {
+  margin-top: 2px;
+  color: #4b4a42;
+  font-size: 9px;
+}
+
+.known-world-war-doctrines p {
+  margin-top: 4px;
+  color: #625e53;
+  font-size: 8px;
+  line-height: 1.5;
+}
+
+.known-world-war-fronts {
+  display: grid;
+  gap: 7px;
+  margin-top: 9px;
+}
+
+.known-world-war-front > span {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: #514f47;
+  font-size: 8px;
+}
+
+.known-world-war-front > i {
+  height: 5px;
+  display: block;
+  margin: 3px 0;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(71, 60, 41, 0.15);
+}
+
+.known-world-war-front > i > u {
+  width: var(--war-progress);
+  height: 100%;
+  display: block;
+  background: linear-gradient(90deg, #7c8a74, #a75749);
+}
+
+@media (max-width: 980px) {
+  .known-world-war > header,
+  .known-world-war-doctrines,
+  .known-world-war-forces {
+    grid-template-columns: 1fr;
+  }
+
+  .known-world-war > header {
+    display: grid;
+  }
+}
+
 .barbarian-frontier-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }

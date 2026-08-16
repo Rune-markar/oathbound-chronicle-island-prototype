@@ -91,3 +91,29 @@ test("生活から国家と10段階出世を通常導線の実装として追跡
   assert.match(manual, /日雇い.*運送.*護衛/s);
   assert.match(changelog, /所領事業.*家中恩賞.*二軍団.*継承/s);
 });
+
+test("生成国家間の攻撃・防衛戦争と残る全面統合境界を追跡する", async () => {
+  const autonomousWar = STATUS_ENTRIES.find((item) => item.id === "ai-generated-world-wars");
+  const bridge = STATUS_ENTRIES.find((item) => item.id === "generated-war-bridge");
+  assert.equal(autonomousWar?.category, "implemented");
+  for (const term of ["AI対AI", "二正面", "補給", "攻城", "限定割譲"]) {
+    assert.match(`${autonomousWar.summary} ${autonomousWar.evidence}`, new RegExp(term));
+  }
+  assert.ok(autonomousWar.sources.some((item) => item.href === "./src/generated-world-war-system.js"));
+  assert.ok(autonomousWar.sources.some((item) => item.href === "./src/app.js"));
+  assert.ok(autonomousWar.sources.some((item) => item.href === "./tests/generated-world-war-system.test.mjs"));
+  assert.equal(bridge?.category, "configured");
+  assert.match(`${bridge.summary} ${bridge.evidence}`, /別台帳.*固定戦域.*3戦線以上/s);
+
+  const projectRoot = new URL("../", import.meta.url);
+  const [manual, backlog, spec] = await Promise.all([
+    readFile(new URL("MANUAL.md", projectRoot), "utf8"),
+    readFile(new URL("UNIMPLEMENTED_FEATURES.md", projectRoot), "utf8"),
+    readFile(new URL("docs/superpowers/specs/2026-08-16-ai-generated-world-wars.md", projectRoot), "utf8"),
+  ]);
+  assert.match(manual, /決戦突破.*回廊戦争.*資源圧迫戦.*限定圧力/s);
+  assert.match(manual, /城砦網防衛.*機動防御.*縦深防御/s);
+  assert.match(backlog, /生成国家間の自律戦争.*実装済み/s);
+  assert.match(backlog, /生成戦争エンジンの全面統合.*部分接続/s);
+  assert.match(spec, /未知の戦争は通常UIへ出ず/);
+});

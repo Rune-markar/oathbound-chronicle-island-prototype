@@ -316,10 +316,17 @@ test("monster nests and intelligent barbarian settlements are visible as managed
 test("world affairs is a player-known timeline learned through rumors or nearby presence", () => {
   const panel = appSource.match(/function renderWorldGeopolitics\(\)[\s\S]*?function renderWorldPeoples/)?.[0] ?? "";
   assert.match(panel, /getGeneratedWorldIntelligenceView\(state\)/);
+  assert.match(panel, /getKnownGeneratedWorldWarView\(state\)/);
   assert.match(panel, /住人の噂/);
   assert.match(panel, /現場・近傍/);
+  assert.match(panel, /把握済みの列国戦争/);
+  assert.match(panel, /攻撃理論/);
+  assert.match(panel, /防衛理論/);
+  assert.match(panel, /侵攻進捗/);
   assert.match(panel, /新しく知った順/);
   assert.doesNotMatch(panel, /国家別戦略|二国間関係|判断要因/);
+  assert.match(styleSource, /\.known-world-war-doctrines/);
+  assert.match(styleSource, /--war-progress/);
 });
 
 test("map landmarks stay clear while local actions live in the left panel without allowing a dungeon bypass", () => {

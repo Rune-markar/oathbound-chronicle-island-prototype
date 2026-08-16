@@ -111,6 +111,7 @@ ver2では、平民・浪人・傭兵から従士、騎士、城主、地方領�
 - 正式要求、譲歩、第三国仲介、武装圧力、交渉期限、受諾見込みを持つ国境交渉
 - 人物ごとの出自・派閥・野心・政策選好と、命令・季節方針による忠誠・人物関係・不満の変化
 - ヴァルカを含む外国9か国が毎月、交易・仲介・援助・動員・保証・圧力などの国家意図を更新する世界公報
+- 生成国家同士が地理・国力・備蓄・即応・攻勢意図から攻撃理論と防衛理論を選び、実在国境の最大二正面で兵站・損耗・攻城・停戦・限定割譲まで進める自律戦争
 - 直轄と太守委任、戸籍把握、州郡化、行政到達、州庫留保を扱う拡大型の内政自動化
 - 三州 × 17分野の権限保有者を法的権限と実務権限に分け、成立事件・取得年・正統性・慣習定着・地域支持・執行力まで保存する権限台帳
 - 情報・行政・財政・強制・インフラ・規格化の六能力と、地方勢力が処理している仕事を引き受ける中央行政能力・行政負荷
@@ -149,4 +150,4 @@ python -m http.server 4180
 npm run check
 ```
 
-人物経歴・管轄・建議・共有認可は `src/player-career.js`、町起点の名声記録と地方間伝搬は `src/regional-reputation.js`、生成地域の人口・集落成長・領主・支配勢力は `src/regional-domain-system.js`、国家進行は `src/monthly-simulation.js`、三幕・外交交渉・人物政治・外国意図は `src/campaign-system.js`、公開入口は `src/simulation.js`、都市・武将の派生計算は `src/realm-model.js`、町政は `src/town-administration.js`、州郡統治は `src/administration-model.js`、履歴イベント・圧力・因果グラフ・年代記編纂は `src/history-model.js`、世界統計は `src/world-statistics.js`、作戦・講和・占領政策の定義は `src/war-system.js`、相手の戦争判断は `src/war-ai.js`、音響生成は `src/audio.js`、画面制御は `src/app.js` に分けています。外部ライブラリ、外部音源、外部通信は使用しません。
+人物経歴・管轄・建議・共有認可は `src/player-career.js`、町起点の名声記録と地方間伝搬は `src/regional-reputation.js`、生成地域の人口・集落成長・領主・支配勢力は `src/regional-domain-system.js`、生成国家間戦争は `src/generated-world-war-system.js`、国家進行は `src/monthly-simulation.js`、三幕・外交交渉・人物政治・外国意図は `src/campaign-system.js`、公開入口は `src/simulation.js`、都市・武将の派生計算は `src/realm-model.js`、町政は `src/town-administration.js`、州郡統治は `src/administration-model.js`、履歴イベント・圧力・因果グラフ・年代記編纂は `src/history-model.js`、世界統計は `src/world-statistics.js`、作戦・講和・占領政策の定義は `src/war-system.js`、固定戦域側の戦争判断は `src/war-ai.js`、音響生成は `src/audio.js`、画面制御は `src/app.js` に分けています。外部ライブラリ、外部音源、外部通信は使用しません。
