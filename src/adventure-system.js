@@ -14,6 +14,13 @@ import { ABILITY_LABELS, normalizeAbilityScores } from "./character-abilities.js
 import { discoverUnderworldContacts, fenceStolenItem, normalizeCrimeState } from "./crime-system.js";
 import { getRobberyOpportunities } from "./robbery-system.js";
 import { getSmugglingOffers } from "./smuggling-system.js";
+import {
+  getEquippedTacticalMagic,
+  getEquippedTalentEffects,
+  normalizeMasteryState,
+  observeMasteryProgress,
+  recordMasteryEvent,
+} from "./skill-mastery-system.js";
 
 const clone = (value) => structuredClone(value);
 
@@ -361,7 +368,7 @@ export function normalizeAdventureState(state) {
       });
     }
   }
-  return state;
+  return observeMasteryProgress(normalizeMasteryState(state));
 }
 
 function preparedClone(state) {
@@ -678,6 +685,7 @@ export function movePersonalMap(state, context, destinationId) {
   }
   next = advanceGeneratedWorldTime(next, travelMinutes);
   if (next.player?.villageLife) next.player.villageLife.fatigue = Math.min(100, (next.player.villageLife.fatigue ?? 0) + fatigueGain);
+  recordMasteryEvent(next, "journeys", 1);
   return next;
 }
 
@@ -847,6 +855,8 @@ export function explorePersonalMap(state, context, options = {}) {
   }
   personalMapResult(record, result);
   storePersonalRegion(next, context.region.id, record);
+  recordMasteryEvent(next, "explorations", 1);
+  if (result.type === "item") recordMasteryEvent(next, "loot_items", result.quantity ?? 1);
   return next;
 }
 
@@ -1222,6 +1232,7 @@ function addCandidateToParty(next, candidate, source) {
   }
   const relation = next.adventure.npcRelations[candidate.id] ??= normalizeNpcRelation(candidate.id, null);
   relation.joined = true;
+  recordMasteryEvent(next, "recruits", 1);
   return next;
 }
 
@@ -1443,6 +1454,9 @@ export function getDungeonTacticalRoster(state) {
     available: (player?.villageLife?.hp ?? 1) > 0,
     level: 1,
     uniqueCharacterId: null,
+    abilities: { ...(player?.abilities ?? {}) },
+    equippedMagic: getEquippedTacticalMagic(state).map((entry) => ({ id: entry.id, tacticalSkillId: entry.tacticalSkillId, name: entry.name })),
+    equippedTalents: getEquippedTalentEffects(state).map((entry) => ({ id: entry.id, name: entry.name, modifiers: { ...entry.modifiers } })),
   };
   const roleBonuses = {
     前衛: { leadership: 6, war: 15, intelligence: 0, charisma: 2 },
@@ -1513,12 +1527,18 @@ export function createDungeonTacticalBattle(state) {
       const maxHp = index === 0 ? run.playerMaxHp : 42 + Math.max(1, participant.level ?? 1) * 6;
       const astralCalibration = participant.passiveId === "astral_calibration";
       const healingRole = /治療|僧侶|神官/.test(participant.role ?? "");
+      const equippedMagicSkillIds = (participant.equippedMagic ?? []).map((entry) => entry.tacticalSkillId);
+      const masteryStatuses = (participant.equippedTalents ?? []).map((entry) => ({
+        id: `mastery:${entry.id}`, name: entry.name, duration: null, modifiers: { ...entry.modifiers }, sourceCharacterId: participant.id,
+      }));
+      const baseClassId = unitClassForRole(participant.role);
+      const classAbilities = baseClassId === "mage" ? ["magic"] : [];
       return createCombatUnit({
         id: `unit:${run.id}:player:${participant.id}`,
         name: participant.name,
         iconUrl: participant.portraitImage ?? null,
         side: "player",
-        unitClassId: unitClassForRole(participant.role),
+        unitClassId: baseClassId,
         commanderId: playerCommanderId,
         soldierCount: 1,
         maxSoldierCount: 1,
@@ -1526,17 +1546,20 @@ export function createDungeonTacticalBattle(state) {
         maxHp,
         position: playerPositions[index] ?? { x: 2 + index % 4, y: 1 + index % 8 },
         order: UNIT_ORDERS.ATTACK,
-        activeSkill: astralCalibration ? "lightning" : healingRole ? "heal" : undefined,
+        activeSkill: equippedMagicSkillIds[0] ?? (astralCalibration ? "lightning" : healingRole ? "heal" : undefined),
+        abilityIds: [...new Set([...classAbilities, ...(equippedMagicSkillIds.length ? ["magic"] : [])])],
+        availableMagicSkillIds: equippedMagicSkillIds.length ? equippedMagicSkillIds : null,
+        magicPower: equippedMagicSkillIds.length ? Math.max(12, Number(participant.abilities?.intelligence ?? participant.stats?.intelligence ?? 12) * 1.35) : null,
         actionActorType: index === 0 ? "local_player" : "ai",
         actionAbilityScore: participant.abilities?.dexterity ?? null,
         tags: ["PERSONAL_COMBATANT", index === 0 ? "PLAYER_CHARACTER" : "PARTY_MEMBER", ...(index === 0 ? [] : [`PARTY_ID:${participant.id}`]), ...(healingRole ? ["HEALER"] : []), ...(astralCalibration ? ["ASTRAL_CALIBRATION"] : [])],
-        statusEffects: astralCalibration ? [{
+        statusEffects: [...masteryStatuses, ...(astralCalibration ? [{
           id: "astral_calibration",
           name: "星環定礎",
           duration: null,
           modifiers: { magicPower: 1.22 },
           sourceCharacterId: participant.uniqueCharacterId,
-        }] : [],
+        }] : [])],
       });
     });
     const enemyUnits = profile.enemyUnits.slice(0, enemyUnitCount).map((definition, index) => {
@@ -1695,6 +1718,9 @@ function finishRun(next, run) {
     completedContracts: [...new Set(run.completedContractIds ?? [])],
   });
   next.adventure.dungeonHistory = next.adventure.dungeonHistory.slice(0, 40);
+  recordMasteryEvent(next, "dungeon_clears", 1);
+  recordMasteryEvent(next, `${run.dungeonType}_explorations`, 1);
+  if (run.loot.length) recordMasteryEvent(next, "loot_items", run.loot.reduce((sum, item) => sum + Number(item.quantity ?? 1), 0));
   runLog(run, (run.completedContractIds?.length ?? 0) > 0 ? `探索完了。依頼${run.completedContractIds.length}件も達成した。` : "最奥へ到達し、探索を完了した。", "success");
 }
 
@@ -1767,6 +1793,8 @@ export function resolveDungeonTacticalBattle(state, battleResult) {
   const hpLoss = personalUnitBattle && protagonistResult
     ? Math.max(0, protagonistResult.maxHp - protagonistResult.remainingHp)
     : battleResult.winner === "player" ? Math.min(28, Math.round(casualtyRate * 34)) : Math.max(1, run.playerHp - 1);
+  if (hpLoss > 0) recordMasteryEvent(next, "damage_taken", hpLoss);
+  Object.values(battleResult.magicUsage ?? {}).forEach((count) => recordMasteryEvent(next, "magic_casts", count));
   run.playerHp = personalUnitBattle && protagonistResult
     ? Math.max(0, Math.min(run.playerMaxHp, protagonistResult.remainingHp))
     : Math.max(battleResult.winner === "player" ? 1 : 0, run.playerHp - hpLoss);
@@ -1798,6 +1826,9 @@ export function resolveDungeonTacticalBattle(state, battleResult) {
   }
   if (battleResult.autoResolved) run.skippedBattles = (run.skippedBattles ?? 0) + 1;
   if (battleResult.winner === "player") {
+    recordMasteryEvent(next, "battle_wins", 1);
+    recordMasteryEvent(next, "enemy_kind", 1, run.combat.enemyId);
+    if (run.playerHp <= run.playerMaxHp * 0.35) recordMasteryEvent(next, "low_hp_wins", 1);
     run.combat.outcome = "victory";
     grantBattleTrophy(next, run);
     completeCombatObjectives(next, run);
@@ -1807,6 +1838,7 @@ export function resolveDungeonTacticalBattle(state, battleResult) {
       ? run.mode === "travel" ? `${run.combat.enemyName}を退け、移動先へ到着した。` : `${run.combat.enemyName}を退けた。周辺の安全を確保し、個人マップへ戻れる。`
       : `既存の戦術戦闘で${run.combat.enemyName}を退けた。戦利品を自動回収し、探索を再開する。`, "success");
   } else {
+    recordMasteryEvent(next, "battle_losses", 1);
     run.combat.outcome = battleResult.winner === "draw" ? "draw" : "defeat";
     run.phase = "failed";
     runLog(run, battleResult.winner === "draw" ? "双方が戦闘継続能力を失い、探索隊は撤退した。入口までの帰還路と収納袋を確保していたため、獲得済みの戦利品は持ち帰れる。" : "戦術戦闘に敗れ、探索隊は撤退した。入口までの帰還路と収納袋を確保していたため、獲得済みの戦利品は失わない。", "danger");
@@ -1861,6 +1893,7 @@ export function withdrawDungeonBattle(state) {
   if (!run || run.phase !== "battle" || !run.combat) throw new Error("撤退できる戦闘遭遇がありません。");
   run.combat.outcome = "withdrawn";
   run.phase = "failed";
+  recordMasteryEvent(next, "retreats", 1);
   runLog(run, `${run.combat.enemyName}の編成を確認し、交戦前に入口へ撤退した。獲得済みの戦利品は収納袋へ封じて持ち帰る。`, "info");
   return next;
 }

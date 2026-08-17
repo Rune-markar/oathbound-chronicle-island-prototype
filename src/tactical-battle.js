@@ -127,7 +127,7 @@ export function createCombatUnit({
   commanderId, soldierCount = 120, maxSoldierCount = soldierCount, hp, maxHp: requestedMaxHp = null, morale, fatigue = 0,
   cohesion, experience = 35, supply = 100, maxSupply = 100, position, facing = FACING.EAST, statusEffects = [], tags = [],
   order = UNIT_ORDERS.HOLD, activeSkill = null,
-  actionActorType = ACTION_ACTOR_TYPES.AI, actionAbilityScore = null,
+  actionActorType = ACTION_ACTOR_TYPES.AI, actionAbilityScore = null, abilityIds = null, availableMagicSkillIds = null, magicPower = null,
 } = {}) {
   const unitClass = assertDefinition(UNIT_CLASSES, unitClassId, "兵種");
   const race = assertDefinition(RACES, raceId, "種族");
@@ -151,9 +151,11 @@ export function createCombatUnit({
     defense: unitClass.stats.defense,
     rangedAttack: unitClass.stats.rangedAttack,
     range: unitClass.stats.range,
+    magicPower: Number.isFinite(Number(magicPower)) ? Number(magicPower) : null,
     statusEffects: statusEffects.map((effect) => ({ ...effect })),
     tags: [...new Set([...unitClass.tags, ...race.tags, ...tags])],
-    abilities: [...unitClass.abilities],
+    abilities: [...new Set([...unitClass.abilities, ...(abilityIds ?? [])])],
+    availableMagicSkillIds: availableMagicSkillIds ? [...new Set(availableMagicSkillIds)] : null,
     order, lastOrder: order, state: "STABLE", engagedWith: [],
     plannedPosition: null, targetId: null, activeSkill: activeSkill ?? (unitClassId === "mage" ? "fire" : null),
     plannedAction: null, playerInstructions: {}, lastMovedDistance: 0, turnChargeBonus: 0, actedThisTurn: false,
@@ -870,7 +872,7 @@ export function getEffectiveStats(battle, unitOrId) {
     rangedAttack: unit.rangedAttack * modifierProduct(unit, "rangedAttack") * terrainClassModifier(unit, terrain, "rangedAttack") * formationModifier(battle, unit, "rangedAttack") * logistics.modifier * commanderAttack * common,
     rangedAccuracy: clamp(rangedAccuracy * formationModifier(battle, unit, "rangedAccuracy") * logistics.modifier * fortification.modifier("rangedAccuracy"), 0.08, 0.95),
     range: Math.max(1, unit.range * modifierProduct(unit, "range") * terrainClassModifier(unit, terrain, "range")),
-    magicPower: (unitClass.stats.magicPower ?? 0) * modifierProduct(unit, "magicPower") * logistics.modifier * commanderAttack * moraleFactor * fatigueFactor,
+    magicPower: (unit.magicPower ?? unitClass.stats.magicPower ?? 0) * modifierProduct(unit, "magicPower") * logistics.modifier * commanderAttack * moraleFactor * fatigueFactor,
     engineering: (unitClass.stats.engineering ?? 0) * modifierProduct(unit, "engineering") * cohesionFactor * fatigueFactor,
     chargePower: (unitClass.stats.chargePower ?? 0) * modifierProduct(unit, "charge") * terrainClassModifier(unit, terrain, "charge") * formationModifier(battle, unit, "charge") * logistics.modifier,
     bracePower: (unitClass.stats.bracePower ?? 0) * modifierProduct(unit, "brace") * fortification.modifier("brace"),
@@ -976,6 +978,7 @@ export function planUnitAbility(battle, unitId, actionId, position) {
     requireDirectCommand(next, unit);
     const definitions = unit.abilities.includes("magic") ? MAGIC_SKILLS : unit.abilities.includes("engineering") ? ENGINEER_ACTIONS : null;
     if (!definitions?.[actionId]) throw new Error("この部隊は指定された能力を使用できません");
+    if (unit.abilities.includes("magic") && unit.availableMagicSkillIds && !unit.availableMagicSkillIds.includes(actionId)) throw new Error("この魔法は装備していません");
     if (!getBattleTile(next, position)) throw new Error("能力の対象がマップ外です");
     unit.activeSkill = unit.abilities.includes("magic") ? actionId : unit.activeSkill;
     unit.plannedAction = { actionId, position: { ...position } };
@@ -1481,6 +1484,7 @@ function applyTileStatus(battle, position, definition) {
 function applyMagicSkillMutable(battle, caster, skillId, position) {
   const skill = assertDefinition(MAGIC_SKILLS, skillId, "魔法");
   if (!caster.abilities.includes("magic")) throw new Error("魔術兵ではありません");
+  if (caster.availableMagicSkillIds && !caster.availableMagicSkillIds.includes(skillId)) throw new Error("この魔法は装備していません");
   if (distance(caster.position, position) > skill.range) throw new Error("魔法の射程外です");
   const stats = getEffectiveStats(battle, caster);
   skill.effects.forEach((effect) => {
@@ -1503,11 +1507,18 @@ function applyMagicSkillMutable(battle, caster, skillId, position) {
         target.soldierCount += restored;
         target.hp = clamp(target.hp + restored * 0.35, 0, target.maxHp);
         addLog(battle, "magic", `${caster.name}の${skill.name}により${target.name}の負傷兵${restored}名が復帰しました。`);
+      } else if (effect.type === "restore_morale") {
+        const restored = Math.max(1, Math.round(stats.magicPower * effect.powerScale));
+        target.morale = clamp(target.morale + restored, 0, 100);
+        addLog(battle, "magic", `${caster.name}の${skill.name}により${target.name}の士気が${restored}回復しました。`);
       }
     });
   });
-  caster.fatigue = clamp(caster.fatigue + skill.fatigue, 0, 100);
+  const magicFatigue = modifierProduct(caster, "magicFatigue");
+  caster.fatigue = clamp(caster.fatigue + skill.fatigue * magicFatigue, 0, 100);
   caster.actedThisTurn = true;
+  battle.magicUsage ??= {};
+  battle.magicUsage[skillId] = (battle.magicUsage[skillId] ?? 0) + 1;
   addLog(battle, "magic", `${caster.name}が${skill.name}を発動しました。`);
 }
 

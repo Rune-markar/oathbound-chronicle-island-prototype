@@ -155,6 +155,10 @@ export const BATTLE_FORTIFICATION_TYPES = Object.freeze({
 });
 
 export const MAGIC_SKILLS = Object.freeze({
+  arcane_bolt: Object.freeze({
+    id: "arcane_bolt", name: "熾火の一矢", range: 6, radius: 0, fatigue: 6,
+    effects: [{ type: "unit_damage", powerScale: 0.3, moraleScale: 0.12, target: "enemy_area" }],
+  }),
   fire: Object.freeze({
     id: "fire", name: "炎陣", range: 6, radius: 1, fatigue: 11,
     effects: [
@@ -184,6 +188,26 @@ export const MAGIC_SKILLS = Object.freeze({
   heal: Object.freeze({
     id: "heal", name: "治癒", range: 5, radius: 1, fatigue: 10,
     effects: [{ type: "restore_soldiers", powerScale: 0.16, target: "ally_area" }],
+  }),
+  radiant_ward: Object.freeze({
+    id: "radiant_ward", name: "陽光の護り", range: 5, radius: 1, fatigue: 9,
+    effects: [{ type: "unit_status", statusId: "radiant_ward", duration: 3, modifiers: { defense: 1.2 }, target: "ally_area" }],
+  }),
+  battle_hymn: Object.freeze({
+    id: "battle_hymn", name: "戦歌共鳴", range: 5, radius: 2, fatigue: 8,
+    effects: [{ type: "restore_morale", powerScale: 0.34, target: "ally_area" }],
+  }),
+  shadow_veil: Object.freeze({
+    id: "shadow_veil", name: "影衣", range: 5, radius: 1, fatigue: 9,
+    effects: [{ type: "unit_status", statusId: "shadow_veil", duration: 2, modifiers: { defense: 1.1, rangedAccuracy: 1.18 }, target: "ally_area" }],
+  }),
+  sunder: Object.freeze({
+    id: "sunder", name: "鎧砕呪", range: 6, radius: 0, fatigue: 11,
+    effects: [{ type: "unit_damage", powerScale: 0.48, moraleScale: 0.22, tagBonus: { HEAVY_ARMOR: 1.55 }, target: "enemy_area" }],
+  }),
+  life_surge: Object.freeze({
+    id: "life_surge", name: "生命潮", range: 6, radius: 2, fatigue: 14,
+    effects: [{ type: "restore_soldiers", powerScale: 0.28, target: "ally_area" }],
   }),
 });
 
