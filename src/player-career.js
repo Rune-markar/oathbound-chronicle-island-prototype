@@ -1,5 +1,6 @@
 import { createVillageLifeState, normalizeVillageLifeState } from "./village-life.js";
 import { normalizeAbilityScores } from "./character-abilities.js";
+import { normalizeMasteryState } from "./skill-mastery-system.js";
 import { createMerchantTradeState, normalizeMerchantTradeState } from "./merchant-trade.js";
 import {
   REGIONAL_REPUTATION_GAINS,
@@ -220,7 +221,7 @@ export function initializeCareerState(baseState, options = {}) {
     title: "名もなき個人として街道へ立つ",
     text: "依頼を果たし、武勲、名声、財産、人脈を得て、自らの立場を選ぶ。", tone: "info",
   }];
-  return normalizeCrimeState(next);
+  return normalizeMasteryState(normalizeCrimeState(next));
 }
 
 export function normalizeCareerState(state) {
@@ -259,7 +260,7 @@ export function normalizeCareerState(state) {
   normalizeVillageLifeState(state);
   state.player.crime = normalizeCrimeState(state).player.crime;
   normalizeMerchantTradeState(state);
-  return state;
+  return normalizeMasteryState(state);
 }
 
 export function getCareerStage(state) {
