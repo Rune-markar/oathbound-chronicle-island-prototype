@@ -37,7 +37,7 @@ test("現状台帳のローカル出典と開始画面の導線が存在する",
 });
 
 test("犯罪プレーの通常導線、六行動、帰結を実装済みとして追跡する", async () => {
-  assert.equal(STATUS_LEDGER_META.lastAuditedAt, "2026-08-16");
+  assert.equal(STATUS_LEDGER_META.lastAuditedAt, "2026-08-18");
   const crime = STATUS_ENTRIES.find((item) => item.id === "criminal-play-flow");
   assert.ok(crime, "criminal-play-flow ledger entry is required");
   assert.equal(crime.category, "implemented");
@@ -62,8 +62,16 @@ test("犯罪プレーの通常導線、六行動、帰結を実装済みとし�
   assert.match(manual, /盗品.*故買屋.*手配.*隠れ家.*出頭.*服役.*逃亡.*亡命.*追放.*恩赦/s);
   assert.match(manual, /主権者.*権力濫用/s);
   assert.match(manual, /暗殺.*拘束.*ゲーム終了/s);
-  assert.match(changelog, /Unreleased — 2026-08-16/);
+  assert.match(changelog, /Unreleased — 2026-08-18/);
   assert.match(changelog, /犯罪.*保存.*移行.*政治.*歴史.*テスト/s);
+});
+
+test("世界終局の二経路を生成世界へ接続済みとして追跡する", () => {
+  const ending = STATUS_ENTRIES.find((item) => item.id === "world-ending-design");
+  assert.equal(ending?.category, "implemented");
+  assert.match(`${ending.summary} ${ending.evidence}`, /善行点.*国家改革.*歴史政策.*所領政治.*一か月一件.*経路固定/s);
+  assert.ok(ending.sources.some((item) => item.href === "./src/world-endgame-system.js"));
+  assert.ok(ending.sources.some((item) => item.href === "./tests/world-endgame-system.test.mjs"));
 });
 
 test("生活から国家と10段階出世を通常導線の実装として追跡する", async () => {

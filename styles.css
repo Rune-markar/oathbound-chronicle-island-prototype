@@ -10177,9 +10177,11 @@ body:not(.is-expert-mode) .selection-card { bottom: 48px; }
 .central-decision-strip small { margin-top: 3px; overflow: hidden; color: #91aaa2; font: 7px/1.25 system-ui, sans-serif; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 
 .centralization-heading { background: linear-gradient(145deg, rgba(83, 50, 28, .86), rgba(22, 48, 48, .94)); }
-.centralization-panel-body { display: grid; gap: 11px; }
+.centralization-panel-body { min-width: 0; display: grid; gap: 11px; overflow-x: hidden; }
 .centralization-panel-body > section,
 .centralization-panel-body > details {
+  min-width: 0;
+  max-width: 100%;
   border: 1px solid rgba(99, 91, 70, .23);
   background: rgba(255, 252, 241, .44);
 }
@@ -10286,6 +10288,54 @@ body:not(.is-expert-mode) .selection-card { bottom: 48px; }
 .leviathan-policy-grid small { color: #6e7772; font: 7px/1.35 system-ui, sans-serif; }
 
 .post-centralization-crisis > div { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; padding: 10px; }
+
+.world-endgame-board { display: grid; gap: 10px; }
+.world-endgame-board > header { display: flex; justify-content: space-between; gap: 14px; align-items: start; }
+.world-endgame-board > header p { max-width: 52%; margin: 0; color: #6e7067; font: 8px/1.5 system-ui, sans-serif; }
+.world-endgame-ledger { display: grid; grid-template-columns: repeat(5, 1fr); gap: 1px; background: rgba(104, 88, 54, .18); }
+.world-endgame-ledger > span { display: grid; gap: 3px; padding: 9px; background: #f3ead5; }
+.world-endgame-ledger small { color: #846d45; font: 700 7px system-ui, sans-serif; }
+.world-endgame-ledger strong { color: #314944; font-size: 15px; }
+.world-endgame-routes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.world-endgame-route { display: grid; gap: 8px; padding: 10px; border: 1px solid rgba(70, 83, 72, .24); background: rgba(248, 241, 224, .72); }
+.world-endgame-route.is-committed { border-color: #876b36; box-shadow: inset 0 0 0 1px rgba(135, 107, 54, .28); }
+.world-endgame-route.is-locked { opacity: .58; }
+.world-endgame-route > header { display: flex; justify-content: space-between; gap: 8px; }
+.world-endgame-route h3 { margin: 2px 0 0; color: #314944; font-size: 13px; }
+.world-endgame-route header small { color: #8e6d31; font: 800 7px system-ui, sans-serif; letter-spacing: .11em; }
+.world-endgame-route header b { color: #755d32; font-size: 10px; }
+.world-endgame-route > p { margin: 0; color: #5f665f; font: 8px/1.45 system-ui, sans-serif; }
+.world-endgame-requirements,
+.world-endgame-route > ol,
+.sovereignty-records { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.world-endgame-requirements li,
+.world-endgame-route > ol li { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 6px; align-items: start; color: #75675b; font: 8px/1.35 system-ui, sans-serif; }
+.world-endgame-requirements li.is-met { color: #35634e; }
+.world-endgame-route > ol li > i { display: grid; place-items: center; width: 17px; height: 17px; border-radius: 50%; background: rgba(91, 77, 54, .1); font-style: normal; }
+.world-endgame-route > ol strong,
+.world-endgame-route > ol small { display: block; }
+.world-endgame-route > ol small { margin-top: 2px; color: #77746b; }
+.world-endgame-route > ol li.is-complete { color: #35634e; }
+.world-endgame-route > ol li.is-current { color: #7a5425; }
+.world-endgame-route > button { display: flex; justify-content: space-between; gap: 8px; padding: 9px; border: 1px solid #765b2f; color: #fff8e8; background: #5a4930; cursor: pointer; text-align: left; }
+.world-endgame-route > button:disabled { cursor: default; opacity: .48; }
+.world-endgame-route > button span { font-size: 7px; opacity: .8; }
+.world-endgame-complete { color: #35634e; font-size: 9px; }
+.world-endgame-board > details { padding: 8px; border: 1px solid rgba(75, 83, 70, .18); }
+.world-endgame-board > details summary { color: #4d5f54; cursor: pointer; font-size: 9px; font-weight: 700; }
+.sovereignty-records { margin-top: 8px; }
+.sovereignty-records li { display: grid; grid-template-columns: 66px minmax(100px, .6fr) 1fr; gap: 7px; padding: 6px; border-left: 3px solid #80663a; background: rgba(128, 102, 58, .06); }
+.sovereignty-records li.is-preserved { border-left-color: #39715b; }
+.sovereignty-records span { color: #7f704f; font: 700 7px system-ui, sans-serif; }
+.sovereignty-records strong { color: #3e5148; font-size: 8px; }
+.sovereignty-records small { color: #77746b; font: 7px/1.4 system-ui, sans-serif; }
+
+@media (max-width: 900px) {
+  .world-endgame-board > header { display: grid; }
+  .world-endgame-board > header p { max-width: none; }
+  .world-endgame-ledger { grid-template-columns: repeat(3, 1fr); }
+  .world-endgame-routes { grid-template-columns: 1fr; }
+}
 .post-centralization-crisis > div > div { display: grid; grid-template-columns: 1fr auto; gap: 4px; padding: 7px; border: 1px solid rgba(139, 77, 51, .18); background: rgba(145, 76, 50, .05); }
 .post-centralization-crisis span { color: #594f49; font-size: 8px; }
 .post-centralization-crisis strong { color: #92513d; font: 800 9px system-ui, sans-serif; }

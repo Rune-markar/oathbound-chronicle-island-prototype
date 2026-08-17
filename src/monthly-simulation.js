@@ -123,6 +123,12 @@ import {
   startNationalReform,
 } from "./centralization-campaign.js";
 import {
+  WORLD_ENDGAME_ROUTES,
+  deriveWorldEndgameStatus,
+  normalizeWorldEndgameState,
+  performWorldEndgameAction as applyWorldEndgameAction,
+} from "./world-endgame-system.js";
+import {
   TOWN_COMMAND_IDS,
   advanceTownAdministration,
   applyTownCommand,
@@ -456,6 +462,7 @@ export {
   NATIONAL_REFORM_BUDGETS,
   NATIONAL_REFORM_SYSTEMS,
   REFORM_CONCESSIONS,
+  WORLD_ENDGAME_ROUTES,
 };
 export {
   CAREER_ACTIONS,
@@ -987,7 +994,8 @@ export function normalizeWarState(state) {
   normalizeCareerState(state);
   normalizeRoleDelegationState(state);
   normalizeSimulationCreeds(state);
-  return normalizeCentralizationCampaign(WORLD, state);
+  normalizeCentralizationCampaign(WORLD, state);
+  return normalizeWorldEndgameState(state);
 }
 
 export function createInitialState(options = {}) {
@@ -1169,6 +1177,9 @@ export function advanceCareerMonth(state) {
   next = advanceGeneratedCampaignMonth(next);
   advanceMerchantMarkets(next);
   resolveRoleDelegations(WORLD, next);
+  resolveNationalReforms(WORLD, next);
+  advanceCentralizationCampaign(WORLD, next);
+  advanceLeviathanCycle(WORLD, next);
   if (next.scenarioMode === "generated") {
     next = advanceGeneratedWorldRegions(next);
     next = refreshGeneratedWorldSimulationFidelity(next);
@@ -1188,7 +1199,7 @@ export function advanceCareerMonth(state) {
         ));
     }
   }
-  return next;
+  return normalizeWorldEndgameState(next);
 }
 
 export function getCampaignStatus(state) {
@@ -1385,6 +1396,8 @@ export function getCentralizationCampaignStatus(state) { return deriveCentraliza
 export function getCentralizationDecisions(state) { return getCentralizationPrimaryDecisions(WORLD, state); }
 export function getHistoricalRuleEffects(state, regionId = null) { return deriveHistoricalRuleEffects(WORLD, state, regionId); }
 export function getLeviathanStatus(state) { return deriveLeviathanStatus(WORLD, state); }
+export function getWorldEndgameStatus(state) { return deriveWorldEndgameStatus(WORLD, state); }
+export function performWorldEndgameAction(state, actionId) { return applyWorldEndgameAction(WORLD, state, actionId); }
 export function startNationalReformPackage(state, input) {
   assertPlayerAuthority(state, { authority: "centralization", scope: "nation", commandId: "centralization" });
   return startNationalReform(WORLD, state, input);

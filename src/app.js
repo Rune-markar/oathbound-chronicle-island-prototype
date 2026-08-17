@@ -39,6 +39,7 @@ import {
   VILLAGE_FACILITIES,
   WAR_OBJECTIVES,
   WAR_PLANS,
+  WORLD_ENDGAME_ROUTES,
   WORLD,
   COLETTE_LINDE_ID,
   MARIELLE_CROIX_ID,
@@ -97,6 +98,7 @@ import {
   getMilitarySummary,
   getMilitaryCareerMissionView,
   getLeviathanStatus,
+  getWorldEndgameStatus,
   getPeaceOptions,
   getCityCreedReport,
   getNationCreedReport,
@@ -124,6 +126,7 @@ import {
   getCareerStage,
   getPersonalChronicleView,
   performCareerAction,
+  performWorldEndgameAction,
   prepareMilitaryCareerMission,
   createMilitaryCareerBattle,
   reportMilitaryCareerMission,
@@ -598,6 +601,8 @@ const view = {
   endingOpen: Boolean(
     state.player?.crime?.runEnded
     ||
+    (state.worldEndgame?.ending && state.lastViewedWorldEndingId !== state.worldEndgame.ending.id)
+    ||
     (state.centralizationCampaign?.ending && state.lastViewedCentralizationEndingId !== state.centralizationCampaign.ending.id)
     || (state.campaign?.ending && state.lastViewedEndingId !== state.campaign.ending.id)
   ),
@@ -808,7 +813,8 @@ function commit(nextState, message = "", cue = "confirm") {
     view.warRegionId = null;
     view.selectedWarHexId = null;
   }
-  if (state.centralizationCampaign?.ending && state.phase !== "event" && state.lastViewedCentralizationEndingId !== state.centralizationCampaign.ending.id) view.endingOpen = true;
+  if (state.worldEndgame?.ending && state.phase !== "event" && state.lastViewedWorldEndingId !== state.worldEndgame.ending.id) view.endingOpen = true;
+  else if (state.centralizationCampaign?.ending && state.phase !== "event" && state.lastViewedCentralizationEndingId !== state.centralizationCampaign.ending.id) view.endingOpen = true;
   else if (state.campaign?.ending && state.phase !== "event" && state.lastViewedEndingId !== state.campaign.ending.id) view.endingOpen = true;
   if (state.player?.crime?.runEnded) view.endingOpen = true;
   persist();
@@ -989,7 +995,7 @@ let lastLedgerDrawerTrigger = null;
 function renderTabs() {
   const stage = getCareerStage(state);
   const allowed = state.player
-    ? new Set(["career", "people", "world", "village", "location", ...(stage?.governance ? ["governance"] : [])])
+    ? new Set(["career", "people", "world", "village", "location", ...(stage?.governance ? ["governance"] : []), ...(state.player.sovereign ? ["centralization"] : [])])
     : null;
   if (allowed && !allowed.has(view.panel)) view.panel = stage?.governance ? "governance" : "career";
   const compact = isCompactMobileShell();
@@ -1180,6 +1186,22 @@ function renderEndingModal() {
     document.querySelector(".strategy-shell")?.setAttribute("inert", "");
     return;
   }
+  const worldEnding = state.worldEndgame?.ending ?? null;
+  if (worldEnding) {
+    const endgame = getWorldEndgameStatus(state);
+    const route = WORLD_ENDGAME_ROUTES[worldEnding.routeId];
+    const open = Boolean(view.endingOpen && state.lastViewedWorldEndingId !== worldEnding.id);
+    elements.endingModal.classList.toggle("is-hidden", !open);
+    if (!open) return;
+    const records = endgame.ledger[worldEnding.routeId === "plural_federation" ? "preserved" : "consolidated"].slice(-6).map((record) => `<li><span>${escapeHtml(record.source)}</span><strong>${escapeHtml(record.name)}</strong><small>${escapeHtml(record.detail)}</small></li>`).join("");
+    elements.endingContent.innerHTML = `
+      <header class="ending-header"><span>LEVIATHAN COVENANT · WORLD SOVEREIGNTY DECIDED</span><h1 id="endingTitle">${escapeHtml(worldEnding.name)}</h1><p>${escapeHtml(worldEnding.description)}</p></header>
+      <div class="ending-route"><span><small>リヴァイアサン</small><strong>${state.worldEndgame.leviathanResolution === "reconciled" ? "生存圏盟約" : "討伐・封鎖"}</strong></span><i>→</i><span><small>世界主権</small><strong>${state.worldEndgame.goddessResolution === "accepted" ? "女神へ委任" : "住民の合意へ留保"}</strong></span></div>
+      <section class="ending-objectives"><header><h2>${escapeHtml(route.name)}</h2><b>3 / 3 段階</b></header><p>${escapeHtml(route.principle)}</p></section>
+      <section class="ending-decisions"><header><h2>この結末を成立させた制度</h2><small>善行点ではなく保存された統治履歴</small></header><ol>${records || "<li><strong>終局判断の年代記を保存しました。</strong></li>"}</ol></section>
+      <footer class="ending-actions"><button type="button" data-ending-reports>国家報告を詳しく見る</button><button class="is-primary" type="button" data-ending-continue>物語終局後も年代記を続ける</button></footer>`;
+    return;
+  }
   const campaign = getCampaignStatus(state);
   const finalEnding = state.centralizationCampaign?.ending ?? null;
   const displayedEnding = finalEnding ?? campaign.ending;
@@ -1210,7 +1232,10 @@ function renderResetModal() {
 }
 
 function acknowledgeEnding() {
-  if (state.centralizationCampaign?.ending) {
+  if (state.worldEndgame?.ending) {
+    state = { ...state, lastViewedWorldEndingId: state.worldEndgame.ending.id };
+    persist();
+  } else if (state.centralizationCampaign?.ending) {
     state = { ...state, lastViewedCentralizationEndingId: state.centralizationCampaign.ending.id };
     persist();
   } else if (state.campaign?.ending) {
@@ -3611,16 +3636,33 @@ function renderCentralizationPanel() {
   `).join("");
   const leviathan = getLeviathanStatus(state);
   const leviathanPolicies = Object.values(LEVIATHAN_POLICIES).map((policy) => `<button type="button" data-leviathan-policy="${policy.id}" class="${leviathan.policy.id === policy.id ? "is-active" : ""}" ${leviathan.policy.id === policy.id || status.decisionsRemaining <= 0 ? "disabled" : ""}><strong>${policy.name}</strong><small>${policy.description}</small></button>`).join("");
+  const endgame = getWorldEndgameStatus(state);
+  const endgameRoutes = endgame.routes.map((route) => {
+    const available = route.eligible || state.worldEndgame.routeId === route.id;
+    const requirements = route.requirements.map((requirement) => `<li class="${requirement.met ? "is-met" : ""}"><i>${requirement.met ? "✓" : "○"}</i><span>${escapeHtml(requirement.label)}</span></li>`).join("");
+    const steps = route.steps.map((step, index) => {
+      const complete = state.worldEndgame.completedStepIds.includes(step.id);
+      const current = route.nextStep?.id === step.id;
+      return `<li class="${complete ? "is-complete" : current ? "is-current" : ""}"><i>${complete ? "✓" : index + 1}</i><span><strong>${escapeHtml(step.name)}</strong><small>${escapeHtml(step.consequence)}</small></span></li>`;
+    }).join("");
+    const actionLocked = !available || !route.nextStep || state.worldEndgame.lastActionTurn === state.turn;
+    return `<article class="world-endgame-route ${state.worldEndgame.routeId === route.id ? "is-committed" : ""} ${route.lockedByOtherRoute ? "is-locked" : ""}">
+      <header><div><small>${route.id === "rational_empire" ? "ORDER / GODDESS" : "CONSENT / HUMAN"}</small><h3>${escapeHtml(route.name)}</h3></div><b>${route.completedSteps} / 3</b></header>
+      <p>${escapeHtml(route.principle)}</p><ul class="world-endgame-requirements">${requirements}</ul><ol>${steps}</ol>
+      ${route.nextStep ? `<button type="button" data-world-endgame-action="${route.nextStep.id}" ${actionLocked ? "disabled" : ""}><strong>${escapeHtml(route.nextStep.name)}</strong><span>${state.worldEndgame.lastActionTurn === state.turn && state.worldEndgame.routeId === route.id ? "次の月まで制度を定着" : available ? "不可逆な世界主権判断を実行" : "成立条件が不足"}</span></button>` : `<strong class="world-endgame-complete">物語終局を年代記へ記録済み</strong>`}
+    </article>`;
+  }).join("");
+  const sovereigntyRecords = [...endgame.ledger.preserved.map((entry) => ({ ...entry, kind: "preserved" })), ...endgame.ledger.consolidated.map((entry) => ({ ...entry, kind: "consolidated" }))].slice(-10).map((entry) => `<li class="is-${entry.kind}"><span>${entry.kind === "preserved" ? "残した制度" : "統一した制度"}</span><strong>${escapeHtml(entry.name)}</strong><small>${escapeHtml(entry.source)} · ${escapeHtml(entry.detail)}</small></li>`).join("");
   const crisisRows = status.crisis?.issues?.length ? status.crisis.issues.map((issue) => `<div><span>${issue.name}</span><strong>${issue.severity}</strong><i style="--value:${issue.severity}%"></i><small>${issue.basis}</small></div>`).join("") : "";
   elements.leftPanel.innerHTML = `
     <header class="panel-heading centralization-heading">
       <span>CENTRALIZATION CAMPAIGN · ${state.scenarioMode === "generated" ? "GENERATED HISTORY" : "SELENA CANON"}</span>
       <h1>${status.currentStage.name}</h1>
-      <p>完全な中央集権国家が唯一の最終目標。達成方法と集権後の権力構造が結末を分ける。</p>
+      <p>合理化の実利と、自治・約束・代表手続を残すコストを積み上げ、世界主権の二経路へ接続する。</p>
     </header>
     <div class="panel-body centralization-panel-body">
       <section class="centralization-command-hero">
-        <article><small>次に除去すべき最大障壁</small><strong>${status.largestBarrier.label}</strong><span>${status.nextStage ? `次段階 ${status.nextStage.name}` : status.ending?.powerStructure ?? "集権後危機を統治中"}</span></article>
+        <article><small>次に除去すべき最大障壁</small><strong>${escapeHtml(status.largestBarrier?.label ?? status.ending?.name ?? "集権後統治を継続")}</strong><span>${status.nextStage ? `次段階 ${status.nextStage.name}` : status.ending?.powerStructure ?? "集権後危機を統治中"}</span></article>
         <article><small>中央集権化結果</small><strong>${Math.round(status.result.resultIndex)}%</strong><span>法 ${Math.round(status.result.legalCentralization)} / 実務 ${Math.round(status.result.practicalCentralization)} / 行政負荷 ${status.result.capacity.utilization}%</span></article>
         <article><small>今月の主要判断</small><strong>残り ${status.decisionsRemaining} / 3</strong><span>改革・歴史・災害対応を合計3件まで</span></article>
       </section>
@@ -3647,7 +3689,8 @@ function renderCentralizationPanel() {
       <section class="local-power-agency"><header><div><small>WORLD STATE → PRESSURE → MANIFESTATION</small><h2>地方勢力の能動的反応</h2></div><p>乱数ではなく、特権・支持・不満・外国接触・譲歩から決定。</p></header>${reactions}</section>
       <section class="state-formation-history"><header><div><small>TERRAIN → PRESENT BARRIERS</small><h2>地形・歴史・特権・改革制約</h2></div><b>国家統合コスト ${formation.integrationCost}</b></header><ol>${geographyFlow}</ol></section>
       <section class="historical-rule-policy"><header><div><small>WORLD TRUTH / HISTORICAL RECORD / PUBLIC BELIEF</small><h2>歴史認識政策</h2></div><div><span>法的正当性 ${historyRules.legalLegitimacy}</span><span>王廷支持 ${historyRules.courtSupport}</span><span>地域服従 ${historyRules.publicBelief}</span><span>外交請求 ${historyRules.diplomaticClaim}</span></div></header><div class="history-policy-grid">${historyPolicies}</div></section>
-      <section class="leviathan-centralization"><header><div><small>DECADAL MIGRATION / NON-COMBAT HAZARD</small><h2>リヴァイアサン：${leviathan.name}</h2></div><b>情報精度 ${leviathan.informationAccuracy}%</b></header><p>${leviathan.estimatedPosition} · ${leviathan.signs.join(" / ")}。航路 ${leviathan.routesClosed ? "閉鎖" : "監視"}、港湾避難 ${leviathan.evacuationRequired ? "必要" : "待機"}。討伐・捕獲・誘導は行わない。</p><div class="leviathan-policy-grid">${leviathanPolicies}</div></section>
+      <section class="leviathan-centralization"><header><div><small>DECADAL MIGRATION / ORDINARY DISASTER POLICY</small><h2>リヴァイアサン：${leviathan.name}</h2></div><b>情報精度 ${leviathan.informationAccuracy}%</b></header><p>${leviathan.estimatedPosition} · ${leviathan.signs.join(" / ")}。航路 ${leviathan.routesClosed ? "閉鎖" : "監視"}、港湾避難 ${leviathan.evacuationRequired ? "必要" : "待機"}。平時は自然災害として扱い、討伐または和解は世界終局でのみ実行する。</p><div class="leviathan-policy-grid">${leviathanPolicies}</div></section>
+      <section class="world-endgame-board"><header><div><small>SOVEREIGNTY LEDGER / TWO CANONICAL ENDINGS</small><h2>世界主権の最終制度</h2></div><p>人間性は善行点ではなく、ゲーム中に残した約束・自治・代表手続として判定する。合理化は危機対応力を得る正規経路であり、悪役選択ではない。</p></header><div class="world-endgame-ledger"><span><small>残した制度</small><strong>${endgame.ledger.preserved.length}</strong></span><span><small>制度分野</small><strong>${endgame.ledger.preservedSources}</strong></span><span><small>統一した制度</small><strong>${endgame.ledger.consolidated.length}</strong></span><span><small>重大な約束違反</small><strong>${endgame.ledger.breaches.length}</strong></span><span><small>合意可能な国家</small><strong>${endgame.ledger.consentingStates}</strong></span></div><div class="world-endgame-routes">${endgameRoutes}</div><details><summary>この結末を作っている実際の統治履歴</summary><ul class="sovereignty-records">${sovereigntyRecords || "<li><strong>まだ終局条件へ残る制度履歴がありません。</strong></li>"}</ul></details></section>
       ${status.crisis ? `<section class="post-centralization-crisis"><header><div><small>MANDATORY 12 MONTHS</small><h2>集権後危機 ${status.crisis.months} / 12か月</h2></div><b>${status.ending?.name ?? "統治継続"}</b></header><div>${crisisRows}</div></section>` : ""}
       <details class="specialist-ledger-link"><summary>専門台帳：17分野×各地域の法的・実務権限</summary><p>都市 → 統治委任を開き、上部の「専門台帳」を表示すると、従来の17分野台帳と個別改革を確認できます。</p><button type="button" data-open-specialist-ledger>専門台帳を開く</button></details>
     </div>
@@ -7738,6 +7781,7 @@ function playNavigationCue(event) {
     "[data-start-national-reform]",
     "[data-history-policy]",
     "[data-leviathan-policy]",
+    "[data-world-endgame-action]",
     "[data-open-specialist-ledger]",
     "[data-spending-category]",
     "[data-spending-city]",
@@ -8747,6 +8791,13 @@ document.addEventListener("click", async (event) => {
   }
   const governanceCommand = event.target.closest("[data-governance-command]");
   if (governanceCommand) {
+    if (governanceCommand.dataset.governanceCommand === "centralization") {
+      elements.backMenu?.removeAttribute("open");
+      view.panel = "centralization";
+      view.scale = "country";
+      renderPanelFromTop();
+      return;
+    }
     try {
       const territoryId = governanceCommand.dataset.territoryId ?? null;
       const next = executeGovernanceCommand(
@@ -9181,6 +9232,7 @@ document.addEventListener("click", async (event) => {
   }
   const shortcutTab = event.target.closest("[data-shortcut-tab]");
   if (shortcutTab) {
+    elements.backMenu?.removeAttribute("open");
     openLedgerDrawer();
     if (!isCompactMobileShell()) clearTileDetailSelection();
     view.panel = "world";
@@ -9214,6 +9266,7 @@ document.addEventListener("click", async (event) => {
       showToast(panelButton.dataset.panel === "governance" ? "領主就任後に統治が解放されます。" : "キャリア進行によって解放されます。", "ui");
       return;
     }
+    elements.backMenu?.removeAttribute("open");
     openLedgerDrawer();
     if (!isCompactMobileShell()) clearTileDetailSelection();
     view.panel = panelButton.dataset.panel;
@@ -9274,6 +9327,17 @@ document.addEventListener("click", async (event) => {
     const policy = LEVIATHAN_POLICIES[leviathanPolicyButton.dataset.leviathanPolicy];
     if (!window.confirm(`リヴァイアサン対応を「${policy.name}」へ変更します。\n\n${policy.description}\n\n沿岸行政・中央権限・外交へ波及します。続けますか？`)) return;
     try { commit(chooseLeviathanPolicy(state, policy.id), `沿岸災害対応を「${policy.name}」へ変更しました。`, "confirm"); }
+    catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
+  const worldEndgameButton = event.target.closest("[data-world-endgame-action]");
+  if (worldEndgameButton) {
+    const actionId = worldEndgameButton.dataset.worldEndgameAction;
+    const route = Object.values(WORLD_ENDGAME_ROUTES).find((entry) => entry.steps.some((step) => step.id === actionId));
+    const step = route?.steps.find((entry) => entry.id === actionId);
+    if (!route || !step) return;
+    if (!window.confirm(`${route.name}：${step.name}\n\n${step.consequence}\n\nこの判断は世界主権の経路として保存され、別経路へ戻せません。続けますか？`)) return;
+    try { commit(performWorldEndgameAction(state, actionId), `${step.name}を世界年代記へ記録しました。`, "event"); }
     catch (error) { showToast(error.message, "danger"); }
     return;
   }

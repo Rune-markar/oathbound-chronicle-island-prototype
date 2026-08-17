@@ -13,6 +13,7 @@ import { getGeneratedWorldView } from "../src/generated-world-system.js";
 
 const appSource = await readFile(new URL("../src/app.js", import.meta.url), "utf8");
 const manualSource = await readFile(new URL("../MANUAL.md", import.meta.url), "utf8");
+const styleSource = await readFile(new URL("../styles.css", import.meta.url), "utf8");
 
 test("a blank browser cannot continue or autosave the fallback preview state", () => {
   assert.match(appSource, /let chronicleReady = Boolean\(loadedChronicle\)/);
@@ -32,6 +33,13 @@ test("the displayed playable career route only claims milestones reachable from 
   ]);
   assert.match(appSource, /PLAYABLE_CAREER_STAGE_ROUTE/);
   assert.match(manualSource, /通常UIで通過できる立身段階/);
+});
+
+test("a sovereign can reach the world-endgame board from the normal career shell", () => {
+  assert.match(appSource, /state\.player\.sovereign \? \["centralization"\] : \[\]/);
+  assert.match(appSource, /governanceCommand\.dataset\.governanceCommand === "centralization"/);
+  assert.match(appSource, /data-world-endgame-action/);
+  assert.match(styleSource, /centralization-panel-body \{ min-width: 0;[\s\S]*?overflow-x: hidden/);
 });
 
 test("a generated-world fief keeps the live generated region binding", () => {
