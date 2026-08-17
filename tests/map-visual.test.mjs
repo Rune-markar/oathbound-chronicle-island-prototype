@@ -129,7 +129,7 @@ test("normal play generates the whole world, then zooms to region-level movement
   assert.match(appSource, /clientHeight/);
   assert.match(generatedWorldSource, /expeditionRegionId/);
   assert.match(generatedWorldSource, /pathRegionIds/);
-  assert.match(appSource, /pixelsPerTile: 12/);
+  assert.match(appSource, /pixelsPerTile: 8/);
   assert.match(appSource, /illustrated-strategy-map-v8-european-settlement-hierarchy/);
   assert.match(styleSource, /\.generated-world-copy\s*\{[^}]*width: 100%;[^}]*height: 100%;/s);
   assert.match(appSource, /x \+ 0\.5 - viewport\.x/);
@@ -406,6 +406,8 @@ test("world, geopolitics, nation, and statistics panels share one generated-worl
   assert.match(appSource, /function renderWorldGeopolitics\(\)/);
   assert.match(appSource, /\["geopolitics", "nations", "statistics"\]\.includes\(view\.atlasMode\)/);
   assert.match(appSource, /image\.src = generatedMapVisualCache\.url/);
+  assert.match(appSource, /URL\.createObjectURL\(new Blob\(\[mapSvg\]/);
+  assert.match(appSource, /URL\.revokeObjectURL\(generatedMapVisualCache\.entries\.get\(oldestKey\)\)/);
   assert.doesNotMatch(appSource, /data-generated-statistics-nation="\$\{item\.nationId\}"/);
 });
 
@@ -442,7 +444,8 @@ test("the political overlay uses stylized atlas textures clipped to exact nation
     assert.ok(statSync(asset).size > 1_000_000);
   }
   assert.match(markup, /class="map-ocean-texture"[^>]*world-map-ocean-painted\.png/);
-  assert.match(markup, /id="atlasLandTexture"[\s\S]*world-map-land-painted\.png/);
+  assert.match(markup, /id="atlasLandTexture"[\s\S]*data-href="\.\/assets\/generated\/world-map-land-painted\.png"/);
+  assert.match(appSource, /strategyMap\.querySelectorAll\("image\[data-href\]"\)/);
   assert.doesNotMatch(markup, /terrain-satellite|world-terrain-satellite\.png/);
   assert.equal(markup.match(/class="country-landmass"/g)?.length, countryIds.length);
   assert.match(markup, /id="borderDisplace"/);

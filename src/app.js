@@ -320,7 +320,7 @@ import {
   startGeneratedTravelEncounter,
   withdrawDungeonBattle,
 } from "./adventure-system.js";
-import { terrainSvgDataUrl } from "./terrain-renderer.js";
+import { renderTerrainSvg } from "./terrain-renderer.js";
 import {
   BATTLE_FORTIFICATION_TYPES,
   FACING,
@@ -507,12 +507,14 @@ const loadedChronicle = loadState();
 let chronicleReady = Boolean(loadedChronicle);
 const offlineResume = loadedChronicle
   ? resumeDelegatedChronicle(loadedChronicle, advanceCareerMonth)
-  : { state: createCareerInitialState(), report: null };
+  // A new chronicle builds its world asynchronously after the player starts.
+  // Generating it here blocks the launch screen for several seconds.
+  : { state: createInitialState(), report: null };
 let state = normalizeAdventureState(refreshGeneratedWorldForDate(offlineResume.state));
 if (state.centralizationCampaign?.ending) state.council.pending = false;
 let toastTimer = null;
 let previewCache = { state: null, value: null };
-let generatedMapVisualCache = { key: null, url: null };
+let generatedMapVisualCache = { key: null, url: null, entries: new Map() };
 let tacticalEffectTimer = null;
 let tacticalEffectsPlaying = false;
 let adventureAdvanceTimer = null;
@@ -1364,6 +1366,10 @@ function renderCharacterCreation() {
   const draft = view.characterDraft;
   elements.characterCreation.hidden = !view.characterCreationOpen;
   elements.launchActions.hidden = view.characterCreationOpen;
+  if (view.characterCreationOpen) {
+    const goddessImage = elements.characterCreation.querySelector(".goddess-portrait img");
+    if (goddessImage && !goddessImage.src) goddessImage.src = goddessImage.dataset.src;
+  }
   if (!view.characterCreationOpen || !draft) return;
   const goddess = view.goddessPrologue;
   elements.characterCreation.classList.toggle("is-selecting", ["selection", "error"].includes(goddess.phase));
@@ -5874,17 +5880,30 @@ function renderGeneratedWorldMapLayer() {
   const visibleObjectKey = [...visibleObjectIds].sort().join(",");
   const visualKey = `${runtime.key}|illustrated-strategy-map-v8-european-settlement-hierarchy|${view.generatedMapScale}|${visibleObjectKey}`;
   if (generatedMapVisualCache.key !== visualKey) {
-    generatedMapVisualCache = {
-      key: visualKey,
-      url: terrainSvgDataUrl(runtime.terrain, {
-        cellSize: 12,
-        pixelsPerTile: 12,
+    let url = generatedMapVisualCache.entries.get(visualKey);
+    if (url) {
+      generatedMapVisualCache.entries.delete(visualKey);
+      generatedMapVisualCache.entries.set(visualKey, url);
+    } else {
+      const mapSvg = renderTerrainSvg(runtime.terrain, {
+        cellSize: 8,
+        pixelsPerTile: 8,
         showGrid: false,
         nationMap: runtime.nations,
         visibleObjectIds,
         textureUrl: new URL("./assets/generated/terrain-natural-texture.png", window.location.href).href,
-      }),
-    };
+      });
+      // Blob URLs avoid percent-encoding and retaining a ~20 MB data URL.
+      url = URL.createObjectURL(new Blob([mapSvg], { type: "image/svg+xml" }));
+      generatedMapVisualCache.entries.set(visualKey, url);
+      if (generatedMapVisualCache.entries.size > 2) {
+        const oldestKey = generatedMapVisualCache.entries.keys().next().value;
+        URL.revokeObjectURL(generatedMapVisualCache.entries.get(oldestKey));
+        generatedMapVisualCache.entries.delete(oldestKey);
+      }
+    }
+    generatedMapVisualCache.key = visualKey;
+    generatedMapVisualCache.url = url;
   }
   if (elements.generatedWorldStrip.dataset.visualKey !== visualKey) {
     elements.generatedWorldStrip.innerHTML = `
@@ -6056,6 +6075,10 @@ function renderMap() {
     renderWarBoard();
     return;
   }
+  elements.strategyMap.querySelectorAll("image[data-href]").forEach((image) => {
+    image.setAttribute("href", image.dataset.href);
+    image.removeAttribute("data-href");
+  });
   elements.strategyMap.className.baseVal = `strategy-map map-mode-${view.mapMode} scale-${view.scale}${state.war ? " is-at-war" : ""}`;
   elements.strategyMap.setAttribute("viewBox", MAP_VIEWBOXES[view.scale] ?? MAP_VIEWBOXES.world);
   const labels = {
@@ -7643,6 +7666,16 @@ function render() {
   renderWorldArrival();
   renderBattlePreparation();
   renderTacticalBattle();
+  renderAdventureScreen();
+  const adventureVisible = Boolean(view.adventureOpen && state.adventure?.activeRun);
+  if (
+    view.launchOpen
+    || view.battlePreparation
+    || view.tacticalBattle
+    || view.tacticalResultOpen
+    || view.commanderDispositionOpen
+    || adventureVisible
+  ) return;
   renderAnalysisMode();
   renderCampaignBar();
   renderResources();
@@ -7665,7 +7698,6 @@ function render() {
   renderGuideModal();
   renderEndingModal();
   renderResetModal();
-  renderAdventureScreen();
   renderCharacterDetailModal();
 }
 
@@ -8237,6 +8269,9 @@ document.addEventListener("click", async (event) => {
         origin: { type: "imperial-princess", enemyName: "グレート帝国親征軍" },
       });
       return;
+    }
+    if (action === "world" && !state.player) {
+      state = normalizeAdventureState(refreshGeneratedWorldForDate(createCareerInitialState()));
     }
     view.launchOpen = false;
     view.guideOpen = false;
@@ -10038,7 +10073,9 @@ elements.warBoard.addEventListener("keydown", (event) => {
 elements.tacticalMapScroll?.addEventListener("scroll", positionTacticalInspector, { passive: true });
 window.addEventListener("resize", positionTacticalInspector);
 window.addEventListener("resize", () => {
-  generatedMapVisualCache.key = null;
+  generatedMapVisualCache.entries.forEach((url) => URL.revokeObjectURL(url));
+  generatedMapVisualCache = { key: null, url: null, entries: new Map() };
+  delete elements.generatedWorldStrip.dataset.visualKey;
   renderMap();
 });
 window.addEventListener("beforeunload", () => persist());

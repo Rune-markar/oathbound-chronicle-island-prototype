@@ -16,6 +16,8 @@ const FEATURE_TINTS = Object.freeze({
   floodplain: "#8c8e56",
 });
 
+const terrainRasterCache = new WeakMap();
+
 const clamp = (value, min = 0, max = 1) => Math.min(max, Math.max(min, value));
 
 function escapeAttribute(value) {
@@ -123,6 +125,12 @@ function bytesToBase64(bytes) {
 }
 
 function renderTerrainBmpDataUrl(world, pixelsPerTile = 12) {
+  let worldCache = terrainRasterCache.get(world);
+  if (!worldCache) {
+    worldCache = new Map();
+    terrainRasterCache.set(world, worldCache);
+  }
+  if (worldCache.has(pixelsPerTile)) return worldCache.get(pixelsPerTile);
   const width = world.width * pixelsPerTile;
   const height = world.height * pixelsPerTile;
   const rowSize = Math.ceil(width * 3 / 4) * 4;
@@ -198,7 +206,9 @@ function renderTerrainBmpDataUrl(world, pixelsPerTile = 12) {
       bytes[offset + 2] = Math.round(clamp(red, 0, 255));
     }
   }
-  return `data:image/bmp;base64,${bytesToBase64(bytes)}`;
+  const dataUrl = `data:image/bmp;base64,${bytesToBase64(bytes)}`;
+  worldCache.set(pixelsPerTile, dataUrl);
+  return dataUrl;
 }
 
 function coastlinePathData(world, cellSize) {
