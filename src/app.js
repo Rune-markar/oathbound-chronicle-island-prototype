@@ -321,6 +321,7 @@ import { terrainSvgDataUrl } from "./terrain-renderer.js";
 import {
   BATTLE_FORTIFICATION_TYPES,
   FACING,
+  MAGIC_SKILLS,
   ORDER_LABELS,
   PHASE_LABELS,
   RACES,
@@ -354,6 +355,7 @@ import {
   isBattleTilePassable,
   issueUnitOrder,
   planCommanderMove,
+  planUnitAbility,
   planUnitMove,
   planUnitTarget,
   setUnitFacing,
@@ -393,6 +395,14 @@ import {
   formatAbilityModifier,
   rollAbilityScores,
 } from "./character-abilities.js";
+import {
+  getMasteryView,
+  MASTERY_LOADOUT_LIMITS,
+  normalizeMasteryState,
+  observeMasteryProgress,
+  recordMasteryEvent,
+  toggleMasteryLoadout,
+} from "./skill-mastery-system.js";
 import {
   createGoddessMercyCompanion,
   createGoddessPrologueState,
@@ -528,6 +538,7 @@ const view = {
   selectedTacticalUnitId: null,
   selectedTacticalCommanderId: null,
   selectedTacticalFortificationId: null,
+  pendingTacticalMagicId: null,
   tacticalInspectorDismissed: false,
   panel: "world",
   shortcutTab: "world",
@@ -794,7 +805,7 @@ function persist(showMessage = false) {
 
 function commit(nextState, message = "", cue = "confirm") {
   const wasAtWar = Boolean(state.war);
-  state = normalizeLifeToRealmState(normalizeAdventureState(refreshGeneratedWorldForDate(nextState)));
+  state = observeMasteryProgress(normalizeMasteryState(normalizeLifeToRealmState(normalizeAdventureState(refreshGeneratedWorldForDate(nextState)))));
   normalizePropertyEnterpriseState(state);
   normalizeCompanionQuestState(state);
   normalizeEstatePoliticsState(state);
@@ -5005,6 +5016,36 @@ function renderPersonalChronicle(history) {
     </section>`;
 }
 
+function masteryConditionLeaves(condition) {
+  return condition?.children ? condition.children.flatMap(masteryConditionLeaves) : condition ? [condition] : [];
+}
+
+function masteryConditionHtml(condition) {
+  const leaves = masteryConditionLeaves(condition);
+  return `<ul class="mastery-condition-list">${leaves.map((entry) => `<li class="${entry.met ? "is-met" : ""}"><i>${entry.met ? "✓" : "·"}</i><span>${escapeHtml(entry.label)}</span><b>${Math.min(entry.current, entry.target)} / ${entry.target}</b></li>`).join("")}</ul>`;
+}
+
+function renderMasteryBoard() {
+  const entries = getMasteryView(state);
+  const mastery = state.player.mastery;
+  const unlocked = entries.filter((entry) => entry.unlocked).length;
+  const renderGroup = (kind, title, subtitle) => {
+    const limit = MASTERY_LOADOUT_LIMITS[kind];
+    const equippedCount = kind === "magic" ? mastery.equippedMagicIds.length : mastery.equippedTalentIds.length;
+    const cards = entries.filter((entry) => entry.kind === kind).map((entry) => {
+      const leaves = masteryConditionLeaves(entry.condition);
+      const progress = leaves.length ? Math.round(leaves.reduce((sum, item) => sum + Math.min(1, item.current / Math.max(1, item.target)), 0) / leaves.length * 100) : 0;
+      return `<article class="mastery-card ${entry.unlocked ? "is-unlocked" : "is-locked"} ${entry.equipped ? "is-equipped" : ""}">
+        <header><i>${entry.unlocked ? entry.equipped ? "装" : "得" : "?"}</i><div><small>${escapeHtml(entry.school)}</small><h3>${escapeHtml(entry.name)}</h3></div><b>${entry.unlocked ? entry.equipped ? "装備中" : "習得済み" : `${progress}%`}</b></header>
+        <p>${escapeHtml(entry.description)}</p>
+        ${entry.unlocked ? `<button type="button" data-mastery-loadout="${entry.id}" class="${entry.equipped ? "is-remove" : ""}">${entry.equipped ? "装備から外す" : `${kind === "magic" ? "魔法" : "技能"}枠へ装備`}</button>` : `<details><summary>取得条件を見る</summary><p>${escapeHtml(entry.hint)}</p>${masteryConditionHtml(entry.condition)}</details>`}
+      </article>`;
+    }).join("");
+    return `<section class="mastery-group is-${kind}"><header><div><small>${kind === "magic" ? "SPELL DISCOVERY" : "PRACTICED TALENTS"}</small><h3>${title}</h3><p>${subtitle}</p></div><b>${equippedCount} / ${limit} 装備</b></header><div class="mastery-card-grid">${cards}</div></section>`;
+  };
+  return `<section class="mastery-board"><header><div><small>DISCOVERY THROUGH PLAY</small><h2>魔法・技能の探究</h2><p>能力点を購入するのではなく、旅・探索・敗走・負傷・会話・依頼・戦闘で条件を満たして会得します。習得後は限られた枠へ装備し、戦術戦闘で使います。</p></div><strong>${unlocked}<small> / ${entries.length} 習得</small></strong></header>${renderGroup("magic", "魔法式", "戦場へ持ち込める術は4つ。対象・範囲・疲労の違いで組み替えます。")}${renderGroup("talent", "鍛錬技能", "常時効果は3つ。得意分野を作るか、弱点を補うかを選びます。")}</section>`;
+}
+
 function renderCareerWorkspace() {
   const player = state.player;
   const stage = getCareerStage(state);
@@ -5027,6 +5068,7 @@ function renderCareerWorkspace() {
     <div class="career-workspace-body">
       <section class="career-status-strip"><div><small>所属</small><strong>${escapeHtml(affiliationLabel)}</strong></div><div><small>所領</small><strong>${player.holdings.length}領</strong><span>${holdings}</span></div><div><small>直属家臣</small><strong>${player.householdRetainers.length}名</strong></div><div><small>次の立場</small><strong>${nextPosition}</strong></div></section>
       <section class="career-ability-sheet"><header><div><small>D&amp;D ABILITY SCORES</small><h2>基礎6能力値</h2></div><p>作成時の4d6方式による値。役職人物も同じ尺度を持ちます。</p></header><div>${ABILITY_KEYS.map((abilityId) => `<article><small>${abilityId.slice(0, 3).toUpperCase()}</small><span>${ABILITY_LABELS[abilityId]}</span><strong>${player.abilities?.[abilityId] ?? 10}</strong><b>${formatAbilityModifier(player.abilities?.[abilityId] ?? 10)}</b></article>`).join("")}</div></section>
+      ${renderMasteryBoard()}
       <section class="career-metric-grid">${careerMetricCards(player, regionalReputation)}</section>
       ${regionalReputationBoard(regionalReputation)}
       ${invitations}
@@ -5945,6 +5987,7 @@ async function playGeneratedTravel(nextState, destinationName, message, travelPl
     elements.generatedTravelOverlay.classList.add("is-hidden");
     route?.classList.remove("is-active", "is-route", "is-direct");
     markerAnimation?.cancel();
+    recordMasteryEvent(nextState, "journeys", 1);
     if (nextState.adventure?.activeRun?.mode === "travel") view.adventureOpen = true;
     const encounterNote = nextState.generatedWorld?.lastTravel?.encounter ? " 移動中にモンスターと遭遇しました。" : "";
     commit(nextState, `${message}（${formatGeneratedTravelDuration(elapsedMinutes)}経過）${encounterNote}`, "ui");
@@ -7193,6 +7236,12 @@ function renderTacticalUnitInspector(battle, unit) {
   const plan = [unit.plannedPosition ? `移動 ${tacticalPositionLabel(unit.plannedPosition)}` : null, target ? `目標 ${target.name}` : null, unit.plannedAction ? `${unit.plannedAction.actionId} ${tacticalPositionLabel(unit.plannedAction.position)}` : null].filter(Boolean).join(" · ") || "未指定（進行時に兵種・特性・現在命令から行動）";
   const orders = unit.side === "player" ? `
     <section class="tactical-orders"><header><h3>命令</h3><small>${commanded ? `指揮官 ${commander.name}` : "指揮範囲外・自律行動"}</small></header><div class="tactical-order-grid">${orderButtons}</div><div class="tactical-facing-grid" aria-label="部隊の向き">${facingButtons}</div><p class="tactical-plan-note">${escapeHtml(plan)}</p></section>` : "";
+  const magicIds = unit.abilities.includes("magic") ? (unit.availableMagicSkillIds ?? Object.keys(MAGIC_SKILLS)) : [];
+  const magicOrders = unit.side === "player" && magicIds.length ? `<section class="tactical-magic-orders"><header><h3>装備魔法</h3><small>${view.pendingTacticalMagicId ? "対象マスを選択してください" : "術を選び、盤面の対象を指定"}</small></header><div>${magicIds.map((id) => {
+    const skill = MAGIC_SKILLS[id];
+    if (!skill) return "";
+    return `<button type="button" data-battle-magic="${id}" class="${view.pendingTacticalMagicId === id ? "is-active" : ""}" ${canCommand ? "" : "disabled"}><strong>${escapeHtml(skill.name)}</strong><small>射程 ${skill.range} · 範囲 ${skill.radius} · 疲労 ${skill.fatigue}</small></button>`;
+  }).join("")}</div>${view.pendingTacticalMagicId ? `<p>盤面の味方・敵・空きマスを選ぶと「${escapeHtml(MAGIC_SKILLS[view.pendingTacticalMagicId]?.name ?? "魔法")}」を予約します。</p>` : ""}</section>` : "";
   elements.tacticalBattleInspector.innerHTML = `
     <article class="tactical-unit-sheet">
       <button class="tactical-inspector-close" type="button" data-battle-inspector-close aria-label="情報カードをたたむ（選択は維持）" title="選択を維持したまま情報カードをたたむ">×</button>
@@ -7203,6 +7252,7 @@ function renderTacticalUnitInspector(battle, unit) {
         <span class="is-supply"><small>補給</small><strong>${logistics.ratio}% · ${escapeHtml(logisticsConnection)}</strong><meter min="0" max="100" value="${logistics.ratio}"></meter></span>
       </div>
       ${orders}
+      ${magicOrders}
       <details class="tactical-unit-details">
         <summary><strong>部隊詳細</strong><small>HP・疲労・兵站・実効戦力</small></summary>
         <div class="tactical-detail-vitals">
@@ -7429,6 +7479,12 @@ function handleTacticalTile(button) {
   const clickedFortification = getBattleFortification(battle, button.dataset.battleFortification);
   const selectedUnit = getBattleUnit(battle, view.selectedTacticalUnitId);
   try {
+    if (selectedUnit?.side === "player" && view.pendingTacticalMagicId) {
+      view.tacticalBattle = planUnitAbility(battle, selectedUnit.id, view.pendingTacticalMagicId, { x, y });
+      view.pendingTacticalMagicId = null;
+      renderTacticalBattle();
+      return;
+    }
     if (clickedUnit) {
       if (selectedUnit?.id === clickedUnit.id) {
         if (view.tacticalInspectorDismissed) view.tacticalInspectorDismissed = false;
@@ -7440,12 +7496,14 @@ function handleTacticalTile(button) {
       } else if (selectedUnit?.side === "player" && clickedUnit.side !== selectedUnit.side) {
         view.tacticalBattle = planUnitTarget(battle, selectedUnit.id, clickedUnit.id);
       } else {
+        view.pendingTacticalMagicId = null;
         view.selectedTacticalUnitId = clickedUnit.id;
         view.selectedTacticalCommanderId = null;
         view.selectedTacticalFortificationId = null;
         view.tacticalInspectorDismissed = false;
       }
     } else if (clickedCommander) {
+      view.pendingTacticalMagicId = null;
       const sameCommander = view.selectedTacticalCommanderId === clickedCommander.id;
       if (sameCommander && view.tacticalInspectorDismissed) view.tacticalInspectorDismissed = false;
       else {
@@ -7455,6 +7513,7 @@ function handleTacticalTile(button) {
         view.tacticalInspectorDismissed = false;
       }
     } else if (clickedFortification) {
+      view.pendingTacticalMagicId = null;
       const sameFortification = view.selectedTacticalFortificationId === clickedFortification.id;
       if (sameFortification && view.tacticalInspectorDismissed) view.tacticalInspectorDismissed = false;
       else {
@@ -8739,6 +8798,15 @@ document.addEventListener("click", async (event) => {
     } catch (error) { showToast(error.message, "danger"); }
     return;
   }
+  const masteryLoadout = event.target.closest("[data-mastery-loadout]");
+  if (masteryLoadout) {
+    try {
+      const masteryId = masteryLoadout.dataset.masteryLoadout;
+      const wasEquipped = state.player.mastery.equippedMagicIds.includes(masteryId) || state.player.mastery.equippedTalentIds.includes(masteryId);
+      commit(toggleMasteryLoadout(state, masteryId), wasEquipped ? "装備枠から外しました。" : "次の戦闘用装備へ組み込みました。", "ui");
+    } catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
   const serviceInvitation = event.target.closest("[data-accept-service]");
   if (serviceInvitation) {
     try { commit(acceptServiceInvitation(state, serviceInvitation.dataset.acceptService), "主君を選び、具体的な主従関係を結びました。", "confirm"); }
@@ -8954,6 +9022,12 @@ document.addEventListener("click", async (event) => {
   if (battleFacing && view.tacticalBattle && view.selectedTacticalUnitId) {
     try { view.tacticalBattle = setUnitFacing(view.tacticalBattle, view.selectedTacticalUnitId, battleFacing.dataset.battleFacing); }
     catch (error) { showToast(error.message, "danger"); }
+    renderTacticalBattle();
+    return;
+  }
+  const battleMagic = event.target.closest("[data-battle-magic]");
+  if (battleMagic && view.tacticalBattle && view.selectedTacticalUnitId) {
+    view.pendingTacticalMagicId = view.pendingTacticalMagicId === battleMagic.dataset.battleMagic ? null : battleMagic.dataset.battleMagic;
     renderTacticalBattle();
     return;
   }

@@ -94,6 +94,7 @@ export function createBattleResult(battle) {
     player,
     enemy,
     crossings,
+    magicUsage: { ...(battle.magicUsage ?? {}) },
     encirclement,
     capture: {
       eligible: Boolean(capturedCommander),
