@@ -37,7 +37,7 @@ test("現状台帳のローカル出典と開始画面の導線が存在する",
 });
 
 test("犯罪プレーの通常導線、六行動、帰結を実装済みとして追跡する", async () => {
-  assert.equal(STATUS_LEDGER_META.lastAuditedAt, "2026-08-18");
+  assert.equal(STATUS_LEDGER_META.lastAuditedAt, "2026-08-19");
   const crime = STATUS_ENTRIES.find((item) => item.id === "criminal-play-flow");
   assert.ok(crime, "criminal-play-flow ledger entry is required");
   assert.equal(crime.category, "implemented");

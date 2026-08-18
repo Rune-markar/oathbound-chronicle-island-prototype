@@ -20,12 +20,15 @@ import {
   getChargePreview,
   getEffectiveStats,
   getLogisticsState,
+  getMagicSkillPreview,
+  getMagicTargetTiles,
   getReachableBattleTiles,
   getReachableCommanderTiles,
   getSupplyRoute,
   issueUnitOrder,
   isBattleTilePassable,
   planCommanderMove,
+  planUnitAbility,
   planUnitMove,
   setUnitFacing,
   setBattleTerrain,
@@ -53,7 +56,7 @@ test("developer battle provides the exact 5 versus 5 sample roster on a compact 
   assert.equal(battle.map.width, 20);
   assert.equal(battle.map.height, 14);
   assert.equal(battle.map.tiles.length, 280);
-  assert.deepEqual(playerClasses, ["archer", "cavalry", "infantry", "infantry", "spearman"]);
+  assert.deepEqual(playerClasses, ["archer", "cavalry", "infantry", "mage", "spearman"]);
   assert.deepEqual(enemyClasses, ["archer", "infantry", "infantry", "infantry", "light_cavalry"]);
   assert.equal(battle.commanders.length, 2);
   assert.equal(battle.fortifications.length, 2);
@@ -62,7 +65,8 @@ test("developer battle provides the exact 5 versus 5 sample roster on a compact 
   const iconUrls = [...battle.units, ...battle.commanders].map((actor) => actor.iconUrl);
   assert.equal(iconUrls.filter(Boolean).length, 12);
   assert.equal(new Set(iconUrls).size, 12);
-  assert.ok(iconUrls.every((iconUrl) => iconUrl.endsWith(".png")));
+  assert.ok(iconUrls.every((iconUrl) => /\.(png|webp)$/.test(iconUrl)));
+  assert.deepEqual(getBattleUnit(battle, "p-mage").availableMagicSkillIds, ["fire", "ice", "heal", "earth"]);
   assert.equal(isBattleTilePassable(battle, { x: 10, y: 2 }), false);
   assert.equal(isBattleTilePassable(battle, { x: 10, y: 3 }), true);
   assert.equal(isBattleTilePassable(battle, { x: 10, y: 6 }), true);
@@ -314,13 +318,13 @@ test("commander movement range matches the same destinations accepted by manual 
 
 test("progress preserves player instructions and gives unassigned allies trait-based actions", () => {
   let battle = createSampleBattle();
-  const autonomousBefore = { ...getBattleUnit(battle, "p-infantry-2").position };
+  const autonomousBefore = { ...getBattleUnit(battle, "p-mage").position };
   battle = planUnitMove(battle, "p-infantry-1", { x: 7, y: 4 });
   battle = issueUnitOrder(battle, "p-spearman", "defend");
   battle = setUnitFacing(battle, "p-spearman", "north");
   battle = executeBattleTurn(battle);
   assert.deepEqual(getBattleUnit(battle, "p-infantry-1").position, { x: 7, y: 4 });
-  assert.notDeepEqual(getBattleUnit(battle, "p-infantry-2").position, autonomousBefore);
+  assert.notDeepEqual(getBattleUnit(battle, "p-mage").position, autonomousBefore);
   assert.equal(getBattleUnit(battle, "p-spearman").facing, "north");
   assert.ok(battle.log.some((entry) => entry.phase === "command" && entry.message.includes("兵種・特性")));
 });
@@ -362,6 +366,35 @@ test("magic effects and engineer terrain operations are driven by definitions", 
   assert.ok(getBattleTile(battle, { x: 3, y: 4 }).status.some((status) => status.id === "bridge"));
   battle = applyEngineerAction(battle, "engineer", "destroy_bridge", { x: 3, y: 4 });
   assert.ok(!getBattleTile(battle, { x: 3, y: 4 }).status.some((status) => status.id === "bridge"));
+});
+
+test("magic planning rejects misleading targets and previews exact affected units", () => {
+  const map = createBattleMap({ width: 10, height: 8 });
+  const commanders = [
+    createCommander({ id: "p-cmd", name: "魔術指揮官", side: "player", position: { x: 1, y: 3 }, commandRange: 12 }),
+    createCommander({ id: "e-cmd", name: "敵指揮官", side: "enemy", position: { x: 8, y: 3 }, commandRange: 12 }),
+  ];
+  const units = [
+    createCombatUnit({ id: "mage", name: "試験魔術兵", side: "player", unitClassId: "mage", commanderId: "p-cmd", position: { x: 2, y: 2 }, availableMagicSkillIds: ["lightning", "heal", "fire"] }),
+    createCombatUnit({ id: "ally", name: "負傷した味方", side: "player", unitClassId: "infantry", commanderId: "p-cmd", position: { x: 3, y: 2 }, soldierCount: 70, maxSoldierCount: 100 }),
+    createCombatUnit({ id: "heavy", name: "重装標的", side: "enemy", unitClassId: "heavy_infantry", commanderId: "e-cmd", position: { x: 6, y: 2 } }),
+  ];
+  const battle = createBattleState({ map, commanders, units, seed: 99 });
+
+  assert.throws(() => planUnitAbility(battle, "mage", "lightning", { x: 3, y: 2 }), /範囲内に敵がいません/);
+  assert.throws(() => planUnitAbility(battle, "mage", "heal", { x: 9, y: 7 }), /射程外/);
+  assert.ok(getMagicTargetTiles(battle, "mage", "lightning").some((tile) => tile.position.x === 6 && tile.position.y === 2));
+  assert.ok(!getMagicTargetTiles(battle, "mage", "lightning").some((tile) => tile.position.x === 3 && tile.position.y === 2));
+
+  const preview = getMagicSkillPreview(battle, "mage", "lightning", { x: 6, y: 2 });
+  assert.equal(preview.name, "雷撃");
+  assert.equal(preview.effects.length, 1);
+  assert.equal(preview.effects[0].name, "重装標的");
+  assert.ok(preview.effects[0].casualties > 0);
+  assert.equal(getBattleUnit(battle, "heavy").soldierCount, 120, "preview must not mutate the battle");
+
+  const fireTiles = getMagicTargetTiles(battle, "mage", "fire");
+  assert.ok(fireTiles.some((tile) => tile.position.x === 4 && tile.position.y === 4), "terrain magic may target an empty tile");
 });
 
 test("light cavalry pursuit turns a rout into disproportionate casualties", () => {
