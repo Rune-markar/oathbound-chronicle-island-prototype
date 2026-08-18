@@ -1131,6 +1131,7 @@ a:focus-visible,
   font-size: 9px;
   font-weight: 700;
 }
+.campaign-bar-actions kbd { margin-left: 7px; padding: 2px 5px; border: 1px solid rgba(28, 41, 40, .3); border-radius: 3px; background: rgba(255, 255, 255, .28); font: 800 8px/1 system-ui, sans-serif; }
 
 .campaign-primary-action {
   border: 1px solid #d0ad5d;
@@ -10618,6 +10619,9 @@ body:not(.is-expert-mode) .selection-card { bottom: 48px; }
 .goddess-dialogue header span { color: #78918c; font: 800 8px system-ui, sans-serif; letter-spacing: .14em; }
 .goddess-dialogue p { margin: 15px 0 12px; color: #fff6db; font: 500 clamp(14px, 1.45vw, 20px)/1.8 Georgia, "Yu Mincho", serif; letter-spacing: .045em; text-shadow: 0 2px 12px #000; }
 .goddess-dialogue footer { display: flex; align-items: center; justify-content: flex-end; gap: 10px; color: #829793; font: 700 8px system-ui, sans-serif; letter-spacing: .1em; }
+.goddess-dialogue footer .goddess-skip { margin-right: auto; min-height: 34px; padding: 7px 11px; color: #f0d58e; border: 1px solid rgba(225, 190, 103, .42); background: rgba(26, 63, 58, .72); cursor: pointer; font: 800 10px/1 system-ui, sans-serif; letter-spacing: .06em; }
+.goddess-dialogue footer .goddess-skip:hover:not(:disabled) { border-color: #e8c66f; background: rgba(45, 91, 80, .88); }
+.goddess-dialogue footer .goddess-skip:disabled { cursor: wait; opacity: .66; }
 .goddess-dialogue footer i { width: 7px; height: 7px; border-right: 1px solid #e1b85d; border-bottom: 1px solid #e1b85d; transform: rotate(45deg); animation: goddess-cue 1.2s ease-in-out infinite; }
 @keyframes goddess-cue { 50% { transform: translateY(4px) rotate(45deg); opacity: .4; } }
 .goddess-character-setup {
@@ -14567,6 +14571,9 @@ body.is-character-conversation .map-stage {
 .conversation-message button { min-height: 56px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 13px 17px; color: #fff5d2; border: 1px solid #d9b24f; background: linear-gradient(135deg, #47776c, #27574f); cursor: pointer; font-size: 15px; font-weight: 800; }
 .conversation-message button:hover { border-color: #ffe092; filter: brightness(1.1); }
 .conversation-message button span { color: #edca70; font-size: 18px; }
+.conversation-actions { display: grid; gap: 7px; }
+.conversation-actions .is-quick { min-height: 38px; padding-block: 8px; color: #c9d9d3; border-color: rgba(199, 218, 210, .34); background: rgba(255, 255, 255, .045); font-size: 11px; }
+.conversation-actions .is-quick span { color: #b8cbc4; font-size: 14px; }
 
 .npc-social-message { grid-template-columns: minmax(260px, 1fr) minmax(230px, 320px) minmax(210px, 280px); gap: 14px; }
 .npc-social-message > div > span { display: block; margin-top: 8px; color: #c3d5cf; font: 700 11px/1.45 system-ui, sans-serif; }

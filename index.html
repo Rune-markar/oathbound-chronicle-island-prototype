@@ -58,7 +58,7 @@
           <div class="goddess-dialogue story-text-window" role="status" aria-live="polite">
             <header><strong id="goddessSpeaker">女神イリシア</strong><span id="goddessLineCounter">1 / 3</span></header>
             <p id="goddessDialogueText">目を開け、迷える魂。</p>
-            <footer><span id="goddessDialogueCue">女神の言葉は自動で進みます</span><i aria-hidden="true"></i></footer>
+            <footer><button class="goddess-skip" id="goddessSkip" type="button" data-goddess-skip>演出を省略</button><span id="goddessDialogueCue">女神の言葉は自動で進みます</span><i aria-hidden="true"></i></footer>
           </div>
         </div>
       </section>
@@ -249,12 +249,12 @@
           </details>
         </div>
         <nav class="primary-tabs" id="primaryTabs" aria-label="主要画面">
-          <button class="is-active" type="button" data-mobile-primary data-shortcut-tab="world"><span>界</span>世界</button>
-          <button type="button" data-mobile-primary data-shortcut-tab="characters"><span>人</span>人物</button>
-          <button type="button" data-mobile-primary data-panel="governance" hidden><span>領</span>統治</button>
-          <button type="button" data-mobile-primary data-panel="centralization" hidden><span>冠</span>国制</button>
-          <button type="button" data-mobile-primary data-panel="council" hidden><span>♜</span>評定</button>
-          <button type="button" data-mobile-more-toggle aria-expanded="false" aria-controls="mobileMoreMenu"><span>⋯</span>その他</button>
+          <button class="is-active" type="button" data-mobile-primary data-shortcut-tab="world" title="世界（1）"><span>界</span>世界</button>
+          <button type="button" data-mobile-primary data-shortcut-tab="characters" title="人物（2）"><span>人</span>人物</button>
+          <button type="button" data-mobile-primary data-panel="governance" title="統治（3）" hidden><span>領</span>統治</button>
+          <button type="button" data-mobile-primary data-panel="centralization" title="国制（4）" hidden><span>冠</span>国制</button>
+          <button type="button" data-mobile-primary data-panel="council" title="評定（5）" hidden><span>♜</span>評定</button>
+          <button type="button" data-mobile-more-toggle title="その他（6）" aria-expanded="false" aria-controls="mobileMoreMenu"><span>⋯</span>その他</button>
           <div class="mobile-more-menu" id="mobileMoreMenu" hidden>
             <button type="button" data-panel="spending" hidden><span>¤</span>支出</button>
             <button type="button" data-panel="city" hidden><span>城</span>都市</button>

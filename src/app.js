@@ -638,6 +638,7 @@ const elements = {
   goddessDialogueText: document.querySelector("#goddessDialogueText"),
   goddessLineCounter: document.querySelector("#goddessLineCounter"),
   goddessDialogueCue: document.querySelector("#goddessDialogueCue"),
+  goddessSkip: document.querySelector("#goddessSkip"),
   goddessSeedValue: document.querySelector("#goddessSeedValue"),
   launchGeneration: document.querySelector("#launchGeneration"),
   launchGenerationStatus: document.querySelector("#launchGenerationStatus"),
@@ -1065,44 +1066,112 @@ function campaignObjectiveItems(campaign, compact = false) {
   `).join("");
 }
 
+function careerNextActionModel() {
+  const player = state.player;
+  const stage = getCareerStage(state);
+  const activeQuest = player.villageLife?.quests?.find((quest) => quest.source === "guild" && ["accepted", "active", "completed", "reported"].includes(quest.status));
+  const activeRun = state.adventure?.activeRun;
+  const fallenCompanion = player.villageLife?.party?.find((member) => member.alive === false);
+  if (player.stage === "individual" && activeRun?.phase === "battle") return { title: `${activeRun.combat.enemyName}との戦闘方法を選ぶ`, label: "戦闘判断へ", route: "adventure" };
+  if (player.stage === "individual" && activeRun?.phase === "failed") return { title: "探索隊を村の治療所へ帰還させる", label: "帰還判断へ", route: "adventure" };
+  if (player.stage === "individual" && fallenCompanion) return { title: `${fallenCompanion.name}を神殿で蘇生する`, label: "神殿へ", route: "treatment" };
+  if (player.stage === "individual" && (player.villageLife?.hp ?? 100) < 35) return { title: `重傷を治療する（HP ${player.villageLife.hp}/${player.villageLife.maxHp}）`, label: "治療へ", route: "treatment" };
+  if (player.stage === "individual" && activeQuest?.status === "completed") return { title: `${activeQuest.name}を受注窓口へ報告する`, label: "報告窓口へ", route: "quest-desk", villageId: activeQuest.acceptedVillageId };
+  if (player.stage === "individual" && activeQuest?.status === "reported") return { title: `${activeQuest.name}の報酬を受け取る`, label: "報酬窓口へ", route: "quest-desk", villageId: activeQuest.acceptedVillageId };
+  if (player.stage === "individual" && activeQuest) {
+    const hasParty = player.villageLife?.party?.some((member) => member.active !== false && member.alive !== false);
+    if (!hasParty) return { title: `${activeQuest.name}の仲間を集める`, label: "酒場へ", route: "quest-desk", villageId: activeQuest.acceptedVillageId, facilityId: "tavern" };
+    return { title: `${activeQuest.name}を達成する`, label: "依頼地点へ", route: "quest-target", targetId: activeQuest.dungeonId ?? null };
+  }
+  const titles = {
+    individual: "村へ入り、依頼・救命・大会・紹介から仕官の縁を得る",
+    retainer: "主君の命令で功績と信用を得る",
+    commander: "委任された部隊を率い、辺境を救援する",
+    castellan: "城下事業を完成させ、預かった城を正式な所領にする",
+    lord: "自領を治め、忠誠・建議・独立の道を選ぶ",
+    multi_lord: "複数領の利害を束ね、中央政治へ関与する",
+    governor: "委任地方を治め、主君との権限境界を保つ",
+    duke: "大戦役と論功を背景に、地方諸侯を束ねる",
+    regent: "代行政権と正統性の反発を両立させる",
+    independent_ruler: "同じ統治画面で新国家全体を統治する",
+    centralized_ruler: "全国への直接命令と反動を統治する",
+  };
+  return player.stage === "individual"
+    ? { title: titles[player.stage], label: "最寄りの集落へ", route: "settlement" }
+    : { title: titles[player.stage], label: stage.governance ? "統治判断へ" : "人物行動へ", route: stage.governance ? "governance" : "career" };
+}
+
+function currentGeneratedSettlement() {
+  const { runtime, expeditionTile } = getGeneratedWorldView(state);
+  return (runtime.nations.objects ?? []).find((object) => object.settlementLevel && object.tileIndex === expeditionTile.index) ?? null;
+}
+
+function openCampaignWorldTarget(targetId = null, targetKind = "object") {
+  elements.backMenu?.removeAttribute("open");
+  view.panel = "world";
+  view.shortcutTab = "world";
+  view.atlasMode = "generated";
+  view.generatedMapScale = "region";
+  view.scale = "world";
+  view.villageFacilityOpen = false;
+  if (targetId) view.selectedGeneratedSite = { kind: targetKind, id: targetId };
+  renderPanelFromTop();
+}
+
+function openCampaignSettlement(villageId, facilityId = null) {
+  const { runtime, expeditionTile } = getGeneratedWorldView(state);
+  let settlement = villageId
+    ? (runtime.nations.objects ?? []).find((object) => object.id === villageId && object.settlementLevel)
+    : currentGeneratedSettlement();
+  if (!settlement && villageId?.startsWith("village:")) {
+    const regionId = villageId.slice("village:".length);
+    const personalMap = state.adventure?.personalMap?.regions?.[regionId];
+    settlement = personalMap?.currentLocationId === villageId
+      ? (runtime.nations.objects ?? []).find((object) => object.settlementLevel && object.tileIndex === expeditionTile.index)
+      : (runtime.nations.objects ?? []).find((object) => object.regionId === regionId && object.type === "village")
+        ?? (runtime.nations.objects ?? []).find((object) => object.regionId === regionId && object.settlementLevel);
+  }
+  if (!settlement || settlement.tileIndex !== expeditionTile.index) {
+    openCampaignWorldTarget(settlement?.id ?? villageId ?? null);
+    showToast(settlement ? `${settlement.name}を目標に選びました。地図から移動してください。` : "地図上の集落へ移動すると、依頼と仲間の導線が開きます。", "ui");
+    return;
+  }
+  enterVillage(settlement.id);
+  if (facilityId) {
+    view.selectedVillageFacilityId = facilityId === "guild" && (settlement.settlementLevel === "village" || settlement.type === "village") ? "tavern" : facilityId;
+    view.villageFacilityOpen = true;
+  }
+  renderPanelFromTop();
+}
+
+function focusCampaignNextAction() {
+  if (!state.player) return;
+  const action = careerNextActionModel();
+  if (action.route === "settlement") return openCampaignSettlement(null, "tavern");
+  if (action.route === "treatment") return openCampaignSettlement(null, "temple");
+  if (action.route === "quest-desk") return openCampaignSettlement(action.villageId, action.facilityId ?? "guild");
+  if (action.route === "quest-target") return openCampaignWorldTarget(action.targetId, action.targetId ? "dungeon" : "object");
+  if (action.route === "adventure") {
+    view.panel = "world";
+    view.adventureOpen = true;
+    render();
+    return;
+  }
+  elements.backMenu?.removeAttribute("open");
+  openLedgerDrawer();
+  view.panel = action.route;
+  renderPanelFromTop();
+}
+
 function renderCampaignBar() {
   if (state.player) {
     const player = state.player;
     const stage = getCareerStage(state);
-    const activeQuest = player.villageLife?.quests?.find((quest) => quest.source === "guild" && ["accepted", "active", "completed", "reported"].includes(quest.status));
-    const activeRun = state.adventure?.activeRun;
-    const fallenCompanion = player.villageLife?.party?.find((member) => member.alive === false);
-    const next = player.stage === "individual" && activeRun?.phase === "battle"
-      ? `${activeRun.combat.enemyName}との戦闘方法を選ぶ`
-      : player.stage === "individual" && activeRun?.phase === "failed"
-        ? "探索隊を村の治療所へ帰還させる"
-        : player.stage === "individual" && fallenCompanion
-          ? `${fallenCompanion.name}を神殿で蘇生する`
-        : player.stage === "individual" && (player.villageLife?.hp ?? 100) < 35
-          ? `重傷を治療する（HP ${player.villageLife.hp}/${player.villageLife.maxHp}）`
-          : player.stage === "individual" && activeQuest?.status === "completed"
-            ? `${activeQuest.name}を受注窓口へ報告する`
-            : player.stage === "individual" && activeQuest?.status === "reported"
-              ? `${activeQuest.name}の報酬を受け取る`
-              : player.stage === "individual" && activeQuest
-                ? `${activeQuest.name}を達成する`
-                : {
-      individual: "村へ入り、依頼・救命・大会・紹介から仕官の縁を得る",
-      retainer: "主君の命令で功績と信用を得る",
-      commander: "委任された部隊を率い、辺境を救援する",
-      castellan: "城下事業を完成させ、預かった城を正式な所領にする",
-      lord: "自領を治め、忠誠・建議・独立の道を選ぶ",
-      multi_lord: "複数領の利害を束ね、中央政治へ関与する",
-      governor: "委任地方を治め、主君との権限境界を保つ",
-      duke: "大戦役と論功を背景に、地方諸侯を束ねる",
-      regent: "代行政権と正統性の反発を両立させる",
-      independent_ruler: "同じ統治画面で新国家全体を統治する",
-      centralized_ruler: "全国への直接命令と反動を統治する",
-    }[player.stage];
+    const next = careerNextActionModel();
     elements.campaignBar.innerHTML = `
       <div class="campaign-bar-goal"><small>立身段階 ${stage.order + 1}/${CAREER_STAGE_ROUTE.length}</small><strong>${stage.name} · ${player.title}</strong><span>${stage.description}</span></div>
-      <button class="campaign-bar-next" type="button" data-panel="${stage.governance ? "governance" : "career"}"><small>現在の目標</small><strong>${next}</strong><span>武勲 ${player.metrics.martialMerit} · 政績 ${player.metrics.civilMerit} · 家臣支持 ${player.metrics.householdSupport}</span></button>
-      <div class="campaign-bar-actions"><button class="campaign-primary-action" type="button" data-panel="${stage.governance ? "governance" : "career"}">${stage.governance ? "統治画面を開く" : "人物行動を開く"}</button></div>`;
+      <button class="campaign-bar-next" type="button" data-campaign-next title="次の目標へ移動（N）"><small>現在の目標 · 押すと直行</small><strong>${next.title}</strong><span>武勲 ${player.metrics.martialMerit} · 政績 ${player.metrics.civilMerit} · 家臣支持 ${player.metrics.householdSupport}</span></button>
+      <div class="campaign-bar-actions"><button class="campaign-primary-action" type="button" data-campaign-next>${next.label}<kbd>N</kbd></button><button class="campaign-help-action" type="button" data-panel="${stage.governance ? "governance" : "career"}">判断一覧</button></div>`;
     return;
   }
   const status = getCentralizationCampaignStatus(state);
@@ -1289,6 +1358,20 @@ function rollCharacterDraft(draft, advanceRoll = false) {
 }
 
 const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+let goddessFinalizeToken = null;
+
+function showGoddessCharacterSelection({ mercyGranted = false } = {}) {
+  goddessSequenceToken += 1;
+  view.characterDraft = { ...readCharacterDraftForm(), mercyGranted: mercyGranted || Boolean(view.characterDraft?.mercyGranted) };
+  view.goddessPrologue = {
+    ...view.goddessPrologue,
+    phase: "selection",
+    line: mercyGranted ? GODDESS_MERCY_LINES.at(-1) : "名を告げ、望む種族と出自、魂の適性を選びなさい。その選択から、あなたの能力を定めます。",
+    lineNumber: 1,
+    lineTotal: 1,
+  };
+  renderLaunchScreen();
+}
 
 async function playGoddessArrival(token) {
   for (let index = 0; index < GODDESS_ARRIVAL_LINES.length; index += 1) {
@@ -1344,6 +1427,7 @@ async function playGoddessMercyBranch() {
 
 function openCharacterCreation() {
   goddessSequenceToken += 1;
+  goddessFinalizeToken = null;
   const worldSeed = createCharacterWorldSeed();
   view.characterDraft = rollCharacterDraft({
     name: "アレク", raceId: "human", origin: "没落貴族", roleId: "warrior", worldSeed, rollCount: 0,
@@ -1391,7 +1475,15 @@ function renderCharacterCreation() {
     : goddess.phase === "generating" ? "会話の裏で世界を生成しています"
       : goddess.phase === "error" ? "選択内容を保ったまま再試行できます"
         : goddess.phase === "mercy" ? "しつこい願いに、女神が応じました"
-          : "女神の言葉は自動で進みます";
+          : goddess.skipRequested ? "世界生成が終わり次第、すぐ開始します"
+            : "女神の言葉は自動で進みます";
+  if (elements.goddessSkip) {
+    elements.goddessSkip.hidden = goddess.phase === "selection" || goddess.phase === "error";
+    elements.goddessSkip.textContent = goddess.phase === "arrival" || goddess.phase === "mercy"
+      ? "魂の選択へ"
+      : goddess.phase === "departure" ? "すぐ始める" : goddess.skipRequested ? "演出省略を予約済み" : "演出を省略";
+    elements.goddessSkip.disabled = Boolean(goddess.skipRequested && goddess.phase === "generating");
+  }
   elements.goddessSeedValue.textContent = `世界シード：${draft.worldSeed}`;
   const nameInput = document.querySelector("#characterCreationName");
   const raceSelect = document.querySelector("#characterCreationRace");
@@ -1427,15 +1519,30 @@ async function playWorldArrival(token) {
   view.worldArrival = { active: true, stage: 0 };
   renderWorldArrival();
   for (let stage = 1; stage < 3; stage += 1) {
-    await delay(1400);
+    await delay(650);
     if (token !== goddessSequenceToken) return;
     view.worldArrival = { active: true, stage };
     renderWorldArrival();
   }
-  await delay(1700);
+  await delay(850);
   if (token !== goddessSequenceToken) return;
   view.worldArrival = { active: false, stage: 2 };
   renderWorldArrival();
+}
+
+async function finishGoddessReincarnation(token, { skipArrival = false } = {}) {
+  if (token !== goddessSequenceToken || goddessFinalizeToken === token) return;
+  goddessFinalizeToken = token;
+  view.characterCreationOpen = false;
+  view.characterDraft = null;
+  view.goddessPrologue = createGoddessPrologueState();
+  view.launchOpen = false;
+  view.guideOpen = false;
+  render();
+  audio.play("reset");
+  if (!skipArrival) await playWorldArrival(token);
+  if (token !== goddessSequenceToken) return;
+  showToast(skipArrival ? "生成された世界ですぐに行動を開始できます。" : "女神の庭から、生成された世界へ転生しました。");
 }
 
 async function resetChronicle(options = {}, flow = {}) {
@@ -1515,6 +1622,7 @@ async function resetChronicle(options = {}, flow = {}) {
 
 async function beginGoddessReincarnation(draft) {
   const token = ++goddessSequenceToken;
+  goddessFinalizeToken = null;
   view.goddessPrologue = {
     ...view.goddessPrologue,
     phase: "generating",
@@ -1539,9 +1647,9 @@ async function beginGoddessReincarnation(draft) {
     goddessMercyCompanion: draft.mercyGranted ? createGoddessMercyCompanion(draft.worldSeed) : null,
   };
   const generationPromise = resetChronicle(options, { deferLaunch: true });
-  const dialoguePromise = (async () => {
+  void (async () => {
     for (let index = 0; index < GODDESS_GENERATION_LINES.length; index += 1) {
-      if (token !== goddessSequenceToken) return;
+      if (token !== goddessSequenceToken || view.goddessPrologue.phase !== "generating") return;
       view.goddessPrologue = {
         ...view.goddessPrologue,
         phase: "generating",
@@ -1550,10 +1658,10 @@ async function beginGoddessReincarnation(draft) {
         lineTotal: GODDESS_GENERATION_LINES.length,
       };
       renderLaunchScreen();
-      await delay(2600);
+      await delay(1600);
     }
   })();
-  const [generated] = await Promise.all([generationPromise, dialoguePromise]);
+  const generated = await generationPromise;
   if (token !== goddessSequenceToken) return;
   if (!generated) {
     view.goddessPrologue = {
@@ -1573,18 +1681,13 @@ async function beginGoddessReincarnation(draft) {
     generationReady: true,
   };
   renderLaunchScreen();
-  await delay(3600);
+  if (view.goddessPrologue.skipRequested) {
+    await finishGoddessReincarnation(token, { skipArrival: true });
+    return;
+  }
+  await delay(1600);
   if (token !== goddessSequenceToken) return;
-  view.characterCreationOpen = false;
-  view.characterDraft = null;
-  view.goddessPrologue = createGoddessPrologueState();
-  view.launchOpen = false;
-  view.guideOpen = false;
-  render();
-  audio.play("reset");
-  await playWorldArrival(token);
-  if (token !== goddessSequenceToken) return;
-  showToast("女神の庭から、生成された世界へ転生しました。");
+  await finishGoddessReincarnation(token, { skipArrival: false });
 }
 
 function costLabel(command) {
@@ -4298,7 +4401,7 @@ function beginVillageConversation({ kind, id, facilityId, castId = facilityId, t
 }
 
 function focusVillageConversation() {
-  requestAnimationFrame(() => document.querySelector(".village-conversation [data-village-dialogue-cancel]")?.focus());
+  requestAnimationFrame(() => document.querySelector(".village-conversation [data-village-dialogue-next], .village-conversation [data-npc-conversation-action], .village-conversation [data-village-dialogue-cancel]")?.focus());
 }
 
 function closeVillageConversation() {
@@ -4399,6 +4502,7 @@ function renderVillageConversation() {
   const counterpart = conversation.counterpart;
   const playerPortrait = playerConversationPortrait();
   const finalLine = conversation.lineIndex >= conversation.lines.length - 1;
+  const quickLabel = conversation.kind === "contract" ? "この内容で受注" : conversation.kind.startsWith("party-") ? "この内容で決定" : "説明を省略して実行";
   return `<section class="village-conversation" role="dialog" aria-modal="true" aria-labelledby="villageConversationTitle" style="--conversation-art:url('${villageFacilityArt(conversation.facilityId)}')">
     <header><div><small>${escapeHtml(village.name)} / ${escapeHtml(counterpart.role)}</small><h1 id="villageConversationTitle">${escapeHtml(conversation.title)}</h1></div><button type="button" data-village-dialogue-cancel aria-label="会話をやめる">×</button></header>
     <div class="village-conversation-stage">
@@ -4406,7 +4510,7 @@ function renderVillageConversation() {
       <div class="conversation-place"><span>${escapeHtml(village.name)}</span><strong>${escapeHtml(conversation.title)}</strong></div>
       <figure class="conversation-character is-other ${counterpart.transparent ? "has-transparent-art" : ""} ${line.side === "other" ? "is-speaking" : ""}"><img src="${escapeHtml(counterpart.image)}" alt="${escapeHtml(counterpart.name)}"><figcaption><small>${escapeHtml(counterpart.role)}</small><strong>${escapeHtml(counterpart.name)}</strong></figcaption></figure>
     </div>
-    <footer class="conversation-message story-text-window"><div><small>${line.side === "player" ? "PLAYER" : "VILLAGER"}</small><strong>${escapeHtml(line.speaker)}</strong><p>${escapeHtml(line.text)}</p></div><button type="button" data-village-dialogue-next>${finalLine ? "この行動を実行" : "返答する"}<span>→</span></button></footer>
+    <footer class="conversation-message story-text-window"><div><small>${line.side === "player" ? "PLAYER" : "VILLAGER"}</small><strong>${escapeHtml(line.speaker)}</strong><p>${escapeHtml(line.text)}</p></div><nav class="conversation-actions"><button type="button" data-village-dialogue-next>${finalLine ? "この行動を実行" : "返答する"}<span>→</span></button>${finalLine ? "" : `<button class="is-quick" type="button" data-village-dialogue-skip>${quickLabel}<span>»</span></button>`}</nav></footer>
   </section>`;
 }
 
@@ -6527,7 +6631,8 @@ function renderLaunchScreen() {
   elements.launchScreen.querySelectorAll("button").forEach((button) => {
     const lockedGoddessExit = button.matches('[data-character-create-action="cancel"]')
       && ["generating", "departure"].includes(view.goddessPrologue?.phase);
-    button.disabled = generation.active || lockedGoddessExit;
+    const narrationControl = button.matches("[data-goddess-skip]");
+    button.disabled = (generation.active && !narrationControl) || lockedGoddessExit || (narrationControl && Boolean(view.goddessPrologue?.skipRequested));
   });
   const developerLauncher = elements.launchScreen.querySelector(".developer-launcher");
   if (developerLauncher) {
@@ -8165,6 +8270,10 @@ document.addEventListener("click", async (event) => {
     closeVillageConversation();
     return;
   }
+  if (event.target.closest("[data-village-dialogue-skip]")) {
+    completeVillageConversation();
+    return;
+  }
   if (event.target.closest("[data-village-dialogue-next]")) {
     if (!view.villageConversation) return;
     if (view.villageConversation.lineIndex < view.villageConversation.lines.length - 1) {
@@ -8199,6 +8308,20 @@ document.addEventListener("click", async (event) => {
     goddessPersistentTap.classList.add("is-tapped");
     if (result.triggered) void playGoddessMercyBranch();
     else audio.play("ui");
+    return;
+  }
+  const goddessSkip = event.target.closest("[data-goddess-skip]");
+  if (goddessSkip) {
+    const phase = view.goddessPrologue?.phase;
+    if (phase === "arrival" || phase === "mercy") {
+      showGoddessCharacterSelection({ mercyGranted: phase === "mercy" });
+    } else if (phase === "generating") {
+      view.goddessPrologue = { ...view.goddessPrologue, skipRequested: true };
+      renderLaunchScreen();
+    } else if (phase === "departure") {
+      view.goddessPrologue = { ...view.goddessPrologue, skipRequested: true };
+      void finishGoddessReincarnation(goddessSequenceToken, { skipArrival: true });
+    }
     return;
   }
   const characterCreateAction = event.target.closest("[data-character-create-action]");
@@ -9339,6 +9462,11 @@ document.addEventListener("click", async (event) => {
     }
     return;
   }
+  const campaignNext = event.target.closest("[data-campaign-next]");
+  if (campaignNext) {
+    focusCampaignNextAction();
+    return;
+  }
   const shortcutTab = event.target.closest("[data-shortcut-tab]");
   if (shortcutTab) {
     elements.backMenu?.removeAttribute("open");
@@ -9985,6 +10113,24 @@ document.addEventListener("keydown", (event) => {
       const last = focusable.at(-1);
       if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    }
+  }
+  const editing = event.target instanceof HTMLElement && Boolean(event.target.closest("input, select, textarea, [contenteditable='true']"));
+  const modalOpen = view.launchOpen || view.guideOpen || view.resetOpen || view.characterDetailOpen || view.villageConversation || view.tacticalBattle || view.battlePreparation;
+  if (!editing && !modalOpen && !event.ctrlKey && !event.metaKey && !event.altKey) {
+    if (event.key.toLowerCase() === "n" && state.player) {
+      event.preventDefault();
+      focusCampaignNextAction();
+      return;
+    }
+    if (/^[1-6]$/.test(event.key)) {
+      const shortcut = [...elements.primaryTabs.querySelectorAll(":scope > button")]
+        .filter((button) => !button.hidden && button.getAttribute("aria-disabled") !== "true")[Number(event.key) - 1];
+      if (shortcut) {
+        event.preventDefault();
+        shortcut.click();
+        return;
+      }
     }
   }
   if (event.key === "Escape" && view.villageConversation) {
