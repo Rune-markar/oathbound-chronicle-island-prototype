@@ -200,6 +200,17 @@ test("compact landscape phones use a fixed top-map-bottom shell without page scr
   assert.match(styleSource, /overscroll-behavior: contain/);
 });
 
+test("compact landscape readability overrides keep identity, navigation, and ledger copy legible", () => {
+  const readabilityPass = styleSource.match(/2026-08 mobile landscape readability pass[\s\S]*$/)?.[0] ?? "";
+  assert.match(readabilityPass, /--compact-topbar-height: 42px/);
+  assert.match(readabilityPass, /--compact-navbar-height: 50px/);
+  assert.match(readabilityPass, /\.left-hud \.realm-identity\s*\{[^}]*display: flex;/s);
+  assert.match(readabilityPass, /\.primary-tabs > button[\s\S]*?font-size: 11px/);
+  assert.match(readabilityPass, /\.ledger-drawer\s*\{[^}]*width: min\(72vw, 560px\);/s);
+  assert.match(readabilityPass, /\.ledger-drawer \.panel-body :where\(small, span, strong, b, button, dt, dd\)/);
+  assert.match(readabilityPass, /\.launch-actions\s*\{\s*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/);
+});
+
 test("compact mobile navigation preserves map state and exposes accessible locked and drawer states", () => {
   assert.match(appSource, /mobileMoreOpen: false/);
   assert.match(appSource, /function isCompactMobileShell\(\)/);
