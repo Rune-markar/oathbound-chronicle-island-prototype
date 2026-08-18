@@ -16186,3 +16186,168 @@ body.is-location-focus .village-central-status article > strong { font-size: cla
 
 @media (max-width: 1100px) { .mastery-card-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 @media (max-width: 720px) { .mastery-board { padding:12px; } .mastery-board > header,.mastery-group > header { align-items:flex-start; } .mastery-card-grid { grid-template-columns:1fr; } }
+
+/* 2026-08 mobile landscape readability pass.
+   Keep the map-led play shell, but give persistent controls and opt-in ledgers
+   enough room to be read and operated on short phone viewports. */
+@media (max-width: 980px) and (orientation: landscape) {
+  .strategy-shell {
+    --compact-topbar-height: 42px;
+    --compact-navbar-height: 50px;
+    grid-template-rows: var(--compact-topbar-height) minmax(0, 1fr) var(--compact-navbar-height);
+  }
+
+  .left-hud {
+    height: var(--compact-topbar-height);
+    grid-template-columns: minmax(96px, 18vw) minmax(0, 1fr) minmax(176px, 27vw);
+  }
+
+  /* An older <=700px rule hid this entry after the compact shell was added. */
+  .left-hud .realm-identity {
+    min-height: var(--compact-topbar-height);
+    height: var(--compact-topbar-height);
+    display: flex;
+    padding-inline: 10px;
+  }
+
+  .left-hud .realm-identity strong,
+  .left-hud .campaign-bar-next > strong,
+  .left-hud .date-button strong,
+  .mobile-time-label {
+    font-size: 11px;
+  }
+
+  .left-hud .campaign-bar,
+  .left-hud .campaign-bar-next,
+  .left-hud .date-controls,
+  .left-hud .date-button {
+    min-height: var(--compact-topbar-height);
+    height: var(--compact-topbar-height);
+  }
+
+  .left-hud .campaign-bar-next { padding-inline: 11px; }
+  .left-hud .date-button { gap: 8px; padding-inline: 10px; }
+
+  .left-dock > .primary-tabs {
+    min-height: var(--compact-navbar-height);
+  }
+
+  .left-dock > .primary-tabs > button,
+  .left-dock > .primary-tabs > [data-mobile-primary][hidden] {
+    min-height: var(--compact-navbar-height);
+    height: var(--compact-navbar-height);
+    grid-template-rows: 19px 14px;
+    gap: 2px;
+    font-size: 11px;
+  }
+
+  .left-dock > .primary-tabs > button > span { font-size: 16px; }
+
+  .ledger-drawer {
+    top: var(--compact-topbar-height);
+    bottom: var(--compact-navbar-height);
+    width: min(72vw, 560px);
+    grid-template-rows: 48px minmax(0, 1fr);
+  }
+
+  .ledger-drawer-bar { padding-left: 16px; }
+  .ledger-drawer-bar small { font-size: 9px; }
+  .ledger-drawer-bar strong { font-size: 13px; }
+  .ledger-drawer-bar button { width: 40px; height: 40px; }
+
+  .ledger-drawer .panel-heading { padding: 16px 18px; }
+  .ledger-drawer .panel-heading span { font-size: 10px; }
+  .ledger-drawer .panel-heading h1 { font-size: 22px; }
+  .ledger-drawer .panel-heading p { font-size: 12px; line-height: 1.5; }
+  .ledger-drawer .panel-body { padding: 14px; }
+  .ledger-drawer .panel-body small { font-size: max(11px, 1em); line-height: 1.4; }
+  .ledger-drawer .panel-body button,
+  .ledger-drawer .panel-body li,
+  .ledger-drawer .panel-body dd { min-height: 40px; font-size: max(12px, 1em); }
+  .ledger-drawer .panel-body :where(small, span, strong, b, button, dt, dd) {
+    font-size: max(11px, 1em);
+  }
+
+  .personal-map-command { padding: 12px; }
+  .personal-map-command > header small,
+  .personal-map-command > header > strong,
+  .personal-map-explore small,
+  .personal-map-destinations > header small,
+  .personal-map-destinations > button small,
+  .personal-map-destinations > button strong,
+  .personal-map-destinations > button > b,
+  .personal-map-destinations > p,
+  .personal-map-entry-actions small,
+  .personal-map-entry-actions strong,
+  .personal-map-entry-actions > button > b,
+  .personal-map-entry-actions > p,
+  .personal-map-result small,
+  .personal-map-result strong,
+  .personal-map-result p,
+  .personal-map-empty,
+  .generated-movement-dial small,
+  .generated-shipping-command small,
+  .generated-shipping-command > header > strong {
+    font-size: 11px;
+    line-height: 1.4;
+  }
+
+  .personal-map-command > header > strong { line-height: 1; }
+  .personal-map-current-copy { display: block; font-size: 12px; }
+  .personal-map-explore strong { font-size: 13px; }
+  .personal-map-destinations { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px; }
+  .personal-map-destinations > button { min-height: 48px; padding: 8px; }
+
+  .left-info-drawer .back-menu-content {
+    top: var(--compact-topbar-height);
+    bottom: calc(var(--compact-navbar-height) + 42px);
+    width: min(72vw, 560px);
+  }
+
+  .left-info-drawer > footer {
+    bottom: var(--compact-navbar-height);
+    width: min(72vw, 560px);
+  }
+
+  .ledger-drawer-scrim:not([hidden]) {
+    inset: var(--compact-topbar-height) 0 var(--compact-navbar-height);
+  }
+
+  .mobile-more-menu {
+    bottom: calc(var(--compact-navbar-height) + 8px);
+    width: min(360px, calc(100vw - 16px));
+    max-height: calc(100dvh - var(--compact-topbar-height) - var(--compact-navbar-height) - 16px);
+  }
+
+  .mobile-more-menu button,
+  .mobile-more-menu [data-mobile-more-action] {
+    min-height: 48px;
+    font-size: 12px;
+  }
+
+  /* The entry hub stays scrollable, but its primary choices no longer collapse
+     into a long one-column strip merely because a phone is short and wide. */
+  .launch-screen {
+    min-height: 100dvh;
+    gap: 12px;
+    padding: 14px max(18px, env(safe-area-inset-right)) 18px max(18px, env(safe-area-inset-left));
+  }
+  .launch-brand { max-width: none; }
+  .launch-title-logo { width: min(300px, 42vw); }
+  .launch-brand p { max-width: 70ch; font-size: 13px; }
+  .launch-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .launch-actions button,
+  .launch-actions .launch-status-link { min-height: 66px; padding: 10px 14px; }
+  .launch-actions button small,
+  .launch-actions .launch-status-link small,
+  .launch-actions button span,
+  .launch-actions .launch-status-link span { font-size: 11px; }
+  .developer-launcher { align-self: start; padding-top: 12px; }
+  .developer-launch-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .developer-launch-grid button,
+  .developer-launch-grid a { min-height: 64px; }
+  .developer-launch-grid strong { font-size: 13px; }
+  .developer-launch-grid small,
+  .developer-launch-grid b { font-size: 11px; }
+  .launch-screen > footer { font-size: 10px; }
+}
