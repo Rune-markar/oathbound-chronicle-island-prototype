@@ -351,6 +351,8 @@ import {
   getEffectiveStats,
   getFortificationAura,
   getLogisticsState,
+  getMagicSkillPreview,
+  getMagicTargetTiles,
   getReachableBattleTiles,
   getReachableCommanderTiles,
   getSupplyRoute,
@@ -668,11 +670,13 @@ const elements = {
   tacticalBattleScreen: document.querySelector("#tacticalBattleScreen"),
   tacticalBattleTitle: document.querySelector("#tacticalBattleTitle"),
   tacticalBattleSummary: document.querySelector("#tacticalBattleSummary"),
+  tacticalCommandGuide: document.querySelector("#tacticalCommandGuide"),
   tacticalDeploymentBar: document.querySelector("#tacticalDeploymentBar"),
   tacticalBattleMap: document.querySelector("#tacticalBattleMap"),
   tacticalMapScroll: document.querySelector(".tactical-map-scroll"),
   tacticalBattleInspector: document.querySelector("#tacticalBattleInspector"),
   tacticalBattleLog: document.querySelector("#tacticalBattleLog"),
+  tacticalExecutePreview: document.querySelector("#tacticalExecutePreview"),
   tacticalResultButton: document.querySelector("#tacticalResultButton"),
   tacticalBattleReset: document.querySelector("#tacticalBattleReset"),
   tacticalBattleSkip: document.querySelector("#tacticalBattleSkip"),
@@ -6856,6 +6860,7 @@ function openTacticalBattle({ battle = createSampleBattle(), roster = null, defa
   view.selectedTacticalCommanderId = null;
   view.selectedTacticalFortificationId = null;
   view.tacticalInspectorDismissed = false;
+  view.pendingTacticalMagicId = null;
   render();
 }
 
@@ -6880,6 +6885,7 @@ function openDungeonTacticalBattle() {
     view.selectedTacticalCommanderId = null;
     view.selectedTacticalFortificationId = null;
     view.tacticalInspectorDismissed = false;
+    view.pendingTacticalMagicId = null;
     render();
     return;
   }
@@ -6900,6 +6906,7 @@ function startTacticalBattle() {
   view.selectedTacticalCommanderId = null;
   view.selectedTacticalFortificationId = null;
   view.tacticalInspectorDismissed = false;
+  view.pendingTacticalMagicId = null;
   render();
 }
 
@@ -6946,6 +6953,7 @@ function clearTacticalBattleView() {
   view.selectedTacticalCommanderId = null;
   view.selectedTacticalFortificationId = null;
   view.tacticalInspectorDismissed = false;
+  view.pendingTacticalMagicId = null;
 }
 
 function exitTacticalBattle({ applyDungeonResult = false } = {}) {
@@ -7084,6 +7092,55 @@ function tacticalFacingArrow(facing) {
 
 function tacticalPositionLabel(position) {
   return position ? `${position.x + 1}-${position.y + 1}` : "なし";
+}
+
+function tacticalMagicEffectLabel(skill) {
+  const labels = {
+    unit_damage: "敵へダメージ",
+    restore_soldiers: "味方の兵力回復",
+    restore_morale: "味方の士気回復",
+    burning: "炎上地形",
+    frozen: "凍結地形",
+    earth_wall: "防御地形",
+    slowed: "敵を鈍足化",
+    buffeted: "敵の射撃低下",
+    radiant_ward: "味方の防御上昇",
+    shadow_veil: "味方の防御・射撃上昇",
+  };
+  return [...new Set(skill.effects.map((effect) => labels[effect.statusId] ?? labels[effect.type] ?? "特殊効果"))].join("・");
+}
+
+function tacticalPlanLabel(battle, unit) {
+  if (unit.plannedAction) {
+    const skill = MAGIC_SKILLS[unit.plannedAction.actionId];
+    return `${skill?.name ?? unit.plannedAction.actionId} → ${tacticalPositionLabel(unit.plannedAction.position)}`;
+  }
+  const target = getBattleUnit(battle, unit.targetId);
+  if (target) return `攻撃 → ${target.name}`;
+  if (unit.plannedPosition) return `移動 → ${tacticalPositionLabel(unit.plannedPosition)}`;
+  if (unit.playerInstructions?.order) return `${ORDER_LABELS[unit.order]}命令`;
+  return `${ORDER_LABELS[unit.order]}（自律）`;
+}
+
+function renderTacticalCommandGuide(battle) {
+  const units = battle.units.filter((unit) => unit.side === "player" && !["DESTROYED", "ESCAPED"].includes(unit.state));
+  const selected = getBattleUnit(battle, view.selectedTacticalUnitId);
+  const hasPlan = Boolean(selected && (selected.plannedAction || selected.targetId || selected.plannedPosition || Object.keys(selected.playerInstructions ?? {}).length));
+  const step = !selected ? 1 : view.pendingTacticalMagicId ? 3 : hasPlan ? 4 : 2;
+  const steps = [
+    ["1", "味方を選ぶ"],
+    ["2", "命令・魔法を選ぶ"],
+    ["3", "盤面で対象を選ぶ"],
+    ["4", "命令を実行"],
+  ];
+  elements.tacticalCommandGuide.innerHTML = `
+    <ol>${steps.map(([number, label], index) => `<li class="${index + 1 === step ? "is-current" : index + 1 < step ? "is-complete" : ""}"><i>${number}</i><span>${label}</span></li>`).join("")}</ol>
+    <div class="tactical-command-roster" aria-label="味方部隊の命令状況">${units.map((unit) => {
+      const selectedUnit = unit.id === selected?.id;
+      const directPlan = Boolean(unit.plannedAction || unit.targetId || unit.plannedPosition || Object.keys(unit.playerInstructions ?? {}).length);
+      const commanded = isInCommandRange(battle, unit);
+      return `<button type="button" data-battle-select-unit="${unit.id}" class="${selectedUnit ? "is-selected" : ""} ${directPlan ? "has-plan" : ""} ${commanded ? "" : "is-autonomous"}" aria-pressed="${selectedUnit}"><strong>${escapeHtml(unit.name)}</strong><small>${commanded ? tacticalPlanLabel(battle, unit) : "指揮範囲外・自律"}</small><b>${directPlan ? "指示済" : commanded ? "選択" : "自律"}</b></button>`;
+    }).join("")}</div>`;
 }
 
 function tacticalEffectPoint(position, tileSize) {
@@ -7280,8 +7337,14 @@ function renderTacticalMap(battle) {
     ...(selectedUnit ? getReachableBattleTiles(battle, selectedUnit.id) : []),
     ...(selectedCommander ? getReachableCommanderTiles(battle, selectedCommander.id) : []),
   ].map((entry) => [`${entry.position.x},${entry.position.y}`, entry]));
-  const attackableTiles = new Map((selectedUnit ? getAttackableBattleTiles(battle, selectedUnit.id) : [])
+  const pendingMagic = selectedUnit && view.pendingTacticalMagicId
+    ? MAGIC_SKILLS[view.pendingTacticalMagicId]
+    : null;
+  const attackableTiles = new Map((selectedUnit
+    ? pendingMagic ? getMagicTargetTiles(battle, selectedUnit.id, pendingMagic.id) : getAttackableBattleTiles(battle, selectedUnit.id)
+    : [])
     .map((entry) => [`${entry.position.x},${entry.position.y}`, entry]));
+  const plannedMagic = selectedUnit?.plannedAction ? MAGIC_SKILLS[selectedUnit.plannedAction.actionId] : null;
   elements.tacticalBattleMap.innerHTML = battle.map.tiles.map((tile) => {
     const key = `${tile.position.x},${tile.position.y}`;
     const unit = unitsByPosition.get(key);
@@ -7296,6 +7359,8 @@ function renderTacticalMap(battle) {
     );
     const isPlanned = plannedPosition && key === `${plannedPosition.x},${plannedPosition.y}`;
     const isTarget = target && key === `${target.position.x},${target.position.y}`;
+    const inPlannedMagicArea = Boolean(plannedMagic && selectedUnit?.plannedAction
+      && Math.abs(tile.position.x - selectedUnit.plannedAction.position.x) + Math.abs(tile.position.y - selectedUnit.plannedAction.position.y) <= plannedMagic.radius);
     const reachable = reachableTiles.get(key);
     const attackable = attackableTiles.get(key);
     const supplyRouteStep = supplyRouteByPosition.get(key);
@@ -7327,7 +7392,7 @@ function renderTacticalMap(battle) {
     const fortificationArt = fortification ? `./assets/generated/tactical-structures/${fortification.typeId}-v2.png` : "";
     const fortificationMarkup = fortification ? `<span class="tactical-fortification-marker is-${fortification.typeId} is-${fortification.side} ${fortification.encircled ? "is-encircled" : ""}" aria-hidden="true"><img src="${fortificationArt}" alt="" draggable="false"><b>${fortificationDefinition.symbol}</b><em><span style="width:${fortificationIntegrity}%"></span></em></span>` : "";
     const title = `${terrain.name}${feature ? `・${feature.name ?? ({ ford: "浅瀬", bridge: "橋梁", supply_depot: "補給所" }[feature.id])}` : ""} ${tile.position.x + 1}-${tile.position.y + 1}${isPassable ? "" : " / 通行不可"}${reachable ? ` / 移動可能 消費${reachable.cost}` : ""}${attackable ? ` / 攻撃可能 射程${attackable.distance}/${attackable.range}` : ""}${supplyNode ? ` / ${supplyNode.name} 備蓄${Math.round(supplyNode.stockpile)}/${supplyNode.maxStockpile}` : ""}${isSupplyRoute ? ` / 補給路 ${supplyRouteStep}/${selectedSupplyRoute.route.length - 1}` : ""}${fortification ? ` / ${fortification.name} 耐久${fortification.durability}/${fortification.baseDurability}${fortification.typeId === "castle" ? ` 備蓄${Math.round(fortification.supplyStockpile)}/${fortification.maxSupplyStockpile}` : ""}${fortification.encircled ? " 完全包囲" : ""}` : ""}${unit ? ` / ${unit.name} 兵${unit.soldierCount} 士気${Math.round(unit.morale)} 行動${unitVisual.label}` : ""}${commander ? ` / ${commander.name}` : ""}`;
-    return `<button type="button" role="gridcell" class="tactical-tile terrain-${tile.terrainType} ${isPassable ? "" : "is-impassable"} ${reachable ? "is-reachable" : ""} ${attackable ? "is-attackable" : ""} ${isSelected ? "is-selected" : ""} ${isPlanned ? "is-planned" : ""} ${isTarget ? "is-target" : ""} ${inCommand ? "is-in-command" : ""} ${inFortificationAura ? "is-fortification-aura" : ""} ${isSupplyRoute ? "is-supply-route" : ""} ${isSupplySource ? "is-supply-source" : ""} ${isSupplyCut ? "is-supply-cut" : ""} ${burning ? "has-burning" : ""}" style="--tile-texture-x:${-tile.position.x * 44};--tile-texture-y:${-tile.position.y * 44}" data-battle-tile="${key}" data-terrain-symbol="${terrain.symbol ?? ""}" ${unit ? `data-battle-unit="${unit.id}"` : ""} ${commander ? `data-battle-commander="${commander.id}"` : ""} ${fortification ? `data-battle-fortification="${fortification.id}"` : ""} aria-label="${escapeHtml(title)}" title="${escapeHtml(title)}">${terrainMarkup}${supplyRouteMarkup}${featureMarkup}${supplyMarkup}${fortificationMarkup}${unitMarkup}${commanderMarkup}</button>`;
+    return `<button type="button" role="gridcell" class="tactical-tile terrain-${tile.terrainType} ${isPassable ? "" : "is-impassable"} ${reachable ? "is-reachable" : ""} ${attackable ? "is-attackable" : ""} ${pendingMagic && attackable ? "is-magic-target" : ""} ${isSelected ? "is-selected" : ""} ${isPlanned ? "is-planned" : ""} ${isTarget ? "is-target" : ""} ${inPlannedMagicArea ? "is-magic-area" : ""} ${inCommand ? "is-in-command" : ""} ${inFortificationAura ? "is-fortification-aura" : ""} ${isSupplyRoute ? "is-supply-route" : ""} ${isSupplySource ? "is-supply-source" : ""} ${isSupplyCut ? "is-supply-cut" : ""} ${burning ? "has-burning" : ""}" style="--tile-texture-x:${-tile.position.x * 44};--tile-texture-y:${-tile.position.y * 44}" data-battle-tile="${key}" data-terrain-symbol="${terrain.symbol ?? ""}" ${unit ? `data-battle-unit="${unit.id}"` : ""} ${commander ? `data-battle-commander="${commander.id}"` : ""} ${fortification ? `data-battle-fortification="${fortification.id}"` : ""} aria-label="${escapeHtml(title)}" title="${escapeHtml(title)}">${terrainMarkup}${supplyRouteMarkup}${featureMarkup}${supplyMarkup}${fortificationMarkup}${unitMarkup}${commanderMarkup}</button>`;
   }).join("");
 }
 
@@ -7404,15 +7469,32 @@ function renderTacticalUnitInspector(battle, unit) {
   const visualOrder = TACTICAL_ORDER_VISUALS[tacticalVisualOrder(unit)] ?? TACTICAL_ORDER_VISUALS.hold;
   const orderButtons = Object.values(UNIT_ORDERS).map((order) => `<button type="button" data-battle-order="${order}" class="${unit.order === order ? "is-active" : ""}" ${canCommand ? "" : "disabled"}>${ORDER_LABELS[order]}</button>`).join("");
   const facingButtons = Object.values(FACING).map((facing) => `<button type="button" data-battle-facing="${facing}" class="${unit.facing === facing ? "is-active" : ""}" ${canCommand ? "" : "disabled"}>${tacticalFacingArrow(facing)}</button>`).join("");
-  const plan = [unit.plannedPosition ? `移動 ${tacticalPositionLabel(unit.plannedPosition)}` : null, target ? `目標 ${target.name}` : null, unit.plannedAction ? `${unit.plannedAction.actionId} ${tacticalPositionLabel(unit.plannedAction.position)}` : null].filter(Boolean).join(" · ") || "未指定（進行時に兵種・特性・現在命令から行動）";
+  const plan = tacticalPlanLabel(battle, unit);
   const orders = unit.side === "player" ? `
-    <section class="tactical-orders"><header><h3>命令</h3><small>${commanded ? `指揮官 ${commander.name}` : "指揮範囲外・自律行動"}</small></header><div class="tactical-order-grid">${orderButtons}</div><div class="tactical-facing-grid" aria-label="部隊の向き">${facingButtons}</div><p class="tactical-plan-note">${escapeHtml(plan)}</p></section>` : "";
+    <section class="tactical-orders"><header><h3>この部隊への命令</h3><small>${commanded ? `指揮官 ${commander.name}` : "指揮範囲外・自律行動"}</small></header><div class="tactical-order-grid">${orderButtons}</div><div class="tactical-facing-grid" aria-label="部隊の向き">${facingButtons}</div><p class="tactical-plan-note"><b>現在の予定</b> ${escapeHtml(plan)}</p></section>` : "";
   const magicIds = unit.abilities.includes("magic") ? (unit.availableMagicSkillIds ?? Object.keys(MAGIC_SKILLS)) : [];
   const magicOrders = unit.side === "player" && magicIds.length ? `<section class="tactical-magic-orders"><header><h3>装備魔法</h3><small>${view.pendingTacticalMagicId ? "対象マスを選択してください" : "術を選び、盤面の対象を指定"}</small></header><div>${magicIds.map((id) => {
     const skill = MAGIC_SKILLS[id];
     if (!skill) return "";
-    return `<button type="button" data-battle-magic="${id}" class="${view.pendingTacticalMagicId === id ? "is-active" : ""}" ${canCommand ? "" : "disabled"}><strong>${escapeHtml(skill.name)}</strong><small>射程 ${skill.range} · 範囲 ${skill.radius} · 疲労 ${skill.fatigue}</small></button>`;
-  }).join("")}</div>${view.pendingTacticalMagicId ? `<p>盤面の味方・敵・空きマスを選ぶと「${escapeHtml(MAGIC_SKILLS[view.pendingTacticalMagicId]?.name ?? "魔法")}」を予約します。</p>` : ""}</section>` : "";
+    return `<button type="button" data-battle-magic="${id}" class="${view.pendingTacticalMagicId === id ? "is-active" : ""}" ${canCommand ? "" : "disabled"}><strong>${escapeHtml(skill.name)}</strong><em>${escapeHtml(tacticalMagicEffectLabel(skill))}</em><small>射程 ${skill.range} · 範囲 ${skill.radius} · 疲労 ${skill.fatigue}</small></button>`;
+  }).join("")}</div>${view.pendingTacticalMagicId ? `<p>青紫色のマスだけが有効対象です。盤面で対象を選ぶと「${escapeHtml(MAGIC_SKILLS[view.pendingTacticalMagicId]?.name ?? "魔法")}」を予約します。</p>` : ""}</section>` : "";
+  let actionPreview = "";
+  if (unit.plannedAction && MAGIC_SKILLS[unit.plannedAction.actionId]) {
+    try {
+      const preview = getMagicSkillPreview(battle, unit.id, unit.plannedAction.actionId, unit.plannedAction.position);
+      const affected = preview.effects.map((effect) => {
+        const changes = [effect.casualties ? `損耗 ${effect.casualties}` : null, effect.restored ? `回復 ${effect.restored}` : null, effect.moraleChange ? `士気 ${effect.moraleChange > 0 ? "+" : ""}${effect.moraleChange}` : null, effect.addedStatuses.length ? `状態 ${effect.addedStatuses.join("・")}` : null].filter(Boolean).join(" / ") || "状態効果";
+        return `<li><strong>${escapeHtml(effect.name)}</strong><span>${escapeHtml(changes)}</span></li>`;
+      }).join("");
+      actionPreview = `<section class="tactical-action-preview is-magic"><header><div><small>発動前プレビュー</small><h3>${escapeHtml(preview.name)}</h3></div><b>疲労 +${preview.fatigueCost} → ${preview.fatigueAfter}</b></header><p>対象 ${tacticalPositionLabel(preview.position)} · 射程 ${preview.distance}/${preview.range} · 効果範囲 ${preview.radius}</p>${affected ? `<ul>${affected}</ul>` : `<p>${preview.createsTerrainEffect ? "対象範囲へ地形効果を発生させます。" : "対象への数値変化はありません。"}</p>`}</section>`;
+    } catch (error) {
+      actionPreview = `<section class="tactical-action-preview is-invalid"><strong>この予定は実行できません</strong><p>${escapeHtml(error.message)}</p></section>`;
+    }
+  } else if (target) {
+    const separation = Math.abs(unit.position.x - target.position.x) + Math.abs(unit.position.y - target.position.y);
+    const ranged = stats.rangedAttack > 0 && separation <= stats.range && !unit.engagedWith.length;
+    actionPreview = `<section class="tactical-action-preview"><header><div><small>攻撃前プレビュー</small><h3>${escapeHtml(target.name)}</h3></div><b>${ranged ? "この判定で射撃" : separation === 1 ? "この判定で白兵" : "接敵へ前進"}</b></header><p>距離 ${separation}${ranged ? ` / 射程 ${stats.range.toFixed(0)}` : ""} · 敵兵力 ${target.soldierCount} · 士気 ${Math.round(target.morale)}</p></section>`;
+  }
   elements.tacticalBattleInspector.innerHTML = `
     <article class="tactical-unit-sheet">
       <button class="tactical-inspector-close" type="button" data-battle-inspector-close aria-label="情報カードをたたむ（選択は維持）" title="選択を維持したまま情報カードをたたむ">×</button>
@@ -7424,6 +7506,7 @@ function renderTacticalUnitInspector(battle, unit) {
       </div>
       ${orders}
       ${magicOrders}
+      ${actionPreview}
       <details class="tactical-unit-details">
         <summary><strong>部隊詳細</strong><small>HP・疲労・兵站・実効戦力</small></summary>
         <div class="tactical-detail-vitals">
@@ -7578,6 +7661,8 @@ function renderTacticalBattle() {
   const battle = view.tacticalBattle;
   elements.tacticalBattleScreen.classList.toggle("is-hidden", !battle);
   if (!battle) {
+    if (elements.tacticalCommandGuide) elements.tacticalCommandGuide.innerHTML = "";
+    if (elements.tacticalExecutePreview) elements.tacticalExecutePreview.innerHTML = "";
     renderTacticalPostBattle();
     return;
   }
@@ -7596,6 +7681,7 @@ function renderTacticalBattle() {
   elements.tacticalPlayerLegend.textContent = labels.player;
   elements.tacticalEnemyLegend.textContent = labels.enemy;
   renderTacticalSummary(battle);
+  renderTacticalCommandGuide(battle);
   renderTacticalDeployment(battle);
   renderTacticalMap(battle);
   const selectedUnit = getBattleUnit(battle, view.selectedTacticalUnitId);
@@ -7611,6 +7697,10 @@ function renderTacticalBattle() {
   if (inspectorOpen) positionTacticalInspector();
   elements.tacticalBattleLog.innerHTML = battle.log.slice(-6).reverse().map((entry) => `<p title="${escapeHtml(entry.message)}"><b>T${entry.turn} ${escapeHtml(PHASE_LABELS[entry.phase] ?? entry.phase)}</b>${escapeHtml(entry.message)}</p>`).join("");
   const executeButton = elements.tacticalBattleScreen.querySelector('[data-battle-action="execute"]');
+  const activePlayerUnits = battle.units.filter((unit) => unit.side === "player" && !["ROUTED", "DESTROYED", "ESCAPED"].includes(unit.state));
+  const directlyPlanned = activePlayerUnits.filter((unit) => unit.plannedAction || unit.targetId || unit.plannedPosition || Object.keys(unit.playerInstructions ?? {}).length).length;
+  elements.tacticalExecutePreview.innerHTML = `<small>次の判定</small><strong>${directlyPlanned}隊へ指示 · ${Math.max(0, activePlayerUnits.length - directlyPlanned)}隊は現在命令で自律</strong>`;
+  executeButton.textContent = battle.winner ? "決着済み" : "命令を実行";
   executeButton.disabled = tacticalEffectsPlaying || Boolean(battle.winner);
   elements.tacticalResultButton.hidden = !battle.winner;
   elements.tacticalResultButton.disabled = tacticalEffectsPlaying;
@@ -7623,6 +7713,7 @@ function advanceTacticalBattle() {
   const nextBattle = executeBattleTurn(previousBattle);
   const effects = buildTacticalEffects(previousBattle, nextBattle);
   view.tacticalBattle = nextBattle;
+  view.pendingTacticalMagicId = null;
   if (nextBattle.winner && !view.tacticalResult) prepareTacticalResult({ open: false });
   const selectedUnit = getBattleUnit(nextBattle, view.selectedTacticalUnitId);
   const selectedCommander = getBattleCommander(nextBattle, view.selectedTacticalCommanderId);
@@ -7653,6 +7744,7 @@ function handleTacticalTile(button) {
     if (selectedUnit?.side === "player" && view.pendingTacticalMagicId) {
       view.tacticalBattle = planUnitAbility(battle, selectedUnit.id, view.pendingTacticalMagicId, { x, y });
       view.pendingTacticalMagicId = null;
+      view.tacticalInspectorDismissed = false;
       renderTacticalBattle();
       return;
     }
@@ -9211,6 +9303,16 @@ document.addEventListener("click", async (event) => {
     renderTacticalBattle();
     return;
   }
+  const battleSelectUnit = event.target.closest("[data-battle-select-unit]");
+  if (battleSelectUnit && view.tacticalBattle) {
+    view.pendingTacticalMagicId = null;
+    view.selectedTacticalUnitId = battleSelectUnit.dataset.battleSelectUnit;
+    view.selectedTacticalCommanderId = null;
+    view.selectedTacticalFortificationId = null;
+    view.tacticalInspectorDismissed = false;
+    renderTacticalBattle();
+    return;
+  }
   const battleFormation = event.target.closest("[data-battle-formation]");
   if (battleFormation && view.tacticalBattle) {
     try {
@@ -9237,6 +9339,7 @@ document.addEventListener("click", async (event) => {
   const battleMagic = event.target.closest("[data-battle-magic]");
   if (battleMagic && view.tacticalBattle && view.selectedTacticalUnitId) {
     view.pendingTacticalMagicId = view.pendingTacticalMagicId === battleMagic.dataset.battleMagic ? null : battleMagic.dataset.battleMagic;
+    if (view.pendingTacticalMagicId && window.innerWidth < 760) view.tacticalInspectorDismissed = true;
     renderTacticalBattle();
     return;
   }

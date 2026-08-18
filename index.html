@@ -70,7 +70,7 @@
       <section class="developer-launcher" aria-label="開発者メニュー">
         <header><div><small>DEVELOPER ACCESS</small><h2>システム検証メニュー</h2></div><span id="launchDeveloperBuild">PRODUCT 0.4.0 · BUILD 290fb29 · GENERATION VER2</span></header>
         <div class="developer-launch-grid">
-          <button class="is-featured" type="button" data-developer-action="battle"><i>⚔</i><span><strong>戦術戦闘テスト</strong><small>20×14部隊戦 · 命令／士気／潰走／追撃</small></span><b>起動</b></button>
+          <button class="is-featured" type="button" data-developer-action="battle"><i>⚔</i><span><strong>戦術戦闘テスト</strong><small>20×14部隊戦 · 命令／魔法／士気／追撃</small></span><b>起動</b></button>
           <button type="button" data-developer-action="imperial-princess-battle"><i>皇</i><span><strong>皇女将官戦</strong><small>グレート帝国皇女の親征 · 舟橋／歩騎連携</small></span><b>起動</b></button>
           <button type="button" data-developer-action="senior-general-battle"><i>将</i><span><strong>上級将官戦</strong><small>セレナ北方軍集団 · 段列交代／機動予備</small></span><b>起動</b></button>
           <button type="button" data-developer-action="realm"><i>♜</i><span><strong>国家運営UI</strong><small>評定・都市・外交・軍制の統合画面</small></span><b>開く</b></button>
@@ -153,11 +153,12 @@
         </div>
       </header>
       <section class="tactical-battle-summary" id="tacticalBattleSummary" aria-live="polite"></section>
+      <section class="tactical-command-guide" id="tacticalCommandGuide" aria-label="戦闘の操作手順" aria-live="polite"></section>
       <div class="tactical-battle-layout">
         <main class="tactical-map-panel">
           <section class="tactical-deployment-bar" id="tacticalDeploymentBar" aria-label="初期陣形配置"></section>
           <div class="tactical-map-toolbar">
-            <p><b>操作</b> 味方を選ぶと移動・攻撃可能範囲を表示。必要な指示を出して「進行」</p>
+            <p><b>操作</b> 上の味方一覧から部隊を選び、命令・移動・攻撃・魔法を指定して「命令を実行」</p>
             <span><i class="is-player"></i><b id="tacticalPlayerLegend">王国軍</b></span><span><i class="is-enemy"></i><b id="tacticalEnemyLegend">公国軍</b></span><span><i class="is-command"></i>指揮官</span><span><i class="is-reachable"></i>移動可能</span><span><i class="is-attackable"></i>攻撃可能</span>
           </div>
           <div class="tactical-map-scroll">
@@ -169,7 +170,8 @@
       <footer class="tactical-battle-footer">
         <details class="tactical-battle-log"><summary><strong>戦闘記録</strong><small>必要なときに表示</small></summary><div id="tacticalBattleLog"></div></details>
         <div class="tactical-turn-actions">
-          <button class="is-primary" type="button" data-battle-action="execute">進行</button>
+          <span id="tacticalExecutePreview"></span>
+          <button class="is-primary" type="button" data-battle-action="execute">命令を実行</button>
         </div>
       </footer>
     </section>

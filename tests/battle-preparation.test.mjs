@@ -61,7 +61,7 @@ test("manual deployment moves a selected unit only inside the friendly deploymen
   assert.deepEqual(getBattleUnit(draft.battle, "p-infantry-1").position, { x: 7, y: 2 });
   assert.equal(draft.selectedUnitId, null);
   assert.throws(() => placeBattlePreparationUnit(draft, "p-infantry-1", { x: 12, y: 2 }), /展開区域/);
-  const occupied = getBattleUnit(draft.battle, "p-infantry-2").position;
+  const occupied = getBattleUnit(draft.battle, "p-mage").position;
   assert.throws(() => placeBattlePreparationUnit(draft, "p-infantry-1", occupied), /使用されています/);
 });
 
