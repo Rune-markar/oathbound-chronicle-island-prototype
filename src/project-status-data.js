@@ -1,13 +1,13 @@
 export const STATUS_LEDGER_META = Object.freeze({
   schemaVersion: 1,
   projectGeneration: "ver2",
-  lastAuditedAt: "2026-08-18",
+  lastAuditedAt: "2026-08-19",
   auditScope: Object.freeze({
     codexPrimaryTasks: 80,
-    codexRange: "2026-08-02 — 2026-08-18",
+    codexRange: "2026-08-02 — 2026-08-19",
     gitCommits: 69,
-    gitRange: "initial — 2026-08-18 world-endgame integration",
-    workingTreeIncluded: false,
+    gitRange: "initial — 2026-08-19 combat clarity and magic integration",
+    workingTreeIncluded: true,
   }),
   maintenanceRule: "仕様・導入状態・廃止方針を変更する際は、実装と同じ変更でこの台帳を更新し、一次出典を最低1件付ける。",
 });
@@ -87,7 +87,7 @@ export const STATUS_ENTRIES = Object.freeze([
   entry({ id: "regional-domain", category: "implemented", area: "生成世界", title: "行政地域・集落成長・支配勢力変更", summary: "生成国家を行政地域へ分割し、人口・領主・中心集落・移譲・独立と村から町、町から都市への成長を保存する。", evidence: "地域ドメインAPIと専用回帰テスト、Unreleased履歴に現行導入記録がある。", sources: [source("地域ドメイン", "./src/regional-domain-system.js", "地域・集落・支配勢力API"), source("地域回帰テスト", "./tests/regional-domain-system.test.mjs", "移譲・独立・集落成長"), source("更新履歴", "./CHANGELOG.md", "Unreleased・行政地域と集落網")] }),
   entry({ id: "world-autonomy", category: "implemented", area: "世界情勢", title: "生成国家の自律月次判断", summary: "在野人物やプレイヤー国家選択から独立した決定的入力で、統合・交易・外交・動員・戦争・停戦を月次選択する。", evidence: "月次シミュレーションと国家生成テストで再現性・国家判断を検証する。", sources: [source("月次シミュレーション", "./src/monthly-simulation.js", "generated world monthly progression"), source("国家生成", "./src/nation-generation.js", "国家・地域・資源評価"), source("国家生成テスト", "./tests/nation-generation.test.mjs", "再現性・国家状態"), source("実装範囲", "./README.md", "生成国家の自律世界情勢")] }),
   entry({ id: "simulation-fidelity", category: "implemented", area: "世界情勢", title: "プレイヤー中心のシミュレーション精度階層", summary: "プレイヤー関係地方では人物と地域事件を毎月処理し、遠隔地域は環境適応型の間隔と月次上限で処理しつつ、国家政策は全世界で毎月実行する。", evidence: "所在地・任官地・支配地・建国領と隣接地を常時対象にし、遠隔地域は2〜6か月間隔かつ月6地方まで、無人遠隔地は国家政策のみとする。世界シードと年月による決定論的な選出を回帰テストで確認する。", updatedAt: "2026-08-15", sources: [source("実行方針", "./WORLD_SIMULATION_POLICY.md", "シミュレーション精度・離席中の重大判断"), source("精度計画", "./src/simulation-fidelity.js", "buildSimulationFidelityPlan"), source("月次接続", "./src/monthly-simulation.js", "refreshGeneratedWorldSimulationFidelity"), source("回帰テスト", "./tests/simulation-fidelity.test.mjs", "deterministic bounded remote simulation")] }),
-  entry({ id: "tactical-battle", category: "implemented", area: "戦闘", title: "戦闘準備・20×14戦術戦闘・戦果処遇", summary: "参陣者、陣形、配置、兵站、地形、補給、指揮、追撃、勝敗、捕縛後処遇までを一連の状態として実装する。", evidence: "開発メニューだけでなく個人探索の遭遇からも接続済み。", sources: [source("戦闘本体", "./src/tactical-battle.js", "戦術状態・命令解決"), source("戦闘準備", "./src/battle-preparation.js", "参加者・陣形・兵站"), source("戦果処理", "./src/battle-results.js", "勝敗・捕縛"), source("戦術回帰テスト", "./tests/tactical-battle.test.mjs", "戦術戦闘") ] }),
+  entry({ id: "tactical-battle", category: "implemented", area: "戦闘", title: "戦闘準備・明瞭な命令／魔法・戦果処遇", summary: "参陣者、陣形、兵站から、4段階の命令手順、全味方の予定、魔法対象・効果予告、追撃、勝敗、捕縛後処遇までを一連の状態として実装する。", evidence: "開発メニューと個人探索の遭遇から接続済み。選択魔法ごとの有効マス、対象別効果、疲労を発動前に確認でき、射程外・対象不在を予約時に拒否する。", updatedAt: "2026-08-19", sources: [source("戦闘本体", "./src/tactical-battle.js", "getMagicTargetTiles / getMagicSkillPreview / planUnitAbility"), source("戦闘UI", "./src/app.js", "renderTacticalCommandGuide / renderTacticalUnitInspector"), source("戦闘準備", "./src/battle-preparation.js", "参加者・陣形・兵站"), source("戦果処理", "./src/battle-results.js", "勝敗・捕縛"), source("戦術回帰テスト", "./tests/tactical-battle.test.mjs", "魔法対象検証・AI射程判断"), source("UI回帰テスト", "./tests/tactical-clarity-ui.test.mjs", "4段階導線・効果予告") ] }),
   entry({ id: "action-timing", category: "implemented", area: "戦闘", title: "能力連動の設定可能な行動時計", summary: "ゲーム内行動時計が各主体の次回行動値と一致した時だけ戦術行動を実行し、能力値が高い主体ほど次の行動までの間隔が短くなる。", evidence: "AIは7、操作プレイヤーは10、将来の他プレイヤーは35または42を既定値とする。値は共通設定と戦闘別上書きへ分離され、同行NPCと他プレイヤーを混同しない。", updatedAt: "2026-08-15", sources: [source("行動時間設定", "./src/action-timing.js", "ACTION_TIMING_DEFAULTS / deriveActionInterval"), source("戦術接続", "./src/tactical-battle.js", "actionTime / nextActionAt / setBattleActionTimingConfig"), source("個人戦接続", "./src/adventure-system.js", "local_player / actionAbilityScore"), source("回帰テスト", "./tests/action-timing.test.mjs", "strict time match / configurable intervals")] }),
   entry({ id: "causal-history", category: "implemented", area: "歴史", title: "因果履歴・歴史認識・制度的負債", summary: "世界状態から圧力、事件、因果DAG、制度的遺産を生成し、World Truth・公的記録・公共認識を分離する。", evidence: "履歴イベント、圧力、認識と回帰テストが現行ソースに存在する。", sources: [source("履歴モデル", "./src/history-model.js", "Event Store / Causal DAG / Historical Record"), source("履歴テスト", "./tests/history-model.test.mjs", "圧力・因果・歴史認識"), source("ゲームマニュアル", "./MANUAL.md", "因果年代記と蓄積圧力")] }),
 

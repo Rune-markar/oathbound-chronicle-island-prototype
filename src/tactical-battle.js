@@ -294,7 +294,7 @@ export function createSampleBattle() {
   ];
   const units = [
     createCombatUnit({ id: "p-infantry-1", name: "王国第一歩兵隊", iconUrl: `${TACTICAL_ICON_BASE}/p-infantry-1.png`, side: "player", unitClassId: "infantry", commanderId: "cmd-selene", soldierCount: 160, position: { x: 4, y: 4 }, order: "advance" }),
-    createCombatUnit({ id: "p-infantry-2", name: "王国第二歩兵隊", iconUrl: `${TACTICAL_ICON_BASE}/p-infantry-2.png`, side: "player", unitClassId: "infantry", commanderId: "cmd-selene", soldierCount: 150, position: { x: 4, y: 9 }, order: "advance" }),
+    createCombatUnit({ id: "p-mage", name: "セレナ魔導隊", iconUrl: "./assets/generated/unique-mage-runea-vesper.webp", side: "player", raceId: "elf", unitClassId: "mage", commanderId: "cmd-selene", soldierCount: 150, position: { x: 4, y: 9 }, order: "attack", availableMagicSkillIds: ["fire", "ice", "heal", "earth"] }),
     createCombatUnit({ id: "p-spearman", name: "灰冠槍兵隊", iconUrl: `${TACTICAL_ICON_BASE}/p-spearman.png`, side: "player", unitClassId: "spearman", commanderId: "cmd-selene", soldierCount: 140, position: { x: 5, y: 6 }, order: "defend" }),
     createCombatUnit({ id: "p-archer", name: "セレナ長弓隊", iconUrl: `${TACTICAL_ICON_BASE}/p-archer.png`, side: "player", raceId: "elf", unitClassId: "archer", commanderId: "cmd-selene", soldierCount: 120, position: { x: 2, y: 6 }, order: "attack" }),
     createCombatUnit({ id: "p-cavalry", name: "王国近衛騎兵", iconUrl: `${TACTICAL_ICON_BASE}/p-cavalry.png`, side: "player", unitClassId: "cavalry", commanderId: "cmd-selene", soldierCount: 90, position: { x: 3, y: 12 }, order: "attack" }),
@@ -980,6 +980,7 @@ export function planUnitAbility(battle, unitId, actionId, position) {
     if (!definitions?.[actionId]) throw new Error("この部隊は指定された能力を使用できません");
     if (unit.abilities.includes("magic") && unit.availableMagicSkillIds && !unit.availableMagicSkillIds.includes(actionId)) throw new Error("この魔法は装備していません");
     if (!getBattleTile(next, position)) throw new Error("能力の対象がマップ外です");
+    if (unit.abilities.includes("magic")) validateMagicTarget(next, unit, actionId, position);
     unit.activeSkill = unit.abilities.includes("magic") ? actionId : unit.activeSkill;
     unit.plannedAction = { actionId, position: { ...position } };
     unit.plannedPosition = null;
@@ -1264,7 +1265,15 @@ function planAiUnit(battle, unit, explicitTargetId = null) {
   if (!target) return;
   unit.targetId = target.id;
   if (unit.unitClassId === "mage") {
-    unit.plannedAction = { actionId: unit.activeSkill ?? "fire", position: { ...target.position } };
+    const actionId = unit.activeSkill ?? "fire";
+    const skill = MAGIC_SKILLS[actionId] ?? MAGIC_SKILLS.fire;
+    if (distance(unit.position, target.position) > skill.range) {
+      unit.plannedAction = null;
+      unit.plannedPosition = stepToward(battle, unit, target.position);
+    } else {
+      unit.plannedPosition = null;
+      unit.plannedAction = { actionId, position: { ...target.position } };
+    }
     return;
   }
   if (unit.unitClassId === "engineer") {
@@ -1467,6 +1476,50 @@ function unitsInArea(battle, position, radius, side = null) {
   return battle.units.filter((unit) => onField(unit) && (!side || unit.side === side) && distance(unit.position, position) <= radius);
 }
 
+function magicEligibleUnits(battle, caster, skill, position) {
+  const units = new Map();
+  skill.effects.forEach((effect) => {
+    const side = effect.target === "ally_area" ? caster.side : effect.target === "enemy_area" ? (caster.side === "player" ? "enemy" : "player") : null;
+    if (!side) return;
+    unitsInArea(battle, position, skill.radius, side).forEach((unit) => units.set(unit.id, unit));
+  });
+  return [...units.values()];
+}
+
+function validateMagicTarget(battle, caster, skillId, position) {
+  const skill = assertDefinition(MAGIC_SKILLS, skillId, "魔法");
+  const separation = distance(caster.position, position);
+  if (separation > skill.range) throw new Error(`${skill.name}の射程外です（距離${separation} / 射程${skill.range}）`);
+  const hasTileEffect = skill.effects.some((effect) => ["tile_status", "remove_tile_status"].includes(effect.type));
+  const requiresUnitTarget = skill.effects.some((effect) => effect.target === "ally_area" || effect.target === "enemy_area");
+  const affectedUnits = magicEligibleUnits(battle, caster, skill, position);
+  if (requiresUnitTarget && !hasTileEffect && !affectedUnits.length) {
+    const allyOnly = skill.effects.every((effect) => !effect.target || effect.target === "ally_area");
+    throw new Error(`${skill.name}の範囲内に${allyOnly ? "味方" : "敵"}がいません`);
+  }
+  return { skill, separation, affectedUnits };
+}
+
+export function getMagicTargetTiles(battle, unitId, skillId) {
+  const caster = getBattleUnit(battle, unitId);
+  const skill = MAGIC_SKILLS[skillId];
+  if (!caster || !skill || !caster.abilities.includes("magic")) return [];
+  if (caster.availableMagicSkillIds && !caster.availableMagicSkillIds.includes(skillId)) return [];
+  return battle.map.tiles.flatMap((tile) => {
+    try {
+      const preview = validateMagicTarget(battle, caster, skillId, tile.position);
+      return [{
+        position: { ...tile.position },
+        distance: preview.separation,
+        range: skill.range,
+        affectedUnitIds: preview.affectedUnits.map((unit) => unit.id),
+      }];
+    } catch {
+      return [];
+    }
+  });
+}
+
 function applyTileStatus(battle, position, definition) {
   const tile = getBattleTile(battle, position);
   if (!tile) return;
@@ -1528,6 +1581,40 @@ export function castMagicSkill(battle, unitId, skillId, position) {
   if (!caster || !getBattleTile(next, position)) throw new Error("魔法の使用者または対象が不正です");
   applyMagicSkillMutable(next, caster, skillId, position);
   return next;
+}
+
+export function getMagicSkillPreview(battle, unitId, skillId, position) {
+  const caster = getBattleUnit(battle, unitId);
+  if (!caster || !getBattleTile(battle, position)) throw new Error("魔法の使用者または対象が不正です");
+  const { skill, separation, affectedUnits } = validateMagicTarget(battle, caster, skillId, position);
+  const before = new Map(affectedUnits.map((unit) => [unit.id, structuredClone(unit)]));
+  const simulated = castMagicSkill(battle, unitId, skillId, position);
+  const effects = affectedUnits.map((unit) => {
+    const previous = before.get(unit.id);
+    const next = getBattleUnit(simulated, unit.id);
+    return {
+      id: unit.id,
+      name: unit.name,
+      side: unit.side,
+      casualties: Math.max(0, previous.soldierCount - next.soldierCount),
+      restored: Math.max(0, next.soldierCount - previous.soldierCount),
+      moraleChange: Math.round(next.morale - previous.morale),
+      addedStatuses: next.statusEffects.filter((status) => !previous.statusEffects.some((item) => item.id === status.id)).map((status) => status.id),
+    };
+  });
+  const simulatedCaster = getBattleUnit(simulated, unitId);
+  return {
+    skillId,
+    name: skill.name,
+    position: { ...position },
+    distance: separation,
+    range: skill.range,
+    radius: skill.radius,
+    fatigueCost: Math.round((simulatedCaster.fatigue - caster.fatigue) * 10) / 10,
+    fatigueAfter: Math.round(simulatedCaster.fatigue * 10) / 10,
+    effects,
+    createsTerrainEffect: skill.effects.some((effect) => effect.type === "tile_status"),
+  };
 }
 
 function applyEngineerActionMutable(battle, engineer, actionId, position) {
