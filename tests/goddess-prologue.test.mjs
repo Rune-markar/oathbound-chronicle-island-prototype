@@ -78,8 +78,18 @@ test("開始画面は女神立ち絵、下部テキストウィンドウ、魂�
   assert.match(index, /assets\/generated\/goddess-ilysia\.png/);
   assert.doesNotMatch(index, /goddessMercyReveal|goddess-mercy-companion/);
   assert.match(index, /class="[^"]*goddess-dialogue[^"]*"/);
+  assert.match(index, /data-goddess-skip/);
   assert.match(index, /id="characterCreationRace"/);
   assert.match(index, /CANONICAL ENDING MEMO/);
+});
+
+test("転生演出は実際の世界生成だけを待ち、任意に省略して開始できる", async () => {
+  const app = await readFile(new URL("../src/app.js", import.meta.url), "utf8");
+  assert.match(app, /const generated = await generationPromise/);
+  assert.doesNotMatch(app, /Promise\.all\(\[generationPromise, dialoguePromise\]\)/);
+  assert.match(app, /function showGoddessCharacterSelection/);
+  assert.match(app, /async function finishGoddessReincarnation/);
+  assert.match(app, /goddessPrologue\.skipRequested/);
 });
 
 test("世界生成中も女神界を閉じず、画面上部の進捗バーへ実進捗を渡す", async () => {
