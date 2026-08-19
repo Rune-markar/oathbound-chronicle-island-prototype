@@ -6688,11 +6688,14 @@ function battlePreparationDefaults(roster) {
 
 function tacticalOriginLabels() {
   if (view.tacticalOrigin?.type === "military-career") {
+    const sideLabels = view.tacticalBattle?.sideLabels ?? view.battlePreparation?.battle?.sideLabels ?? {};
+    const player = sideLabels.player ?? "主君軍";
+    const enemy = sideLabels.enemy ?? "軍務対象勢力";
     return {
-      player: "主君軍",
-      enemy: "軍務対象勢力",
-      playerVictory: "主君軍勝利",
-      enemyVictory: "軍務対象勢力勝利",
+      player,
+      enemy,
+      playerVictory: `${player}勝利`,
+      enemyVictory: `${enemy}勝利`,
       exit: "作戦地域へ戻る",
     };
   }
@@ -7282,6 +7285,11 @@ function renderTacticalDeployment(battle) {
   const formation = TACTICAL_FORMATIONS[battle.formations?.player] ?? TACTICAL_FORMATIONS.line;
   const preparation = battle.preparation;
   const locked = battle.turn > 0 || Boolean(preparation?.finalized);
+  const nationalMatchup = battle.nationalArmies ? `<div class="tactical-national-matchup">${["player", "enemy"].map((sideId) => {
+    const army = battle.nationalArmies[sideId];
+    if (!army) return `<section class="is-${sideId}"><small>${sideId === "player" ? "自軍軍制" : "敵軍軍制"}</small><strong>非正規部隊</strong><span>国家常備軍の軍制外</span></section>`;
+    return `<section class="is-${sideId}"><small>${sideId === "player" ? "自軍軍制" : "敵軍軍制"} · ${escapeHtml(army.nationName)}</small><strong>${escapeHtml(army.doctrineName)}</strong><span>${escapeHtml(army.doctrineSummary)}</span><em>強み ${escapeHtml(army.strengths.slice(0, 2).join("・"))} / 弱点 ${escapeHtml(army.risks[0])}</em></section>`;
+  }).join("")}</div>` : "";
   const logistics = preparation?.finalized
     ? `${BATTLE_LOGISTICS_PLANS[preparation.logisticsPlanId]?.name ?? "兵站計画"} · 約${preparation.sustainableDays}日`
     : "補給路は敵支配圏で遮断";
@@ -7296,7 +7304,8 @@ function renderTacticalDeployment(battle) {
         <span><small>陣形</small><strong>${formation.name}</strong></span>
         <span><small>兵站</small><strong>${logistics}</strong></span>
         <p>${stallGuidance}</p>
-      </div>`;
+      </div>
+      ${nationalMatchup}`;
     return;
   }
   elements.tacticalDeploymentBar.innerHTML = `
@@ -7305,6 +7314,7 @@ function renderTacticalDeployment(battle) {
       ${Object.values(TACTICAL_FORMATIONS).map((option) => `<button type="button" data-battle-formation="${option.id}" class="${formation.id === option.id ? "is-active" : ""}" ${locked ? "disabled" : ""} title="${escapeHtml(option.description)}"><b>${option.name}</b><small>攻 ${Math.round((option.modifiers.attack ?? 1) * 100)} / 守 ${Math.round((option.modifiers.defense ?? 1) * 100)} / 動 ${Math.round((option.modifiers.movement ?? 1) * 100)}</small></button>`).join("")}
     </div>
     <p class="tactical-logistics-brief"><b>兵站</b> ${logistics}</p>
+    ${nationalMatchup}
   `;
 }
 
@@ -7478,6 +7488,11 @@ function renderTacticalUnitInspector(battle, unit) {
     if (!skill) return "";
     return `<button type="button" data-battle-magic="${id}" class="${view.pendingTacticalMagicId === id ? "is-active" : ""}" ${canCommand ? "" : "disabled"}><strong>${escapeHtml(skill.name)}</strong><em>${escapeHtml(tacticalMagicEffectLabel(skill))}</em><small>射程 ${skill.range} · 範囲 ${skill.radius} · 疲労 ${skill.fatigue}</small></button>`;
   }).join("")}</div>${view.pendingTacticalMagicId ? `<p>青紫色のマスだけが有効対象です。盤面で対象を選ぶと「${escapeHtml(MAGIC_SKILLS[view.pendingTacticalMagicId]?.name ?? "魔法")}」を予約します。</p>` : ""}</section>` : "";
+  const nationalIdentity = unit.nationalDoctrineName ? `<section class="tactical-national-unit-sheet">
+    <header><div><small>${escapeHtml(unit.nationName ?? "国家軍")}</small><h3>${escapeHtml(unit.nationalDoctrineName)}</h3></div><b>${escapeHtml(unit.nationalTraitName ?? "標準部隊")}</b></header>
+    <p>${escapeHtml(unit.nationalTraitDescription ?? unit.nationalDoctrineSummary ?? "国家軍制に基づく部隊です。")}</p>
+    <div><span><small>得意</small><strong>${escapeHtml(unit.nationalStrength ?? "標準戦闘")}</strong></span><span><small>弱点</small><strong>${escapeHtml(unit.nationalRisk ?? "特記事項なし")}</strong></span></div>
+  </section>` : "";
   let actionPreview = "";
   if (unit.plannedAction && MAGIC_SKILLS[unit.plannedAction.actionId]) {
     try {
@@ -7504,6 +7519,7 @@ function renderTacticalUnitInspector(battle, unit) {
         <span><small>士気</small><strong>${Math.round(unit.morale)} · ${tacticalStateLabel(unit)}</strong><meter min="0" max="100" value="${unit.morale}"></meter></span>
         <span class="is-supply"><small>補給</small><strong>${logistics.ratio}% · ${escapeHtml(logisticsConnection)}</strong><meter min="0" max="100" value="${logistics.ratio}"></meter></span>
       </div>
+      ${nationalIdentity}
       ${orders}
       ${magicOrders}
       ${actionPreview}
