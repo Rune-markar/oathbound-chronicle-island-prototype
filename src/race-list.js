@@ -375,3 +375,26 @@ export function getTacticalRaceDefinition(raceId) {
     tags: race.unitTags,
   });
 }
+
+// Generated nations can use either a concrete race (elf, dwarf, lizardman...)
+// or a people category (currently beastfolk). Tactical callers must resolve
+// both through the same canonical military record instead of maintaining a
+// second, partial list in the battle engine.
+export function getTacticalPeopleDefinition(peopleId) {
+  const profile = getRaceDefinition(peopleId) ?? getRaceCategory(peopleId);
+  if (!profile) throw new Error(`種族・文化リストに存在しない戦術集団です: ${peopleId}`);
+  return Object.freeze({
+    ...profile,
+    // Category-backed peoples use commonTraits while concrete races use
+    // traits. The tactical contract exposes one uniform read-only field.
+    traits: profile.traits ?? profile.commonTraits,
+    modifiers: profile.combatModifiers,
+    terrainAffinity: profile.terrainModifiers,
+    tags: profile.unitTags,
+  });
+}
+
+export const TACTICAL_PEOPLE_IDS = freezeArray([
+  ...RACE_LIST.map((race) => race.id),
+  ...Object.keys(RACE_CATEGORIES),
+]);

@@ -1,4 +1,4 @@
-import { getTacticalRaceDefinition } from "./race-list.js";
+import { getTacticalPeopleDefinition, TACTICAL_PEOPLE_IDS } from "./race-list.js";
 
 export const UNIT_CLASS_IDS = Object.freeze({
   INFANTRY: "infantry",
@@ -77,8 +77,7 @@ export const UNIT_CLASSES = Object.freeze({
 // 戦闘用の種族補正も正本の完全な特性レコードから派生させる。
 // ここへ名称や補正だけの種族定義を追加してはならない。
 export const RACES = Object.freeze(Object.fromEntries(
-  ["human", "elf", "dwarf", "orc", "giant"]
-    .map((raceId) => [raceId, getTacticalRaceDefinition(raceId)]),
+  TACTICAL_PEOPLE_IDS.map((peopleId) => [peopleId, getTacticalPeopleDefinition(peopleId)]),
 ));
 
 export const EQUIPMENT = Object.freeze({

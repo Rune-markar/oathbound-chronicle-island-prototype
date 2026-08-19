@@ -6,6 +6,11 @@ import {
   createCommander,
   setBattleTerrain,
 } from "./tactical-battle.js";
+import {
+  createNationalArmyUnitSpecs,
+  getNationalArmySummary,
+  getNationalUnitProfile,
+} from "./national-unit-system.js";
 
 const clone = (value) => structuredClone(value);
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
@@ -48,7 +53,14 @@ function regionRecord(state, regionId) {
   if (state.scenarioMode === "generated") {
     const runtime = buildGeneratedWorld(state);
     const region = runtime.nations.regions.find((entry) => entry.id === regionId);
-    if (region) return { id: region.id, name: region.name, nationId: region.nationId };
+    if (region) return {
+      id: region.id,
+      name: region.name,
+      nationId: region.nationId,
+      dominantTerrain: region.dominantTerrain,
+      dominantRelief: region.dominantRelief,
+      markerIndex: region.markerIndex,
+    };
   }
   const names = { orta: "東境州", nereia: "ネレイア" };
   return { id: regionId, name: names[regionId] ?? regionId, nationId: state.player?.affiliation?.nationId ?? null };
@@ -202,10 +214,60 @@ function personalParticipants(state, mission) {
   const playerMaxHp = Math.max(1, Number(life.maxHp) || 100);
   return [{
     id: state.player.id ?? "player", name: state.player.name, role: state.player.specialty ?? state.player.title,
+    raceId: state.player.raceId ?? "human",
     hp: Math.max(0, Number.isFinite(Number(life.hp)) ? Number(life.hp) : playerMaxHp), maxHp: playerMaxHp, player: true,
   }, ...(life.party ?? []).filter((member) => selected.has(member.id) && member.active !== false && member.alive !== false).map((member) => ({
-    id: member.id, name: member.name, role: member.role ?? "冒険者", hp: Math.max(0, Number(member.hp) || 0), maxHp: Math.max(1, Number(member.maxHp) || 48), player: false,
+    id: member.id, name: member.name, role: member.role ?? "冒険者", raceId: member.raceId ?? "human",
+    hp: Math.max(0, Number(member.hp) || 0), maxHp: Math.max(1, Number(member.maxHp) || 48), player: false,
   }))];
+}
+
+function fixedNationRecord(nationId, fallbackName = "主君領") {
+  const peopleId = nationId === "forest_alliance" ? "beastfolk" : "human";
+  return { id: nationId ?? "local-polity", name: fallbackName, shortName: fallbackName.replace(/[国領軍]$/, ""), peopleId, peopleName: peopleId === "beastfolk" ? "獣人" : "人間" };
+}
+
+function militaryNationContext(state, mission) {
+  if (state.scenarioMode !== "generated") {
+    const playerNation = fixedNationRecord(state.player?.affiliation?.nationId, state.player?.affiliation?.liegeName ?? "主君領");
+    return { runtime: null, playerNation, enemyNation: null, targetRegion: null };
+  }
+  const runtime = buildGeneratedWorld(state);
+  const targetRegion = runtime.regionById.get(mission.targetRegion.id) ?? null;
+  const originNationId = mission.originRegion.nationId ?? state.generatedWorld?.playerNationId;
+  const playerNation = runtime.nationById.get(originNationId) ?? runtime.nationById.get(state.generatedWorld?.playerNationId);
+  if (!playerNation) throw new Error("軍務を発令した生成国家を特定できません");
+  const targetNation = targetRegion ? runtime.nationById.get(targetRegion.nationId) ?? null : null;
+  const neighboringEnemy = (targetRegion?.neighborIds ?? [])
+    .map((regionId) => runtime.regionById.get(regionId))
+    .filter((region) => region && region.nationId !== playerNation.id)
+    .sort((left, right) => left.id.localeCompare(right.id))
+    .map((region) => runtime.nationById.get(region.nationId))
+    .find(Boolean) ?? null;
+  const enemyNation = targetNation?.id !== playerNation.id ? targetNation : neighboringEnemy;
+  return { runtime, playerNation, enemyNation, targetRegion };
+}
+
+function applyGeneratedBattlefield(map, runtime, targetRegion, approachId) {
+  const terrainCounts = new Map();
+  for (const tileIndex of targetRegion?.tileIndices ?? []) {
+    const tile = runtime?.tiles?.[tileIndex];
+    const tactical = tile?.feature === "marsh" || tile?.feature === "floodplain"
+      ? "swamp"
+      : ["forest", "rainforest"].includes(tile?.feature) ? "forest"
+        : ["mountains", "hills"].includes(tile?.relief) ? "hill" : "plain";
+    terrainCounts.set(tactical, (terrainCounts.get(tactical) ?? 0) + 1);
+  }
+  const dominant = [...terrainCounts.entries()].sort((left, right) => right[1] - left[1])[0]?.[0] ?? "plain";
+  const accent = approachId === "scout" ? "forest" : dominant;
+  const patches = {
+    forest: [[3, 1], [3, 2], [4, 1], [5, 6], [6, 6], [6, 7]],
+    hill: [[3, 1], [4, 1], [5, 2], [5, 6], [6, 6], [6, 7]],
+    swamp: [[3, 1], [3, 2], [4, 2], [5, 5], [6, 5], [6, 6]],
+    plain: [],
+  }[accent] ?? [];
+  patches.forEach(([x, y]) => setBattleTerrain(map, { x, y }, accent));
+  return { dominant, accent, regionTerrain: targetRegion?.dominantTerrain ?? null, regionRelief: targetRegion?.dominantRelief ?? null };
 }
 
 export function createMilitaryCareerBattle(state) {
@@ -214,11 +276,15 @@ export function createMilitaryCareerBattle(state) {
   const currentRegionId = state.scenarioMode === "generated" ? state.generatedWorld?.expeditionRegionId : state.player.locationId;
   if (currentRegionId !== mission.targetRegion.id) throw new Error("軍務の対象地域へ移動してください");
   const forecast = missionForecast(state, mission);
-  const map = createBattleMap({ width: 10, height: 8, terrainType: mission.preparation.approachId === "scout" ? "forest" : "plain" });
+  const nations = militaryNationContext(state, mission);
+  const map = createBattleMap({ width: 10, height: 8, terrainType: "plain" });
   for (let x = 0; x < map.width; x += 1) setBattleTerrain(map, { x, y: 4 }, "road");
+  const environment = applyGeneratedBattlefield(map, nations.runtime, nations.targetRegion, mission.preparation.approachId);
+  const playerProfile = getNationalUnitProfile(nations.playerNation.peopleId);
+  const enemyProfile = nations.enemyNation ? getNationalUnitProfile(nations.enemyNation.peopleId) : null;
   const commanders = [
-    createCommander({ id: `${mission.id}:player-commander`, name: state.player.name, side: "player", position: { x: 0, y: 4 }, leadership: 68, tactics: 64 }),
-    createCommander({ id: `${mission.id}:enemy-commander`, name: mission.kind === "commander_relief" ? "包囲軍指揮官" : "襲撃団頭目", side: "enemy", position: { x: 9, y: 4 }, leadership: 58, tactics: 56 }),
+    createCommander({ id: `${mission.id}:player-commander`, name: `${state.player.name}（${nations.playerNation.shortName ?? nations.playerNation.name}軍）`, side: "player", position: { x: 0, y: 4 }, leadership: 68, tactics: 64, traits: playerProfile ? [playerProfile.doctrineName, ...playerProfile.strengths.slice(0, 2)] : [] }),
+    createCommander({ id: `${mission.id}:enemy-commander`, name: nations.enemyNation ? `${nations.enemyNation.shortName ?? nations.enemyNation.name}軍指揮官` : mission.kind === "commander_relief" ? "包囲軍指揮官" : "襲撃団頭目", side: "enemy", position: { x: 9, y: 4 }, leadership: 58, tactics: 56, traits: enemyProfile ? [enemyProfile.doctrineName, ...enemyProfile.strengths.slice(0, 2)] : [] }),
   ];
   const personalPositions = [{ x: 1, y: 4 }, { x: 1, y: 2 }, { x: 1, y: 6 }, { x: 2, y: 3 }];
   const personalUnits = personalParticipants(state, mission).map((member, index) => createCombatUnit({
@@ -230,6 +296,7 @@ export function createMilitaryCareerBattle(state) {
     maxSoldierCount: 1,
     hp: member.hp,
     maxHp: member.maxHp,
+    raceId: member.raceId,
     position: personalPositions[index] ?? { x: 2, y: index % 8 },
     unitClassId: unitClassForRole(member.role),
     tags: ["MILITARY_MISSION", member.player ? "PLAYER_CHARACTER" : "PARTY_MEMBER", `MEMBER_ID:${member.id}`],
@@ -237,14 +304,50 @@ export function createMilitaryCareerBattle(state) {
   }));
   const levySize = Math.max(6, forecast.playerStrength - personalUnits.length * 4);
   const enemySize = forecast.enemyStrength;
+  const scale = mission.kind === "commander_relief" ? "commander" : "retainer";
+  const playerArmy = createNationalArmyUnitSpecs({
+    nation: nations.playerNation,
+    side: "player",
+    commanderId: commanders[0].id,
+    strength: levySize,
+    scale,
+    positions: [{ x: 2, y: 5 }, { x: 2, y: 1 }, { x: 2, y: 7 }],
+    seed: mission.id,
+  }).map((spec) => createCombatUnit({ ...spec, supply: forecast.supply, maxSupply: 100, tags: [...spec.tags, "MILITARY_MISSION", "LIEGE_FORCE"] }));
+  const enemyArmy = nations.enemyNation && mission.kind === "commander_relief"
+    ? createNationalArmyUnitSpecs({
+      nation: nations.enemyNation,
+      side: "enemy",
+      commanderId: commanders[1].id,
+      strength: Math.round(enemySize * 1.28),
+      scale: "commander",
+      positions: [{ x: 8, y: 4 }, { x: 8, y: 2 }, { x: 8, y: 6 }],
+      seed: `${mission.id}:enemy`,
+    }).map((spec) => createCombatUnit({ ...spec, facing: "west", tags: [...spec.tags, "MILITARY_MISSION", "MISSION_TARGET"] }))
+    : [
+      createCombatUnit({ id: `${mission.id}:enemy-main`, name: mission.kind === "commander_relief" ? "包囲軍主隊" : "街道襲撃団", side: "enemy", commanderId: commanders[1].id, soldierCount: enemySize, maxSoldierCount: enemySize, position: { x: 8, y: 4 }, unitClassId: "infantry", facing: "west", tags: ["MILITARY_MISSION", "MISSION_TARGET"] }),
+      createCombatUnit({ id: `${mission.id}:enemy-ranged`, name: "敵弓兵", side: "enemy", commanderId: commanders[1].id, soldierCount: Math.max(3, Math.round(enemySize * 0.28)), maxSoldierCount: Math.max(3, Math.round(enemySize * 0.28)), position: { x: 8, y: 2 }, unitClassId: "archer", facing: "west", tags: ["MILITARY_MISSION", "MISSION_TARGET"] }),
+    ];
   const units = [
     ...personalUnits,
-    createCombatUnit({ id: `${mission.id}:levy`, name: mission.kind === "commander_relief" ? "救援軍主隊" : "主君支給の従兵", side: "player", commanderId: commanders[0].id, soldierCount: levySize, maxSoldierCount: levySize, supply: forecast.supply, position: { x: 2, y: 5 }, unitClassId: "spearman", tags: ["MILITARY_MISSION", "LIEGE_FORCE"] }),
-    createCombatUnit({ id: `${mission.id}:enemy-main`, name: mission.kind === "commander_relief" ? "包囲軍主隊" : "街道襲撃団", side: "enemy", commanderId: commanders[1].id, soldierCount: enemySize, maxSoldierCount: enemySize, position: { x: 8, y: 4 }, unitClassId: "infantry", tags: ["MILITARY_MISSION", "MISSION_TARGET"] }),
-    createCombatUnit({ id: `${mission.id}:enemy-ranged`, name: "敵弓兵", side: "enemy", commanderId: commanders[1].id, soldierCount: Math.max(3, Math.round(enemySize * 0.28)), maxSoldierCount: Math.max(3, Math.round(enemySize * 0.28)), position: { x: 8, y: 2 }, unitClassId: "archer", tags: ["MILITARY_MISSION", "MISSION_TARGET"] }),
+    ...playerArmy,
+    ...enemyArmy,
   ];
-  const battle = createBattleState({ id: mission.battleId, name: `${mission.targetRegion.name}・${mission.title}`, map, commanders, units, seed: hashString(mission.id) });
-  battle.sideLabels = { player: "主君軍", enemy: "敵対勢力" };
+  const battle = createBattleState({
+    id: mission.battleId,
+    name: `${mission.targetRegion.name}・${mission.title}`,
+    map,
+    commanders,
+    units,
+    formations: { player: playerProfile?.formationId ?? "line", enemy: enemyProfile?.formationId ?? "line" },
+    seed: hashString(mission.id),
+  });
+  battle.sideLabels = { player: nations.playerNation.name, enemy: nations.enemyNation?.name ?? "敵対勢力" };
+  battle.nationalArmies = {
+    player: getNationalArmySummary(nations.playerNation),
+    enemy: nations.enemyNation && mission.kind === "commander_relief" ? getNationalArmySummary(nations.enemyNation) : null,
+  };
+  battle.environment = environment;
   battle.militaryMissionId = mission.id;
   return battle;
 }

@@ -128,22 +128,25 @@ export function createCombatUnit({
   cohesion, experience = 35, supply = 100, maxSupply = 100, position, facing = FACING.EAST, statusEffects = [], tags = [],
   order = UNIT_ORDERS.HOLD, activeSkill = null,
   actionActorType = ACTION_ACTOR_TYPES.AI, actionAbilityScore = null, abilityIds = null, availableMagicSkillIds = null, magicPower = null,
+  nationId = null, nationName = null, nationalProfileId = null, nationalDoctrineName = null,
+  nationalDoctrineSummary = null, nationalTraitId = null, nationalTraitName = null, nationalTraitDescription = null,
+  nationalStrength = null, nationalRisk = null, nationalModifiers = {}, nationalTerrainModifiers = {},
 } = {}) {
   const unitClass = assertDefinition(UNIT_CLASSES, unitClassId, "兵種");
   const race = assertDefinition(RACES, raceId, "種族");
   if (!id || !name || !commanderId || !isFinitePosition(position)) throw new Error("部隊にはid・name・commanderId・positionが必要です");
-  const maxHp = Math.max(1, Math.round(requestedMaxHp ?? unitClass.stats.hp * (race.modifiers.hp ?? 1)));
+  const maxHp = Math.max(1, Math.round(requestedMaxHp ?? unitClass.stats.hp * (race.modifiers.hp ?? 1) * (nationalModifiers.hp ?? 1)));
   return {
     id, name, iconUrl, side, raceId, unitClassId,
     equipmentIds: [...(equipmentIds ?? DEFAULT_EQUIPMENT[unitClassId] ?? [])], commanderId,
     soldierCount: clamp(Math.round(soldierCount), 0, Math.max(1, Math.round(maxSoldierCount))),
     maxSoldierCount: Math.max(1, Math.round(maxSoldierCount)),
     hp: clamp(hp ?? maxHp, 0, maxHp), maxHp,
-    morale: clamp(morale ?? Math.round(unitClass.initial.morale * (race.modifiers.morale ?? 1)), 0, 100),
+    morale: clamp(morale ?? Math.round(unitClass.initial.morale * (race.modifiers.morale ?? 1) * (nationalModifiers.morale ?? 1)), 0, 100),
     fatigue: clamp(fatigue, 0, 100),
     supply: clamp(supply, 0, Math.max(1, maxSupply)), maxSupply: Math.max(1, maxSupply), logisticsState: "supplied",
     logisticsConnected: true, lastSupplyConsumption: 0, lastSupplyDelivery: 0, lastSupplySourceId: null,
-    cohesion: clamp(cohesion ?? Math.round(unitClass.initial.cohesion * (race.modifiers.cohesion ?? 1)), 0, 100),
+    cohesion: clamp(cohesion ?? Math.round(unitClass.initial.cohesion * (race.modifiers.cohesion ?? 1) * (nationalModifiers.cohesion ?? 1)), 0, 100),
     experience: clamp(experience, 0, 100),
     position: { ...position }, facing,
     movement: unitClass.stats.movement,
@@ -151,13 +154,17 @@ export function createCombatUnit({
     defense: unitClass.stats.defense,
     rangedAttack: unitClass.stats.rangedAttack,
     range: unitClass.stats.range,
-    magicPower: Number.isFinite(Number(magicPower)) ? Number(magicPower) : null,
+    magicPower: magicPower !== null && magicPower !== undefined && Number.isFinite(Number(magicPower)) ? Number(magicPower) : null,
     statusEffects: statusEffects.map((effect) => ({ ...effect })),
     tags: [...new Set([...unitClass.tags, ...race.tags, ...tags])],
     abilities: [...new Set([...unitClass.abilities, ...(abilityIds ?? [])])],
     availableMagicSkillIds: availableMagicSkillIds ? [...new Set(availableMagicSkillIds)] : null,
+    nationId, nationName, nationalProfileId, nationalDoctrineName, nationalDoctrineSummary,
+    nationalTraitId, nationalTraitName, nationalTraitDescription, nationalStrength, nationalRisk,
+    nationalModifiers: { ...nationalModifiers },
+    nationalTerrainModifiers: Object.fromEntries(Object.entries(nationalTerrainModifiers).map(([terrainId, modifiers]) => [terrainId, { ...modifiers }])),
     order, lastOrder: order, state: "STABLE", engagedWith: [],
-    plannedPosition: null, targetId: null, activeSkill: activeSkill ?? (unitClassId === "mage" ? "fire" : null),
+    plannedPosition: null, targetId: null, activeSkill: activeSkill ?? (unitClassId === "mage" ? availableMagicSkillIds?.[0] ?? "fire" : null),
     plannedAction: null, playerInstructions: {}, lastMovedDistance: 0, turnChargeBonus: 0, actedThisTurn: false,
     actionActorType, actionAbilityScore, actionInterval: null, nextActionAt: 0, lastActionAt: null, actionReadyThisPulse: false,
   };
@@ -591,11 +598,13 @@ function getFortificationEffects(battle, entity) {
   return { active, modifier };
 }
 
-function modifierProduct(unit, property) {
+function modifierProduct(unit, property, terrainId = null) {
   const race = RACES[unit.raceId];
   let product = race.modifiers[property] ?? 1;
   unit.equipmentIds.forEach((equipmentId) => { product *= EQUIPMENT[equipmentId]?.modifiers[property] ?? 1; });
   unit.statusEffects.forEach((effect) => { product *= effect.modifiers?.[property] ?? 1; });
+  product *= unit.nationalModifiers?.[property] ?? 1;
+  if (terrainId) product *= unit.nationalTerrainModifiers?.[terrainId]?.[property] ?? 1;
   return product;
 }
 
@@ -769,7 +778,7 @@ function getUnitSupplyConsumption(unit) {
   const classLoad = unit.tags.includes("CAVALRY") ? 1.3 : unit.tags.includes("RANGED") ? 1 : 0;
   const actionLoad = unit.actedThisTurn ? 2.2 : 0;
   const movementLoad = unit.lastMovedDistance * 0.85;
-  return 1.5 + classLoad + actionLoad + movementLoad;
+  return (1.5 + classLoad + actionLoad + movementLoad) * modifierProduct(unit, "supplyConsumption");
 }
 
 export function getLogisticsState(battle, unitOrId) {
@@ -851,10 +860,11 @@ export function getEffectiveStats(battle, unitOrId) {
   const strengthFactor = 0.34 + 0.66 * (unit.soldierCount / Math.max(1, unit.maxSoldierCount));
   const experienceFactor = 0.82 + unit.experience / 220;
   const terrainAffinity = race.terrainAffinity[terrain.id] ?? 1;
+  const unitModifier = (property) => modifierProduct(unit, property, terrain.id);
   const terrainDefense = 1 + tileStatusValue(tile, "defenseBonus", tile.defenseBonus);
   const common = moraleFactor * fatigueFactor * cohesionFactor * strengthFactor * experienceFactor;
   const movement = unit.movement
-    * modifierProduct(unit, "movement")
+    * unitModifier("movement")
     * terrainClassModifier(unit, terrain, "movement")
     * formationModifier(battle, unit, "movement")
     * logistics.modifier
@@ -862,27 +872,30 @@ export function getEffectiveStats(battle, unitOrId) {
     * (0.62 + unit.cohesion / 260)
     * (1 - unit.fatigue * 0.0045);
   const rangedAccuracy = unitClass.stats.accuracy
-    * modifierProduct(unit, "rangedAccuracy")
+    * unitModifier("rangedAccuracy")
     * terrainClassModifier(unit, terrain, "rangedAccuracy")
     * tile.visibilityModifier;
   const result = {
-    attack: unit.attack * modifierProduct(unit, "attack") * terrainClassModifier(unit, terrain, "attack") * formationModifier(battle, unit, "attack") * logistics.modifier * commanderAttack * common,
-    defense: unit.defense * modifierProduct(unit, "defense") * terrainClassModifier(unit, terrain, "defense") * formationModifier(battle, unit, "defense") * logistics.modifier * commanderDefense * common * terrainDefense * (1 + (terrainAffinity - 1) * 0.35) * fortification.modifier("defense"),
+    attack: unit.attack * unitModifier("attack") * terrainClassModifier(unit, terrain, "attack") * formationModifier(battle, unit, "attack") * logistics.modifier * commanderAttack * common,
+    defense: unit.defense * unitModifier("defense") * terrainClassModifier(unit, terrain, "defense") * formationModifier(battle, unit, "defense") * logistics.modifier * commanderDefense * common * terrainDefense * (1 + (terrainAffinity - 1) * 0.35) * fortification.modifier("defense"),
     movement: Math.max(1, movement),
-    rangedAttack: unit.rangedAttack * modifierProduct(unit, "rangedAttack") * terrainClassModifier(unit, terrain, "rangedAttack") * formationModifier(battle, unit, "rangedAttack") * logistics.modifier * commanderAttack * common,
+    rangedAttack: unit.rangedAttack * unitModifier("rangedAttack") * terrainClassModifier(unit, terrain, "rangedAttack") * formationModifier(battle, unit, "rangedAttack") * logistics.modifier * commanderAttack * common,
     rangedAccuracy: clamp(rangedAccuracy * formationModifier(battle, unit, "rangedAccuracy") * logistics.modifier * fortification.modifier("rangedAccuracy"), 0.08, 0.95),
-    range: Math.max(1, unit.range * modifierProduct(unit, "range") * terrainClassModifier(unit, terrain, "range")),
-    magicPower: (unit.magicPower ?? unitClass.stats.magicPower ?? 0) * modifierProduct(unit, "magicPower") * logistics.modifier * commanderAttack * moraleFactor * fatigueFactor,
-    engineering: (unitClass.stats.engineering ?? 0) * modifierProduct(unit, "engineering") * cohesionFactor * fatigueFactor,
-    chargePower: (unitClass.stats.chargePower ?? 0) * modifierProduct(unit, "charge") * terrainClassModifier(unit, terrain, "charge") * formationModifier(battle, unit, "charge") * logistics.modifier,
-    bracePower: (unitClass.stats.bracePower ?? 0) * modifierProduct(unit, "brace") * fortification.modifier("brace"),
-    pursuitPower: (unitClass.stats.pursuitPower ?? 1) * modifierProduct(unit, "pursuit"),
-    durabilityPerSoldier: unitClass.stats.durabilityPerSoldier * modifierProduct(unit, "durabilityPerSoldier"),
-    fatigueCost: unitClass.stats.fatigueCost * modifierProduct(unit, "fatigueCost"),
+    range: Math.max(1, unit.range * unitModifier("range") * terrainClassModifier(unit, terrain, "range")),
+    magicPower: (unit.magicPower ?? unitClass.stats.magicPower ?? 0) * unitModifier("magicPower") * logistics.modifier * commanderAttack * moraleFactor * fatigueFactor,
+    engineering: (unitClass.stats.engineering ?? 0) * unitModifier("engineering") * cohesionFactor * fatigueFactor,
+    chargePower: (unitClass.stats.chargePower ?? 0) * unitModifier("charge") * terrainClassModifier(unit, terrain, "charge") * formationModifier(battle, unit, "charge") * logistics.modifier,
+    bracePower: (unitClass.stats.bracePower ?? 0) * unitModifier("brace") * fortification.modifier("brace"),
+    pursuitPower: (unitClass.stats.pursuitPower ?? 1) * unitModifier("pursuit"),
+    durabilityPerSoldier: unitClass.stats.durabilityPerSoldier * unitModifier("durabilityPerSoldier"),
+    fatigueCost: unitClass.stats.fatigueCost * unitModifier("fatigueCost"),
   };
   result.breakdown = {
     race: race.name,
-    raceModifier: Number(modifierProduct(unit, "attack").toFixed(2)),
+    raceModifier: Number((race.modifiers.attack ?? 1).toFixed(2)),
+    nationalDoctrine: unit.nationalDoctrineName ?? "固有軍制なし",
+    nationalTrait: unit.nationalTraitName ?? "標準部隊",
+    nationalModifier: Number(((unit.nationalModifiers?.attack ?? 1) * (unit.nationalTerrainModifiers?.[terrain.id]?.attack ?? 1)).toFixed(2)),
     commander: commanded ? `${commander.name}の指揮範囲内` : "指揮範囲外・自律行動",
     commanderModifier: Number(commanderAttack.toFixed(2)),
     terrain: terrain.name,
