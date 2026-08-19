@@ -10964,6 +10964,7 @@ body.is-battle-preparation-open { overflow: hidden; }
 .tactical-national-matchup small { color: #8fa79d; font: 800 7px system-ui,sans-serif; letter-spacing: .06em; }
 .tactical-national-matchup strong { color: #e5d4ae; font: 800 9px system-ui,sans-serif; }
 .tactical-national-matchup span { grid-column: 1 / -1; overflow: hidden; color: #9caaa4; font: 7px/1.35 system-ui,sans-serif; text-overflow: ellipsis; white-space: nowrap; }
+.tactical-national-matchup .tactical-generation-badge { color: #72b79d; font-weight: 800; letter-spacing: .04em; }
 .tactical-national-matchup em { grid-column: 1 / -1; overflow: hidden; color: #bda66f; font: 7px system-ui,sans-serif; text-overflow: ellipsis; white-space: nowrap; }
 .tactical-deployment-copy { display: grid; grid-template-columns: auto 1fr; align-items: baseline; gap: 2px 8px; }
 .tactical-deployment-copy span { color: #b9924b; font: 800 7px system-ui, sans-serif; letter-spacing: .16em; }
@@ -11253,6 +11254,9 @@ body.is-battle-preparation-open { overflow: hidden; }
 .tactical-national-unit-sheet header h3 { margin: 0; color: #4f675c; font-size: 10px; }
 .tactical-national-unit-sheet header b { color: #8d6626; font: 800 9px system-ui,sans-serif; }
 .tactical-national-unit-sheet > p { margin: 6px 0; color: #696357; font: 8px/1.45 system-ui,sans-serif; }
+.tactical-national-unit-sheet > .tactical-generated-unit-line { display: grid; grid-template-columns: auto minmax(0,1fr); gap: 6px; align-items: center; padding: 5px 6px; background: rgba(55,112,89,.08); }
+.tactical-generated-unit-line b { color: #39735e; font: 800 7px system-ui,sans-serif; letter-spacing: .05em; }
+.tactical-generated-unit-line span { overflow: hidden; color: #6d786f; font: 7px system-ui,sans-serif; text-overflow: ellipsis; white-space: nowrap; }
 .tactical-national-unit-sheet > div { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 5px; }
 .tactical-national-unit-sheet > div span { display: grid; gap: 2px; padding: 5px; background: rgba(255,255,255,.35); }
 .tactical-national-unit-sheet > div small { color: #8c7a5f; font: 7px system-ui,sans-serif; }
