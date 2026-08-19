@@ -1,4 +1,4 @@
-import { requestLandscapeMode } from "./orientation-control.js";
+import { requestPortraitMode } from "./orientation-control.js";
 import { BUILD_INFO, getBuildCommitUrl } from "./build-info.js";
 import {
   ADMINISTRATION_MANDATES,
@@ -1005,10 +1005,11 @@ function renderAnalysisMode() {
 }
 
 function isCompactMobileShell() {
-  return typeof window.matchMedia === "function" && window.matchMedia("(max-width: 980px) and (orientation: landscape)").matches;
+  return typeof window.matchMedia === "function" && window.matchMedia("(max-width: 980px) and (orientation: portrait)").matches;
 }
 
 let lastLedgerDrawerTrigger = null;
+let ledgerDrawerFocusTimer = null;
 
 function renderTabs() {
   const stage = getCareerStage(state);
@@ -1051,10 +1052,18 @@ function openLedgerDrawer() {
   lastLedgerDrawerTrigger = document.activeElement?.closest?.("button") ?? null;
   view.ledgerDrawerOpen = true;
   view.mobileMoreOpen = false;
-  if (isCompactMobileShell()) requestAnimationFrame(() => elements.closeLedgerDrawer?.focus());
+  if (isCompactMobileShell()) {
+    clearTimeout(ledgerDrawerFocusTimer);
+    ledgerDrawerFocusTimer = setTimeout(() => {
+      if (view.ledgerDrawerOpen && isCompactMobileShell()) elements.closeLedgerDrawer?.focus({ preventScroll: true });
+      ledgerDrawerFocusTimer = null;
+    }, 0);
+  }
 }
 
 function closeLedgerDrawer() {
+  clearTimeout(ledgerDrawerFocusTimer);
+  ledgerDrawerFocusTimer = null;
   view.ledgerDrawerOpen = false;
   renderTabs();
   lastLedgerDrawerTrigger?.focus?.();
@@ -10191,21 +10200,21 @@ document.querySelector("#realmHome").addEventListener("click", () => {
 });
 elements.closeLedgerDrawer.addEventListener("click", closeLedgerDrawer);
 document.querySelector("[data-close-ledger-drawer]")?.addEventListener("click", closeLedgerDrawer);
-const landscapeStartButton = document.querySelector("#requestLandscape");
-const landscapeGuardStatus = document.querySelector("#landscapeGuardStatus");
-landscapeStartButton?.addEventListener("click", async () => {
-  landscapeStartButton.disabled = true;
-  landscapeStartButton.setAttribute("aria-busy", "true");
-  landscapeGuardStatus.hidden = true;
-  const result = await requestLandscapeMode();
+const portraitStartButton = document.querySelector("#requestPortrait");
+const portraitGuardStatus = document.querySelector("#portraitGuardStatus");
+portraitStartButton?.addEventListener("click", async () => {
+  portraitStartButton.disabled = true;
+  portraitStartButton.setAttribute("aria-busy", "true");
+  portraitGuardStatus.hidden = true;
+  const result = await requestPortraitMode();
   if (!result.ok) {
-    landscapeGuardStatus.textContent = "このブラウザでは横画面固定を利用できません";
-    landscapeGuardStatus.hidden = false;
+    portraitGuardStatus.textContent = "このブラウザでは縦画面固定を利用できません。端末を縦向きにしてください。";
+    portraitGuardStatus.hidden = false;
   }
-  landscapeStartButton.disabled = false;
-  landscapeStartButton.removeAttribute("aria-busy");
+  portraitStartButton.disabled = false;
+  portraitStartButton.removeAttribute("aria-busy");
 });
-const compactShellMedia = window.matchMedia("(max-width: 980px) and (orientation: landscape)");
+const compactShellMedia = window.matchMedia("(max-width: 980px) and (orientation: portrait)");
 compactShellMedia.addEventListener?.("change", () => {
   view.mobileMoreOpen = false;
   view.generatedMapLegendInitialized = false;
@@ -10269,13 +10278,13 @@ document.addEventListener("keydown", (event) => {
     elements.mobileMoreToggle?.focus();
     return;
   }
-  if (event.key === "Escape" && view.ledgerDrawerOpen) {
-    closeLedgerDrawer();
-    return;
-  }
   if (event.key === "Escape" && view.characterDetailOpen) {
     view.characterDetailOpen = false;
     renderCharacterDetailModal();
+    return;
+  }
+  if (event.key === "Escape" && view.ledgerDrawerOpen) {
+    closeLedgerDrawer();
     return;
   }
   if (event.key === "Escape" && view.adventureOpen && ["complete", "failed"].includes(state.adventure.activeRun?.phase)) {

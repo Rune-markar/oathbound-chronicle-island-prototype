@@ -290,7 +290,7 @@ test("round-robin mixed-terrain simulations keep every doctrine viable without o
   assert.ok(totals.stalls / totals.matches < 0.15, `too many mixed-terrain simulations stalled: ${totals.stalls}/${totals.matches}`);
 });
 
-test("normal tactical UI exposes national doctrine and traits without hiding the short-landscape battlefield", async () => {
+test("normal tactical UI exposes national doctrine and traits in the portrait battlefield", async () => {
   const [app, styles] = await Promise.all([
     readFile(new URL("../src/app.js", import.meta.url), "utf8"),
     readFile(new URL("../styles.css", import.meta.url), "utf8"),
@@ -304,7 +304,11 @@ test("normal tactical UI exposes national doctrine and traits without hiding the
   assert.match(app, /nationalTraitDescription.*nationalStrength.*nationalRisk/s);
   assert.match(styles, /tactical-national-matchup/);
   assert.match(styles, /tactical-generated-unit-line/);
-  assert.match(styles, /max-width: 980px.*orientation: landscape.*max-height: 430px/s);
-  assert.match(styles, /tactical-map-scroll \{ padding: 8px 10px 12px; \}/);
-  assert.match(styles, /tactical-battle-map \{ --battle-tile-size: 38px; \}/);
+  assert.match(styles, /max-width: 980px.*orientation: portrait/s);
+  const portraitPass = styles.match(/2026-08 mobile portrait readability pass[\s\S]*$/)?.[0] ?? "";
+  assert.match(portraitPass, /tactical-battle-header-actions[\s\S]*?overflow-x: auto/s);
+  assert.match(portraitPass, /tactical-turn-actions button\s*\{[^}]*min-height: 44px;[^}]*font-size: 12px;/s);
+  assert.match(portraitPass, /tactical-order-grid button,[\s\S]*?tactical-facing-grid button\s*\{[^}]*min-height: 44px;[^}]*font-size: 12px;/s);
+  assert.match(portraitPass, /tactical-battle-inspector\s*\{[^}]*inset: auto 8px 8px !important;[^}]*max-height: 70%;/s);
+  assert.match(styles, /tactical-map-scroll\s*\{[^}]*overflow: auto;/s);
 });

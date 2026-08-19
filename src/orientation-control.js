@@ -1,4 +1,4 @@
-export async function requestLandscapeMode({ documentRef = document, screenRef = screen } = {}) {
+export async function requestPortraitMode({ documentRef = document, screenRef = screen } = {}) {
   const requestFullscreen = documentRef?.documentElement?.requestFullscreen;
   const lockOrientation = screenRef?.orientation?.lock;
   if (typeof requestFullscreen !== "function") return { ok: false, reason: "fullscreen-unsupported" };
@@ -12,7 +12,7 @@ export async function requestLandscapeMode({ documentRef = document, screenRef =
   }
 
   try {
-    await lockOrientation.call(screenRef.orientation, "landscape");
+    await lockOrientation.call(screenRef.orientation, "portrait");
     return { ok: true };
   } catch {
     if (enteredFullscreen && typeof documentRef.exitFullscreen === "function") {

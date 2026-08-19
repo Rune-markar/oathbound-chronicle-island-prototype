@@ -15758,8 +15758,8 @@ body.is-location-focus .village-central-status article > strong { font-size: cla
   .offline-report-board { padding: 20px; }
 }
 
-/* Landscape-only play kit: persistent map, PC-style command chrome, opt-in drawers. */
-.landscape-guard { display: none; }
+/* Portrait-first play kit: persistent map, PC-style command chrome, opt-in drawers. */
+.portrait-guard { display: none; }
 
 .strategy-shell {
   height: 100dvh;
@@ -15938,7 +15938,7 @@ body.is-location-focus .village-central-status article > strong { font-size: cla
 .mobile-more-menu [data-mobile-more-action] { display: none; }
 .ledger-drawer-scrim { display: none; }
 
-@media (max-width: 980px) and (orientation: landscape) {
+@media (max-width: 980px) and (orientation: portrait) {
   body {
     overflow: hidden;
     overscroll-behavior: none;
@@ -16147,14 +16147,14 @@ body.is-location-focus .village-central-status article > strong { font-size: cla
   }
 }
 
-@media (orientation: portrait) {
+@media (max-width: 980px) and (orientation: landscape) {
   body { overflow: hidden; }
-  body > :not(.landscape-guard),
-  body > :not(.landscape-guard) * {
+  body > :not(.portrait-guard),
+  body > :not(.portrait-guard) * {
     visibility: hidden !important;
     pointer-events: none !important;
   }
-  .landscape-guard {
+  .portrait-guard {
     position: fixed;
     z-index: 1000000;
     inset: 0;
@@ -16167,7 +16167,7 @@ body.is-location-focus .village-central-status article > strong { font-size: cla
     background: radial-gradient(circle at 50% 32%, rgba(70, 120, 107, .3), transparent 30%), linear-gradient(155deg, #10282a, #091719 70%);
     text-align: center;
   }
-  .landscape-guard-device {
+  .portrait-guard-device {
     width: 82px;
     height: 132px;
     display: grid;
@@ -16175,18 +16175,17 @@ body.is-location-focus .village-central-status article > strong { font-size: cla
     border: 3px solid #d5b869;
     border-radius: 12px;
     box-shadow: 0 12px 34px rgba(0, 0, 0, .34);
-    transform: rotate(90deg);
   }
-  .landscape-guard-device i {
+  .portrait-guard-device i {
     width: 54px;
     height: 88px;
     border: 1px solid rgba(213, 184, 105, .45);
     background: linear-gradient(145deg, #315c53, #193a3a);
   }
-  .landscape-guard small { color: #d5b869; font: 800 10px/1 system-ui, sans-serif; letter-spacing: .2em; }
-  .landscape-guard h1 { margin: 0; font: 700 clamp(24px, 7vw, 42px)/1.25 Georgia, "Yu Mincho", serif; }
-  .landscape-guard p { max-width: 420px; margin: 0; color: #bdc9c3; line-height: 1.7; }
-  .landscape-guard-status {
+  .portrait-guard small { color: #d5b869; font: 800 10px/1 system-ui, sans-serif; letter-spacing: .2em; }
+  .portrait-guard h1 { margin: 0; font: 700 clamp(24px, 7vw, 42px)/1.25 Georgia, "Yu Mincho", serif; }
+  .portrait-guard p { max-width: 420px; margin: 0; color: #bdc9c3; line-height: 1.7; }
+  .portrait-guard-status {
     max-width: 420px;
     margin: 0;
     padding: 9px 12px;
@@ -16194,8 +16193,8 @@ body.is-location-focus .village-central-status article > strong { font-size: cla
     border: 1px solid rgba(213, 184, 105, .45);
     background: rgba(78, 35, 26, .5);
   }
-  .landscape-guard-status[hidden] { display: none; }
-  .landscape-guard button {
+  .portrait-guard-status[hidden] { display: none; }
+  .portrait-guard button {
     min-height: 48px;
     margin-top: 4px;
     padding: 10px 18px;
@@ -16205,7 +16204,7 @@ body.is-location-focus .village-central-status article > strong { font-size: cla
     cursor: pointer;
     font-weight: 800;
   }
-  .landscape-guard button:disabled { cursor: wait; opacity: .68; }
+  .portrait-guard button:disabled { cursor: wait; opacity: .68; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -16303,85 +16302,135 @@ body.is-location-focus .village-central-status article > strong { font-size: cla
 @media (max-width: 1100px) { .mastery-card-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 @media (max-width: 720px) { .mastery-board { padding:12px; } .mastery-board > header,.mastery-group > header { align-items:flex-start; } .mastery-card-grid { grid-template-columns:1fr; } }
 
-/* 2026-08 mobile landscape readability pass.
-   Keep the map-led play shell, but give persistent controls and opt-in ledgers
-   enough room to be read and operated on short phone viewports. */
-@media (max-width: 980px) and (orientation: landscape) {
+/* 2026-08 mobile portrait readability pass.
+   Keep the map-led play shell, but use the vertical axis for persistent context
+   and present long controls as a wide bottom sheet. */
+@media (max-width: 980px) and (orientation: portrait) {
   .strategy-shell {
-    --compact-topbar-height: 42px;
-    --compact-navbar-height: 50px;
+    --compact-topbar-height: 94px;
+    --compact-navbar-height: calc(64px + env(safe-area-inset-bottom));
     grid-template-rows: var(--compact-topbar-height) minmax(0, 1fr) var(--compact-navbar-height);
   }
 
   .left-hud {
     height: var(--compact-topbar-height);
-    grid-template-columns: minmax(96px, 18vw) minmax(0, 1fr) minmax(176px, 27vw);
+    grid-template-columns: minmax(0, 1fr) minmax(132px, 38vw);
+    grid-template-rows: 44px 50px;
   }
 
-  /* An older <=700px rule hid this entry after the compact shell was added. */
   .left-hud .realm-identity {
-    min-height: var(--compact-topbar-height);
-    height: var(--compact-topbar-height);
+    grid-column: 1;
+    grid-row: 1;
+    min-height: 44px;
+    height: 44px;
     display: flex;
-    padding-inline: 10px;
+    padding-inline: max(12px, env(safe-area-inset-left));
   }
 
   .left-hud .realm-identity strong,
   .left-hud .campaign-bar-next > strong,
   .left-hud .date-button strong,
   .mobile-time-label {
-    font-size: 11px;
+    font-size: 12px;
   }
 
-  .left-hud .campaign-bar,
-  .left-hud .campaign-bar-next,
-  .left-hud .date-controls,
+  .left-hud .campaign-bar {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    min-height: 50px;
+    height: 50px;
+    border-top: 1px solid rgba(221, 200, 147, .14);
+  }
+
+  .left-hud .campaign-bar-next {
+    min-height: 50px;
+    height: 50px;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 4px 9px;
+    padding: 6px max(12px, env(safe-area-inset-left));
+  }
+  .left-hud .campaign-bar-next > small {
+    display: block;
+    grid-column: 1;
+    grid-row: 1 / 3;
+    color: #c4a75d;
+    font: 800 10px/1.3 system-ui, sans-serif;
+  }
+  .left-hud .campaign-bar-next > strong,
+  .left-hud .campaign-bar-next > span {
+    grid-column: 2;
+    white-space: normal;
+  }
+  .left-hud .campaign-bar-next > strong {
+    display: -webkit-box;
+    overflow: hidden;
+    line-height: 1.35;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  .left-hud .date-controls {
+    grid-column: 2;
+    grid-row: 1;
+    min-height: 44px;
+    height: 44px;
+  }
   .left-hud .date-button {
-    min-height: var(--compact-topbar-height);
-    height: var(--compact-topbar-height);
+    min-height: 44px;
+    height: 44px;
+    gap: 4px;
+    padding-inline: 8px max(10px, env(safe-area-inset-right));
   }
-
-  .left-hud .campaign-bar-next { padding-inline: 11px; }
-  .left-hud .date-button { gap: 8px; padding-inline: 10px; }
+  .left-hud .date-button strong { font-size: 10px; }
+  .mobile-time-label { font-size: 11px; }
 
   .left-dock > .primary-tabs {
     min-height: var(--compact-navbar-height);
+    padding-bottom: env(safe-area-inset-bottom);
   }
 
   .left-dock > .primary-tabs > button,
   .left-dock > .primary-tabs > [data-mobile-primary][hidden] {
-    min-height: var(--compact-navbar-height);
-    height: var(--compact-navbar-height);
-    grid-template-rows: 19px 14px;
-    gap: 2px;
-    font-size: 11px;
+    min-height: 64px;
+    height: 64px;
+    grid-template-rows: 24px 16px;
+    gap: 3px;
+    font-size: 12px;
   }
 
-  .left-dock > .primary-tabs > button > span { font-size: 16px; }
+  .left-dock > .primary-tabs > button > span { font-size: 20px; }
 
   .ledger-drawer {
-    top: var(--compact-topbar-height);
+    top: max(calc(var(--compact-topbar-height) + 80px), 34dvh);
     bottom: var(--compact-navbar-height);
-    width: min(72vw, 560px);
-    grid-template-rows: 48px minmax(0, 1fr);
+    left: 0;
+    width: 100%;
+    grid-template-rows: 52px minmax(0, 1fr);
+    border-top: 1px solid #a6813a;
+    border-right: 0;
+    border-radius: 18px 18px 0 0;
+    box-shadow: 0 -18px 42px rgba(4, 13, 14, .52);
+    transform: translateY(24px);
   }
+  .ledger-drawer.is-open { transform: translateY(0); }
 
   .ledger-drawer-bar { padding-left: 16px; }
-  .ledger-drawer-bar small { font-size: 9px; }
-  .ledger-drawer-bar strong { font-size: 13px; }
-  .ledger-drawer-bar button { width: 40px; height: 40px; }
+  .ledger-drawer-bar small { font-size: 10px; }
+  .ledger-drawer-bar strong { font-size: 14px; }
+  .ledger-drawer-bar button { width: 44px; height: 44px; }
 
-  .ledger-drawer .panel-heading { padding: 16px 18px; }
-  .ledger-drawer .panel-heading span { font-size: 10px; }
-  .ledger-drawer .panel-heading h1 { font-size: 22px; }
-  .ledger-drawer .panel-heading p { font-size: 12px; line-height: 1.5; }
-  .ledger-drawer .panel-body { padding: 14px; }
-  .ledger-drawer .panel-body small { font-size: max(11px, 1em); line-height: 1.4; }
+  .ledger-drawer .panel-heading { padding: 18px 20px; }
+  .ledger-drawer .panel-heading span { font-size: 11px; }
+  .ledger-drawer .panel-heading h1 { font-size: 24px; }
+  .ledger-drawer .panel-heading p { font-size: 14px; line-height: 1.6; }
+  .ledger-drawer .panel-body { padding: 16px; }
+  .ledger-drawer .panel-body small { font-size: max(12px, 1em); line-height: 1.5; }
   .ledger-drawer .panel-body button,
   .ledger-drawer .panel-body li,
-  .ledger-drawer .panel-body dd { min-height: 40px; font-size: max(12px, 1em); }
+  .ledger-drawer .panel-body dd { min-height: 44px; font-size: max(13px, 1em); }
   .ledger-drawer .panel-body :where(small, span, strong, b, button, dt, dd) {
-    font-size: max(11px, 1em);
+    font-size: max(12px, 1em);
   }
 
   .personal-map-command { padding: 12px; }
@@ -16404,25 +16453,27 @@ body.is-location-focus .village-central-status article > strong { font-size: cla
   .generated-movement-dial small,
   .generated-shipping-command small,
   .generated-shipping-command > header > strong {
-    font-size: 11px;
-    line-height: 1.4;
+    font-size: 12px;
+    line-height: 1.5;
   }
 
   .personal-map-command > header > strong { line-height: 1; }
-  .personal-map-current-copy { display: block; font-size: 12px; }
-  .personal-map-explore strong { font-size: 13px; }
-  .personal-map-destinations { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px; }
-  .personal-map-destinations > button { min-height: 48px; padding: 8px; }
+  .personal-map-current-copy { display: block; font-size: 13px; }
+  .personal-map-explore strong { font-size: 14px; }
+  .personal-map-destinations { grid-template-columns: 1fr; gap: 9px; }
+  .personal-map-destinations > button { min-height: 52px; padding: 10px; }
 
   .left-info-drawer .back-menu-content {
-    top: var(--compact-topbar-height);
-    bottom: calc(var(--compact-navbar-height) + 42px);
-    width: min(72vw, 560px);
+    top: max(calc(var(--compact-topbar-height) + 24px), 18dvh);
+    bottom: calc(var(--compact-navbar-height) + 48px);
+    width: 100%;
+    border-radius: 18px 18px 0 0;
   }
 
   .left-info-drawer > footer {
     bottom: var(--compact-navbar-height);
-    width: min(72vw, 560px);
+    width: 100%;
+    min-height: 48px;
   }
 
   .ledger-drawer-scrim:not([hidden]) {
@@ -16431,39 +16482,110 @@ body.is-location-focus .village-central-status article > strong { font-size: cla
 
   .mobile-more-menu {
     bottom: calc(var(--compact-navbar-height) + 8px);
-    width: min(360px, calc(100vw - 16px));
+    right: max(8px, env(safe-area-inset-right));
+    left: max(8px, env(safe-area-inset-left));
+    width: auto;
     max-height: calc(100dvh - var(--compact-topbar-height) - var(--compact-navbar-height) - 16px);
   }
 
   .mobile-more-menu button,
   .mobile-more-menu [data-mobile-more-action] {
-    min-height: 48px;
-    font-size: 12px;
+    min-height: 52px;
+    font-size: 13px;
   }
 
-  /* The entry hub stays scrollable, but its primary choices no longer collapse
-     into a long one-column strip merely because a phone is short and wide. */
+  .merchant-market-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .merchant-market-good { grid-template-columns: 1fr; gap: 10px; }
+  .merchant-market-prices { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .merchant-market-good input,
+  .merchant-market-actions button { min-height: 44px; }
+  .merchant-trade-history li { grid-template-columns: 1fr; }
+
+  /* The entry hub and new-character flow use the portrait width without
+     shrinking copy or placing important actions side by side. */
   .launch-screen {
     min-height: 100dvh;
-    gap: 12px;
-    padding: 14px max(18px, env(safe-area-inset-right)) 18px max(18px, env(safe-area-inset-left));
+    gap: 16px;
+    padding: max(28px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) calc(24px + env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));
   }
   .launch-brand { max-width: none; }
-  .launch-title-logo { width: min(300px, 42vw); }
-  .launch-brand p { max-width: 70ch; font-size: 13px; }
-  .launch-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .launch-title-logo { width: min(340px, 100%); }
+  .launch-brand p { max-width: 48ch; font-size: 14px; }
+  .launch-actions { grid-template-columns: 1fr; }
   .launch-actions button,
-  .launch-actions .launch-status-link { min-height: 66px; padding: 10px 14px; }
+  .launch-actions .launch-status-link { min-height: 74px; padding: 13px 15px; }
   .launch-actions button small,
   .launch-actions .launch-status-link small,
   .launch-actions button span,
-  .launch-actions .launch-status-link span { font-size: 11px; }
+  .launch-actions .launch-status-link span { font-size: 12px; }
   .developer-launcher { align-self: start; padding-top: 12px; }
-  .developer-launch-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .developer-launch-grid { grid-template-columns: 1fr; }
   .developer-launch-grid button,
-  .developer-launch-grid a { min-height: 64px; }
-  .developer-launch-grid strong { font-size: 13px; }
+  .developer-launch-grid a { min-height: 68px; }
+  .developer-launch-grid strong { font-size: 14px; }
   .developer-launch-grid small,
-  .developer-launch-grid b { font-size: 11px; }
-  .launch-screen > footer { font-size: 10px; }
+  .developer-launch-grid b { font-size: 12px; }
+  .launch-screen > footer { font-size: 11px; }
+
+  .goddess-prologue.is-selecting .goddess-portrait,
+  .goddess-prologue.is-generating .goddess-portrait,
+  .goddess-prologue.is-departing .goddess-portrait {
+    top: 0;
+    right: 0;
+    bottom: 200px;
+    left: 0;
+    width: 100vw;
+    opacity: .34;
+  }
+  .goddess-prologue.is-selecting .goddess-character-setup {
+    top: 72px;
+    right: 12px;
+    bottom: auto;
+    left: 12px;
+    width: auto;
+    max-height: calc(100% - 300px);
+    padding: 14px;
+  }
+  .goddess-prologue.is-selecting .goddess-character-setup .character-creation-form input,
+  .goddess-prologue.is-selecting .goddess-character-setup .character-creation-form select { height: 44px; }
+  .goddess-dialogue { min-height: 174px; }
+
+  .tactical-battle-header {
+    gap: 8px;
+    padding: 9px 11px;
+  }
+  .tactical-battle-header span { display: none; }
+  .tactical-battle-header h1 { margin: 0; font-size: 16px; }
+  .tactical-battle-header-actions {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+  .tactical-battle-header-actions button,
+  .tactical-more-actions > summary,
+  .tactical-turn-actions button {
+    min-height: 44px;
+    font-size: 12px;
+    line-height: 1.2;
+  }
+  .tactical-battle-header-actions button,
+  .tactical-more-actions > summary { white-space: nowrap; }
+  .tactical-command-guide > ol li { min-height: 36px; }
+  .tactical-command-roster button { min-height: 48px; }
+  .tactical-order-grid button,
+  .tactical-facing-grid button {
+    min-height: 44px;
+    font-size: 12px;
+    line-height: 1.2;
+  }
+  .tactical-battle-inspector {
+    inset: auto 8px 8px !important;
+    width: auto;
+    max-height: 70%;
+  }
+  .tactical-inspector-close { width: 44px; height: 44px; }
+  .tactical-battle-footer { min-height: 64px; padding-bottom: calc(8px + env(safe-area-inset-bottom)); }
 }

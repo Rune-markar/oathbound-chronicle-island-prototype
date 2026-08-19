@@ -153,7 +153,7 @@ test("undiscovered regions are shown with a subdued gray knowledge overlay", () 
   assert.match(styleSource, /\.generated-region-knowledge-layer\s*\{[^}]*pointer-events: none;/s);
 });
 
-test("landscape shell keeps the map visible and moves detailed information into an opt-in drawer", () => {
+test("map shell keeps the map visible and moves detailed information into an opt-in drawer", () => {
   const leftDock = markup.match(/<aside class="left-dock"[^>]*>[\s\S]*?<\/aside>/)?.[0] ?? "";
   assert.match(leftDock, /class="left-hud"/);
   assert.match(leftDock, /class="grand-topbar"/);
@@ -164,7 +164,7 @@ test("landscape shell keeps the map visible and moves detailed information into 
   assert.match(appSource, /class="generated-command-status"/);
   assert.doesNotMatch(appSource, /class="generated-move-command"/);
   assert.doesNotMatch(appSource, /<h2>地方へ移動<\/h2>/);
-  assert.match(styleSource, /Landscape-only play kit/);
+  assert.match(styleSource, /Portrait-first play kit/);
   assert.match(styleSource, /\.strategy-shell\s*\{[^}]*height: 100dvh;[^}]*grid-template-columns: 72px minmax\(0, 1fr\);/s);
   assert.match(styleSource, /\.ledger-drawer\s*\{[^}]*position: fixed;[^}]*visibility: hidden;/s);
   assert.match(styleSource, /\.ledger-drawer\.is-open\s*\{[^}]*visibility: visible;/s);
@@ -172,7 +172,7 @@ test("landscape shell keeps the map visible and moves detailed information into 
   assert.match(appSource, /function openLedgerDrawer\(\)/);
 });
 
-test("compact landscape phones use a fixed top-map-bottom shell without page scrolling", () => {
+test("compact portrait phones use a fixed top-map-bottom shell without page scrolling", () => {
   const primaryTabs = markup.match(/<nav class="primary-tabs"[^>]*>[\s\S]*?<\/nav>/)?.[0] ?? "";
   const expectedOrder = [
     'data-shortcut-tab="world"',
@@ -194,41 +194,53 @@ test("compact landscape phones use a fixed top-map-bottom shell without page scr
   assert.match(primaryTabs, /data-panel="diplomacy"/);
   assert.match(primaryTabs, /data-panel="military"/);
   assert.match(markup, /id="ledgerDrawerScrim"[^>]*hidden/);
-  assert.match(styleSource, /@media \(max-width: 980px\) and \(orientation: landscape\)[\s\S]*?grid-template-rows: 34px minmax\(0, 1fr\) 44px;/);
-  assert.match(styleSource, /@media \(max-width: 980px\) and \(orientation: landscape\)[\s\S]*?\.primary-tabs\s*\{[^}]*grid-column: 1;[^}]*grid-row: 3;[^}]*grid-template-columns: repeat\(6, minmax\(0, 1fr\)\);/s);
-  assert.match(styleSource, /@media \(max-width: 980px\) and \(orientation: landscape\)[\s\S]*?\.ledger-drawer\s*\{[^}]*top: 34px;[^}]*bottom: 44px;[^}]*left: 0;[^}]*width: min\(45vw, 390px\);/s);
+  const portraitPass = styleSource.match(/2026-08 mobile portrait readability pass[\s\S]*$/)?.[0] ?? "";
+  assert.match(portraitPass, /--compact-topbar-height: 94px/);
+  assert.match(portraitPass, /--compact-navbar-height: calc\(64px \+ env\(safe-area-inset-bottom\)\)/);
+  assert.match(styleSource, /@media \(max-width: 980px\) and \(orientation: portrait\)[\s\S]*?\.primary-tabs\s*\{[^}]*grid-column: 1;[^}]*grid-row: 3;[^}]*grid-template-columns: repeat\(6, minmax\(0, 1fr\)\);/s);
+  assert.match(portraitPass, /\.ledger-drawer\s*\{[^}]*top: max\(calc\(var\(--compact-topbar-height\) \+ 80px\), 34dvh\);[^}]*bottom: var\(--compact-navbar-height\);[^}]*left: 0;[^}]*width: 100%;/s);
   assert.match(styleSource, /overscroll-behavior: contain/);
 });
 
-test("compact landscape readability overrides keep identity, navigation, and ledger copy legible", () => {
-  const readabilityPass = styleSource.match(/2026-08 mobile landscape readability pass[\s\S]*$/)?.[0] ?? "";
-  assert.match(readabilityPass, /--compact-topbar-height: 42px/);
-  assert.match(readabilityPass, /--compact-navbar-height: 50px/);
+test("compact portrait readability overrides keep identity, navigation, and ledger copy legible", () => {
+  const readabilityPass = styleSource.match(/2026-08 mobile portrait readability pass[\s\S]*$/)?.[0] ?? "";
+  assert.match(readabilityPass, /--compact-topbar-height: 94px/);
+  assert.match(readabilityPass, /--compact-navbar-height: calc\(64px \+ env\(safe-area-inset-bottom\)\)/);
   assert.match(readabilityPass, /\.left-hud \.realm-identity\s*\{[^}]*display: flex;/s);
-  assert.match(readabilityPass, /\.primary-tabs > button[\s\S]*?font-size: 11px/);
-  assert.match(readabilityPass, /\.ledger-drawer\s*\{[^}]*width: min\(72vw, 560px\);/s);
+  assert.match(readabilityPass, /\.primary-tabs > button[\s\S]*?font-size: 12px/);
+  assert.match(readabilityPass, /\.ledger-drawer\s*\{[^}]*width: 100%;/s);
   assert.match(readabilityPass, /\.ledger-drawer \.panel-body :where\(small, span, strong, b, button, dt, dd\)/);
-  assert.match(readabilityPass, /\.launch-actions\s*\{\s*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/);
+  assert.match(readabilityPass, /\.launch-actions\s*\{\s*grid-template-columns: 1fr;/);
+  assert.match(readabilityPass, /\.goddess-prologue\.is-selecting \.goddess-character-setup\s*\{[^}]*right: 12px;[^}]*left: 12px;[^}]*width: auto;/s);
+  assert.match(readabilityPass, /\.goddess-prologue\.is-selecting \.goddess-character-setup \.character-creation-form input,[\s\S]*?height: 44px;/);
 });
 
 test("compact mobile navigation preserves map state and exposes accessible locked and drawer states", () => {
   assert.match(appSource, /mobileMoreOpen: false/);
-  assert.match(appSource, /function isCompactMobileShell\(\)/);
+  assert.match(appSource, /function isCompactMobileShell\(\)[\s\S]*?max-width: 980px\) and \(orientation: portrait\)/);
+  assert.match(appSource, /compactShellMedia = window\.matchMedia\("\(max-width: 980px\) and \(orientation: portrait\)"\)/);
   assert.match(appSource, /aria-current/);
   assert.match(appSource, /aria-disabled/);
   assert.match(appSource, /data-mobile-more-toggle/);
   assert.match(appSource, /data-close-ledger-drawer/);
+  assert.match(appSource, /ledgerDrawerFocusTimer = setTimeout\([\s\S]*?elements\.closeLedgerDrawer\?\.focus\(\{ preventScroll: true \}\)/);
+  assert.match(appSource, /lastLedgerDrawerTrigger\?\.focus\?\.\(\)/);
   assert.match(appSource, /if \(!isCompactMobileShell\(\)\) clearTileDetailSelection\(\)/);
   assert.match(appSource, /generatedMapLegendInitialized: false/);
   assert.match(appSource, /view\.generatedMapLegendOpen = !isCompactMobileShell\(\)/);
+  assert.ok(
+    appSource.indexOf('event.key === "Escape" && view.characterDetailOpen')
+      < appSource.indexOf('event.key === "Escape" && view.ledgerDrawerOpen'),
+    "Escape must close the foreground character dialog before its drawer",
+  );
 });
 
-test("portrait screens offer an app-controlled landscape start action", () => {
-  assert.match(markup, /id="landscapeGuardTitle">横画面でゲームを開始/);
-  assert.match(markup, /id="requestLandscape"[^>]*>横画面で開始/);
-  assert.match(markup, /id="landscapeGuardStatus"[^>]*role="status"[^>]*aria-live="polite"/);
-  assert.doesNotMatch(markup, /端末を横向きにしてください|横向きに回転/);
-  assert.match(styleSource, /@media \(orientation: portrait\)[\s\S]*?\.landscape-guard\s*\{[\s\S]*?display: grid;/);
+test("compact landscape screens offer an app-controlled portrait start action", () => {
+  assert.match(markup, /id="portraitGuardTitle">縦画面でゲームを開始/);
+  assert.match(markup, /id="requestPortrait"[^>]*>縦画面で開始/);
+  assert.match(markup, /id="portraitGuardStatus"[^>]*role="status"[^>]*aria-live="polite"/);
+  assert.match(styleSource, /@media \(max-width: 980px\) and \(orientation: landscape\)[\s\S]*?\.portrait-guard\s*\{[\s\S]*?display: grid;/);
+  assert.doesNotMatch(styleSource, /@media \(orientation: portrait\)[\s\S]*?visibility: hidden !important/);
 });
 
 test("personal log ticker shows four rows and the full chronicle folds after ten entries", () => {
