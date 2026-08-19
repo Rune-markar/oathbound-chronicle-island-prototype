@@ -271,6 +271,7 @@ export function createBattleState({
     formations: { player: "line", enemy: "line", ...(formations ?? {}) },
     actionTime: 0,
     actionTimingConfig: resolveActionTimingConfig(actionTimingConfig ?? {}),
+    combatEvents: [],
     log: [{ turn: 0, phase: "command", message: "両軍の初期配置が完了しました。" }],
   };
 }
@@ -1032,6 +1033,28 @@ function addLog(battle, phase, message) {
   if (battle.log.length > 120) battle.log.splice(0, battle.log.length - 120);
 }
 
+function recordCombatEvent(battle, event) {
+  battle.combatEvents ??= [];
+  battle.combatEvents.push({ turn: battle.turn, sequence: battle.combatEvents.length, ...event });
+  if (battle.combatEvents.length > 80) battle.combatEvents.splice(0, battle.combatEvents.length - 80);
+}
+
+function recordAttackEvent(battle, { kind, actor = null, target, hit = true, result = null, targetStrength = null }) {
+  recordCombatEvent(battle, {
+    type: "attack",
+    kind,
+    actorId: actor?.id ?? null,
+    targetId: target.id,
+    side: actor?.side ?? null,
+    from: { ...(actor?.position ?? target.position) },
+    to: { ...target.position },
+    hit,
+    casualties: result?.casualties ?? 0,
+    damage: Number((result?.hpDamage ?? result?.damage ?? 0).toFixed(2)),
+    severity: Math.min(1, (result?.casualties ?? 0) / Math.max(1, targetStrength ?? target.soldierCount)),
+  });
+}
+
 function activeForCombat(unit) {
   return Boolean(unit && !["ROUTED", "DESTROYED", "ESCAPED"].includes(unit.state) && unit.soldierCount > 0);
 }
@@ -1328,7 +1351,7 @@ function commandPhase(battle) {
 }
 
 function applyDamage(battle, target, power, moraleDamage, sourceName, phase, casualtyMultiplier = 1) {
-  if (!onField(target)) return { casualties: 0, damage: 0 };
+  if (!onField(target)) return { casualties: 0, damage: 0, hpDamage: 0 };
   const stats = getEffectiveStats(battle, target);
   const variance = 0.88 + nextRandom(battle) * 0.24;
   const damage = Math.max(0, power * variance);
@@ -1349,7 +1372,7 @@ function applyDamage(battle, target, power, moraleDamage, sourceName, phase, cas
   addLog(battle, phase, personalCombatant
     ? `${sourceName} → ${target.name}：HP${Math.max(1, Math.round(hpDamage))}損耗、残りHP${Math.round(target.hp)}。`
     : `${sourceName} → ${target.name}：${casualties}名損耗、士気${Math.round(target.morale)}。`);
-  return { casualties, damage };
+  return { casualties, damage, hpDamage };
 }
 
 function disengageCheck(battle, unit) {
@@ -1361,7 +1384,9 @@ function disengageCheck(battle, unit) {
     addLog(battle, "movement", `${unit.name}は交戦から離脱しました。`);
     return true;
   }
-  applyDamage(battle, unit, 12, 14, "離脱失敗", "movement", 1.15);
+  const targetStrength = unit.soldierCount;
+  const result = applyDamage(battle, unit, 12, 14, "離脱失敗", "movement", 1.15);
+  recordAttackEvent(battle, { kind: "impact", target: unit, result, targetStrength });
   unit.cohesion = clamp(unit.cohesion - 12, 0, 100);
   unit.plannedPosition = null;
   return false;
@@ -1441,7 +1466,9 @@ function chargeReactionPhase(battle) {
     attacker.turnChargeBonus = preview.chargeBonus;
     if (preview.braced) {
       const defenderStats = getEffectiveStats(battle, target);
-      applyDamage(battle, attacker, defenderStats.attack * 0.22 * preview.braceCounterMultiplier, 18 * preview.braceCounterMultiplier, `${target.name}の槍衾迎撃`, "charge_reaction", 1.35);
+      const targetStrength = attacker.soldierCount;
+      const result = applyDamage(battle, attacker, defenderStats.attack * 0.22 * preview.braceCounterMultiplier, 18 * preview.braceCounterMultiplier, `${target.name}の槍衾迎撃`, "charge_reaction", 1.35);
+      recordAttackEvent(battle, { kind: "charge", actor: target, target: attacker, result, targetStrength });
       attacker.turnChargeBonus *= 0.25;
       addLog(battle, "charge_reaction", `${attacker.name}の正面突撃は槍兵のBraceに阻まれました。`);
     } else {
@@ -1478,11 +1505,14 @@ function rangedPhase(battle) {
     const hitChance = clamp(stats.rangedAccuracy * density * targetTile.visibilityModifier, 0.08, 0.94);
     if (nextRandom(battle) > hitChance) {
       addLog(battle, "ranged", `${attacker.name}の斉射は${target.name}を捉えられませんでした。`);
+      recordAttackEvent(battle, { kind: "ranged", actor: attacker, target, hit: false });
       return;
     }
     const defense = getEffectiveStats(battle, target).defense;
     const power = Math.max(3, stats.rangedAttack * 14 / Math.max(20, defense));
-    applyDamage(battle, target, power, power * 0.95, `${attacker.name}の射撃`, "ranged");
+    const targetStrength = target.soldierCount;
+    const result = applyDamage(battle, target, power, power * 0.95, `${attacker.name}の射撃`, "ranged");
+    recordAttackEvent(battle, { kind: "ranged", actor: attacker, target, result, targetStrength });
     attacker.fatigue = clamp(attacker.fatigue + 2, 0, 100);
     attacker.actedThisTurn = true;
   });
@@ -1556,6 +1586,15 @@ function applyMagicSkillMutable(battle, caster, skillId, position) {
   if (caster.availableMagicSkillIds && !caster.availableMagicSkillIds.includes(skillId)) throw new Error("この魔法は装備していません");
   if (distance(caster.position, position) > skill.range) throw new Error("魔法の射程外です");
   const stats = getEffectiveStats(battle, caster);
+  const affectedBefore = new Map(magicEligibleUnits(battle, caster, skill, position)
+    .map((unit) => [unit.id, structuredClone(unit)]));
+  const areaPositions = battle.map.tiles
+    .filter((tile) => distance(tile.position, position) <= skill.radius)
+    .map((tile) => ({ ...tile.position }));
+  const tileEffects = skill.effects
+    .filter((effect) => effect.type === "tile_status")
+    .flatMap((effect) => areaPositions
+      .map((tilePosition) => ({ statusId: effect.statusId, position: { ...tilePosition } })));
   skill.effects.forEach((effect) => {
     if (effect.type === "tile_status") {
       battle.map.tiles.filter((tile) => distance(tile.position, position) <= skill.radius).forEach((tile) => applyTileStatus(battle, tile.position, effect));
@@ -1589,10 +1628,39 @@ function applyMagicSkillMutable(battle, caster, skillId, position) {
   battle.magicUsage ??= {};
   battle.magicUsage[skillId] = (battle.magicUsage[skillId] ?? 0) + 1;
   addLog(battle, "magic", `${caster.name}が${skill.name}を発動しました。`);
+  const outcomes = [...affectedBefore.entries()].map(([targetId, previous]) => {
+    const target = getBattleUnit(battle, targetId);
+    return {
+      targetId,
+      position: { ...target.position },
+      casualties: Math.max(0, previous.soldierCount - target.soldierCount),
+      restored: Math.max(0, target.soldierCount - previous.soldierCount),
+      hpDamage: Math.max(0, Math.round(previous.hp - target.hp)),
+      hpRestored: Math.max(0, Math.round(target.hp - previous.hp)),
+      moraleChange: Math.round(target.morale - previous.morale),
+      statusIds: target.statusEffects
+        .filter((status) => !previous.statusEffects.some((item) => item.id === status.id))
+        .map((status) => status.id),
+    };
+  });
+  recordCombatEvent(battle, {
+    type: "magic",
+    spellId: skillId,
+    name: skill.name,
+    actorId: caster.id,
+    side: caster.side,
+    from: { ...caster.position },
+    to: { ...position },
+    radius: skill.radius,
+    areaPositions,
+    outcomes,
+    tileEffects,
+  });
 }
 
 export function castMagicSkill(battle, unitId, skillId, position) {
   const next = structuredClone(battle);
+  next.combatEvents = [];
   const caster = getBattleUnit(next, unitId);
   if (!caster || !getBattleTile(next, position)) throw new Error("魔法の使用者または対象が不正です");
   applyMagicSkillMutable(next, caster, skillId, position);
@@ -1691,7 +1759,15 @@ function meleeAttack(battle, attacker, defender) {
   const chargePreview = getChargePreview(battle, attacker.id, defender.id);
   const power = Math.max(3, (attackerStats.attack + attacker.turnChargeBonus) * 15 / Math.max(20, defenderStats.defense) * chargePreview.attackMultiplier);
   const moraleDamage = power * 0.72 * directionBonus.morale + (attacker.turnChargeBonus > 0 ? 8 : 0);
-  applyDamage(battle, defender, power, moraleDamage, `${attacker.name}の${directionBonus.name}攻撃`, "melee");
+  const targetStrength = defender.soldierCount;
+  const result = applyDamage(battle, defender, power, moraleDamage, `${attacker.name}の${directionBonus.name}攻撃`, "melee");
+  recordAttackEvent(battle, {
+    kind: attacker.turnChargeBonus > 0 ? "charge" : "melee",
+    actor: attacker,
+    target: defender,
+    result,
+    targetStrength,
+  });
   attacker.fatigue = clamp(attacker.fatigue + 3.2 * attackerStats.fatigueCost, 0, 100);
   attacker.cohesion = clamp(attacker.cohesion - 2.5, 0, 100);
   attacker.actedThisTurn = true;
@@ -1760,7 +1836,9 @@ function pursuitPhase(battle) {
     const stats = getEffectiveStats(battle, pursuer);
     if (distance(pursuer.position, target.position) > Math.max(4, stats.movement)) return;
     const power = stats.attack * 0.28 * stats.pursuitPower;
-    applyDamage(battle, target, power, 0, `${pursuer.name}の追撃`, "pursuit", 2.8 * stats.pursuitPower);
+    const targetStrength = target.soldierCount;
+    const result = applyDamage(battle, target, power, 0, `${pursuer.name}の追撃`, "pursuit", 2.8 * stats.pursuitPower);
+    recordAttackEvent(battle, { kind: "charge", actor: pursuer, target, result, targetStrength });
     const chasePosition = unoccupiedPositionNear(battle, {
       x: clamp(target.position.x + (pursuer.side === "player" ? -1 : 1), 0, battle.map.width - 1),
       y: target.position.y,
@@ -1776,7 +1854,11 @@ function fatigueAndStatusPhase(battle) {
   battle.units.filter((unit) => onField(unit) && unit.actionReadyThisPulse).forEach((unit) => {
     if (!unit.actedThisTurn && unit.lastMovedDistance === 0) unit.fatigue = clamp(unit.fatigue - 4, 0, 100);
     const tile = getBattleTile(battle, unit.position);
-    if (tile?.status.some((status) => status.id === "burning")) applyDamage(battle, unit, 7, 5, "延焼", "fatigue_status");
+    if (tile?.status.some((status) => status.id === "burning")) {
+      const targetStrength = unit.soldierCount;
+      const result = applyDamage(battle, unit, 7, 5, "延焼", "fatigue_status");
+      recordAttackEvent(battle, { kind: "fire", target: unit, result, targetStrength });
+    }
     const previousLogisticsState = unit.logisticsState;
     const previousConnection = unit.logisticsConnected;
     const logisticsBefore = getLogisticsState(battle, unit);
@@ -1921,6 +2003,7 @@ function actionAbilityScoreFor(unit) {
 export function executeBattleTurn(battle) {
   const next = structuredClone(battle);
   if (next.winner) return next;
+  next.combatEvents = [];
   next.actionTimingConfig = resolveActionTimingConfig(next.actionTimingConfig ?? {});
   next.actionTime = Number.isInteger(next.actionTime) ? next.actionTime : 0;
   next.units.forEach((unit) => {

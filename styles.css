@@ -11003,15 +11003,11 @@ body.is-battle-preparation-open { overflow: hidden; }
 .tactical-battle-map { --battle-tile-size: 44px; position: relative; display: grid; grid-template-columns: repeat(var(--battle-columns, 20), var(--battle-tile-size)); grid-template-rows: repeat(var(--battle-rows, 14), var(--battle-tile-size)); width: calc(var(--battle-columns, 20) * var(--battle-tile-size)); height: calc(var(--battle-rows, 14) * var(--battle-tile-size)); margin-inline: auto; border: 2px solid #aa8a4d; outline: 1px solid rgba(13,29,27,.9); background: #737d51; box-shadow: 0 22px 60px rgba(0, 0, 0, .68), 0 0 0 5px rgba(174,137,69,.08); isolation: isolate; }
 .tactical-battle-map::after { position: absolute; z-index: 8; inset: 0; border: 1px solid rgba(255,231,170,.18); box-shadow: inset 0 0 34px rgba(18,28,21,.25); content: ""; pointer-events: none; }
 .tactical-battle-screen.is-resolving .tactical-tile { pointer-events: none; }
-.tactical-battle-map.is-vfx-active { animation: tacticalMapShock 520ms cubic-bezier(.22,.72,.22,1) 760ms both; }
+.tactical-battle-map.is-vfx-heavy { animation: tacticalMapShock 360ms cubic-bezier(.22,.72,.22,1) 560ms both; }
 .tactical-vfx-layer { position: absolute; z-index: 10; inset: 0; overflow: hidden; pointer-events: none; }
-.tactical-vfx-turn { position: absolute; z-index: 4; left: 50%; top: 50%; display: grid; min-width: 76px; padding: 8px 13px 9px; place-items: center; border-block: 1px solid rgba(246,214,137,.86); color: #fff0bd; background: linear-gradient(90deg, transparent, rgba(18,39,37,.94) 18% 82%, transparent); filter: drop-shadow(0 6px 10px rgba(0,0,0,.72)); font-family: system-ui, sans-serif; transform: translate(-50%, -50%); animation: tacticalTurnStamp 720ms cubic-bezier(.2,.75,.2,1) both; }
-.tactical-vfx-turn::before, .tactical-vfx-turn::after { position: absolute; top: 50%; width: 46px; height: 1px; background: linear-gradient(90deg, transparent, #e6bd62); content: ""; }
-.tactical-vfx-turn::before { right: 100%; }
-.tactical-vfx-turn::after { left: 100%; transform: rotate(180deg); }
-.tactical-vfx-turn small { color: #9eb5ad; font: 700 6px/1 system-ui, sans-serif; letter-spacing: .24em; }
-.tactical-vfx-turn b { font: 900 22px/.95 Georgia, serif; text-shadow: 0 0 12px rgba(238,195,98,.72); }
-.tactical-vfx-turn em { color: #d9bd77; font: 800 7px/1 system-ui, sans-serif; font-style: normal; letter-spacing: .22em; }
+.tactical-vfx-turn { position: absolute; z-index: 5; left: 7px; top: 7px; display: flex; align-items: center; gap: 6px; padding: 4px 7px; border: 1px solid rgba(246,214,137,.62); border-left: 3px solid #e3bd62; border-radius: 2px; color: #fff0bd; background: rgba(18,39,37,.9); box-shadow: 0 4px 10px rgba(0,0,0,.5); font-family: system-ui, sans-serif; animation: tacticalTurnStamp 560ms ease-out both; }
+.tactical-vfx-turn small { color: #c8d2cc; font: 700 6px/1 system-ui, sans-serif; letter-spacing: .12em; }
+.tactical-vfx-turn b { font: 900 8px/1 system-ui, sans-serif; letter-spacing: .08em; }
 .tactical-vfx-move { position: absolute; z-index: 1; width: 22px; height: 22px; border: 2px solid #8ae0c4; border-radius: 50%; background: radial-gradient(circle, rgba(171,255,225,.9) 0 13%, rgba(57,172,139,.48) 16% 42%, transparent 45%); box-shadow: 0 0 13px rgba(79,222,179,.82), -10px 0 14px rgba(87,207,169,.36); transform: translate(-50%, -50%); animation: tacticalUnitRush 720ms cubic-bezier(.18,.68,.2,1) var(--vfx-delay, 0ms) both; }
 .tactical-vfx-move.is-enemy { border-color: #e48b77; background: radial-gradient(circle, rgba(255,202,168,.92) 0 13%, rgba(195,72,58,.5) 16% 42%, transparent 45%); box-shadow: 0 0 13px rgba(232,101,77,.78), 10px 0 14px rgba(205,76,59,.38); }
 .tactical-vfx-move.is-commander { border-color: #f3d47e; border-radius: 3px; background: rgba(236,193,91,.42); box-shadow: 0 0 15px rgba(235,192,88,.86); transform: translate(-50%, -50%) rotate(45deg); }
@@ -11024,6 +11020,37 @@ body.is-battle-preparation-open { overflow: hidden; }
 .tactical-vfx-attack.is-magic::before { top: -1px; height: 5px; background: repeating-linear-gradient(100deg, transparent 0 7px, #bfffff 8px 11px, #7d69ed 12px 16px); clip-path: polygon(0 46%, 14% 20%, 26% 70%, 42% 30%, 58% 75%, 72% 24%, 100% 50%, 72% 64%, 58% 37%, 42% 70%, 26% 28%, 14% 72%); }
 .tactical-vfx-attack.is-melee { --vfx-color: #ffddd0; }
 .tactical-vfx-attack.is-charge { --vfx-color: #ff9f54; height: 6px; filter: drop-shadow(0 0 4px #d5442c); }
+.tactical-vfx-attack.is-miss { opacity: .66; filter: grayscale(.45); }
+.tactical-vfx-miss { position: absolute; z-index: 5; padding: 3px 5px; border: 1px solid #cdd6d1; border-radius: 3px; color: #edf2ef; background: rgba(35,48,47,.9); box-shadow: 0 3px 8px rgba(0,0,0,.58); font: 900 8px/1 system-ui,sans-serif; letter-spacing: .1em; transform: translate(-50%,-50%); animation: tacticalStatusStamp 620ms ease-out var(--vfx-delay,0ms) both; }
+.tactical-vfx-cast { --vfx-color:#c7a9ff; position:absolute; z-index:2; width:34px; height:34px; border:2px solid var(--vfx-color); border-radius:50%; background:radial-gradient(circle,rgba(255,255,255,.92) 0 5%,color-mix(in srgb,var(--vfx-color) 45%,transparent) 8% 24%,transparent 27%); box-shadow:0 0 12px var(--vfx-color),inset 0 0 9px color-mix(in srgb,var(--vfx-color) 48%,transparent); transform:translate(-50%,-50%); animation:tacticalCastSigil 620ms ease-out var(--vfx-delay,0ms) both; }
+.tactical-vfx-cast::before,.tactical-vfx-cast::after { position:absolute; inset:5px; border:1px solid var(--vfx-color); content:""; transform:rotate(45deg); }
+.tactical-vfx-cast::after { inset:10px; border-radius:50%; transform:none; }
+.tactical-vfx-spell-path { --vfx-color:#c7a9ff; position:absolute; z-index:2; width:var(--vfx-length); height:3px; transform:translateY(-50%) rotate(var(--vfx-angle)); transform-origin:0 50%; }
+.tactical-vfx-spell-path::before { position:absolute; inset:-1px 0; border-radius:50%; background:repeating-linear-gradient(100deg,transparent 0 6px,#fff 7px 9px,var(--vfx-color) 10px 14px); box-shadow:0 0 8px var(--vfx-color); content:""; transform-origin:0 50%; animation:tacticalAttackTrace 500ms ease-out var(--vfx-delay,0ms) both; }
+.tactical-vfx-spell { --vfx-color:#c7a9ff; position:absolute; z-index:3; width:var(--vfx-tile-size,44px); height:var(--vfx-tile-size,44px); border:2px solid var(--vfx-color); border-radius:50%; background:radial-gradient(circle,rgba(255,255,255,.88) 0 5%,color-mix(in srgb,var(--vfx-color) 52%,transparent) 8% 25%,transparent 52%); box-shadow:0 0 14px color-mix(in srgb,var(--vfx-color) 82%,transparent),inset 0 0 10px color-mix(in srgb,var(--vfx-color) 45%,transparent); transform:translate(-50%,-50%); animation:tacticalSpellField 620ms cubic-bezier(.18,.72,.2,1) var(--vfx-delay,0ms) both; }
+.tactical-vfx-spell::before,.tactical-vfx-spell::after { position:absolute; left:50%; top:50%; content:""; transform:translate(-50%,-50%); }
+.tactical-vfx-spell::before { width:72%; height:72%; border:1px dashed #fff; border-radius:inherit; }
+.tactical-vfx-spell::after { width:48%; height:48%; background:var(--vfx-color); filter:drop-shadow(0 0 5px var(--vfx-color)); }
+.tactical-vfx-spell > i { position:absolute; z-index:2; left:50%; top:50%; width:5px; height:5px; border-radius:50%; background:#fff; box-shadow:-14px -9px 0 var(--vfx-color),13px -13px 0 var(--vfx-color),10px 14px 0 var(--vfx-color),-13px 12px 0 var(--vfx-color); transform:translate(-50%,-50%); animation:tacticalSpellMotes 540ms ease-out var(--vfx-delay,0ms) both; }
+.tactical-vfx-spell > b { position:absolute; z-index:4; left:50%; bottom:calc(100% - 2px); padding:2px 5px; border:1px solid color-mix(in srgb,var(--vfx-color) 70%,#fff); border-radius:3px; color:#fff9df; background:rgba(25,36,35,.92); box-shadow:0 3px 7px rgba(0,0,0,.58); font:900 8px/1 system-ui,sans-serif; white-space:nowrap; transform:translateX(-50%); }
+.tactical-vfx-cast.is-fire,.tactical-vfx-spell-path.is-fire,.tactical-vfx-spell.is-fire { --vfx-color:#ff7a32; }
+.tactical-vfx-spell.is-fire { border-style:dashed; background:radial-gradient(circle,#fff3ad 0 7%,rgba(255,128,42,.76) 10% 30%,rgba(188,45,25,.38) 34%,transparent 58%); }
+.tactical-vfx-spell.is-fire::after { height:58%; background:linear-gradient(#fff4a8,#ff7b2f 58%,#ad281d); clip-path:polygon(52% 0,70% 29%,92% 57%,73% 100%,50% 82%,27% 100%,8% 57%,30% 31%); }
+.tactical-vfx-cast.is-ice,.tactical-vfx-spell-path.is-ice,.tactical-vfx-spell.is-ice { --vfx-color:#8feaff; }
+.tactical-vfx-spell.is-ice { border-radius:3px; background:radial-gradient(circle,#fff 0 5%,rgba(101,215,255,.58) 9% 27%,transparent 55%); }
+.tactical-vfx-spell.is-ice::before { border-style:solid; border-radius:2px; transform:translate(-50%,-50%) rotate(45deg); }
+.tactical-vfx-spell.is-ice::after { width:62%; height:62%; background:linear-gradient(135deg,#fff,#82dfff 55%,#4a79db); clip-path:polygon(50% 0,60% 34%,86% 14%,68% 42%,100% 50%,68% 58%,86% 86%,60% 66%,50% 100%,40% 66%,14% 86%,32% 58%,0 50%,32% 42%,14% 14%,40% 34%); }
+.tactical-vfx-cast.is-heal,.tactical-vfx-cast.is-life_surge,.tactical-vfx-spell.is-heal,.tactical-vfx-spell.is-life_surge { --vfx-color:#79f0b7; }
+.tactical-vfx-spell.is-heal,.tactical-vfx-spell.is-life_surge { border-color:#e9d990; background:radial-gradient(circle,rgba(255,250,199,.96) 0 7%,rgba(88,229,166,.48) 11% 30%,transparent 58%); }
+.tactical-vfx-spell.is-heal::after,.tactical-vfx-spell.is-life_surge::after { width:52%; height:52%; background:linear-gradient(#fff6bd,#63e5ad); clip-path:polygon(38% 0,62% 0,62% 38%,100% 38%,100% 62%,62% 62%,62% 100%,38% 100%,38% 62%,0 62%,0 38%,38% 38%); }
+.tactical-vfx-cast.is-earth,.tactical-vfx-spell-path.is-earth,.tactical-vfx-spell.is-earth { --vfx-color:#d3a35f; }
+.tactical-vfx-spell.is-earth { border-radius:2px; border-bottom-width:5px; background:linear-gradient(transparent 45%,rgba(105,72,43,.62)); }
+.tactical-vfx-spell.is-earth::before { left:25%; top:64%; width:18%; height:48%; border:1px solid #ead19b; border-radius:2px 2px 0 0; background:#806344; box-shadow:calc(var(--vfx-tile-size,44px) * .24) -5px 0 #a27a4c,calc(var(--vfx-tile-size,44px) * .48) 1px 0 #71543c; transform:translate(-50%,-50%); }
+.tactical-vfx-spell.is-earth::after { display:none; }
+.tactical-vfx-cast.is-lightning,.tactical-vfx-cast.is-arcane_bolt,.tactical-vfx-cast.is-sunder,.tactical-vfx-spell-path.is-lightning,.tactical-vfx-spell-path.is-arcane_bolt,.tactical-vfx-spell-path.is-sunder,.tactical-vfx-spell.is-lightning,.tactical-vfx-spell.is-arcane_bolt,.tactical-vfx-spell.is-sunder { --vfx-color:#bda0ff; }
+.tactical-vfx-cast.is-wind,.tactical-vfx-spell-path.is-wind,.tactical-vfx-spell.is-wind { --vfx-color:#a9f4de; }
+.tactical-vfx-cast.is-radiant_ward,.tactical-vfx-cast.is-battle_hymn,.tactical-vfx-spell.is-radiant_ward,.tactical-vfx-spell.is-battle_hymn { --vfx-color:#ffe58c; }
+.tactical-vfx-cast.is-shadow_veil,.tactical-vfx-spell-path.is-shadow_veil,.tactical-vfx-spell.is-shadow_veil { --vfx-color:#b88dd8; }
 .tactical-vfx-impact { --vfx-color: #ffe0a2; position: absolute; z-index: 3; width: 54px; height: 54px; border: 2px solid var(--vfx-color); border-radius: 50%; background: radial-gradient(circle, rgba(255,249,209,.96) 0 5%, color-mix(in srgb, var(--vfx-color) 58%, transparent) 8% 20%, transparent 48%); box-shadow: 0 0 16px var(--vfx-color), inset 0 0 10px color-mix(in srgb, var(--vfx-color) 55%, transparent); transform: translate(-50%, -50%); animation: tacticalImpactBurst 600ms cubic-bezier(.1,.68,.18,1) var(--vfx-delay, 0ms) both; }
 .tactical-vfx-impact::before, .tactical-vfx-impact::after { position: absolute; left: 50%; top: 50%; width: 44px; height: 4px; border-radius: 50%; background: linear-gradient(90deg, transparent, var(--vfx-color) 18% 82%, transparent); box-shadow: 0 0 7px var(--vfx-color); content: ""; transform: translate(-50%, -50%) rotate(42deg); }
 .tactical-vfx-impact::after { transform: translate(-50%, -50%) rotate(-42deg); }
@@ -11032,15 +11059,25 @@ body.is-battle-preparation-open { overflow: hidden; }
 .tactical-vfx-impact.is-melee { --vfx-color: #ffb49a; }
 .tactical-vfx-impact.is-charge { --vfx-color: #ff7b44; width: 62px; height: 62px; }
 .tactical-vfx-impact.is-fire { --vfx-color: #ff7b35; border-style: dashed; background: radial-gradient(circle, #ffe29a 0 5%, rgba(255,91,34,.68) 12%, transparent 50%); }
+.tactical-vfx-impact.is-ice { --vfx-color:#8feaff; border-radius:3px; transform:translate(-50%,-50%) rotate(45deg); }
+.tactical-vfx-impact.is-earth { --vfx-color:#d3a35f; border-radius:3px; background:radial-gradient(circle,#f0d59b 0 5%,rgba(126,91,54,.65) 12%,transparent 52%); }
+.tactical-vfx-impact.is-lightning,.tactical-vfx-impact.is-arcane_bolt,.tactical-vfx-impact.is-sunder { --vfx-color:#bda0ff; border-style:double; filter:drop-shadow(0 0 7px #6e5de8); }
 .tactical-vfx-impact.is-heavy { filter: drop-shadow(0 0 9px #ff673e); }
 .tactical-vfx-impact > b { position: absolute; z-index: 2; left: 50%; top: 1px; padding: 2px 5px; border: 1px solid rgba(255,226,171,.65); border-radius: 4px; color: #fff1c8; background: rgba(93,25,22,.9); box-shadow: 0 3px 8px rgba(0,0,0,.65); font: 900 10px/1 system-ui, sans-serif; text-shadow: 0 1px 2px #4b100e; white-space: nowrap; animation: tacticalDamageFloat 820ms ease-out var(--vfx-delay, 0ms) both; }
 .tactical-vfx-status { position: absolute; z-index: 4; padding: 4px 8px; border: 1px solid #ffc078; border-radius: 4px; color: #fff4d1; background: linear-gradient(120deg, rgba(125,37,28,.96), rgba(61,24,23,.96)); box-shadow: 0 4px 13px rgba(0,0,0,.72), 0 0 11px rgba(242,76,51,.62); font: 900 10px/1 system-ui, sans-serif; letter-spacing: .08em; transform: translate(-50%, -50%); animation: tacticalStatusStamp 760ms cubic-bezier(.15,.75,.2,1) var(--vfx-delay, 0ms) both; }
 .tactical-vfx-status.is-warning { border-color: #f1cd72; color: #fff0b6; background: linear-gradient(120deg, rgba(126,79,31,.96), rgba(57,43,27,.96)); box-shadow: 0 4px 13px rgba(0,0,0,.72), 0 0 11px rgba(233,175,67,.58); }
 .tactical-vfx-status.is-muted { border-color: #a8b1ad; color: #e2e8e5; background: rgba(43,55,53,.95); box-shadow: 0 4px 13px rgba(0,0,0,.65); }
-@keyframes tacticalTurnStamp { 0% { opacity: 0; transform: translate(-50%, -50%) scale(1.65); } 28%, 66% { opacity: 1; transform: translate(-50%, -50%) scale(1); } 100% { opacity: 0; transform: translate(-50%, -50%) scale(.86); } }
+.tactical-vfx-status.is-heal { border-color:#d9e992; color:#f6ffd6; background:linear-gradient(120deg,rgba(44,112,78,.97),rgba(28,65,55,.97)); box-shadow:0 4px 13px rgba(0,0,0,.68),0 0 12px rgba(89,225,163,.58); }
+.tactical-vfx-status.is-ice { border-color:#b9efff; color:#effcff; background:linear-gradient(120deg,rgba(48,111,139,.97),rgba(42,57,105,.97)); box-shadow:0 4px 13px rgba(0,0,0,.68),0 0 12px rgba(102,218,255,.58); }
+.tactical-vfx-status.is-wind,.tactical-vfx-status.is-radiant_ward,.tactical-vfx-status.is-shadow_veil { border-color:#d7c8ff; color:#fbf6ff; background:linear-gradient(120deg,rgba(70,74,122,.97),rgba(50,46,82,.97)); }
+.tactical-vfx-announcement { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); clip-path:inset(50%); white-space:nowrap; }
+@keyframes tacticalTurnStamp { 0% { opacity:0; transform:translateX(-8px); } 25%,72% { opacity:1; transform:translateX(0); } 100% { opacity:0; transform:translateX(5px); } }
 @keyframes tacticalUnitRush { 0% { opacity: 0; transform: translate(calc(-50% + var(--vfx-move-x)), calc(-50% + var(--vfx-move-y))) scale(.45); } 22% { opacity: 1; } 70% { opacity: .95; transform: translate(-50%, -50%) scale(1.18); } 100% { opacity: 0; transform: translate(-50%, -50%) scale(.7); } }
 @keyframes tacticalAttackTrace { 0% { opacity: 0; transform: scaleX(0); } 22%, 72% { opacity: 1; transform: scaleX(1); } 100% { opacity: 0; transform: scaleX(1); } }
 @keyframes tacticalProjectile { 0% { opacity: 0; transform: translateX(calc(-1 * var(--vfx-length))) scale(.35); } 15% { opacity: 1; } 78% { opacity: 1; transform: translateX(0) scale(1); } 100% { opacity: 0; transform: translateX(0) scale(1.8); } }
+@keyframes tacticalCastSigil { 0% { opacity:0; transform:translate(-50%,-50%) scale(.35) rotate(-28deg); } 30%,70% { opacity:1; transform:translate(-50%,-50%) scale(1) rotate(0); } 100% { opacity:0; transform:translate(-50%,-50%) scale(1.25) rotate(20deg); } }
+@keyframes tacticalSpellField { 0% { opacity:0; transform:translate(-50%,-50%) scale(.2); } 26%,72% { opacity:1; transform:translate(-50%,-50%) scale(1); } 100% { opacity:0; transform:translate(-50%,-50%) scale(1.18); } }
+@keyframes tacticalSpellMotes { 0% { opacity:0; transform:translate(-50%,-50%) scale(.2) rotate(-20deg); } 35%,70% { opacity:1; } 100% { opacity:0; transform:translate(-50%,-50%) scale(1.4) rotate(45deg); } }
 @keyframes tacticalImpactBurst { 0% { opacity: 0; transform: translate(-50%, -50%) scale(.16) rotate(-18deg); } 25% { opacity: 1; } 70% { opacity: .9; transform: translate(-50%, -50%) scale(1) rotate(0); } 100% { opacity: 0; transform: translate(-50%, -50%) scale(1.45) rotate(9deg); } }
 @keyframes tacticalDamageFloat { 0% { opacity: 0; transform: translate(-50%, 5px) scale(.68); } 25%, 70% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -35px) scale(1.08); } }
 @keyframes tacticalStatusStamp { 0% { opacity: 0; transform: translate(-50%, -50%) scale(2.1) rotate(-7deg); } 28%, 72% { opacity: 1; transform: translate(-50%, -50%) scale(1) rotate(0); } 100% { opacity: 0; transform: translate(-50%, -76%) scale(.92); } }
@@ -11149,7 +11186,18 @@ body.is-battle-preparation-open { overflow: hidden; }
 .tactical-tile.is-planned { box-shadow: inset 0 0 0 3px #e3bd61; }
 .tactical-tile.is-target { box-shadow: inset 0 0 0 3px #dc6658; }
 .tactical-tile.is-selected { z-index: 6; box-shadow: inset 0 0 0 3px #fff0b5, 0 0 16px rgba(255, 223, 133, .82); filter: brightness(1.08); }
-.tactical-tile.has-burning::after { content: "♨"; position: absolute; right: 2px; top: 0; color: #ffae55; font-size: 10px; }
+.tactical-magic-residue { position:absolute; pointer-events:none; }
+.tactical-magic-residue.is-burning { z-index:6; right:2px; top:1px; color:#ffd176; filter:drop-shadow(0 0 4px #e64b25); font:900 11px/1 serif; text-shadow:0 1px 2px #6f1d16; }
+.tactical-magic-residue.is-burning::after { position:absolute; right:-2px; top:-1px; width:13px; height:13px; border-radius:50%; background:radial-gradient(circle,rgba(255,187,75,.44),transparent 68%); content:""; }
+.tactical-magic-residue.is-frozen { z-index:5; inset:1px; overflow:hidden; border:1px solid rgba(176,239,255,.86); color:#e8fbff; box-shadow:inset 0 0 8px rgba(80,192,236,.52); font:900 9px/1 serif; text-align:left; text-shadow:0 0 4px #5bc9ef; }
+.tactical-magic-residue.is-frozen::before,.tactical-magic-residue.is-frozen::after { position:absolute; width:22px; height:1px; background:#c7f5ff; box-shadow:0 0 3px #5dc8ed; content:""; transform:rotate(48deg); }
+.tactical-magic-residue.is-frozen::before { left:-5px; bottom:8px; }
+.tactical-magic-residue.is-frozen::after { right:-5px; top:8px; }
+.tactical-magic-residue.is-earth-wall { z-index:3; left:4px; right:4px; bottom:3px; height:23px; display:flex; align-items:end; justify-content:center; gap:1px; filter:drop-shadow(0 2px 2px rgba(38,24,17,.68)); }
+.tactical-magic-residue.is-earth-wall i { width:28%; border:1px solid #d4b276; border-bottom:3px solid #4f3b2b; border-radius:3px 3px 1px 1px; background:linear-gradient(135deg,#b38b58,#67513c); box-shadow:inset 1px 1px rgba(255,230,170,.28); }
+.tactical-magic-residue.is-earth-wall i:nth-child(1) { height:65%; transform:rotate(-8deg); }
+.tactical-magic-residue.is-earth-wall i:nth-child(2) { height:100%; }
+.tactical-magic-residue.is-earth-wall i:nth-child(3) { height:72%; transform:rotate(8deg); }
 
 .is-order-hold { --tactical-order-color: #e4bf66; }
 .is-order-advance { --tactical-order-color: #f04e45; }
@@ -11573,17 +11621,27 @@ body.is-battle-preparation-open { overflow: hidden; }
 @media (prefers-reduced-motion: reduce) {
   .terrain-river .tactical-terrain-art::before,
   .tactical-fortification-marker.is-encircled::before,
-  .tactical-battle-map.is-vfx-active { animation: none; }
+  .tactical-battle-map.is-vfx-heavy { animation: none; }
   .tactical-vfx-turn,
   .tactical-vfx-move,
   .tactical-vfx-attack::before,
   .tactical-vfx-attack::after,
+  .tactical-vfx-miss,
+  .tactical-vfx-cast,
+  .tactical-vfx-spell-path::before,
+  .tactical-vfx-spell,
+  .tactical-vfx-spell > i,
   .tactical-vfx-impact,
   .tactical-vfx-impact > b,
   .tactical-vfx-status { animation: none; }
+  .tactical-vfx-turn { opacity:.9; transform:none; }
   .tactical-vfx-move { opacity: .75; transform: translate(-50%, -50%); }
   .tactical-vfx-attack::before { opacity: .72; transform: scaleX(1); }
   .tactical-vfx-attack::after { opacity: .9; transform: none; }
+  .tactical-vfx-miss { opacity:1; transform:translate(-50%,-50%); }
+  .tactical-vfx-cast { opacity:.72; transform:translate(-50%,-50%) scale(.72); }
+  .tactical-vfx-spell { opacity:.88; transform:translate(-50%,-50%) scale(.82); }
+  .tactical-vfx-spell > i { opacity:.9; transform:translate(-50%,-50%); }
   .tactical-vfx-impact { opacity: .92; transform: translate(-50%, -50%) scale(.8); }
   .tactical-vfx-impact > b { opacity: 1; transform: translate(-50%, -28px); }
   .tactical-vfx-status { opacity: 1; transform: translate(-50%, -70%); }

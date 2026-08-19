@@ -7169,7 +7169,8 @@ function stopTacticalBattleEffects() {
   }
   tacticalEffectsPlaying = false;
   elements.tacticalBattleMap?.querySelector(".tactical-vfx-layer")?.remove();
-  elements.tacticalBattleMap?.classList.remove("is-vfx-active");
+  elements.tacticalBattleMap?.classList.remove("is-vfx-active", "is-vfx-heavy");
+  elements.tacticalBattleScreen?.querySelector(".tactical-vfx-announcement")?.remove();
   elements.tacticalBattleScreen?.classList.remove("is-resolving");
   const executeButton = elements.tacticalBattleScreen?.querySelector('[data-battle-action="execute"]');
   if (executeButton) executeButton.disabled = !view.tacticalBattle || Boolean(view.tacticalBattle.winner);
@@ -7177,6 +7178,7 @@ function stopTacticalBattleEffects() {
 }
 
 function appendTacticalMovementEffect(layer, effect, tileSize, reducedMotion) {
+  if (reducedMotion) return;
   const from = tacticalEffectPoint(effect.from, tileSize);
   const to = tacticalEffectPoint(effect.to, tileSize);
   const marker = document.createElement("span");
@@ -7189,17 +7191,20 @@ function appendTacticalMovementEffect(layer, effect, tileSize, reducedMotion) {
   layer.append(marker);
 }
 
-function appendTacticalImpactEffect(layer, effect, tileSize, index, reducedMotion) {
+function tacticalEffectDelay(effect, index, reducedMotion) {
+  return reducedMotion ? 0 : 120 + Math.min(effect.sequence ?? index, 5) * 45;
+}
+
+function appendTacticalAttackEffect(layer, effect, tileSize, index, reducedMotion) {
   const from = tacticalEffectPoint(effect.from, tileSize);
   const to = tacticalEffectPoint(effect.to, tileSize);
   const dx = to.x - from.x;
   const dy = to.y - from.y;
   const distance = Math.max(tileSize * 0.35, Math.hypot(dx, dy));
-  const delay = reducedMotion ? 0 : 520 + Math.min(index, 7) * 135;
-
-  if (effect.kind !== "impact" && effect.kind !== "fire") {
+  const delay = tacticalEffectDelay(effect, index, reducedMotion);
+  if (!reducedMotion && effect.kind !== "impact" && effect.kind !== "fire") {
     const attack = document.createElement("span");
-    attack.className = `tactical-vfx-attack is-${effect.kind}`;
+    attack.className = `tactical-vfx-attack is-${effect.kind} ${effect.hit ? "" : "is-miss"}`;
     attack.style.left = `${from.x}px`;
     attack.style.top = `${from.y}px`;
     attack.style.setProperty("--vfx-length", `${distance}px`);
@@ -7207,16 +7212,78 @@ function appendTacticalImpactEffect(layer, effect, tileSize, index, reducedMotio
     attack.style.setProperty("--vfx-delay", `${delay}ms`);
     layer.append(attack);
   }
+  if (!effect.hit) {
+    const miss = document.createElement("b");
+    miss.className = "tactical-vfx-miss";
+    miss.textContent = "MISS";
+    miss.style.left = `${to.x}px`;
+    miss.style.top = `${to.y}px`;
+    miss.style.setProperty("--vfx-delay", `${delay + (reducedMotion ? 0 : 170)}ms`);
+    layer.append(miss);
+  }
+}
+
+function appendTacticalSpellEffect(layer, effect, tileSize, index, reducedMotion) {
+  const from = tacticalEffectPoint(effect.from, tileSize);
+  const to = tacticalEffectPoint(effect.to, tileSize);
+  const delay = tacticalEffectDelay(effect, index, reducedMotion);
+  const beneficial = ["heal", "life_surge", "radiant_ward", "battle_hymn"].includes(effect.spellId);
+  const cast = document.createElement("span");
+  cast.className = `tactical-vfx-cast is-${effect.spellId}`;
+  cast.style.left = `${from.x}px`;
+  cast.style.top = `${from.y}px`;
+  cast.style.setProperty("--vfx-delay", `${delay}ms`);
+  layer.append(cast);
+
+  if (!reducedMotion && !beneficial && (from.x !== to.x || from.y !== to.y)) {
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const path = document.createElement("span");
+    path.className = `tactical-vfx-spell-path is-${effect.spellId}`;
+    path.style.left = `${from.x}px`;
+    path.style.top = `${from.y}px`;
+    path.style.setProperty("--vfx-length", `${Math.hypot(dx, dy)}px`);
+    path.style.setProperty("--vfx-angle", `${Math.atan2(dy, dx) * 180 / Math.PI}deg`);
+    path.style.setProperty("--vfx-delay", `${delay + 80}ms`);
+    layer.append(path);
+  }
+
+  const positions = effect.areaPositions?.length ? effect.areaPositions : [effect.to];
+  const seen = new Set();
+  positions.forEach((position) => {
+    const key = `${position.x},${position.y}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    const point = tacticalEffectPoint(position, tileSize);
+    const field = document.createElement("span");
+    field.className = `tactical-vfx-spell is-${effect.spellId}`;
+    field.style.left = `${point.x}px`;
+    field.style.top = `${point.y}px`;
+    field.style.setProperty("--vfx-tile-size", `${tileSize}px`);
+    field.style.setProperty("--vfx-delay", `${delay + (reducedMotion ? 0 : 180)}ms`);
+    field.append(document.createElement("i"));
+    if (key === `${effect.to.x},${effect.to.y}`) {
+      const label = document.createElement("b");
+      label.textContent = effect.name;
+      field.append(label);
+    }
+    layer.append(field);
+  });
+}
+
+function appendTacticalImpactEffect(layer, effect, tileSize, index, reducedMotion) {
+  const to = tacticalEffectPoint(effect.to, tileSize);
+  const delay = tacticalEffectDelay(effect, index, reducedMotion);
 
   const impact = document.createElement("span");
   impact.className = `tactical-vfx-impact is-${effect.kind} ${effect.severity >= 0.18 ? "is-heavy" : ""}`;
   impact.style.left = `${to.x}px`;
   impact.style.top = `${to.y}px`;
-  impact.style.setProperty("--vfx-delay", `${delay + (reducedMotion ? 0 : 230)}ms`);
-  const casualty = document.createElement("b");
-  casualty.textContent = `−${effect.casualties}`;
-  casualty.setAttribute("aria-hidden", "true");
-  impact.append(casualty);
+  impact.style.setProperty("--vfx-delay", `${delay + (reducedMotion ? 0 : 260)}ms`);
+  const value = document.createElement("b");
+  value.textContent = effect.casualties > 0 ? `−${effect.casualties}` : `HP−${Math.max(1, Math.round(effect.damage ?? 0))}`;
+  value.setAttribute("aria-hidden", "true");
+  impact.append(value);
   layer.append(impact);
 }
 
@@ -7227,7 +7294,7 @@ function appendTacticalStatusEffect(layer, effect, tileSize, index, reducedMotio
   marker.textContent = effect.label;
   marker.style.left = `${point.x}px`;
   marker.style.top = `${point.y}px`;
-  marker.style.setProperty("--vfx-delay", `${reducedMotion ? 0 : 980 + Math.min(index, 6) * 110}ms`);
+  marker.style.setProperty("--vfx-delay", `${tacticalEffectDelay(effect, index, reducedMotion) + (reducedMotion ? 0 : 280)}ms`);
   layer.append(marker);
 }
 
@@ -7243,25 +7310,39 @@ function playTacticalBattleEffects(effects, battle, onComplete) {
 
   const turn = document.createElement("span");
   turn.className = "tactical-vfx-turn";
-  turn.innerHTML = `<small>TURN</small><b>${effects.turn}</b><em>交戦</em>`;
+  turn.innerHTML = `<small>TURN ${effects.turn}</small><b>交戦解決</b>`;
   layer.append(turn);
   effects.movements.forEach((effect) => appendTacticalMovementEffect(layer, effect, tileSize, reducedMotion));
+  effects.attacks.forEach((effect, index) => appendTacticalAttackEffect(layer, effect, tileSize, index, reducedMotion));
+  effects.spells.forEach((effect, index) => appendTacticalSpellEffect(layer, effect, tileSize, index, reducedMotion));
   effects.impacts.forEach((effect, index) => appendTacticalImpactEffect(layer, effect, tileSize, index, reducedMotion));
   effects.statuses.forEach((effect, index) => appendTacticalStatusEffect(layer, effect, tileSize, index, reducedMotion));
   map.append(layer);
   map.classList.add("is-vfx-active");
+  map.classList.toggle("is-vfx-heavy", effects.impacts.some((effect) => effect.kind === "charge" || effect.kind === "fire" || effect.severity >= 0.18));
   elements.tacticalBattleScreen.classList.add("is-resolving");
+  const announcement = document.createElement("span");
+  announcement.className = "tactical-vfx-announcement";
+  announcement.setAttribute("role", "status");
+  announcement.setAttribute("aria-live", "polite");
+  const spellNames = [...new Set(effects.spells.map((effect) => effect.name))];
+  const casualties = effects.impacts.reduce((sum, effect) => sum + (effect.casualties ?? 0), 0);
+  announcement.textContent = [`第${effects.turn}ターン`, spellNames.join("・"), effects.attacks.length ? `攻撃${effects.attacks.length}件` : "", casualties ? `損耗${casualties}` : ""].filter(Boolean).join("。");
+  elements.tacticalBattleScreen.append(announcement);
   tacticalEffectsPlaying = true;
   const executeButton = elements.tacticalBattleScreen.querySelector('[data-battle-action="execute"]');
   if (executeButton) executeButton.disabled = true;
   elements.tacticalResultButton.disabled = true;
 
-  const duration = reducedMotion ? 700 : Math.min(2800, 1650 + effects.impacts.length * 135 + effects.statuses.length * 80);
+  const sequences = [...effects.attacks, ...effects.spells, ...effects.impacts, ...effects.statuses]
+    .map((effect) => effect.sequence ?? 0);
+  const duration = reducedMotion ? 450 : Math.min(1400, 1160 + Math.min(6, Math.max(0, ...sequences)) * 40);
   tacticalEffectTimer = setTimeout(() => {
     tacticalEffectTimer = null;
     tacticalEffectsPlaying = false;
     layer.remove();
-    map.classList.remove("is-vfx-active");
+    map.classList.remove("is-vfx-active", "is-vfx-heavy");
+    announcement.remove();
     elements.tacticalBattleScreen.classList.remove("is-resolving");
     if (view.tacticalBattle !== battle) return;
     if (executeButton) executeButton.disabled = Boolean(battle.winner);
@@ -7394,6 +7475,8 @@ function renderTacticalMap(battle) {
     const terrain = TERRAIN_TYPES[tile.terrainType];
     const isPassable = isBattleTilePassable(battle, tile.position, selectedUnit);
     const burning = tile.status.some((status) => status.id === "burning");
+    const frozen = tile.status.some((status) => status.id === "frozen");
+    const earthWall = tile.status.some((status) => status.id === "earth_wall");
     const feature = tile.status.find((status) => ["ford", "bridge", "supply_depot"].includes(status.id));
     const unitPortrait = unit?.iconUrl ? `<img src="${escapeHtml(unit.iconUrl)}" alt="" draggable="false">` : "";
     const commanderPortrait = commander?.iconUrl ? `<img src="${escapeHtml(commander.iconUrl)}" alt="" draggable="false">` : "";
@@ -7402,6 +7485,7 @@ function renderTacticalMap(battle) {
     const unitMarkup = unit ? `<span class="tactical-unit-counter is-${unit.side} ${unitVisual.className} ${unit.state === "ROUTED" ? "is-routed" : ""}" title="行動状態：${unitVisual.label}">${unitPortrait}<b>${UNIT_CLASSES[unit.unitClassId].symbol}</b><span class="tactical-unit-strength" aria-hidden="true"><i style="width:${unitStrength}%"></i></span></span><span class="tactical-facing is-${unit.facing}">${tacticalFacingArrow(unit.facing)}</span>` : "";
     const commanderMarkup = commander ? `<span class="tactical-commander-counter is-${commander.side}" title="${escapeHtml(commander.name)}">${commanderPortrait}<i>将</i></span>` : "";
     const terrainMarkup = `<span class="tactical-terrain-art" aria-hidden="true"><i></i><i></i><i></i></span>`;
+    const magicResidueMarkup = `${burning ? '<span class="tactical-magic-residue is-burning" aria-hidden="true">♨</span>' : ""}${frozen ? '<span class="tactical-magic-residue is-frozen" aria-hidden="true">✦</span>' : ""}${earthWall ? '<span class="tactical-magic-residue is-earth-wall" aria-hidden="true"><i></i><i></i><i></i></span>' : ""}`;
     const featureMarkup = feature ? `<span class="tactical-feature-marker is-${feature.id}" aria-hidden="true">${feature.id === "bridge" ? "═" : feature.id === "ford" ? "⋮" : "▣"}</span>` : "";
     const supplyMarkup = supplyNode ? `<span class="tactical-supply-node is-${supplyNode.side}" aria-hidden="true"><i>補</i></span>` : "";
     const supplyRouteMarkup = isSupplyRoute
@@ -7410,8 +7494,9 @@ function renderTacticalMap(battle) {
     const fortificationIntegrity = fortification ? Math.round(fortification.durability / fortificationDefinition.maxBaseDurability * 100) : 0;
     const fortificationArt = fortification ? `./assets/generated/tactical-structures/${fortification.typeId}-v2.png` : "";
     const fortificationMarkup = fortification ? `<span class="tactical-fortification-marker is-${fortification.typeId} is-${fortification.side} ${fortification.encircled ? "is-encircled" : ""}" aria-hidden="true"><img src="${fortificationArt}" alt="" draggable="false"><b>${fortificationDefinition.symbol}</b><em><span style="width:${fortificationIntegrity}%"></span></em></span>` : "";
-    const title = `${terrain.name}${feature ? `・${feature.name ?? ({ ford: "浅瀬", bridge: "橋梁", supply_depot: "補給所" }[feature.id])}` : ""} ${tile.position.x + 1}-${tile.position.y + 1}${isPassable ? "" : " / 通行不可"}${reachable ? ` / 移動可能 消費${reachable.cost}` : ""}${attackable ? ` / 攻撃可能 射程${attackable.distance}/${attackable.range}` : ""}${supplyNode ? ` / ${supplyNode.name} 備蓄${Math.round(supplyNode.stockpile)}/${supplyNode.maxStockpile}` : ""}${isSupplyRoute ? ` / 補給路 ${supplyRouteStep}/${selectedSupplyRoute.route.length - 1}` : ""}${fortification ? ` / ${fortification.name} 耐久${fortification.durability}/${fortification.baseDurability}${fortification.typeId === "castle" ? ` 備蓄${Math.round(fortification.supplyStockpile)}/${fortification.maxSupplyStockpile}` : ""}${fortification.encircled ? " 完全包囲" : ""}` : ""}${unit ? ` / ${unit.name} 兵${unit.soldierCount} 士気${Math.round(unit.morale)} 行動${unitVisual.label}` : ""}${commander ? ` / ${commander.name}` : ""}`;
-    return `<button type="button" role="gridcell" class="tactical-tile terrain-${tile.terrainType} ${isPassable ? "" : "is-impassable"} ${reachable ? "is-reachable" : ""} ${attackable ? "is-attackable" : ""} ${pendingMagic && attackable ? "is-magic-target" : ""} ${isSelected ? "is-selected" : ""} ${isPlanned ? "is-planned" : ""} ${isTarget ? "is-target" : ""} ${inPlannedMagicArea ? "is-magic-area" : ""} ${inCommand ? "is-in-command" : ""} ${inFortificationAura ? "is-fortification-aura" : ""} ${isSupplyRoute ? "is-supply-route" : ""} ${isSupplySource ? "is-supply-source" : ""} ${isSupplyCut ? "is-supply-cut" : ""} ${burning ? "has-burning" : ""}" style="--tile-texture-x:${-tile.position.x * 44};--tile-texture-y:${-tile.position.y * 44}" data-battle-tile="${key}" data-terrain-symbol="${terrain.symbol ?? ""}" ${unit ? `data-battle-unit="${unit.id}"` : ""} ${commander ? `data-battle-commander="${commander.id}"` : ""} ${fortification ? `data-battle-fortification="${fortification.id}"` : ""} aria-label="${escapeHtml(title)}" title="${escapeHtml(title)}">${terrainMarkup}${supplyRouteMarkup}${featureMarkup}${supplyMarkup}${fortificationMarkup}${unitMarkup}${commanderMarkup}</button>`;
+    const magicStatusLabel = [burning ? "炎上" : "", frozen ? "凍結" : "", earthWall ? "土壁" : ""].filter(Boolean).join("・");
+    const title = `${terrain.name}${feature ? `・${feature.name ?? ({ ford: "浅瀬", bridge: "橋梁", supply_depot: "補給所" }[feature.id])}` : ""} ${tile.position.x + 1}-${tile.position.y + 1}${magicStatusLabel ? ` / 魔法地形 ${magicStatusLabel}` : ""}${isPassable ? "" : " / 通行不可"}${reachable ? ` / 移動可能 消費${reachable.cost}` : ""}${attackable ? ` / 攻撃可能 射程${attackable.distance}/${attackable.range}` : ""}${supplyNode ? ` / ${supplyNode.name} 備蓄${Math.round(supplyNode.stockpile)}/${supplyNode.maxStockpile}` : ""}${isSupplyRoute ? ` / 補給路 ${supplyRouteStep}/${selectedSupplyRoute.route.length - 1}` : ""}${fortification ? ` / ${fortification.name} 耐久${fortification.durability}/${fortification.baseDurability}${fortification.typeId === "castle" ? ` 備蓄${Math.round(fortification.supplyStockpile)}/${fortification.maxSupplyStockpile}` : ""}${fortification.encircled ? " 完全包囲" : ""}` : ""}${unit ? ` / ${unit.name} 兵${unit.soldierCount} 士気${Math.round(unit.morale)} 行動${unitVisual.label}` : ""}${commander ? ` / ${commander.name}` : ""}`;
+    return `<button type="button" role="gridcell" class="tactical-tile terrain-${tile.terrainType} ${isPassable ? "" : "is-impassable"} ${reachable ? "is-reachable" : ""} ${attackable ? "is-attackable" : ""} ${pendingMagic && attackable ? "is-magic-target" : ""} ${isSelected ? "is-selected" : ""} ${isPlanned ? "is-planned" : ""} ${isTarget ? "is-target" : ""} ${inPlannedMagicArea ? "is-magic-area" : ""} ${inCommand ? "is-in-command" : ""} ${inFortificationAura ? "is-fortification-aura" : ""} ${isSupplyRoute ? "is-supply-route" : ""} ${isSupplySource ? "is-supply-source" : ""} ${isSupplyCut ? "is-supply-cut" : ""} ${burning ? "has-burning" : ""} ${frozen ? "has-frozen" : ""} ${earthWall ? "has-earth-wall" : ""}" style="--tile-texture-x:${-tile.position.x * 44};--tile-texture-y:${-tile.position.y * 44}" data-battle-tile="${key}" data-terrain-symbol="${terrain.symbol ?? ""}" ${unit ? `data-battle-unit="${unit.id}"` : ""} ${commander ? `data-battle-commander="${commander.id}"` : ""} ${fortification ? `data-battle-fortification="${fortification.id}"` : ""} aria-label="${escapeHtml(title)}" title="${escapeHtml(title)}">${terrainMarkup}${magicResidueMarkup}${supplyRouteMarkup}${featureMarkup}${supplyMarkup}${fortificationMarkup}${unitMarkup}${commanderMarkup}</button>`;
   }).join("");
 }
 
