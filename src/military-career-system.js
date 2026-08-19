@@ -305,7 +305,12 @@ export function createMilitaryCareerBattle(state) {
   const levySize = Math.max(6, forecast.playerStrength - personalUnits.length * 4);
   const enemySize = forecast.enemyStrength;
   const scale = mission.kind === "commander_relief" ? "commander" : "retainer";
-  const playerArmy = createNationalArmyUnitSpecs({
+  const generationContext = {
+    environment,
+    missionKind: mission.kind,
+    approachId: mission.preparation.approachId,
+  };
+  const playerArmySpecs = createNationalArmyUnitSpecs({
     nation: nations.playerNation,
     side: "player",
     commanderId: commanders[0].id,
@@ -313,8 +318,10 @@ export function createMilitaryCareerBattle(state) {
     scale,
     positions: [{ x: 2, y: 5 }, { x: 2, y: 1 }, { x: 2, y: 7 }],
     seed: mission.id,
-  }).map((spec) => createCombatUnit({ ...spec, supply: forecast.supply, maxSupply: 100, tags: [...spec.tags, "MILITARY_MISSION", "LIEGE_FORCE"] }));
-  const enemyArmy = nations.enemyNation && mission.kind === "commander_relief"
+    ...generationContext,
+  });
+  const playerArmy = playerArmySpecs.map((spec) => createCombatUnit({ ...spec, supply: forecast.supply, maxSupply: 100, tags: [...spec.tags, "MILITARY_MISSION", "LIEGE_FORCE"] }));
+  const enemyArmySpecs = nations.enemyNation && mission.kind === "commander_relief"
     ? createNationalArmyUnitSpecs({
       nation: nations.enemyNation,
       side: "enemy",
@@ -323,7 +330,11 @@ export function createMilitaryCareerBattle(state) {
       scale: "commander",
       positions: [{ x: 8, y: 4 }, { x: 8, y: 2 }, { x: 8, y: 6 }],
       seed: `${mission.id}:enemy`,
-    }).map((spec) => createCombatUnit({ ...spec, facing: "west", tags: [...spec.tags, "MILITARY_MISSION", "MISSION_TARGET"] }))
+      ...generationContext,
+    })
+    : [];
+  const enemyArmy = enemyArmySpecs.length
+    ? enemyArmySpecs.map((spec) => createCombatUnit({ ...spec, facing: "west", tags: [...spec.tags, "MILITARY_MISSION", "MISSION_TARGET"] }))
     : [
       createCombatUnit({ id: `${mission.id}:enemy-main`, name: mission.kind === "commander_relief" ? "包囲軍主隊" : "街道襲撃団", side: "enemy", commanderId: commanders[1].id, soldierCount: enemySize, maxSoldierCount: enemySize, position: { x: 8, y: 4 }, unitClassId: "infantry", facing: "west", tags: ["MILITARY_MISSION", "MISSION_TARGET"] }),
       createCombatUnit({ id: `${mission.id}:enemy-ranged`, name: "敵弓兵", side: "enemy", commanderId: commanders[1].id, soldierCount: Math.max(3, Math.round(enemySize * 0.28)), maxSoldierCount: Math.max(3, Math.round(enemySize * 0.28)), position: { x: 8, y: 2 }, unitClassId: "archer", facing: "west", tags: ["MILITARY_MISSION", "MISSION_TARGET"] }),
@@ -344,8 +355,8 @@ export function createMilitaryCareerBattle(state) {
   });
   battle.sideLabels = { player: nations.playerNation.name, enemy: nations.enemyNation?.name ?? "敵対勢力" };
   battle.nationalArmies = {
-    player: getNationalArmySummary(nations.playerNation),
-    enemy: nations.enemyNation && mission.kind === "commander_relief" ? getNationalArmySummary(nations.enemyNation) : null,
+    player: getNationalArmySummary(nations.playerNation, playerArmySpecs),
+    enemy: nations.enemyNation && mission.kind === "commander_relief" ? getNationalArmySummary(nations.enemyNation, enemyArmySpecs) : null,
   };
   battle.environment = environment;
   battle.militaryMissionId = mission.id;

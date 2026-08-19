@@ -7288,7 +7288,7 @@ function renderTacticalDeployment(battle) {
   const nationalMatchup = battle.nationalArmies ? `<div class="tactical-national-matchup">${["player", "enemy"].map((sideId) => {
     const army = battle.nationalArmies[sideId];
     if (!army) return `<section class="is-${sideId}"><small>${sideId === "player" ? "自軍軍制" : "敵軍軍制"}</small><strong>非正規部隊</strong><span>国家常備軍の軍制外</span></section>`;
-    return `<section class="is-${sideId}"><small>${sideId === "player" ? "自軍軍制" : "敵軍軍制"} · ${escapeHtml(army.nationName)}</small><strong>${escapeHtml(army.doctrineName)}</strong><span>${escapeHtml(army.doctrineSummary)}</span><em>強み ${escapeHtml(army.strengths.slice(0, 2).join("・"))} / 弱点 ${escapeHtml(army.risks[0])}</em></section>`;
+    return `<section class="is-${sideId}"><small>${sideId === "player" ? "自軍軍制" : "敵軍軍制"} · ${escapeHtml(army.nationName)}</small><strong>${escapeHtml(army.doctrineName)}</strong><span>${escapeHtml(army.doctrineSummary)}</span>${army.generationMethod ? `<span class="tactical-generation-badge">全隊シード生成 · ${army.units.length}個体</span>` : ""}<em>強み ${escapeHtml(army.strengths.slice(0, 2).join("・"))} / 弱点 ${escapeHtml(army.risks[0])}</em></section>`;
   }).join("")}</div>` : "";
   const logistics = preparation?.finalized
     ? `${BATTLE_LOGISTICS_PLANS[preparation.logisticsPlanId]?.name ?? "兵站計画"} · 約${preparation.sustainableDays}日`
@@ -7488,8 +7488,10 @@ function renderTacticalUnitInspector(battle, unit) {
     if (!skill) return "";
     return `<button type="button" data-battle-magic="${id}" class="${view.pendingTacticalMagicId === id ? "is-active" : ""}" ${canCommand ? "" : "disabled"}><strong>${escapeHtml(skill.name)}</strong><em>${escapeHtml(tacticalMagicEffectLabel(skill))}</em><small>射程 ${skill.range} · 範囲 ${skill.radius} · 疲労 ${skill.fatigue}</small></button>`;
   }).join("")}</div>${view.pendingTacticalMagicId ? `<p>青紫色のマスだけが有効対象です。盤面で対象を選ぶと「${escapeHtml(MAGIC_SKILLS[view.pendingTacticalMagicId]?.name ?? "魔法")}」を予約します。</p>` : ""}</section>` : "";
+  const generatedIdentity = unit.generatedUnit && unit.unitGeneration ? `<p class="tactical-generated-unit-line"><b>生成個体 ${escapeHtml(unit.unitGeneration.fingerprint)}</b><span>${escapeHtml(unit.unitGeneration.originName)}編成 · ${escapeHtml(unit.unitGeneration.bannerName)}旗 · ${escapeHtml(unit.unitGeneration.trainingName)} · ${escapeHtml(unit.unitGeneration.fieldName)}</span></p>` : "";
   const nationalIdentity = unit.nationalDoctrineName ? `<section class="tactical-national-unit-sheet">
-    <header><div><small>${escapeHtml(unit.nationName ?? "国家軍")}</small><h3>${escapeHtml(unit.nationalDoctrineName)}</h3></div><b>${escapeHtml(unit.nationalTraitName ?? "標準部隊")}</b></header>
+    <header><div><small>${unit.generatedUnit ? "GENERATED UNIT · " : ""}${escapeHtml(unit.nationName ?? "国家軍")}</small><h3>${escapeHtml(unit.nationalDoctrineName)}</h3></div><b>${escapeHtml(unit.nationalTraitName ?? "標準部隊")}</b></header>
+    ${generatedIdentity}
     <p>${escapeHtml(unit.nationalTraitDescription ?? unit.nationalDoctrineSummary ?? "国家軍制に基づく部隊です。")}</p>
     <div><span><small>得意</small><strong>${escapeHtml(unit.nationalStrength ?? "標準戦闘")}</strong></span><span><small>弱点</small><strong>${escapeHtml(unit.nationalRisk ?? "特記事項なし")}</strong></span></div>
   </section>` : "";

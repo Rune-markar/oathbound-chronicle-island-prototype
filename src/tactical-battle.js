@@ -131,6 +131,7 @@ export function createCombatUnit({
   nationId = null, nationName = null, nationalProfileId = null, nationalDoctrineName = null,
   nationalDoctrineSummary = null, nationalTraitId = null, nationalTraitName = null, nationalTraitDescription = null,
   nationalStrength = null, nationalRisk = null, nationalModifiers = {}, nationalTerrainModifiers = {},
+  generatedUnit = false, unitGeneration = null,
 } = {}) {
   const unitClass = assertDefinition(UNIT_CLASSES, unitClassId, "兵種");
   const race = assertDefinition(RACES, raceId, "種族");
@@ -163,6 +164,8 @@ export function createCombatUnit({
     nationalTraitId, nationalTraitName, nationalTraitDescription, nationalStrength, nationalRisk,
     nationalModifiers: { ...nationalModifiers },
     nationalTerrainModifiers: Object.fromEntries(Object.entries(nationalTerrainModifiers).map(([terrainId, modifiers]) => [terrainId, { ...modifiers }])),
+    generatedUnit: Boolean(generatedUnit),
+    unitGeneration: unitGeneration ? structuredClone(unitGeneration) : null,
     order, lastOrder: order, state: "STABLE", engagedWith: [],
     plannedPosition: null, targetId: null, activeSkill: activeSkill ?? (unitClassId === "mage" ? availableMagicSkillIds?.[0] ?? "fire" : null),
     plannedAction: null, playerInstructions: {}, lastMovedDistance: 0, turnChargeBonus: 0, actedThisTurn: false,
