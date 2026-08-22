@@ -246,6 +246,16 @@ test("pending policy and facility orders change the pure month preview without m
   assert.equal(planned.pendingOrders.length, 2);
 });
 
+test("turn warnings reuse an explicit month preview without changing results or state", () => {
+  const base = ready(createInitialState());
+  const planned = queueOrder(base, { kind: "policy", cityId: "nereia", policyId: "rationing", optionId: "restricted" });
+  const before = structuredClone(planned);
+  const preview = deriveMonthPreview(planned);
+
+  assert.deepEqual(getTurnWarnings(planned, preview), getTurnWarnings(planned));
+  assert.deepEqual(planned, before);
+});
+
 test("unused governance explains when no officer can take another assignment", () => {
   const state = ready(createInitialState());
   Object.values(state.officers).filter((officer) => officer.allegiance === "serving").forEach((officer, index) => {

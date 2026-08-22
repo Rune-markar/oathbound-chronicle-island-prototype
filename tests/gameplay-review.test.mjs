@@ -113,3 +113,20 @@ test("a capital sentence opens a persistent terminal surface and locks gameplay"
   assert.match(appSource, /strategy-shell[\s\S]{0,80}setAttribute\("inert"/);
   assert.match(appSource, /data-crime-ending-new/);
 });
+
+test("the terminal new-character action is routed through click and modal dismissal is registered once", () => {
+  const clickHandler = appSource.match(/document\.addEventListener\("click", async \(event\) => \{[\s\S]*?document\.addEventListener\("keydown"/)?.[0] ?? "";
+  const keydownHandler = appSource.match(/document\.addEventListener\("keydown", \(event\) => \{[\s\S]*?document\.querySelector\("#closeAssignment"\)/)?.[0] ?? "";
+
+  assert.match(clickHandler, /event\.target\.closest\("\[data-crime-ending-new\]"\)[\s\S]*?view\.launchOpen = true;[\s\S]*?openCharacterCreation\(\)/);
+  assert.doesNotMatch(keydownHandler, /data-crime-ending-new/);
+  assert.equal((appSource.match(/elements\.guideModal\.addEventListener\("click"/g) ?? []).length, 1);
+});
+
+test("month-end warnings reuse the cached planning preview", () => {
+  const endMonthFlow = appSource.match(/function endMonth\(\)[\s\S]*?function formatValue/)?.[0] ?? "";
+  const cityPlanFlow = appSource.match(/function renderCityPlan\(ledger\)[\s\S]*?function renderOutliner/)?.[0] ?? "";
+
+  assert.match(endMonthFlow, /getTurnWarnings\(state, getPlanningPreview\(\)\)/);
+  assert.match(cityPlanFlow, /const preview = getPlanningPreview\(\);\s*const warnings = getTurnWarnings\(state, preview\);/);
+});

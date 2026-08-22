@@ -2828,10 +2828,10 @@ export function getWarDeclarationEstimate(state, objectiveId = "transit") {
   };
 }
 
-export function getTurnWarnings(state) {
+export function getTurnWarnings(state, preview = undefined) {
   const ledger = deriveRealmLedger(state);
-  const preview = deriveMonthPreview(state);
-  const foodSecurity = getFoodSecurityStatus(state, preview);
+  const planningPreview = preview === undefined ? deriveMonthPreview(state) : preview;
+  const foodSecurity = getFoodSecurityStatus(state, planningPreview);
   const warnings = [];
   if (ledger.administration.overextension > 0) warnings.push(`行政網が処理限界を${ledger.administration.overextension}%超過：直轄を減らすか、役所と人材を整備してください`);
   const activeAuthorityReforms = state.administration?.reforms?.filter((reform) => reform.status === "active") ?? [];
@@ -2847,7 +2847,7 @@ export function getTurnWarnings(state) {
       : `未使用統治力 ${ledger.governance.available}（担当可能人物なし：任務完了を待つか、施設・政策を検討）`);
   }
   ledger.cities.forEach((city) => {
-    const local = preview?.report.cities.find((item) => item.cityId === city.cityId);
+    const local = planningPreview?.report.cities.find((item) => item.cityId === city.cityId);
     if ((local?.after.money ?? city.money + city.netIncome) < 0) warnings.push(`${city.name}で財政赤字の見込み`);
     if (city.facilities.facilities.some((facility) => facility.level > 0 && facility.operatingRate < 0.7)) warnings.push(`${city.name}で施設稼働率が低下`);
     if (city.factionRisk >= 35) warnings.push(`${city.name}で派閥反乱の危険`);
@@ -2867,7 +2867,7 @@ export function getTurnWarnings(state) {
     if (occupation.garrison < occupation.requiredGarrison) warnings.push(`${occupation.name}の駐屯兵が必要数を下回っています`);
   });
   if (ledger.availableOfficers > 0 && ledger.governance.available <= 0) warnings.push(`待機中の人物 ${ledger.availableOfficers}名（統治力を使い切っているため新規任務は不可）`);
-  const previewMoney = preview?.report.cities.reduce((sum, city) => sum + city.after.money, 0);
+  const previewMoney = planningPreview?.report.cities.reduce((sum, city) => sum + city.after.money, 0);
   if ((previewMoney ?? ledger.treasury + ledger.netIncome) < 0) warnings.push("国家全体で給与遅配の危険");
   return warnings;
 }

@@ -875,7 +875,7 @@ function endMonth() {
     showToast("都市事件への対応を先に決めてください。", "danger");
     return;
   }
-  const warnings = getTurnWarnings(state);
+  const warnings = getTurnWarnings(state, getPlanningPreview());
   if (warnings.length && !window.confirm(`月を終える前の確認\n\n・${warnings.join("\n・")}\n\nこのまま進めますか？`)) return;
   try {
     const next = commitMonth(state);
@@ -6398,8 +6398,8 @@ function renderCityPlan(ledger) {
   const planCityId = view.panel === "spending" ? view.spendingCityId : view.panel === "town" ? WORLD.villages[view.selectedTownId].province : view.selectedCityId;
   const governance = getGovernance(state);
   const reservedMoney = state.pendingOrders.reduce((sum, order) => sum + (order.cost?.money ?? 0), 0);
-  const warnings = getTurnWarnings(state);
   const preview = getPlanningPreview();
+  const warnings = getTurnWarnings(state, preview);
   const planned = state.pendingOrders.length ? state.pendingOrders.map((order) => `
     <article class="planned-order ${order.forced ? "is-forced" : ""}">
       <header><strong>${orderLabel(order)}</strong><button type="button" data-cancel-order="${order.id}" aria-label="命令を取り消す">取消</button></header>
@@ -8419,6 +8419,13 @@ function crimeRecoveryDestination(jurisdictionId) {
 }
 
 document.addEventListener("click", async (event) => {
+  const crimeEndingNew = event.target.closest("[data-crime-ending-new]");
+  if (crimeEndingNew) {
+    view.endingOpen = false;
+    view.launchOpen = true;
+    openCharacterCreation();
+    return;
+  }
   const extortionCollection = event.target.closest("[data-extortion-collect]");
   if (extortionCollection && !extortionCollection.disabled) {
     try {
@@ -10352,11 +10359,6 @@ document.addEventListener("keydown", (event) => {
     closeVillageConversation();
     return;
   }
-  if (event.target.closest("[data-crime-ending-new]")) {
-    view.endingOpen = false;
-    openCharacterCreation();
-    return;
-  }
   if (event.key === "Escape" && view.mobileMoreOpen) {
     view.mobileMoreOpen = false;
     renderTabs();
@@ -10404,7 +10406,6 @@ document.addEventListener("keydown", (event) => {
 });
 document.querySelector("#closeAssignment").addEventListener("click", closeAssignment);
 elements.assignmentModal.addEventListener("click", (event) => { if (event.target === elements.assignmentModal) closeAssignment(); });
-elements.guideModal.addEventListener("click", (event) => { if (event.target === elements.guideModal) { view.guideOpen = false; renderGuideModal(); } });
 elements.declareWarButton.addEventListener("click", () => {
   try {
     const estimate = getWarDeclarationEstimate(state, view.objectiveId);
