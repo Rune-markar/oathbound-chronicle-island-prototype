@@ -1,5 +1,6 @@
 import { requestPortraitMode } from "./orientation-control.js";
 import { BUILD_INFO, getBuildCommitUrl } from "./build-info.js";
+import { resolveWorldDossierNavigation } from "./world-dossier-navigation.js";
 import {
   ADMINISTRATION_MANDATES,
   ADMINISTRATION_MODES,
@@ -58,18 +59,16 @@ import {
   createInitialState,
   declareWar,
   deriveCityMetrics,
+  deriveAdministrationContext,
   deriveAdministrationNetwork,
   deriveMonthPreview,
   deriveMetrics,
   deriveRealmLedger,
   formatDate,
   getCityBreakdown,
-  getCityAdministration,
-  getCentralizationResult,
   getCentralizationCampaignStatus,
   getCentralizationDecisions,
   getAuthorityReform,
-  getRegionAuthority,
   getCampaignStatus,
   getBorderNegotiationStatus,
   getCommandAvailability,
@@ -2171,10 +2170,7 @@ function renderCityEconomy(city) {
 }
 
 function renderCityAdministration(city) {
-  const administration = getCityAdministration(state, city.cityId);
-  const network = deriveAdministrationNetwork(state);
-  const region = getRegionAuthority(state, city.cityId);
-  const centralization = getCentralizationResult(state);
+  const { cityAdministration: administration, network, region, centralization } = deriveAdministrationContext(state, city.cityId);
   if (!view.expertMode) {
     const campaign = getCentralizationCampaignStatus(state);
     const packageRows = campaign.portfolio.systems.map((system) => {
@@ -6212,10 +6208,11 @@ function renderMap() {
   elements.mapScaleSwitch.querySelectorAll("[data-scale]").forEach((button) => button.classList.toggle("is-active", button.dataset.scale === view.scale));
   elements.strategyMap.querySelectorAll(".province[data-place-id]").forEach((node) => { node.style.fill = ""; });
   const authorityNetwork = AUTHORITY_MAP_LABELS[view.mapMode] ? deriveAdministrationNetwork(state) : null;
+  const needsCityMetrics = view.mapMode === "supply" || view.mapMode === "unrest";
   Object.keys(state.cities).forEach((cityId) => {
     const node = elements.strategyMap.querySelector(`.province[data-place-id="${cityId}"]`);
     if (!node) return;
-    const city = deriveCityMetrics(state, cityId);
+    const city = needsCityMetrics ? deriveCityMetrics(state, cityId) : null;
     if (view.mapMode === "supply") node.style.fill = valueColor(clampForMap(50 + city.supplyBalance / 120));
     if (view.mapMode === "unrest") node.style.fill = valueColor(city.publicOrder);
     if (authorityNetwork) {
@@ -6231,6 +6228,7 @@ function renderMap() {
     elements.strategyMap.querySelectorAll(`[data-place-id="${view.selectedId}"]`).forEach((node) => node.classList.add("is-selected"));
   }
   renderStrategicMapState();
+  return authorityNetwork;
 }
 
 function averageAuthorityDomain(region, domainIds) {
@@ -6310,12 +6308,12 @@ function clearTileDetailSelection() {
 
 function closeTileDetail() {
   clearTileDetailSelection();
-  renderMap();
-  renderSelection();
+  const authorityNetwork = renderMap();
+  renderSelection(authorityNetwork);
   renderTileDetail();
 }
 
-function renderSelection() {
+function renderSelection(authorityNetwork = null) {
   if (view.panel === "world" || view.panel === "village") {
     elements.selectionCard.innerHTML = "";
     return;
@@ -6336,7 +6334,9 @@ function renderSelection() {
   }
   if (view.selectedType === "province" && state.cities[view.selectedId]) {
     const city = deriveCityMetrics(state, view.selectedId);
-    const region = AUTHORITY_MAP_LABELS[view.mapMode] ? getRegionAuthority(state, view.selectedId) : null;
+    const region = AUTHORITY_MAP_LABELS[view.mapMode]
+      ? (authorityNetwork ?? deriveAdministrationNetwork(state)).authority.regions.find((item) => item.cityId === view.selectedId)
+      : null;
     const overlayFact = region ? `<span>${authorityOverlayValue(region, view.mapMode).label}</span>` : "";
     const tileFact = view.selectedTileName ? `<span>${view.selectedTileName} · ${view.selectedTerrain}</span>` : "";
     elements.selectionCard.innerHTML = `<header><h3>${city.name}</h3><span>${getOfficerReport(state, city.governorId).name}</span></header><p>${city.note}</p><div class="selection-facts">${tileFact}${overlayFact}<span>人口 ${formatValue(city.population)}</span><span>月収支 ${signed(city.netIncome, 1)}</span><span>治安 ${formatValue(city.publicOrder, 1)}</span></div>`;
@@ -7992,8 +7992,8 @@ function render() {
   renderTabs();
   renderLeftPanel();
   renderAlerts();
-  renderMap();
-  renderSelection();
+  const authorityNetwork = renderMap();
+  renderSelection(authorityNetwork);
   renderTileDetail();
   renderCityWorkspace();
   renderBackMenu();
@@ -9824,76 +9824,11 @@ document.addEventListener("click", async (event) => {
     renderPanelFromTop();
     return;
   }
-  const worldModeButton = event.target.closest("[data-world-mode]");
-  if (worldModeButton) {
-    view.atlasMode = worldModeButton.dataset.worldMode;
-    if (view.atlasMode === "generated") view.generatedMapScale = "region";
-    else if (["geopolitics", "nations", "statistics"].includes(view.atlasMode)) view.generatedMapScale = "world";
-    renderPanelFromTop();
-    return;
-  }
-  const creatureMapButton = event.target.closest("[data-show-creature-on-map]");
-  if (creatureMapButton) {
-    view.selectedCreatureId = creatureMapButton.dataset.showCreatureOnMap;
-    view.selectedType = "creature";
-    view.selectedId = view.selectedCreatureId;
-    view.scale = "world";
-    renderPanelFromTop();
-    return;
-  }
-  const statisticsNationButton = event.target.closest("[data-statistics-nation]");
-  if (statisticsNationButton) {
-    view.selectedNationId = statisticsNationButton.dataset.statisticsNation;
-    view.atlasMode = "statistics";
-    view.panel = "world";
-    renderPanelFromTop();
-    return;
-  }
-  const generatedStatisticsNationButton = event.target.closest("[data-generated-statistics-nation]");
-  if (generatedStatisticsNationButton) {
-    view.selectedGeneratedNationId = generatedStatisticsNationButton.dataset.generatedStatisticsNation;
-    view.atlasMode = "statistics";
-    view.generatedMapScale = "world";
-    view.panel = "world";
-    renderPanelFromTop();
-    return;
-  }
-  const generatedNationButton = event.target.closest("[data-generated-nation]");
-  if (generatedNationButton) {
-    view.selectedGeneratedNationId = generatedNationButton.dataset.generatedNation;
-    view.atlasMode = "nations";
-    view.generatedMapScale = "world";
-    view.panel = "world";
-    renderPanelFromTop();
-    return;
-  }
-  const geopoliticalNationButton = event.target.closest("[data-geopolitical-nation]");
-  if (geopoliticalNationButton) {
-    view.selectedGeneratedNationId = geopoliticalNationButton.dataset.geopoliticalNation;
-    view.atlasMode = "geopolitics";
-    view.generatedMapScale = "world";
-    view.panel = "world";
-    renderPanelFromTop();
-    return;
-  }
-  const worldNationButton = event.target.closest("[data-world-nation]");
-  if (worldNationButton) {
-    view.selectedNationId = worldNationButton.dataset.worldNation;
-    if (WORLD.countries[view.selectedNationId]) {
-      view.selectedType = "country";
-      view.selectedId = view.selectedNationId;
-      view.scale = "world";
-    }
-    view.atlasMode = "nations";
-    view.panel = "world";
-    renderPanelFromTop();
-    return;
-  }
-  const worldPeopleButton = event.target.closest("[data-world-people]");
-  if (worldPeopleButton) {
-    view.selectedPeopleId = worldPeopleButton.dataset.worldPeople;
-    view.atlasMode = "peoples";
-    view.panel = "world";
+  const worldDossierPatch = resolveWorldDossierNavigation(event.target, {
+    hasStaticNation: (nationId) => Boolean(WORLD.countries[nationId]),
+  });
+  if (worldDossierPatch) {
+    Object.assign(view, worldDossierPatch);
     renderPanelFromTop();
     return;
   }
@@ -10161,8 +10096,8 @@ document.addEventListener("click", async (event) => {
       view.tileAnchorX = ((tileRect.left + tileRect.width / 2) - mapRect.left) / mapRect.width;
       view.tileAnchorY = ((tileRect.top + tileRect.height / 2) - mapRect.top) / mapRect.height;
       view.tileWindowOpen = true;
-      renderMap();
-      renderSelection();
+      const authorityNetwork = renderMap();
+      renderSelection(authorityNetwork);
       renderTileDetail();
       return;
     }

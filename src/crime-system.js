@@ -201,12 +201,11 @@ function deterministicSentenceMonths(input, crime) {
   return 3 + (score % 10);
 }
 
-export function normalizeCrimeState(state) {
+function normalizeCrimeStateOnDraft(state) {
   requirePlayerState(state);
-  const next = clone(state);
   const baseline = emptyCrimeState();
-  const prior = next.player.crime ?? {};
-  next.player.crime = {
+  const prior = state.player.crime ?? {};
+  state.player.crime = {
     ...baseline,
     ...prior,
     schemaVersion: CRIME_SCHEMA_VERSION,
@@ -234,10 +233,15 @@ export function normalizeCrimeState(state) {
     monthsElapsed: Math.max(0, Number.isFinite(prior.monthsElapsed) ? prior.monthsElapsed : 0),
     runEnded: Boolean(prior.runEnded),
   };
-  Object.entries(next.player.crime.heatByJurisdiction).forEach(([jurisdictionId, heat]) => {
-    next.player.crime.heatByJurisdiction[jurisdictionId] = normalizeHeat(heat);
+  Object.entries(state.player.crime.heatByJurisdiction).forEach(([jurisdictionId, heat]) => {
+    state.player.crime.heatByJurisdiction[jurisdictionId] = normalizeHeat(heat);
   });
-  return next;
+  return state;
+}
+
+export function normalizeCrimeState(state) {
+  requirePlayerState(state);
+  return normalizeCrimeStateOnDraft(clone(state));
 }
 
 export function getCrimeStatusView(state, context = {}) {
@@ -401,18 +405,23 @@ export function fenceStolenItem(state, input = {}) {
   return next;
 }
 
-export function advanceCrimeMonth(state) {
-  const next = normalizeCrimeState(state);
-  const crime = next.player.crime;
+export function advanceCrimeMonthOnDraft(state) {
+  normalizeCrimeStateOnDraft(state);
+  const crime = state.player.crime;
   crime.monthsElapsed += 1;
   for (const jurisdictionId of Object.keys(crime.heatByJurisdiction)) {
-    const outside = next.player.locationId !== jurisdictionId;
+    const outside = state.player.locationId !== jurisdictionId;
     crime.quietMonthsOutside[jurisdictionId] = outside ? (crime.quietMonthsOutside[jurisdictionId] ?? 0) + 1 : 0;
     let heat = normalizeHeat(crime.heatByJurisdiction[jurisdictionId]);
     if (outside && crime.quietMonthsOutside[jurisdictionId] >= 2) heat = Math.max(0, heat - 5);
     crime.heatByJurisdiction[jurisdictionId] = Math.max(heat, unresolvedFloor(crime, jurisdictionId));
   }
-  return next;
+  return state;
+}
+
+export function advanceCrimeMonth(state) {
+  requirePlayerState(state);
+  return advanceCrimeMonthOnDraft(clone(state));
 }
 
 export function resolveCrimeSentence(state, input = {}) {

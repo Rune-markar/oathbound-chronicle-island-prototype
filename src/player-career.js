@@ -7,7 +7,7 @@ import {
   createRegionalReputationState,
   recordRegionalAchievement,
 } from "./regional-reputation.js";
-import { advanceCrimeMonth, normalizeCrimeState } from "./crime-system.js";
+import { advanceCrimeMonthOnDraft, normalizeCrimeState } from "./crime-system.js";
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const clone = (value) => structuredClone(value);
@@ -577,14 +577,18 @@ export function imposeProhibition(state, prohibition) {
   return next;
 }
 
+export function advanceCareerMonthOnDraft(state) {
+  if (!state.player) throw new Error("キャリア状態ではありません");
+  state.turn += 1;
+  state.month += 1;
+  if (state.month > 12) { state.month = 1; state.year += 1; }
+  state.player.authorityGrants = state.player.authorityGrants.filter((grant) => grant.expiresTurn == null || grant.expiresTurn >= state.turn);
+  state.player.prohibitions = state.player.prohibitions.filter((item) => item.expiresTurn == null || item.expiresTurn >= state.turn);
+  careerLog(state.player, state, "月が進む", "主君、諸侯、地域社会もそれぞれの利害に従って動いている。");
+  return advanceCrimeMonthOnDraft(state);
+}
+
 export function advanceCareerMonth(state) {
   if (!state.player) throw new Error("キャリア状態ではありません");
-  const next = clone(state);
-  next.turn += 1;
-  next.month += 1;
-  if (next.month > 12) { next.month = 1; next.year += 1; }
-  next.player.authorityGrants = next.player.authorityGrants.filter((grant) => grant.expiresTurn == null || grant.expiresTurn >= next.turn);
-  next.player.prohibitions = next.player.prohibitions.filter((item) => item.expiresTurn == null || item.expiresTurn >= next.turn);
-  careerLog(next.player, next, "月が進む", "主君、諸侯、地域社会もそれぞれの利害に従って動いている。");
-  return advanceCrimeMonth(next);
+  return advanceCareerMonthOnDraft(clone(state));
 }

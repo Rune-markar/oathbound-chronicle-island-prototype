@@ -454,12 +454,15 @@ export function closeMilitaryCareerMissionReport(state) {
   return { state: next, promotionActionId: evaluation.promotionEarned ? mission.promotionActionId : null, evaluation };
 }
 
-export function advanceMilitaryCareerMissionMonth(state) {
-  const next = clone(state);
-  const mission = next.player?.militaryCareer?.activeMission;
-  if (!mission || mission.stage === "return_required" || (next.turn ?? 0) <= mission.deadlineTurn) return next;
+export function advanceMilitaryCareerMissionMonthOnDraft(state) {
+  const mission = state.player?.militaryCareer?.activeMission;
+  if (!mission || mission.stage === "return_required" || (state.turn ?? 0) <= mission.deadlineTurn) return state;
   mission.stage = "return_required";
   mission.outcome = "deadline_missed";
   mission.battleResult = { battleId: mission.battleId, winner: null, friendlyCasualties: 0, friendlyHpLoss: 0, enemyCasualties: 0, enemyHpLoss: 0 };
-  return next;
+  return state;
+}
+
+export function advanceMilitaryCareerMissionMonth(state) {
+  return advanceMilitaryCareerMissionMonthOnDraft(clone(state));
 }

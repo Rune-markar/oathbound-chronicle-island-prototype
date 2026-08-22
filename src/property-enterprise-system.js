@@ -143,26 +143,30 @@ function saleUnits(state, shop, commodityId, item, settlement) {
   return Math.min(item.quantity, demand);
 }
 
-export function advancePropertyEnterpriseMonth(state) {
-  let next = prepared(state); const enterprise = next.player.propertyEnterprise; const entry = { period: period(next), revenue: 0, costs: 0, profit: 0, sales: [] };
+export function advancePropertyEnterpriseMonthOnDraft(state) {
+  normalizePropertyEnterpriseState(state); const enterprise = state.player.propertyEnterprise; const entry = { period: period(state), revenue: 0, costs: 0, profit: 0, sales: [] };
   enterprise.properties.filter((property) => property.status === "active").forEach((property) => { entry.costs += property.monthlyCost; });
   Object.values(enterprise.shops).filter((shop) => shop.status === "open").forEach((shop) => {
-    const settlement = settlementFromState(next, shop.settlementId);
+    const settlement = settlementFromState(state, shop.settlementId);
     Object.entries(shop.inventory).forEach(([commodityId, item]) => {
-      const units = settlement ? saleUnits(next, shop, commodityId, item, settlement) : 0;
+      const units = settlement ? saleUnits(state, shop, commodityId, item, settlement) : 0;
       if (!units) return;
-      const good = getSettlementMarket(next, settlement).goods[commodityId]; const unitPrice = round1(good.sellPrice * (shop.priceMultipliers[commodityId] ?? 1)); const revenue = round1(units * unitPrice);
+      const good = getSettlementMarket(state, settlement).goods[commodityId]; const unitPrice = round1(good.sellPrice * (shop.priceMultipliers[commodityId] ?? 1)); const revenue = round1(units * unitPrice);
       item.quantity -= units; entry.revenue = round1(entry.revenue + revenue); entry.sales.push({ settlementId: shop.settlementId, commodityId, units, unitPrice, revenue });
-      shop.ledger.unshift({ period: period(next), commodityId, units, unitPrice, revenue }); if (item.quantity <= 0) delete shop.inventory[commodityId];
+      shop.ledger.unshift({ period: period(state), commodityId, units, unitPrice, revenue }); if (item.quantity <= 0) delete shop.inventory[commodityId];
     });
   });
   const net = round1(entry.revenue - entry.costs); entry.profit = net;
-  if (net >= 0 || next.player.metrics.wealth >= -net) { next.player.metrics.wealth = round1(next.player.metrics.wealth + net); Object.values(enterprise.shops).forEach((shop) => { if (shop.status === "open") shop.arrearsMonths = 0; }); }
+  if (net >= 0 || state.player.metrics.wealth >= -net) { state.player.metrics.wealth = round1(state.player.metrics.wealth + net); Object.values(enterprise.shops).forEach((shop) => { if (shop.status === "open") shop.arrearsMonths = 0; }); }
   else Object.values(enterprise.shops).forEach((shop) => { if (shop.status === "open") shop.arrearsMonths += 1; });
-  Object.keys(enterprise.shops).forEach((id) => { if (enterprise.shops[id].status === "open" && enterprise.shops[id].arrearsMonths >= 3) closeShopOnDraft(next, id); });
-  next.player.propertyEnterprise.monthlyLedger.unshift(entry); next.player.propertyEnterprise.monthlyLedger = next.player.propertyEnterprise.monthlyLedger.slice(0, 24);
-  next.player.propertyEnterprise.stats.sales += entry.sales.reduce((sum, sale) => sum + sale.units, 0); next.player.propertyEnterprise.stats.profit = round1(next.player.propertyEnterprise.stats.profit + net);
-  return next;
+  Object.keys(enterprise.shops).forEach((id) => { if (enterprise.shops[id].status === "open" && enterprise.shops[id].arrearsMonths >= 3) closeShopOnDraft(state, id); });
+  state.player.propertyEnterprise.monthlyLedger.unshift(entry); state.player.propertyEnterprise.monthlyLedger = state.player.propertyEnterprise.monthlyLedger.slice(0, 24);
+  state.player.propertyEnterprise.stats.sales += entry.sales.reduce((sum, sale) => sum + sale.units, 0); state.player.propertyEnterprise.stats.profit = round1(state.player.propertyEnterprise.stats.profit + net);
+  return state;
+}
+
+export function advancePropertyEnterpriseMonth(state) {
+  return advancePropertyEnterpriseMonthOnDraft(clone(state));
 }
 
 export function getPropertyEnterpriseView(state) {

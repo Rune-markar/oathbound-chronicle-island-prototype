@@ -574,12 +574,12 @@ export function executeSuccession(state, legacyChoiceId) {
   return next;
 }
 
-export function advanceLifeToRealmMonth(state) {
-  const next = prepared(state);
-  const life = next.player.lifeToRealm;
-  const salary = [0, 2, 4, 4, 6, 8, 9, 10, 11, 12][stageOrder[next.player.stage] ?? 0] ?? 0;
-  next.player.metrics.wealth = (Number(next.player.metrics.wealth) || 0) + salary;
-  if (next.player.metrics.wealth >= life.home.monthlyRent) next.player.metrics.wealth -= life.home.monthlyRent;
+export function advanceLifeToRealmMonthOnDraft(state) {
+  normalizeLifeToRealmState(state);
+  const life = state.player.lifeToRealm;
+  const salary = [0, 2, 4, 4, 6, 8, 9, 10, 11, 12][stageOrder[state.player.stage] ?? 0] ?? 0;
+  state.player.metrics.wealth = (Number(state.player.metrics.wealth) || 0) + salary;
+  if (state.player.metrics.wealth >= life.home.monthlyRent) state.player.metrics.wealth -= life.home.monthlyRent;
   else { life.home.debt += life.home.monthlyRent; life.home.missedPayments += 1; }
   Object.values(life.companions).forEach((agency) => {
     if (agency.status === "departed") return;
@@ -590,22 +590,26 @@ export function advanceLifeToRealmMonth(state) {
     if (agency.wageArrears >= 3) {
       agency.status = "departed";
       agency.request = null;
-      const member = next.player.villageLife.party.find((entry) => entry.id === agency.id);
+      const member = state.player.villageLife.party.find((entry) => entry.id === agency.id);
       if (member) member.active = false;
-      const adventureMember = next.adventure?.party?.find((entry) => entry.id === agency.id);
+      const adventureMember = state.adventure?.party?.find((entry) => entry.id === agency.id);
       if (adventureMember) adventureMember.active = false;
-      logPersonal(next, `${agency.name}が離脱`, "三か月の未払いにより同行契約を解消した。" );
+      logPersonal(state, `${agency.name}が離脱`, "三か月の未払いにより同行契約を解消した。" );
     }
   });
   const remaining = [];
   life.fief.projects.forEach((project) => {
     const advanced = { ...project, remainingMonths: project.remainingMonths - 1 };
-    if (advanced.remainingMonths <= 0) applyFiefProject(next, advanced);
+    if (advanced.remainingMonths <= 0) applyFiefProject(state, advanced);
     else remaining.push(advanced);
   });
   life.fief.projects = remaining;
   life.household.factionTension = Math.max(0, life.household.factionTension - 1);
-  return next;
+  return state;
+}
+
+export function advanceLifeToRealmMonth(state) {
+  return advanceLifeToRealmMonthOnDraft(clone(state));
 }
 
 export function getLifeToRealmView(state) {

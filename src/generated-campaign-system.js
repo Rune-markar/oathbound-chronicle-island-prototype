@@ -143,9 +143,13 @@ export function respondGeneratedWorldWar(state, warId, responseId) {
   recordWorld(next, "自国戦争への対応", responseId === "mobilize" ? "動員と防衛／攻勢継続を承認した。" : responseId === "withdraw" ? "撤兵と講和を命じた。" : "停戦交渉を命じた。", responseId === "mobilize" ? "danger" : "warning");
   return next;
 }
+export function advanceGeneratedCampaignMonthOnDraft(state) {
+  normalizeGeneratedCampaignState(state); if (state.player.generatedCampaign.active || !state.player.sovereign) return state; const condition = state.generatedWorld.geopolitics?.nationStates?.[playerNationId(state)];
+  if ((condition?.offensiveIntent ?? 0) >= 80 && (condition?.readiness ?? 0) >= 80 && foreignTargets(state).length) {
+    const id = `generated_campaign_proposal:${period(state)}`; if (!state.generatedWorld.pendingStrategicDecisions.some((entry) => entry.id === id)) state.generatedWorld.pendingStrategicDecisions.push({ id, type: "generated_campaign_proposal", title: "国境戦役の開戦提議", summary: "軍議は開戦可能と判断した。不可逆な開戦は君主の承認を待つ。", period: period(state), targetRegionId: foreignTargets(state)[0].regionId });
+  } return state;
+}
+
 export function advanceGeneratedCampaignMonth(state) {
-  const next = prepared(state); if (next.player.generatedCampaign.active || !next.player.sovereign) return next; const condition = next.generatedWorld.geopolitics?.nationStates?.[playerNationId(next)];
-  if ((condition?.offensiveIntent ?? 0) >= 80 && (condition?.readiness ?? 0) >= 80 && foreignTargets(next).length) {
-    const id = `generated_campaign_proposal:${period(next)}`; if (!next.generatedWorld.pendingStrategicDecisions.some((entry) => entry.id === id)) next.generatedWorld.pendingStrategicDecisions.push({ id, type: "generated_campaign_proposal", title: "国境戦役の開戦提議", summary: "軍議は開戦可能と判断した。不可逆な開戦は君主の承認を待つ。", period: period(next), targetRegionId: foreignTargets(next)[0].regionId });
-  } return next;
+  return advanceGeneratedCampaignMonthOnDraft(clone(state));
 }

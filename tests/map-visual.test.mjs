@@ -5,6 +5,7 @@ import { buildTerritorySectorPaths, TERRITORY_SECTOR_COUNT } from "../src/map-ti
 
 const markup = readFileSync(new URL("../index.html", import.meta.url), "utf8");
 const appSource = readFileSync(new URL("../src/app.js", import.meta.url), "utf8");
+const worldDossierNavigationSource = readFileSync(new URL("../src/world-dossier-navigation.js", import.meta.url), "utf8");
 const generatedWorldSource = readFileSync(new URL("../src/generated-world-system.js", import.meta.url), "utf8");
 const styleSource = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
 const manualSource = readFileSync(new URL("../MANUAL.md", import.meta.url), "utf8");
@@ -73,7 +74,8 @@ test("normal play generates the whole world, then zooms to region-level movement
   assert.match(launchFlow, /view\.panel = "world";/);
   assert.match(launchFlow, /view\.atlasMode = "generated";/);
   assert.match(launchFlow, /view\.generatedMapScale = "region";/);
-  assert.match(appSource, /view\.atlasMode === "generated"\) view\.generatedMapScale = "region"/);
+  assert.match(appSource, /resolveWorldDossierNavigation\(event\.target/);
+  assert.match(worldDossierNavigationSource, /value === "generated"\) patch\.generatedMapScale = "region"/);
   assert.match(appSource, /getGeneratedExpeditionReachableRegions\(state\)/);
   assert.match(appSource, /expeditionTile/);
   assert.match(appSource, /dataset\.generatedTileId = tile\.id/);
@@ -529,5 +531,5 @@ test("world scale marks Leviathan as a selectable extreme-creature hazard", () =
   assert.match(styleSource, /\.strategy-map:not\(\.scale-world\) \.world-only/);
   assert.match(styleSource, /\.leviathan-marker\.is-selected \.leviathan-danger-zone/);
   assert.match(appSource, /view\.selectedType === "creature"/);
-  assert.match(appSource, /data-show-creature-on-map/);
+  assert.match(worldDossierNavigationSource, /data-show-creature-on-map/);
 });

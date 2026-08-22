@@ -85,14 +85,18 @@ function applyCompletion(state, record, completed) {
   record.status = "completed"; record.completedPeriod = period(state); state.player.estatePolitics.history.unshift({ ...record, name: completed.name, outcome: "completed" }); logPersonal(state, `${completed.name}が領内へ定着`, "人口・治安・商業・信頼へ成果を反映した。"); logWorld(state, record.regionId, `${completed.name}が完成`, "領民・名望家・商人・家臣の調整を経て所領事業が定着した。", "success");
 }
 
-export function advanceEstatePoliticsMonth(state) {
-  const next = prepared(state);
-  Object.values(next.player.estatePolitics.projects).filter((record) => record.status === "active").forEach((record) => {
+export function advanceEstatePoliticsMonthOnDraft(state) {
+  normalizeEstatePoliticsState(state);
+  Object.values(state.player.estatePolitics.projects).filter((record) => record.status === "active").forEach((record) => {
     if (record.politicalDecisionId === "force" && !record.incidentRecorded) {
-      const region = ensureRegion(next, record.regionId); const outcome = region.rebellionPressure >= 10 ? "opposition" : "accident"; record.incidentRecorded = true; region.security = clamp(region.security - 4, 0, 100); next.player.estatePolitics.history.unshift({ ...record, outcome, period: period(next) });
+      const region = ensureRegion(state, record.regionId); const outcome = region.rebellionPressure >= 10 ? "opposition" : "accident"; record.incidentRecorded = true; region.security = clamp(region.security - 4, 0, 100); state.player.estatePolitics.history.unshift({ ...record, outcome, period: period(state) });
     }
-    const completed = next.player.lifeToRealm.fief.completed.find((entry) => entry.id === record.lifeProjectId);
-    if (completed) applyCompletion(next, record, completed);
+    const completed = state.player.lifeToRealm.fief.completed.find((entry) => entry.id === record.lifeProjectId);
+    if (completed) applyCompletion(state, record, completed);
   });
-  next.player.estatePolitics.history = next.player.estatePolitics.history.slice(0, 60); return next;
+  state.player.estatePolitics.history = state.player.estatePolitics.history.slice(0, 60); return state;
+}
+
+export function advanceEstatePoliticsMonth(state) {
+  return advanceEstatePoliticsMonthOnDraft(clone(state));
 }

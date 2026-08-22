@@ -92,12 +92,16 @@ export function completeCompanionQuest(state, memberId, evidence = {}) {
   next.player.companionQuests.history.unshift({ ...quest, status: "resolved", outcome: "completed", evidenceId, resolvedClockMinutes: now(next) }); logPersonal(next, `${quest.memberName}の依頼を達成`, `${quest.name}を果たし、信頼を深めた。`); return next;
 }
 
-export function advanceCompanionQuests(state) {
-  const next = prepared(state);
-  Object.entries(next.player.companionQuests.activeByMember).forEach(([memberId, quest]) => {
-    if (quest.status !== "active" || now(next) <= quest.deadlineMinutes) return;
-    const agency = next.player.lifeToRealm.companions[memberId]; if (agency) { agency.loyalty = clamp(agency.loyalty - 10, 0, 100); agency.morale = clamp(agency.morale - 8, 0, 100); agency.fear = clamp((Number(agency.fear) || 0) + 15, 0, 100); delete agency.personalQuest; if (agency.loyalty <= 5) agency.status = "departed"; }
-    next.player.companionQuests.history.unshift({ ...quest, status: "resolved", outcome: "expired", resolvedClockMinutes: now(next) }); logPersonal(next, `${quest.memberName}の依頼が期限切れ`, `${quest.name}を果たせず、忠誠と士気を損ねた。`); delete next.player.companionQuests.activeByMember[memberId];
+export function advanceCompanionQuestsOnDraft(state) {
+  normalizeCompanionQuestState(state);
+  Object.entries(state.player.companionQuests.activeByMember).forEach(([memberId, quest]) => {
+    if (quest.status !== "active" || now(state) <= quest.deadlineMinutes) return;
+    const agency = state.player.lifeToRealm.companions[memberId]; if (agency) { agency.loyalty = clamp(agency.loyalty - 10, 0, 100); agency.morale = clamp(agency.morale - 8, 0, 100); agency.fear = clamp((Number(agency.fear) || 0) + 15, 0, 100); delete agency.personalQuest; if (agency.loyalty <= 5) agency.status = "departed"; }
+    state.player.companionQuests.history.unshift({ ...quest, status: "resolved", outcome: "expired", resolvedClockMinutes: now(state) }); logPersonal(state, `${quest.memberName}の依頼が期限切れ`, `${quest.name}を果たせず、忠誠と士気を損ねた。`); delete state.player.companionQuests.activeByMember[memberId];
   });
-  return next;
+  return state;
+}
+
+export function advanceCompanionQuests(state) {
+  return advanceCompanionQuestsOnDraft(clone(state));
 }

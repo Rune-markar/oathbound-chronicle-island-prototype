@@ -7,8 +7,11 @@ import {
   adoptDoctrine,
   commitMonth,
   createInitialState,
+  deriveAdministrationContext,
+  deriveAdministrationNetwork,
   deriveRealmLedger,
   getAuthorityReform,
+  getCityAdministration,
   getCentralizationResult,
   getRegionAuthority,
   setAdministrationMandate,
@@ -24,6 +27,35 @@ function ready(state) {
 function monthReport(state) {
   return state.phase === "event" ? state.pendingMonthReport : state.monthlyReports[0];
 }
+
+test("one administration context matches the independent city, region, and centralization derivations", () => {
+  const initial = createInitialState();
+  const direct = setAdministrationMode(initial, "nereia", "direct");
+  const blind = structuredClone(initial);
+  blind.intelNetwork = 0;
+  blind.cities.nereia.administration.registerCoverage = 5;
+  blind.cities.nereia.internal.administrativeEfficiency = 8;
+  const conquest = structuredClone(initial);
+  conquest.cities.valka_keep = structuredClone(conquest.cities.orta);
+  conquest.cities.valka_keep.administration = null;
+  const reform = structuredClone(initial);
+  reform.cities.nereia.resources.money = 100;
+  const reforming = startAuthorityReform(reform, "nereia", "tax_collection", "absorb");
+
+  for (const [name, state, cityId] of [
+    ["initial", initial, "nereia"],
+    ["direct", direct, "nereia"],
+    ["blind", blind, "nereia"],
+    ["conquest", conquest, "valka_keep"],
+    ["reform", reforming, "nereia"],
+  ]) {
+    const context = deriveAdministrationContext(state, cityId);
+    assert.deepEqual(context.cityAdministration, getCityAdministration(state, cityId), `${name} city administration`);
+    assert.deepEqual(context.region, getRegionAuthority(state, cityId), `${name} region authority`);
+    assert.deepEqual(context.centralization, getCentralizationResult(state), `${name} centralization`);
+    assert.deepEqual(deriveAdministrationNetwork(state), context.network, `${name} network facade`);
+  }
+});
 
 test("administrative network separates nominal holdings from registered and mobilizable power", () => {
   const ledger = deriveRealmLedger(createInitialState());

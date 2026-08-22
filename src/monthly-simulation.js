@@ -58,7 +58,6 @@ import {
   AUTHORITY_TRANSFER_METHODS,
   applyAdministrativeOverload,
   deriveCentralizationResult as modelCentralizationResult,
-  deriveAdministrationNetwork as modelAdministrationNetwork,
   deriveCityAdministration as modelCityAdministration,
   deriveRegionAuthority as modelRegionAuthority,
   getAuthorityReformOptions as modelAuthorityReformOptions,
@@ -175,7 +174,7 @@ import {
   LOCAL_AUTHORITIES,
   NATIONAL_AUTHORITIES,
   acceptServiceInvitation,
-  advanceCareerMonth as advancePlayerCareerMonth,
+  advanceCareerMonthOnDraft as advancePlayerCareerMonthOnDraft,
   assertPlayerAuthority,
   authorizePlayerAction,
   deriveJurisdiction,
@@ -286,16 +285,16 @@ import {
 } from "./crime-system.js";
 import { advanceMerchantMarkets } from "./merchant-trade.js";
 import {
-  PROPERTY_TYPES, acquireProperty, advancePropertyEnterpriseMonth, closePlayerShop, getPropertyEnterpriseView,
+  PROPERTY_TYPES, acquireProperty, advancePropertyEnterpriseMonth, advancePropertyEnterpriseMonthOnDraft, closePlayerShop, getPropertyEnterpriseView,
   normalizePropertyEnterpriseState, openPlayerShop, priceShopCommodity, stockPlayerShop, transferCargoToWarehouse, withdrawWarehouseCargo,
 } from "./property-enterprise-system.js";
-import { advanceCompanionQuests, completeCompanionQuest, getCompanionQuestView, normalizeCompanionQuestState, respondToCompanionQuest } from "./companion-quest-system.js";
-import { ESTATE_DEBATE_OPTIONS, ESTATE_FACTIONS, advanceEstatePoliticsMonth, getEstatePoliticsView, normalizeEstatePoliticsState, resolveEstateProjectDebate, startEstateProjectDebate } from "./estate-politics-system.js";
-import { GENERATED_CAMPAIGN_OBJECTIVES, GENERATED_SIEGE_DECISIONS, advanceGeneratedCampaign, advanceGeneratedCampaignMonth, decideGeneratedSiege, getGeneratedCampaignView, interveneGeneratedWorldWar, normalizeGeneratedCampaignState, requestAlliedContingent, respondGeneratedWorldWar, retreatGeneratedCampaign, settleGeneratedCampaign, startGeneratedCampaign } from "./generated-campaign-system.js";
+import { advanceCompanionQuests, advanceCompanionQuestsOnDraft, completeCompanionQuest, getCompanionQuestView, normalizeCompanionQuestState, respondToCompanionQuest } from "./companion-quest-system.js";
+import { ESTATE_DEBATE_OPTIONS, ESTATE_FACTIONS, advanceEstatePoliticsMonth, advanceEstatePoliticsMonthOnDraft, getEstatePoliticsView, normalizeEstatePoliticsState, resolveEstateProjectDebate, startEstateProjectDebate } from "./estate-politics-system.js";
+import { GENERATED_CAMPAIGN_OBJECTIVES, GENERATED_SIEGE_DECISIONS, advanceGeneratedCampaign, advanceGeneratedCampaignMonth, advanceGeneratedCampaignMonthOnDraft, decideGeneratedSiege, getGeneratedCampaignView, interveneGeneratedWorldWar, normalizeGeneratedCampaignState, requestAlliedContingent, respondGeneratedWorldWar, retreatGeneratedCampaign, settleGeneratedCampaign, startGeneratedCampaign } from "./generated-campaign-system.js";
 import {
   MILITARY_MISSION_APPROACHES,
   MILITARY_MISSION_LOGISTICS,
-  advanceMilitaryCareerMissionMonth,
+  advanceMilitaryCareerMissionMonthOnDraft,
   closeMilitaryCareerMissionReport,
   createMilitaryCareerBattle,
   getMilitaryCareerMissionView,
@@ -313,6 +312,7 @@ import {
   REALM_CAMPAIGN_OBJECTIVES,
   acceptLivelihoodContract,
   advanceLifeToRealmMonth,
+  advanceLifeToRealmMonthOnDraft,
   advanceRealmCampaign,
   answerCompanionRequest,
   chooseLifePath,
@@ -1170,11 +1170,15 @@ export function reportMilitaryCareerMission(state, delegation = {}) {
 }
 
 export function advanceCareerMonth(state) {
-  let next = advanceLifeToRealmMonth(advanceMilitaryCareerMissionMonth(advancePlayerCareerMonth(state)));
-  next = advancePropertyEnterpriseMonth(next);
-  next = advanceCompanionQuests(next);
-  next = advanceEstatePoliticsMonth(next);
-  next = advanceGeneratedCampaignMonth(next);
+  if (!state.player) throw new Error("キャリア状態ではありません");
+  let next = clone(state);
+  next = advancePlayerCareerMonthOnDraft(next);
+  next = advanceMilitaryCareerMissionMonthOnDraft(next);
+  next = advanceLifeToRealmMonthOnDraft(next);
+  next = advancePropertyEnterpriseMonthOnDraft(next);
+  next = advanceCompanionQuestsOnDraft(next);
+  next = advanceEstatePoliticsMonthOnDraft(next);
+  next = advanceGeneratedCampaignMonthOnDraft(next);
   advanceMerchantMarkets(next);
   resolveRoleDelegations(WORLD, next);
   resolveNationalReforms(WORLD, next);
@@ -1388,7 +1392,17 @@ export function deriveCityMetrics(state, cityId) { return modelCityMetrics(WORLD
 export function deriveRealmLedger(state) {
   return { ...modelRealmLedger(WORLD, state), publicDebt: state.fiscal?.publicDebt ?? 24 };
 }
-export function deriveAdministrationNetwork(state) { return modelAdministrationNetwork(WORLD, state, deriveRealmLedger(state).cities); }
+export function deriveAdministrationContext(state, cityId) {
+  const ledger = deriveRealmLedger(state);
+  const network = ledger.administration;
+  return {
+    network,
+    cityAdministration: network.cities.find((city) => city.cityId === cityId) ?? null,
+    region: network.authority.regions.find((region) => region.cityId === cityId) ?? null,
+    centralization: network.centralization,
+  };
+}
+export function deriveAdministrationNetwork(state) { return deriveRealmLedger(state).administration; }
 export function getCityAdministration(state, cityId) { return modelCityAdministration(WORLD, state, cityId, deriveCityMetrics(state, cityId)); }
 export function getRegionAuthority(state, cityId) { return modelRegionAuthority(WORLD, state, cityId); }
 export function getCentralizationResult(state) { return modelCentralizationResult(WORLD, state); }
