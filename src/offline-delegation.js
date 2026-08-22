@@ -5,12 +5,13 @@ export const OFFLINE_MAX_MONTHS = 12;
 const clone = (value) => structuredClone(value);
 
 export function markChronicleSaved(state, now = Date.now()) {
-  const next = clone(state);
-  next.persistence = {
-    ...(next.persistence ?? {}),
-    lastSavedAt: new Date(now).toISOString(),
+  return {
+    ...state,
+    persistence: {
+      ...(state.persistence ?? {}),
+      lastSavedAt: new Date(now).toISOString(),
+    },
   };
-  return next;
 }
 
 export function resumeDelegatedChronicle(state, advanceMonth, now = Date.now()) {

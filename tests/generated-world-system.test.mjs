@@ -80,6 +80,21 @@ test("a new campaign stores a compact reproducible generated-world state", () =>
   });
 });
 
+test("the world clock view reads only clock fields from compact state", () => {
+  const view = getGeneratedWorldTimeView({
+    year: 410,
+    month: 9,
+    generatedWorld: {
+      expeditionClockMinutes: 2 * 24 * 60 + 21 * 60 + 15,
+      characters: [() => "unrelated non-serializable data"],
+    },
+  });
+  assert.equal(view.period, "410-9");
+  assert.equal(view.day, 3);
+  assert.equal(view.timeLabel, "21:15");
+  assert.equal(view.phase, "night");
+});
+
 test("the player recognizes a wrapped circular area of about twenty tiles around the current position", () => {
   const state = createCareerInitialState({ seed: "recognition-radius-test" });
   const world = getGeneratedWorldView(state);
@@ -87,6 +102,13 @@ test("the player recognizes a wrapped circular area of about twenty tiles around
   assert.equal(recognition.radius, GENERATED_RECOGNITION_RADIUS);
   assert.equal(recognition.isRecognized(world.expeditionTile), true);
   assert.ok(recognition.recognizedCount > 400);
+  const expectedTileIds = new Set(world.runtime.tiles.filter((tile) => {
+    const directX = Math.abs(tile.x - world.expeditionTile.x);
+    const dx = Math.min(directX, world.runtime.terrain.width - directX);
+    const dy = Math.abs(tile.y - world.expeditionTile.y);
+    return dx * dx + dy * dy <= GENERATED_RECOGNITION_RADIUS ** 2;
+  }).map((tile) => tile.id));
+  assert.deepEqual(recognition.recognizedTileIds, expectedTileIds);
   for (const tileId of recognition.recognizedTileIds) {
     const tile = world.runtime.tiles.find((entry) => entry.id === tileId);
     const directX = Math.abs(tile.x - world.expeditionTile.x);
@@ -487,6 +509,12 @@ test("colonization extends a player region one roadside village at a time and pe
   assert.ok(planning.bestCandidate);
   assert.ok(planning.candidates.every((candidate) => candidate.roadsideDistance <= 1));
   assert.ok(planning.candidates.every((candidate) => candidate.urbanDistance <= planning.maximumExpansionRadius));
+  assert.ok(planning.candidates.every((candidate) => planning.runtime.nations.objects.every((object) => {
+    const objectTile = planning.runtime.tiles[object.tileIndex];
+    const directX = Math.abs(candidate.tile.x - objectTile.x);
+    const dx = Math.min(directX, planning.runtime.terrain.width - directX);
+    return Math.hypot(dx, candidate.tile.y - objectTile.y) >= 3;
+  })));
 
   const candidate = planning.bestCandidate;
   const arrived = moveGeneratedExpeditionToColonizationSite(initial, candidate.tileId);

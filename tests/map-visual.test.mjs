@@ -106,6 +106,8 @@ test("normal play generates the whole world, then zooms to region-level movement
   assert.match(mapMoveConfirmation, /await playGeneratedTravel\(next, destination\.name/);
   assert.match(styleSource, /\.generated-region-move-target\s*\{[^}]*touch-action: manipulation;[^}]*pointer-events: auto;/s);
   assert.match(styleSource, /\.generated-region-move-layer\s*\{[^}]*z-index:\s*8;/s);
+  assert.match(styleSource, /\.generated-region-move-confirmation > header button \{ width: 44px; height: 44px;/);
+  assert.match(styleSource, /\.generated-region-move-confirmation > footer button \{ min-height: 44px;/);
   assert.match(styleSource, /\.generated-site-marker-layer,[\s\S]*?z-index:\s*7;/);
   assert.match(styleSource, /\.map-caption\s*\{[^}]*pointer-events:\s*none;/s);
   assert.doesNotMatch(appSource, /data-generated-region-destination-id/);
