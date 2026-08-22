@@ -31,6 +31,24 @@ test("guild guidance distinguishes party-gated dungeons from solo local objectiv
   assert.match(app, /周辺探索は主人公一人でも行えます/);
 });
 
+test("a completed local request starts report and reward conversations from its prominent card", () => {
+  const flow = app.match(/function renderVillageQuestFlow\(life, village\)[\s\S]*?\n}\n\nfunction renderGuildProcessedGoodsDesk/)?.[0] ?? "";
+  assert.match(flow, /quest\?\.status === "completed" \? "report_request"/);
+  assert.match(flow, /quest\?\.status === "reported" \? "receive_reward"/);
+  assert.match(flow, /getVillageActionAvailability\(state, deskAction, village\)\.allowed/);
+  assert.match(flow, /data-village-action="\$\{deskAction\}"/);
+});
+
+test("optional local crime choices stay collapsed until their consequences need attention", () => {
+  const section = app.match(/function renderSettlementCrimeSection\(village\)[\s\S]*?\n}\n\nfunction currentCrimeTravelContext/)?.[0] ?? "";
+  assert.match(section, /<details class="crime-context-section settlement-crime-disclosure"/);
+  assert.match(section, /latestIncident \|\| activeOperation \|\| localHeat > 0 \|\| stolen\.length \|\| arrangements\.length/);
+  assert.match(section, /直前の非合法行動/);
+  assert.match(section, /crimeOutcomeMessage/);
+  assert.match(styles, /\.settlement-crime-disclosure > summary/);
+  assert.match(styles, /\.crime-latest-outcome/);
+});
+
 test("generated settlements show only the live contract system", () => {
   const filter = app.match(/function villageFacilityActions\(village, facility\)[\s\S]*?\n}\n\nfunction villageFacilityChoiceCount/)?.[0] ?? "";
   assert.match(filter, /village\.source === "generated" && item\.id === "accept_request"/);

@@ -1167,6 +1167,29 @@ function guildQuestNextAction(quest) {
   return { title: `${quest.name}を進める`, label: "地方内行動へ", route: "quest-local", focusKind: "explore" };
 }
 
+function worldEndgameCareerAction(endgame = null) {
+  if (!state.player?.sovereign) return null;
+  const status = endgame ?? getWorldEndgameStatus(state);
+  if (status.ending) return { title: `${status.ending.name}の結末を確認する`, label: "結末を開く", route: "world-ending" };
+  const route = status.route ?? status.routes.find((entry) => entry.eligible && entry.nextStep);
+  if (!route?.nextStep) return null;
+  if (state.worldEndgame.lastActionTurn === state.turn) {
+    return {
+      title: `月を進め、次の終局判断「${route.nextStep.name}」に備える（${route.completedSteps}/3）`,
+      label: "月を進める",
+      route: "advance-month",
+      endgameRouteId: route.id,
+    };
+  }
+  return {
+    title: `終局判断「${route.nextStep.name}」（${route.completedSteps + 1}/3）`,
+    label: "終局判断へ",
+    route: "world-endgame",
+    endgameRouteId: route.id,
+    endgameActionId: route.nextStep.id,
+  };
+}
+
 function careerNextActionModel() {
   const player = state.player;
   const stage = getCareerStage(state);
@@ -1180,6 +1203,8 @@ function careerNextActionModel() {
   if (player.stage === "individual" && activeQuest?.status === "completed") return { title: `${activeQuest.name}を受注窓口へ報告する`, label: "報告窓口へ", route: "quest-desk", villageId: guildQuestSettlementId(activeQuest) };
   if (player.stage === "individual" && activeQuest?.status === "reported") return { title: `${activeQuest.name}の報酬を受け取る`, label: "報酬窓口へ", route: "quest-desk", villageId: guildQuestSettlementId(activeQuest) };
   if (player.stage === "individual" && activeQuest) return guildQuestNextAction(activeQuest);
+  const worldEndgameAction = worldEndgameCareerAction();
+  if (worldEndgameAction) return worldEndgameAction;
   const pendingStrategicDecision = state.generatedWorld?.pendingStrategicDecisions?.[0];
   if (player.sovereign && pendingStrategicDecision) return { title: `${pendingStrategicDecision.title ?? "国家戦略提案"}を判断する`, label: "判断待ちへ", route: "strategic-decisions" };
   const titles = {
@@ -1279,6 +1304,28 @@ function focusCampaignNextAction() {
   if (action.route === "quest-origin") return openCampaignSettlement(action.villageId);
   if (action.route === "quest-local") return openCampaignLocalAction(action);
   if (action.route === "quest-target") return openCampaignWorldTarget(action.targetId, action.targetId ? "dungeon" : "object");
+  if (action.route === "advance-month") return endMonth();
+  if (action.route === "world-ending") {
+    view.endingOpen = true;
+    render();
+    return;
+  }
+  if (action.route === "world-endgame") {
+    elements.backMenu?.removeAttribute("open");
+    openLedgerDrawer();
+    view.panel = "centralization";
+    renderPanelFromTop();
+    setTimeout(() => {
+      const selector = action.endgameRouteId ? `.world-endgame-route[data-world-endgame-route="${action.endgameRouteId}"]` : ".world-endgame-board";
+      const target = elements.leftPanel?.querySelector(selector) ?? elements.leftPanel?.querySelector(".world-endgame-board");
+      target?.scrollIntoView({ block: "center", behavior: "smooth" });
+      const button = action.endgameActionId
+        ? target?.querySelector(`[data-world-endgame-action="${action.endgameActionId}"]`)
+        : target?.querySelector("[data-world-endgame-action]:not(:disabled)");
+      button?.focus({ preventScroll: true });
+    }, 0);
+    return;
+  }
   if (action.route === "strategic-decisions") {
     elements.backMenu?.removeAttribute("open");
     openLedgerDrawer();
@@ -3897,6 +3944,7 @@ function renderCentralizationPanel() {
   const leviathan = getLeviathanStatus(state);
   const leviathanPolicies = Object.values(LEVIATHAN_POLICIES).map((policy) => `<button type="button" data-leviathan-policy="${policy.id}" class="${leviathan.policy.id === policy.id ? "is-active" : ""}" ${leviathan.policy.id === policy.id || status.decisionsRemaining <= 0 ? "disabled" : ""}><strong>${policy.name}</strong><small>${policy.description}</small></button>`).join("");
   const endgame = getWorldEndgameStatus(state);
+  const endgameCareerAction = worldEndgameCareerAction(endgame);
   const endgameRoutes = endgame.routes.map((route) => {
     const available = route.eligible || state.worldEndgame.routeId === route.id;
     const requirements = route.requirements.map((requirement) => `<li class="${requirement.met ? "is-met" : ""}"><i>${requirement.met ? "✓" : "○"}</i><span>${escapeHtml(requirement.label)}</span></li>`).join("");
@@ -3906,7 +3954,7 @@ function renderCentralizationPanel() {
       return `<li class="${complete ? "is-complete" : current ? "is-current" : ""}"><i>${complete ? "✓" : index + 1}</i><span><strong>${escapeHtml(step.name)}</strong><small>${escapeHtml(step.consequence)}</small></span></li>`;
     }).join("");
     const actionLocked = !available || !route.nextStep || state.worldEndgame.lastActionTurn === state.turn;
-    return `<article class="world-endgame-route ${state.worldEndgame.routeId === route.id ? "is-committed" : ""} ${route.lockedByOtherRoute ? "is-locked" : ""}">
+    return `<article class="world-endgame-route ${state.worldEndgame.routeId === route.id ? "is-committed" : ""} ${route.lockedByOtherRoute ? "is-locked" : ""}" data-world-endgame-route="${route.id}">
       <header><div><small>${route.id === "rational_empire" ? "ORDER / GODDESS" : "CONSENT / HUMAN"}</small><h3>${escapeHtml(route.name)}</h3></div><b>${route.completedSteps} / 3</b></header>
       <p>${escapeHtml(route.principle)}</p><ul class="world-endgame-requirements">${requirements}</ul><ol>${steps}</ol>
       ${route.nextStep ? `<button type="button" data-world-endgame-action="${route.nextStep.id}" ${actionLocked ? "disabled" : ""}><strong>${escapeHtml(route.nextStep.name)}</strong><span>${state.worldEndgame.lastActionTurn === state.turn && state.worldEndgame.routeId === route.id ? "次の月まで制度を定着" : available ? "不可逆な世界主権判断を実行" : "成立条件が不足"}</span></button>` : `<strong class="world-endgame-complete">物語終局を年代記へ記録済み</strong>`}
@@ -3926,6 +3974,7 @@ function renderCentralizationPanel() {
         <article><small>中央集権化結果</small><strong>${Math.round(status.result.resultIndex)}%</strong><span>法 ${Math.round(status.result.legalCentralization)} / 実務 ${Math.round(status.result.practicalCentralization)} / 行政負荷 ${status.result.capacity.utilization}%</span></article>
         <article><small>今月の主要判断</small><strong>残り ${status.decisionsRemaining} / 3</strong><span>改革・歴史・災害対応を合計3件まで</span></article>
       </section>
+      ${endgameCareerAction ? `<section class="world-endgame-command"><span><small>STORY ENDGAME · ${endgame.route?.name ?? "成立条件を達成"}</small><strong>${escapeHtml(endgameCareerAction.title)}</strong><em>世界主権の判断は全3段階。各判断の間に一か月の定着期間があります。</em></span><button type="button" data-campaign-next>${escapeHtml(endgameCareerAction.label)} →</button></section>` : ""}
       <section class="central-stage-rail">${stageRail}</section>
       <section class="central-next-stage"><header><div><small>NEXT STATE</small><h2>${status.nextStage?.name ?? status.currentStage.name}</h2></div><b>${status.currentStage.upkeep}</b></header><p>${status.currentStage.politicalBarrier}</p><ul>${requirements}</ul><aside><strong>失敗時の立て直し</strong><span>${status.currentStage.recovery}</span></aside></section>
       <section class="ash-crown-chapter ${status.chapter.complete ? "is-complete" : ""}"><header><div><small>CHAPTER I</small><h2>灰冠峠三幕キャンペーン</h2></div><b>${status.chapter.complete ? "第一章完了" : "中央集権化の第一章"}</b></header><p>道路規格、敵情、通行権、戦争・占領・定着を通じ、王国制度が共同利益を作れるかを証明する章です。${status.chapter.ending ? ` 結果：${status.chapter.ending.name}。` : ""}</p><button type="button" data-panel="diplomacy">灰冠峠の外交・三幕へ</button></section>
@@ -4783,8 +4832,18 @@ function renderSettlementCrimeSection(village) {
   const fenceDisabled = !stolen.length || !hasLocalFence;
   const fenceReason = !stolen.length ? "換金できる盗品がありません" : !hasLocalFence ? "現地で故買屋を発見する必要があります" : `${stolen[0].name}を換金`;
   const arrangements = (state.player.crime?.extortionArrangements ?? []).filter((entry) => entry.active !== false && entry.settlementId === village.id);
-  return `<section class="crime-context-section" aria-labelledby="settlementCrimeTitle">
-    <header><div><small>ILLEGAL / LOCAL</small><h2 id="settlementCrimeTitle">非合法</h2></div><p>対象と管轄を確かめてから実行します。</p></header>
+  const localHeat = state.player.crime?.heatByJurisdiction?.[village.regionId] ?? 0;
+  const latestIncident = [...(state.player.crime?.incidents ?? [])].reverse().find((entry) => (
+    entry.turn === state.turn && (entry.jurisdiction?.id ?? entry.jurisdictionId) === village.regionId
+  ));
+  const activeOperation = state.player.crime?.activeSmuggling || state.player.crime?.activeSabotage || state.player.crime?.activeAssassination;
+  const needsAttention = Boolean(latestIncident || activeOperation || localHeat > 0 || stolen.length || arrangements.length);
+  const crimeLabels = { theft: "窃盗", extortion: "恐喝", robbery: "街道強盗", smuggling: "密輸", sabotage: "破壊工作", assassination: "暗殺" };
+  const latestOutcome = latestIncident ? crimeOutcomeMessage(crimeLabels[latestIncident.type] ?? "非合法行動", latestIncident) : null;
+  return `<details class="crime-context-section settlement-crime-disclosure" aria-labelledby="settlementCrimeTitle" ${needsAttention ? "open" : ""}>
+    <summary><span><small>ILLEGAL / LOCAL</small><strong id="settlementCrimeTitle">非合法</strong></span><b>${needsAttention ? `要確認 · 手配 ${localHeat}` : "任意の危険行動を表示"}</b></summary>
+    <header><p>物語の本筋とは別の高リスク経路です。対象と管轄を確かめてから実行します。</p></header>
+    ${latestOutcome ? `<aside class="crime-latest-outcome" aria-live="polite"><small>直前の非合法行動</small><strong>${escapeHtml(latestOutcome)}</strong><span>${escapeHtml(latestIncident.historyText || "結果は年代記へ保存されました。")}</span></aside>` : ""}
     <div class="crime-opportunity-grid">
       ${theftOpportunities.map((theft) => crimePreviewCard("theft", theft, previewTheft(state, theft), village.regionName, "窃盗")).join("")}
       ${extortionOpportunities.map((extortion) => crimePreviewCard("extortion", extortion, previewExtortion(state, extortion), village.regionName, extortion.mode === "recurring" ? "継続的なみかじめ" : "一度限りの恐喝")).join("")}
@@ -4796,7 +4855,7 @@ function renderSettlementCrimeSection(village) {
     </nav>
     ${renderSettlementSabotage(village)}
     <p class="crime-feedback" aria-live="polite">成功・失敗と露見の結果は年代記へ記録されます。</p>
-  </section>`;
+  </details>`;
 }
 
 function currentCrimeTravelContext() {
@@ -4999,7 +5058,11 @@ function renderVillageQuestFlow(life, village) {
     : questAction ? questAction.label
       : quest.status === "completed" ? `${venueName}で達成報告`
         : `${venueName}で報酬を受け取る`;
-  const actionAttributes = questAction?.route === "quest-party"
+  const deskAction = quest?.status === "completed" ? "report_request" : quest?.status === "reported" ? "receive_reward" : null;
+  const directDeskAction = deskAction && getVillageActionAvailability(state, deskAction, village).allowed;
+  const actionAttributes = directDeskAction
+    ? `data-village-action="${deskAction}"`
+    : questAction?.route === "quest-party"
     ? 'data-village-facility="tavern" data-open-tavern-section="adventurers"'
     : ["quest-local", "quest-origin", "quest-desk"].includes(questAction?.route) || ["completed", "reported"].includes(quest?.status)
       ? "data-campaign-next"

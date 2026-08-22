@@ -10209,6 +10209,12 @@ body:not(.is-expert-mode) .selection-card { bottom: 48px; }
 .centralization-command-hero small { color: #8f7340; font: 700 7px system-ui, sans-serif; }
 .centralization-command-hero strong { color: #314944; font-size: 13px; }
 .centralization-command-hero span { color: #6e6c63; font: 8px/1.35 system-ui, sans-serif; }
+.world-endgame-command { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 14px; padding: 12px 14px; border: 1px solid #9f7b39; border-left: 4px solid #9f7b39; background: linear-gradient(110deg, rgba(255, 247, 218, .96), rgba(225, 238, 225, .86)); }
+.world-endgame-command span > * { display: block; }
+.world-endgame-command small { color: #8c692f; font: 900 7px/1 system-ui, sans-serif; letter-spacing: .12em; }
+.world-endgame-command strong { margin-top: 4px; color: #31574f; font: 800 15px/1.2 Georgia, "Yu Mincho", serif; }
+.world-endgame-command em { margin-top: 5px; color: #736b5e; font: 9px/1.45 system-ui, sans-serif; font-style: normal; }
+.world-endgame-command button { min-width: 130px; padding: 10px 13px; color: #fff0bb; border: 1px solid #9f7b39; background: linear-gradient(#4c7a70, #315d56); font-weight: 800; }
 
 .central-stage-rail { display: grid; grid-template-columns: repeat(7, minmax(108px, 1fr)); overflow-x: auto; background: #e9dfc8 !important; }
 .central-stage { min-width: 108px; display: grid; grid-template-columns: 23px 1fr; gap: 6px; align-items: center; padding: 9px 7px; border-right: 1px solid rgba(84, 77, 61, .18); opacity: .55; }
@@ -12977,6 +12983,8 @@ body.is-battle-preparation-open { overflow: hidden; }
 }
 
 @media (max-width: 620px) {
+  .world-endgame-command { grid-template-columns: 1fr; }
+  .world-endgame-command button { min-width: 0; }
   .guild-receptionist-desk { grid-template-columns: 92px minmax(0, 1fr); gap: 10px; padding: 10px; }
   .guild-receptionist-desk > figure { height: 150px; }
   .guild-receptionist-desk > figure img { transform: scale(1.75); }
@@ -13087,6 +13095,25 @@ body.is-battle-preparation-open { overflow: hidden; }
 .village-current-request p { margin: 4px 0 0; color: #746c5e; font-size: 10px; }
 .village-request-requirement { display: block; margin-top: 7px; color: #765620; font-size: 9px; font-style: normal; font-weight: 800; line-height: 1.45; }
 .village-current-request button { min-width: 190px; padding: 10px 13px; color: #fff0bb; border: 1px solid #b99243; background: linear-gradient(#497a70, #315d56); font-weight: 800; }
+.settlement-crime-disclosure { padding: 0; overflow: hidden; }
+.settlement-crime-disclosure > summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 13px 15px; color: #f3e5c3; background: linear-gradient(105deg, #4c3933, #65463a); cursor: pointer; list-style: none; }
+.settlement-crime-disclosure > summary::-webkit-details-marker { display: none; }
+.settlement-crime-disclosure > summary span > * { display: block; }
+.settlement-crime-disclosure > summary small { color: #d4ad77; font: 800 7px/1 system-ui, sans-serif; letter-spacing: .13em; }
+.settlement-crime-disclosure > summary strong { margin-top: 4px; font: 800 17px/1 Georgia, "Yu Mincho", serif; }
+.settlement-crime-disclosure > summary b { color: #ead7b3; font-size: 9px; }
+.settlement-crime-disclosure[open] > summary { border-bottom: 1px solid rgba(223, 182, 125, .35); }
+.settlement-crime-disclosure > header,
+.settlement-crime-disclosure > .crime-opportunity-grid,
+.settlement-crime-disclosure > .crime-support-actions,
+.settlement-crime-disclosure > [data-sabotage-context],
+.settlement-crime-disclosure > .crime-feedback { margin-right: 14px; margin-left: 14px; }
+.settlement-crime-disclosure > header { padding-top: 11px; }
+.settlement-crime-disclosure > .crime-feedback { margin-bottom: 14px; }
+.crime-latest-outcome { display: grid; gap: 4px; margin: 0 14px 11px; padding: 10px 12px; border-left: 3px solid #b96d50; background: rgba(105, 51, 42, .12); }
+.crime-latest-outcome small { color: #8f664e; font-size: 7px; font-weight: 900; letter-spacing: .1em; }
+.crime-latest-outcome strong { color: #713d35; font-size: 11px; }
+.crime-latest-outcome span { color: #76675e; font-size: 9px; line-height: 1.45; }
 
 .village-facility-layout { display: grid; grid-template-columns: minmax(190px, 245px) minmax(0, 1fr); gap: 10px; }
 .village-facility-nav { display: grid; align-content: start; gap: 5px; }

@@ -21,6 +21,20 @@ test("現在目標は説明だけでなく次の実行地点への直行操作�
   assert.match(styles, /\.campaign-bar-actions kbd/);
 });
 
+test("成立した世界終局は現在目標から三段階の次判断へ直行できる", () => {
+  const action = app.match(/function worldEndgameCareerAction\(endgame = null\)[\s\S]*?\n}\n\nfunction careerNextActionModel/)?.[0] ?? "";
+  const focus = app.match(/function focusCampaignNextAction\(\)[\s\S]*?\n}\n\nfunction renderCampaignBar/)?.[0] ?? "";
+  assert.match(action, /status\.route \?\? status\.routes\.find/);
+  assert.match(action, /月を進め、次の終局判断「\$\{route\.nextStep\.name\}」に備える/);
+  assert.match(action, /終局判断「\$\{route\.nextStep\.name\}」/);
+  assert.match(action, /route: "advance-month"/);
+  assert.match(action, /route: "world-endgame"/);
+  assert.match(focus, /action\.route === "advance-month"[\s\S]*?endMonth\(\)/);
+  assert.match(focus, /action\.route === "world-endgame"[\s\S]*?data-world-endgame-action/);
+  assert.match(app, /class="world-endgame-command"/);
+  assert.match(styles, /\.world-endgame-command/);
+});
+
 test("主要画面と現在目標はマウス移動なしでも開ける", () => {
   for (const [shortcut, title] of [["1", "世界"], ["2", "人物"], ["3", "統治"], ["4", "国制"], ["5", "評定"], ["6", "その他"]]) {
     assert.match(index, new RegExp(`title="${title}（${shortcut}）"`));
