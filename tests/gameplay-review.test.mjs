@@ -107,6 +107,17 @@ test("a completed request can only be reported to its accepting settlement", () 
   assert.equal(getVillageActionAvailability(state, "report_request", origin).allowed, true);
 });
 
+test("legacy generated quests resolve their virtual village to a real settlement in the same region", () => {
+  const origin = { id: "generated-town", name: "生成町", regionId: "region-a" };
+  const otherRegion = { id: "other-town", name: "他地方町", regionId: "region-b" };
+  let state = createCareerInitialState();
+  state = performVillageAction(state, { id: "village:region-a", name: "旧辺境村" }, "accept_request");
+  state = performVillageAction(state, origin, "recruit_companion");
+  state = performVillageAction(state, origin, "complete_request");
+  assert.equal(getVillageActionAvailability(state, "report_request", origin).allowed, true);
+  assert.equal(getVillageActionAvailability(state, "report_request", otherRegion).allowed, false);
+});
+
 test("a capital sentence opens a persistent terminal surface and locks gameplay", () => {
   assert.match(appSource, /state\.player\?\.crime\?\.runEnded/);
   assert.match(appSource, /CRIMINAL CHRONICLE COMPLETE/);

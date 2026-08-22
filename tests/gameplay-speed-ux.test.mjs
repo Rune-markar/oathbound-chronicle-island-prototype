@@ -10,7 +10,12 @@ test("現在目標は説明だけでなく次の実行地点への直行操作�
   assert.match(app, /function careerNextActionModel\(\)/);
   assert.match(app, /function focusCampaignNextAction\(\)/);
   assert.match(app, /data-campaign-next/);
-  assert.match(app, /activeQuest\.acceptedVillageId/);
+  assert.match(app, /function guildQuestSettlementId\(quest\)/);
+  assert.match(app, /function guildQuestNextAction\(quest\)/);
+  assert.match(app, /route: "quest-party"[\s\S]*?tavernSection: "adventurers"/);
+  assert.match(app, /route: "quest-local"/);
+  assert.match(app, /action\.route === "quest-party"[\s\S]*?action\.tavernSection/);
+  assert.match(app, /action\.route === "quest-local"[\s\S]*?openCampaignLocalAction/);
   assert.match(app, /villageId\?\.startsWith\("village:"\)/);
   assert.match(app, /currentLocationId === villageId/);
   assert.match(styles, /\.campaign-bar-actions kbd/);

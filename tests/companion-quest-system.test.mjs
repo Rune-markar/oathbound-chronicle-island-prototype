@@ -39,6 +39,33 @@ test("hold and refusal are explicit and refusal changes the actual relationship"
   assert.equal(refused.player.companionQuests.history[0].outcome, "refused");
 });
 
+test("a held quest keeps its saved offer across months for acceptance or refusal", () => {
+  const initial = withCompanion("companion-held-across-months");
+  const offer = getCompanionQuestView(initial).companions[0].offers.find((entry) => entry.kind === "journey");
+  const held = respondToCompanionQuest(initial, "mira", offer.id, "hold");
+  const savedOffer = structuredClone(held.player.companionQuests.activeByMember.mira);
+  held.month += 1;
+  held.generatedWorld.expeditionClockMinutes += 60;
+
+  assert.equal(getCompanionQuestView(held).companions[0].offers.some((entry) => entry.id === offer.id), false);
+
+  const accepted = respondToCompanionQuest(held, "mira", offer.id, "accept");
+  assert.equal(accepted.player.companionQuests.activeByMember.mira.status, "active");
+  assert.equal(accepted.player.companionQuests.activeByMember.mira.offeredPeriod, savedOffer.offeredPeriod);
+  assert.equal(accepted.player.companionQuests.activeByMember.mira.targetRegionId, savedOffer.targetRegionId);
+  assert.equal(accepted.player.companionQuests.activeByMember.mira.deadlineMinutes, savedOffer.deadlineMinutes);
+
+  const loyaltyBeforeRefusal = held.player.lifeToRealm.companions.mira.loyalty;
+  const refused = respondToCompanionQuest(held, "mira", offer.id, "refuse");
+  assert.equal(refused.player.companionQuests.activeByMember.mira, undefined);
+  assert.equal(refused.player.lifeToRealm.companions.mira.personalQuest, undefined);
+  assert.ok(refused.player.lifeToRealm.companions.mira.loyalty < loyaltyBeforeRefusal);
+  assert.equal(refused.player.companionQuests.history[0].id, savedOffer.id);
+  assert.equal(refused.player.companionQuests.history[0].targetRegionId, savedOffer.targetRegionId);
+  assert.equal(refused.player.companionQuests.history[0].outcome, "refused");
+  assert.deepEqual(held.player.companionQuests.activeByMember.mira, savedOffer);
+});
+
 test("an accepted journey requires the real destination and improves leadership aptitude", () => {
   let state = withCompanion("companion-journey");
   const offer = getCompanionQuestView(state).companions[0].offers.find((entry) => entry.kind === "journey");

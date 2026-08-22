@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   advanceGeneratedCampaign,
   advanceGeneratedCampaignMonth,
@@ -13,8 +14,8 @@ import {
   settleGeneratedCampaign,
   startGeneratedCampaign,
 } from "../src/generated-campaign-system.js";
-import { createCareerInitialState } from "../src/simulation.js";
-import { getGeneratedWorldView } from "../src/generated-world-system.js";
+import { advanceCareerMonth, createCareerInitialState } from "../src/simulation.js";
+import { advanceGeneratedWorldGeopolitics, dismissGeneratedStrategicDecision, getGeneratedWorldView } from "../src/generated-world-system.js";
 
 function sovereignState(seed = "generated-campaign") {
   const state = createCareerInitialState({ seed });
@@ -52,6 +53,7 @@ test("campaign opportunities are real foreign borders and allied aid is explicit
 test("a generated campaign uses the shared core for three to five fronts, supplies, and a real siege decision", () => {
   let { state, target, ally } = sovereignState("campaign-siege");
   state = requestAlliedContingent(state, ally.id);
+  state.generatedWorld.pendingStrategicDecisions.push({ id: "generated_campaign_proposal:test", type: "generated_campaign_proposal", targetRegionId: target.id, title: "国境戦役の開戦提議" });
   const wealthBefore = state.player.metrics.wealth;
   state = startGeneratedCampaign(state, { targetRegionId: target.id, objectiveId: "limited_annexation", commanderIds: ["player", "dario"], allyNationIds: [ally.id] });
   const active = state.player.generatedCampaign.active;
@@ -62,6 +64,7 @@ test("a generated campaign uses the shared core for three to five fronts, suppli
   assert.ok(active.armies.some((army) => army.allyNationId === ally.id));
   assert.equal(state.player.metrics.wealth, wealthBefore - 34);
   assert.equal(active.targetRegionName, target.name);
+  assert.equal(state.generatedWorld.pendingStrategicDecisions.some((entry) => entry.type === "generated_campaign_proposal"), false);
   state = advanceGeneratedCampaign(state);
   state = advanceGeneratedCampaign(state);
   assert.equal(state.player.generatedCampaign.active.phase, "siege_decision");
@@ -113,6 +116,70 @@ test("monthly AI queues player irreversible war choices instead of executing the
   const next = advanceGeneratedCampaignMonth(state);
   assert.equal(next.player.generatedCampaign.active, null);
   assert.ok(next.generatedWorld.pendingStrategicDecisions.some((entry) => entry.type === "generated_campaign_proposal"));
+});
+
+test("aggregate career months retain one campaign proposal across geopolitical updates and save reloads", () => {
+  const { state } = sovereignState("campaign-ai-aggregate-approval");
+  const playerNationId = state.generatedWorld.playerNationId;
+  state.generatedWorld.geopolitics.nationStates[playerNationId].offensiveIntent = 100;
+  state.generatedWorld.geopolitics.nationStates[playerNationId].readiness = 100;
+
+  const first = advanceCareerMonth(state);
+  const firstProposals = first.generatedWorld.pendingStrategicDecisions.filter((entry) => entry.type === "generated_campaign_proposal");
+  assert.equal(firstProposals.length, 1);
+  assert.equal(firstProposals[0].period, `${first.year}-${first.month}`);
+
+  const reloaded = JSON.parse(JSON.stringify(first));
+  reloaded.generatedWorld.geopolitics.nationStates[playerNationId].offensiveIntent = 100;
+  reloaded.generatedWorld.geopolitics.nationStates[playerNationId].readiness = 100;
+  const second = advanceCareerMonth(reloaded);
+  const secondProposals = second.generatedWorld.pendingStrategicDecisions.filter((entry) => entry.type === "generated_campaign_proposal");
+  assert.equal(secondProposals.length, 1);
+  assert.equal(secondProposals[0].period, `${second.year}-${second.month}`);
+  assert.notEqual(secondProposals[0].id, firstProposals[0].id);
+});
+
+test("a newly advanced strategic producer replaces stale war decisions without deleting campaign proposals", () => {
+  const { state, target } = sovereignState("campaign-stale-strategic-decision");
+  const campaignProposal = { id: "generated_campaign_proposal:kept", type: "generated_campaign_proposal", targetRegionId: target.id };
+  const staleWarDecision = { id: "world-war-response:gone", type: "generated_world_war_response", worldWarId: "gone", period: state.generatedWorld.geopolitics.lastAdvancedPeriod };
+  const externalDecisions = Array.from({ length: 24 }, (_, index) => ({ id: `external-strategic:${index}`, type: "external_decision" }));
+  state.generatedWorld.pendingStrategicDecisions = [campaignProposal, ...externalDecisions, staleWarDecision];
+  state.month = state.month === 12 ? 1 : state.month + 1;
+  if (state.month === 1) state.year += 1;
+
+  const next = advanceGeneratedWorldGeopolitics(state);
+  assert.equal(next.generatedWorld.pendingStrategicDecisions.some((entry) => entry.id === staleWarDecision.id), false);
+  assert.equal(next.generatedWorld.pendingStrategicDecisions.some((entry) => entry.id === campaignProposal.id), true);
+});
+
+test("a sovereign can dismiss a campaign proposal without mutating the saved input", () => {
+  const { state, target } = sovereignState("campaign-proposal-dismissal");
+  state.generatedWorld.pendingStrategicDecisions.push(
+    { id: "generated_campaign_proposal:317-4", type: "generated_campaign_proposal", targetRegionId: target.id, title: "国境戦役の開戦提議", summary: "開戦判断を待つ。" },
+    { id: "generated_campaign_proposal:legacy", type: "generated_campaign_proposal", targetRegionId: target.id, title: "旧提議" },
+    { id: "unrelated-strategic-decision", type: "generated_world_war_response", worldWarId: "world-war:other", title: "別の判断" },
+  );
+  const frozen = structuredClone(state);
+  const next = dismissGeneratedStrategicDecision(state, "generated_campaign_proposal:317-4");
+  assert.equal(next.generatedWorld.pendingStrategicDecisions.some((entry) => entry.type === "generated_campaign_proposal"), false);
+  assert.equal(next.generatedWorld.pendingStrategicDecisions[0].id, "unrelated-strategic-decision");
+  assert.match(next.player.history[0].title, /見送る/);
+  next.generatedWorld.pendingStrategicDecisions[0].title = "変更後";
+  assert.deepEqual(state, frozen);
+});
+
+test("pending strategic decisions are visible and actionable in the sovereign UI", () => {
+  const appSource = readFileSync(new URL("../src/app.js", import.meta.url), "utf8");
+  const renderer = appSource.slice(appSource.indexOf("function renderPendingStrategicDecisions"), appSource.indexOf("function renderLifeToRealmBoard"));
+  assert.match(renderer, /data-pending-strategic-decisions/);
+  assert.match(renderer, /data-generated-campaign-proposal-review/);
+  assert.match(renderer, /data-generated-strategic-dismiss/);
+  assert.match(renderer, /data-generated-war-response/);
+  assert.match(renderer, /data-generated-strategic-occupation/);
+  assert.match(appSource, /route: "strategic-decisions"/);
+  assert.match(appSource, /国家戦略 · 判断待ち/);
+  assert.match(appSource, /dismissGeneratedStrategicDecision\(state, decision\.id\)/);
 });
 
 test("a sovereign can reinforce or mediate a known AI war through the shared war ledger", () => {

@@ -8,7 +8,7 @@ import {
   setBattleTerrain,
   setBattleTileFeature,
 } from "./tactical-battle.js";
-import { advanceGeneratedWorldTime, getGeneratedTravelCrimeContext } from "./generated-world-system.js";
+import { advanceGeneratedWorldTime, getGeneratedTravelCrimeContext, returnGeneratedExpeditionToTravelOrigin } from "./generated-world-system.js";
 import { NOELA_ORBIS_ID, UNIQUE_CHARACTERS, getUniqueCharacter } from "./unique-characters.js";
 import { ABILITY_LABELS, normalizeAbilityScores } from "./character-abilities.js";
 import { discoverUnderworldContacts, fenceStolenItem, normalizeCrimeState } from "./crime-system.js";
@@ -373,6 +373,72 @@ export function normalizeAdventureState(state) {
 
 function preparedClone(state) {
   return normalizeAdventureState(clone(state));
+}
+
+function adventureEventLocation(state, context = {}, fallbackVillageId = null) {
+  const explicitVillage = context.village ?? context.settlement ?? context.place ?? null;
+  const fallbackVillage = context.region?.id ? getRegionAdventureSites(state, context).village : null;
+  const villageId = context.villageId ?? explicitVillage?.id ?? fallbackVillageId ?? fallbackVillage?.id ?? null;
+  const generatedSettlement = (context.runtime?.nations?.objects ?? []).find((entry) => entry.id === villageId) ?? null;
+  const villageName = explicitVillage?.name
+    ?? generatedSettlement?.name
+    ?? (fallbackVillage?.id === villageId ? fallbackVillage.name : null)
+    ?? fallbackVillage?.name
+    ?? villageId
+    ?? "現在地";
+  const settlementLevel = explicitVillage?.settlementLevel
+    ?? generatedSettlement?.settlementLevel
+    ?? (explicitVillage?.type === "village" || generatedSettlement?.type === "village" || villageId?.startsWith("village:") ? "village" : null);
+  return {
+    villageId,
+    villageName,
+    regionId: context.region?.id ?? explicitVillage?.regionId ?? generatedSettlement?.regionId ?? null,
+    regionName: context.region?.name ?? explicitVillage?.regionName ?? generatedSettlement?.regionName ?? "地方不明",
+    settlementLevel,
+  };
+}
+
+function recordAdventureVillageEvent(state, location, event) {
+  const player = state.player;
+  const life = player?.villageLife;
+  if (!player || !life) return;
+  const actionHistory = Array.isArray(life.actionHistory) ? life.actionHistory : [];
+  let actionRecord = actionHistory.find((entry) => entry.eventId === event.eventId);
+  if (!actionRecord) {
+    actionRecord = {
+      id: `adventure:${event.eventId}`,
+      eventId: event.eventId,
+      villageId: location.villageId,
+      villageName: location.villageName,
+      regionId: location.regionId,
+      regionName: location.regionName,
+      facilityId: event.facilityId,
+      facilityName: event.facilityName,
+      actionId: event.actionId,
+      actionName: event.actionName,
+      year: state.year,
+      month: state.month,
+      message: event.message,
+    };
+    life.actionHistory = [actionRecord, ...actionHistory].slice(0, 40);
+  }
+  life.lastAction = actionRecord;
+
+  const history = Array.isArray(player.history) ? player.history : [];
+  if (!history.some((entry) => entry.eventId === event.eventId)) {
+    player.history = [{
+      eventId: event.eventId,
+      turn: state.turn ?? 0,
+      year: state.year,
+      month: state.month,
+      villageId: location.villageId,
+      villageName: location.villageName,
+      regionId: location.regionId,
+      regionName: location.regionName,
+      title: event.title,
+      detail: event.message,
+    }, ...history].slice(0, 60);
+  }
 }
 
 function addInventoryItem(adventure, item, quantity = 1) {
@@ -908,7 +974,7 @@ export function getGuildContracts(state, context) {
       id,
       regionId: context.region.id,
       villageId: village.id,
-      dungeonId: dungeon.id,
+      dungeonId: definition.objective.type === "collect_item" ? null : dungeon.id,
       status,
       objective: { ...objective, progress },
       readyToSubmit: status === "accepted" && objective.type === "collect_item" && progress >= objective.required,
@@ -926,6 +992,7 @@ export function acceptGuildContract(state, contractId, context) {
   if (villageLife?.quests?.some((quest) => quest.source === "guild" && ["accepted", "active", "completed", "reported"].includes(quest.status))) {
     throw new Error("先に受注中の依頼を集落の窓口へ報告し、報酬を受け取ってください。");
   }
+  const acceptedVillageId = context.villageId ?? contract.villageId;
   next.adventure.activeContracts.push({ ...contract, acceptedTurn: next.turn ?? 0, status: "active" });
   if (contract.dungeonId) revealRegionDungeonOnDraft(next, context);
   if (villageLife?.quests) {
@@ -940,7 +1007,8 @@ export function acceptGuildContract(state, contractId, context) {
       merit: contract.merit,
       reward: { ...contract.reward },
       routeEvent: contract.routeEvent ?? null,
-      acceptedVillageId: contract.villageId,
+      acceptedVillageId,
+      acceptedRegionId: contract.regionId,
       dungeonId: contract.dungeonId,
     });
   }
@@ -949,6 +1017,20 @@ export function acceptGuildContract(state, contractId, context) {
     const active = next.adventure.activeContracts.find((entry) => entry.id === contract.id);
     markGuildContractCompleted(next, active ?? contract);
   }
+  const location = adventureEventLocation(next, context, contract.villageId);
+  const completedImmediately = next.player?.villageLife?.quests?.some((quest) => quest.id === contract.id && quest.status === "completed");
+  const venueIsVillage = location.settlementLevel === "village";
+  recordAdventureVillageEvent(next, location, {
+    eventId: `guild-contract-accepted:${contract.id}`,
+    facilityId: venueIsVillage ? "tavern" : "guild",
+    facilityName: venueIsVillage ? "酒場" : "冒険者ギルド",
+    actionId: "accept_guild_contract",
+    actionName: "ギルド依頼受注",
+    title: `${location.villageName}・ギルド依頼受注`,
+    message: completedImmediately
+      ? `「${contract.title}」を受注し、所持済みの${contract.objective.targetName}が達成証明として認められた。依頼は達成済みとなり、受注窓口へ報告できる。`
+      : `「${contract.title}」を受注した。${contract.detail}`,
+  });
   return next;
 }
 
@@ -1192,7 +1274,7 @@ function personalityConversationReaction(personality, actionId, repeated = false
   return reactions[personality.id]?.[actionId] ?? "こちらの言葉を聞き、少し考えてから答えた。";
 }
 
-function addCandidateToParty(next, candidate, source) {
+function addCandidateToParty(next, candidate, source, context) {
   const villageParty = next.player?.villageLife?.party;
   if (Math.max(next.adventure.party.length, villageParty?.length ?? 0) >= 3) throw new Error("パーティーはプレイヤーを含め4人までです。");
   if (candidate.joined) throw new Error("すでにパーティーへ参加しています。");
@@ -1219,24 +1301,27 @@ function addCandidateToParty(next, candidate, source) {
       battleState: "READY",
     });
   }
-  if (candidate.unique && next.player) {
-    next.player.history ??= [];
-    next.player.history.unshift({
-      turn: next.turn ?? 0,
-      year: next.year,
-      month: next.month,
-      title: `固有人物 ${candidate.name}が加入`,
-      detail: `${candidate.role}として探索隊へ参加。固有能力「${candidate.passiveName}」が有効になった。`,
-    });
-    next.player.history = next.player.history.slice(0, 60);
-  }
   const relation = next.adventure.npcRelations[candidate.id] ??= normalizeNpcRelation(candidate.id, null);
   relation.joined = true;
   recordMasteryEvent(next, "recruits", 1);
+  const location = adventureEventLocation(next, context);
+  const invitedByCandidate = source === "invitation";
+  const message = candidate.unique
+    ? `${invitedByCandidate ? `${candidate.name}からの誘いを受け` : `${candidate.name}を誘い`}、${candidate.role}として探索隊へ迎えた。固有能力「${candidate.passiveName}」が有効になった。`
+    : `${invitedByCandidate ? `${candidate.name}からの誘いを受け` : `${candidate.name}を誘い`}、${candidate.role}として探索隊へ迎えた。`;
+  recordAdventureVillageEvent(next, location, {
+    eventId: `companion-recruited:${candidate.id}`,
+    facilityId: "tavern",
+    facilityName: "酒場",
+    actionId: "recruit_companion",
+    actionName: candidate.unique ? "固有人物加入" : "仲間加入",
+    title: candidate.unique ? `固有人物 ${candidate.name}が加入` : `${candidate.name}が加入`,
+    message,
+  });
   return next;
 }
 
-function attemptRecruitmentOnDraft(next, candidate, relation) {
+function attemptRecruitmentOnDraft(next, candidate, relation, context) {
   relation.recruitmentAttempts += 1;
   const condition = recruitmentCondition(next, candidate, relation);
   if (!relation.firstMeetingComplete) {
@@ -1253,7 +1338,7 @@ function attemptRecruitmentOnDraft(next, candidate, relation) {
     return { joined: false, affinityDelta, reaction: `${prefix} ${condition.hint}`, condition };
   }
   if (condition.cost > 0) next.player.metrics.wealth -= condition.cost;
-  addCandidateToParty(next, candidate, candidate.unique ? "unique-recruit" : "player-invite");
+  addCandidateToParty(next, candidate, candidate.unique ? "unique-recruit" : "player-invite", context);
   return { joined: true, affinityDelta: 0, reaction: condition.cost > 0 ? `契約金${condition.cost}を受け取り、同行契約に署名した。` : "条件は満たされた、と頷き、旅支度を手に取った。", condition };
 }
 
@@ -1340,7 +1425,7 @@ export function interactWithNpcCandidate(state, candidateId, actionId, context, 
     affinityDelta = previousCount === 0 ? (personality.id === "practical" || personality.id === "proud" ? 2 : 1) : previousCount === 1 ? 0 : -1;
     if (previousCount >= 1) reaction = previousCount === 1 ? "条件は先ほど伝えた通りだ、と要点だけを確認した。" : personalityConversationReaction(personality, actionId, true);
   } else if (actionId === "invite") {
-    const outcome = attemptRecruitmentOnDraft(next, candidate, relation);
+    const outcome = attemptRecruitmentOnDraft(next, candidate, relation, context);
     affinityDelta = outcome.affinityDelta;
     reaction = outcome.reaction;
     joined = outcome.joined;
@@ -1356,9 +1441,9 @@ function recruitCandidate(state, candidateId, context, expectedIncoming) {
   const next = preparedClone(state);
   const candidate = getTavernCandidates(next, context).find((entry) => entry.id === candidateId);
   if (!candidate || candidate.incoming !== expectedIncoming) throw new RangeError("その冒険者は今、酒場にいません。");
-  if (expectedIncoming) return addCandidateToParty(next, candidate, "invitation");
+  if (expectedIncoming) return addCandidateToParty(next, candidate, "invitation", context);
   const relation = next.adventure.npcRelations[candidate.id] ??= normalizeNpcRelation(candidate.id, null);
-  const outcome = attemptRecruitmentOnDraft(next, candidate, relation);
+  const outcome = attemptRecruitmentOnDraft(next, candidate, relation, context);
   relation.lastResult = { actionId: "invite", firstMeeting: false, affinityDelta: outcome.affinityDelta, discovered: null, discoveryLabel: outcome.condition.hint, reaction: outcome.reaction, joined: outcome.joined, venue: "tavern" };
   if (!outcome.joined) throw new Error(outcome.reaction);
   return next;
@@ -1781,7 +1866,7 @@ export function advanceDungeonRun(state) {
 }
 
 export function resolveDungeonTacticalBattle(state, battleResult) {
-  const next = preparedClone(state);
+  let next = preparedClone(state);
   const run = next.adventure.activeRun;
   if (!run || run.phase !== "battle" || !run.combat) throw new Error("戦闘中ではありません。");
   if (!battleResult?.winner || battleResult.battleId !== run.combat.tacticalBattleId) throw new Error("探索中の戦闘結果ではありません。");
@@ -1841,7 +1926,15 @@ export function resolveDungeonTacticalBattle(state, battleResult) {
     recordMasteryEvent(next, "battle_losses", 1);
     run.combat.outcome = battleResult.winner === "draw" ? "draw" : "defeat";
     run.phase = "failed";
-    runLog(run, battleResult.winner === "draw" ? "双方が戦闘継続能力を失い、探索隊は撤退した。入口までの帰還路と収納袋を確保していたため、獲得済みの戦利品は持ち帰れる。" : "戦術戦闘に敗れ、探索隊は撤退した。入口までの帰還路と収納袋を確保していたため、獲得済みの戦利品は失わない。", "danger");
+    const travelInterrupted = run.mode === "travel";
+    runLog(run, travelInterrupted
+      ? battleResult.winner === "draw"
+        ? "双方が戦闘継続能力を失い、地方移動を中断して出発地へ戻った。経過時間・消費物資・負傷は残る。"
+        : "遭遇戦に敗れ、地方移動を中断して出発地へ戻った。経過時間・消費物資・負傷は残る。"
+      : battleResult.winner === "draw"
+        ? "双方が戦闘継続能力を失い、探索隊は撤退した。入口までの帰還路と収納袋を確保していたため、獲得済みの戦利品は持ち帰れる。"
+        : "戦術戦闘に敗れ、探索隊は撤退した。入口までの帰還路と収納袋を確保していたため、獲得済みの戦利品は失わない。", "danger");
+    if (travelInterrupted) next = returnGeneratedExpeditionToTravelOrigin(next);
   }
   if (run.mode === "personal-map") {
     const region = next.adventure.personalMap.regions[run.regionId];
@@ -1888,13 +1981,18 @@ export function skipDungeonBattle(state) {
 }
 
 export function withdrawDungeonBattle(state) {
-  const next = preparedClone(state);
+  let next = preparedClone(state);
   const run = next.adventure.activeRun;
   if (!run || run.phase !== "battle" || !run.combat) throw new Error("撤退できる戦闘遭遇がありません。");
   run.combat.outcome = "withdrawn";
   run.phase = "failed";
   recordMasteryEvent(next, "retreats", 1);
-  runLog(run, `${run.combat.enemyName}の編成を確認し、交戦前に入口へ撤退した。獲得済みの戦利品は収納袋へ封じて持ち帰る。`, "info");
+  if (run.mode === "travel") {
+    runLog(run, `${run.combat.enemyName}の編成を確認し、交戦前に地方移動を中断して出発地へ戻った。経過時間と消費物資は残る。`, "info");
+    next = returnGeneratedExpeditionToTravelOrigin(next);
+  } else {
+    runLog(run, `${run.combat.enemyName}の編成を確認し、交戦前に入口へ撤退した。獲得済みの戦利品は収納袋へ封じて持ち帰る。`, "info");
+  }
   return next;
 }
 

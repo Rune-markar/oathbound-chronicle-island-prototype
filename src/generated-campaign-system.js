@@ -1,6 +1,8 @@
 import { getGeneratedWorldView, getKnownGeneratedWorldWarView, transferGeneratedRegionControl } from "./generated-world-system.js";
 import { createGeneratedWarFronts, resolveGeneratedWarFronts } from "./generated-war-core.js";
 import { registerGeneratedOccupation } from "./generated-resistance-system.js";
+import { applyApprovedGeopoliticalDecision } from "./geopolitical-world.js";
+import { resolveGeneratedWorldWarCeasefire } from "./generated-world-war-system.js";
 
 const clone = (value) => structuredClone(value);
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
@@ -71,7 +73,9 @@ export function startGeneratedCampaign(state, { targetRegionId, objectiveId, com
   const armies = [{ id: "army-main", nationId: playerNationId(next), commanderId: commanders[0], troops: 520, supplies: 55, casualties: 0 }, { id: "army-support", nationId: playerNationId(next), commanderId: commanders[1], troops: 420, supplies: 46, casualties: 0 }, ...approvedAllies.map((id, index) => ({ id: `army-ally-${index}`, nationId: id, allyNationId: id, commanderId: null, troops: 280, supplies: 36, casualties: 0 }))];
   next.player.generatedCampaign.active = { id: `campaign:${period(next)}:${target.regionId}`, engineId: "generated-war-core-v1", phase: "mustering", outcome: null, originRegionId: originId, targetRegionId: target.regionId, targetRegionName: target.name, targetNationId: target.nationId, objectiveId, objectiveName: objective.name, supplyCost: objective.supplyCost, commanderIds: commanders, allyNationIds: approvedAllies, fronts, armies, siegeDecisionId: null, rebuildingMonths: 0, startedPeriod: period(next), elapsedSteps: 0 };
   const relation = next.generatedWorld.geopolitics.relations[pairKey(playerNationId(next), target.nationId)]; if (relation) { relation.atWar = true; relation.allied = false; relation.tension = Math.max(90, relation.tension); }
-  next.player.generatedCampaign.promisedAllies = next.player.generatedCampaign.promisedAllies.filter((entry) => !approvedAllies.includes(entry.nationId)); recordWorld(next, `${target.name}方面戦役を開始`, `${objective.name}を掲げ、${fronts.length}正面と兵站線を編成した。`); return next;
+  next.player.generatedCampaign.promisedAllies = next.player.generatedCampaign.promisedAllies.filter((entry) => !approvedAllies.includes(entry.nationId));
+  next.generatedWorld.pendingStrategicDecisions = (next.generatedWorld.pendingStrategicDecisions ?? []).filter((entry) => entry.type !== "generated_campaign_proposal");
+  recordWorld(next, `${target.name}方面戦役を開始`, `${objective.name}を掲げ、${fronts.length}正面と兵站線を編成した。`); return next;
 }
 function applyAttrition(active, ratio) { active.armies.forEach((army) => { const loss = Math.max(1, Math.round(army.troops * ratio)); army.troops -= loss; army.casualties += loss; army.supplies = Math.max(0, army.supplies - Math.round(10 + ratio * 100)); }); }
 function finishRebuilding(state) {
@@ -143,6 +147,80 @@ export function respondGeneratedWorldWar(state, warId, responseId) {
   recordWorld(next, "自国戦争への対応", responseId === "mobilize" ? "動員と防衛／攻勢継続を承認した。" : responseId === "withdraw" ? "撤兵と講和を命じた。" : "停戦交渉を命じた。", responseId === "mobilize" ? "danger" : "warning");
   return next;
 }
+
+function closeGeneratedCampaignByCeasefire(state, targetNationId) {
+  const active = state.player.generatedCampaign.active;
+  if (!active || active.targetNationId !== targetNationId) return;
+  state.player.generatedCampaign.history.unshift({
+    ...clone(active),
+    outcome: active.outcome ?? "ceasefire",
+    endedPeriod: period(state),
+    settlementId: "ceasefire",
+  });
+  state.player.generatedCampaign.active = null;
+  recordWorld(state, "生成世界戦役が停戦", "主権者が停戦案を受諾し、国境を変えず戦役を終えた。", "success");
+}
+
+export function approveGeneratedStrategicDecision(state, decisionId, {
+  targetRegionId = null,
+  objectiveId = "secure_route",
+  commanderIds = null,
+  allyNationIds = [],
+} = {}) {
+  const next = prepared(state);
+  assertSovereign(next);
+  const decision = next.generatedWorld.pendingStrategicDecisions.find((entry) => entry.id === decisionId);
+  if (!decision || !String(decision.id).startsWith("strategic-approval-")) throw new Error("承認待ちの国家戦略判断がありません。");
+  if (!["limited_war", "seek_ceasefire", "accept_ceasefire"].includes(decision.pullId)) throw new Error("承認できる国家戦略判断ではありません。");
+  if (decision.nationId !== playerNationId(next)) throw new Error("自国の国家戦略判断だけを承認できます。");
+
+  const world = getGeneratedWorldView(next);
+  const targetNation = world.runtime.nationById.get(decision.targetNationId);
+  if (!targetNation) throw new Error("承認対象の国家が見つかりません。");
+  if (decision.pullId === "limited_war") {
+    if (objectiveId === "full_annexation") throw new Error("限定戦争の承認で完全併合戦役は開始できません。");
+    const relationKey = pairKey(playerNationId(next), targetNation.id);
+    if (next.player.generatedCampaign.active) throw new Error("別の戦役が進行中です");
+    if ((next.generatedWorld.worldWars?.activeWars ?? []).some((war) => war.relationKey === relationKey)) {
+      throw new Error("対象国との生成世界戦争がすでに進行中です。");
+    }
+    const candidates = foreignTargets(next).filter((entry) => entry.nationId === targetNation.id);
+    const target = candidates.find((entry) => entry.regionId === targetRegionId) ?? (!targetRegionId ? candidates[0] : null);
+    if (!target) throw new Error("承認対象国に接する実在の侵攻先地方がありません。");
+    const selectedCommanders = commanderIds ?? ["player", ...(next.player.householdRetainers ?? [])].slice(0, 2);
+    next.generatedWorld.geopolitics = applyApprovedGeopoliticalDecision(world.runtime, next.generatedWorld.geopolitics, next, decision);
+    const started = startGeneratedCampaign(next, {
+      targetRegionId: target.regionId,
+      objectiveId,
+      commanderIds: selectedCommanders,
+      allyNationIds,
+    });
+    started.generatedWorld.pendingStrategicDecisions = (started.generatedWorld.pendingStrategicDecisions ?? []).filter((entry) => entry.id !== decision.id);
+    return started;
+  }
+
+  next.generatedWorld.geopolitics = applyApprovedGeopoliticalDecision(world.runtime, next.generatedWorld.geopolitics, next, decision);
+  const resolvedWorldWarIds = new Set();
+  if (decision.pullId === "accept_ceasefire") {
+    (next.generatedWorld.worldWars?.activeWars ?? [])
+      .filter((war) => war.relationKey === pairKey(playerNationId(next), targetNation.id))
+      .forEach((war) => resolvedWorldWarIds.add(war.id));
+    next.generatedWorld.worldWars = resolveGeneratedWorldWarCeasefire(
+      world.runtime,
+      next.generatedWorld.worldWars,
+      next,
+      playerNationId(next),
+      targetNation.id,
+    );
+    closeGeneratedCampaignByCeasefire(next, targetNation.id);
+  }
+  next.generatedWorld.pendingStrategicDecisions = next.generatedWorld.pendingStrategicDecisions.filter((entry) => (
+    entry.id !== decision.id
+    && !(entry.type === "generated_world_war_response" && resolvedWorldWarIds.has(entry.worldWarId))
+  ));
+  return next;
+}
+
 export function advanceGeneratedCampaignMonthOnDraft(state) {
   normalizeGeneratedCampaignState(state); if (state.player.generatedCampaign.active || !state.player.sovereign) return state; const condition = state.generatedWorld.geopolitics?.nationStates?.[playerNationId(state)];
   if ((condition?.offensiveIntent ?? 0) >= 80 && (condition?.readiness ?? 0) >= 80 && foreignTargets(state).length) {

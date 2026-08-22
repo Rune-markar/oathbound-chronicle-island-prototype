@@ -28,7 +28,7 @@ import { createBattlePreparation, finalizeBattlePreparation } from "../src/battl
 import { autoResolveBattle, executeBattleTurn, getLogisticsState } from "../src/tactical-battle.js";
 import { createBattleResult } from "../src/battle-results.js";
 import { getGeneratedWorldTimeView, getGeneratedWorldView } from "../src/generated-world-system.js";
-import { createCareerInitialState, performVillageAction } from "../src/simulation.js";
+import { createCareerInitialState, getSettlementMeritGain, performVillageAction } from "../src/simulation.js";
 
 function fixture(seed = "adventure-system-test") {
   const state = normalizeAdventureState(createCareerInitialState({ seed }));
@@ -58,14 +58,18 @@ test("each generated region exposes a village and a terrain-aware dungeon", () =
 
 test("guild contracts are accepted and completed by the matching dungeon clear", () => {
   const { state, context, sites } = fixture("guild-contract-test");
-  const contract = getGuildContracts(state, context)[0];
-  let next = acceptGuildContract(state, contract.id, context);
+  const settlement = context.runtime.nations.objects.find((entry) => entry.settlementLevel && entry.regionId === context.region.id);
+  const localContext = { ...context, villageId: settlement.id };
+  const contract = getGuildContracts(state, localContext)[0];
+  let next = acceptGuildContract(state, contract.id, localContext);
   assert.equal(next.adventure.activeContracts.length, 1);
-  assert.equal(getPersonalMapView(next, context).locations.find((location) => location.id === sites.dungeon.id).discovered, true);
+  assert.equal(next.player.villageLife.quests[0].acceptedVillageId, settlement.id);
+  assert.equal(next.player.villageLife.quests[0].acceptedRegionId, context.region.id);
+  assert.equal(getPersonalMapView(next, localContext).locations.find((location) => location.id === sites.dungeon.id).discovered, true);
   assert.throws(() => startDungeonRun(next, sites.dungeon, context.region), /酒場/);
-  const companion = getTavernCandidates(next, context).find((candidate) => !candidate.unique);
-  next = prepareRecruitableCandidate(next, companion.id, context);
-  next = inviteTavernCandidate(next, companion.id, context);
+  const companion = getTavernCandidates(next, localContext).find((candidate) => !candidate.unique);
+  next = prepareRecruitableCandidate(next, companion.id, localContext);
+  next = inviteTavernCandidate(next, companion.id, localContext);
   next = startDungeonRun(next, sites.dungeon, context.region);
   next = advanceDungeonRun(next);
   next = advanceDungeonRun(next);
@@ -75,11 +79,54 @@ test("guild contracts are accepted and completed by the matching dungeon clear",
   assert.equal(next.adventure.activeContracts.length, 0);
   assert.equal(next.adventure.completedContracts[0].id, contract.id);
   assert.equal(next.player.metrics.wealth, state.player.metrics.wealth);
-  next = performVillageAction(next, { id: sites.village.id, name: sites.village.name }, "report_request");
-  assert.equal(next.player.villageLife.guildMerit, contract.merit);
+  const reportingSettlement = { id: settlement.id, name: settlement.name, regionId: settlement.regionId, settlementLevel: settlement.settlementLevel };
+  assert.throws(() => performVillageAction(next, { ...reportingSettlement, id: "another-settlement" }, "report_request"), /受注した集落/);
+  const expectedMerit = getSettlementMeritGain(contract.merit, reportingSettlement, next.player.metrics.renown).merit;
+  next = performVillageAction(next, reportingSettlement, "report_request");
+  assert.equal(next.player.villageLife.guildMerit, expectedMerit);
   assert.ok(next.player.invitations.some((invitation) => invitation.routeId === "chance_rescue"));
-  next = performVillageAction(next, { id: sites.village.id, name: sites.village.name }, "receive_reward");
+  next = performVillageAction(next, reportingSettlement, "receive_reward");
   assert.equal(next.player.metrics.wealth, state.player.metrics.wealth + contract.reward.wealth);
+});
+
+test("accepting a guild contract records one bounded village and career history event", () => {
+  const { state, context } = fixture("guild-contract-history-test");
+  const settlement = context.runtime.nations.objects.find((entry) => entry.settlementLevel && entry.regionId === context.region.id);
+  const localContext = { ...context, villageId: settlement.id };
+  state.year = 412;
+  state.month = 7;
+  state.player.villageLife.actionHistory = Array.from({ length: 40 }, (_, index) => ({ id: `old-action-${index}`, eventId: `old-action-${index}` }));
+  state.player.history = Array.from({ length: 60 }, (_, index) => ({ title: `旧履歴${index}`, eventId: `old-history-${index}` }));
+  const contract = getGuildContracts(state, localContext)[0];
+  const before = structuredClone(state);
+
+  const next = acceptGuildContract(state, contract.id, localContext);
+  const eventId = `guild-contract-accepted:${contract.id}`;
+  const localEvents = next.player.villageLife.actionHistory.filter((entry) => entry.eventId === eventId);
+  const careerEvents = next.player.history.filter((entry) => entry.eventId === eventId);
+
+  assert.deepEqual(state, before, "acceptance must not mutate the source state");
+  assert.equal(next.player.villageLife.actionHistory.length, 40);
+  assert.equal(next.player.history.length, 60);
+  assert.equal(localEvents.length, 1);
+  assert.equal(careerEvents.length, 1);
+  assert.equal(next.player.villageLife.lastAction.eventId, eventId);
+  assert.equal(localEvents[0].villageId, settlement.id);
+  assert.equal(localEvents[0].villageName, settlement.name);
+  assert.equal(localEvents[0].regionId, context.region.id);
+  assert.equal(localEvents[0].regionName, context.region.name);
+  assert.equal(localEvents[0].year, 412);
+  assert.equal(localEvents[0].month, 7);
+  assert.match(localEvents[0].message, new RegExp(contract.title));
+  assert.equal(careerEvents[0].villageId, settlement.id);
+  assert.equal(careerEvents[0].regionId, context.region.id);
+  assert.equal(careerEvents[0].year, 412);
+  assert.equal(careerEvents[0].month, 7);
+  assert.match(careerEvents[0].detail, new RegExp(contract.title));
+
+  assert.throws(() => acceptGuildContract(next, contract.id, localContext), /受注済み/);
+  assert.equal(next.player.villageLife.actionHistory.filter((entry) => entry.eventId === eventId).length, 1);
+  assert.equal(next.player.history.filter((entry) => entry.eventId === eventId).length, 1);
 });
 
 test("guild dungeon guidance reveals the region dungeon and uses its canonical name", () => {
@@ -335,6 +382,51 @@ test("recruitment policies enforce friendship, contract, evaluation, and purpose
   assert.equal(interactWithNpcCandidate(purpose.state, purpose.candidate.id, "invite", context).adventure.party.length, 0);
 });
 
+test("generic and unique recruits each record one persistent village and career history event", () => {
+  for (const unique of [false, true]) {
+    const { state, context } = fixture(`recruit-history-${unique ? "unique" : "generic"}`);
+    const settlement = context.runtime.nations.objects.find((entry) => entry.settlementLevel && entry.regionId === context.region.id);
+    const localContext = { ...context, villageId: settlement.id };
+    const candidate = getTavernCandidates(state, localContext).find((entry) => entry.unique === unique);
+    let prepared = prepareRecruitableCandidate(state, candidate.id, localContext);
+    prepared.year = 413;
+    prepared.month = unique ? 3 : 2;
+    const before = structuredClone(prepared);
+    const historyLength = prepared.player.history.length;
+
+    const next = unique
+      ? inviteTavernCandidate(prepared, candidate.id, localContext)
+      : interactWithNpcCandidate(prepared, candidate.id, "invite", localContext);
+    const eventId = `companion-recruited:${candidate.id}`;
+    const localEvents = next.player.villageLife.actionHistory.filter((entry) => entry.eventId === eventId);
+    const careerEvents = next.player.history.filter((entry) => entry.eventId === eventId);
+
+    assert.deepEqual(prepared, before, "recruitment must not mutate the source state");
+    assert.equal(localEvents.length, 1);
+    assert.equal(careerEvents.length, 1);
+    assert.equal(next.player.history.length, historyLength + 1, "a unique recruit must not create a second career entry");
+    assert.equal(next.player.villageLife.lastAction.eventId, eventId);
+    assert.equal(localEvents[0].villageId, settlement.id);
+    assert.equal(localEvents[0].villageName, settlement.name);
+    assert.equal(localEvents[0].regionId, context.region.id);
+    assert.equal(localEvents[0].regionName, context.region.name);
+    assert.equal(localEvents[0].year, 413);
+    assert.equal(localEvents[0].month, unique ? 3 : 2);
+    assert.match(localEvents[0].message, new RegExp(candidate.name));
+    assert.equal(careerEvents[0].villageId, settlement.id);
+    assert.equal(careerEvents[0].regionId, context.region.id);
+    assert.match(careerEvents[0].detail, new RegExp(candidate.name));
+    if (unique) assert.match(careerEvents[0].detail, new RegExp(candidate.passiveName));
+
+    const recruitAgain = () => unique
+      ? inviteTavernCandidate(next, candidate.id, localContext)
+      : interactWithNpcCandidate(next, candidate.id, "invite", localContext);
+    assert.throws(recruitAgain, /すでに|今、酒場|会話できません/);
+    assert.equal(next.player.villageLife.actionHistory.filter((entry) => entry.eventId === eventId).length, 1);
+    assert.equal(next.player.history.filter((entry) => entry.eventId === eventId).length, 1);
+  }
+});
+
 test("a locally known player can receive an invitation while eating and chooses whether to accept it", () => {
   const { state, context, sites } = fixture("tavern-incoming-test");
   const dining = performVillageAction(state, { id: sites.village.id, name: sites.village.name }, "eat_meal");
@@ -346,6 +438,10 @@ test("a locally known player can receive an invitation while eating and chooses 
   assert.equal(declinedState.adventure.party.length, 0, "showing an invitation never auto-accepts it");
   const accepted = acceptPartyInvitation(dining, incoming.id, socialContext);
   assert.equal(accepted.adventure.party[0].source, "invitation");
+  const eventId = `companion-recruited:${incoming.id}`;
+  assert.equal(accepted.player.villageLife.actionHistory.filter((entry) => entry.eventId === eventId).length, 1);
+  assert.equal(accepted.player.history.filter((entry) => entry.eventId === eventId).length, 1);
+  assert.match(accepted.player.villageLife.lastAction.message, /誘いを受け/);
 });
 
 test("personal map movement is limited to discovered nearby locations", () => {
@@ -388,7 +484,10 @@ test("personal exploration can discover locations, find nothing, and collect for
 test("forage contracts require three concrete exploration finds and an explicit guild delivery", () => {
   const { state, context, sites } = fixture("forage-delivery-test");
   const contract = getGuildContracts(state, context).find((entry) => entry.objective.type === "collect_item");
+  assert.equal(contract.dungeonId, null, "a local forage request must not point at an unrelated dungeon");
+  const dungeonBefore = getPersonalMapView(state, context).locations.find((location) => location.id === sites.dungeon.id).discovered;
   let next = acceptGuildContract(state, contract.id, context);
+  assert.equal(getPersonalMapView(next, context).locations.find((location) => location.id === sites.dungeon.id).discovered, dungeonBefore);
   for (let count = 0; count < 3; count += 1) next = explorePersonalMap(next, context, { roll: 0.9 });
   const active = getGuildContracts(next, context).find((entry) => entry.id === contract.id);
   assert.equal(active.objective.progress, 3);
@@ -451,6 +550,8 @@ test("a previously won monster trophy immediately proves a matching subjugation 
   assert.equal(next.player.villageLife.quests.find((quest) => quest.id === contract.id).status, "completed");
   assert.equal(next.adventure.activeContracts.some((entry) => entry.id === contract.id), false);
   assert.equal(next.adventure.completedContracts.some((entry) => entry.id === contract.id), true);
+  assert.match(next.player.villageLife.lastAction.message, /達成済み/);
+  assert.match(next.player.history[0].detail, /達成済み/);
 });
 
 test("legacy adventure saves gain an empty versioned personal map", () => {

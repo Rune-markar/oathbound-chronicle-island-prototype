@@ -4344,6 +4344,18 @@ a:focus-visible,
   white-space: nowrap;
 }
 
+button.alert-chip {
+  appearance: none;
+  cursor: pointer;
+}
+
+button.alert-chip:hover,
+button.alert-chip:focus-visible {
+  border-color: #e7c66c;
+  box-shadow: 0 0 0 2px rgba(231, 198, 108, .28), 0 5px 14px rgba(12, 28, 30, .42);
+  transform: translateY(-1px);
+}
+
 .alert-chip.danger::before,
 .alert-chip.info::before {
   content: "!";
@@ -12749,6 +12761,14 @@ body.is-battle-preparation-open { overflow: hidden; }
 }
 
 .generated-dungeon-marker:hover { filter: brightness(1.18); transform: translate(-50%, -91%) scale(1.06); }
+.generated-dungeon-marker[data-site-offset="up"] { transform: translate(-50%, calc(-88% - 48px)); }
+.generated-dungeon-marker[data-site-offset="right"] { transform: translate(calc(-50% + 48px), -88%); }
+.generated-dungeon-marker[data-site-offset="down"] { transform: translate(-50%, calc(-88% + 48px)); }
+.generated-dungeon-marker[data-site-offset="left"] { transform: translate(calc(-50% - 48px), -88%); }
+.generated-dungeon-marker[data-site-offset="up"]:hover { transform: translate(-50%, calc(-91% - 48px)) scale(1.06); }
+.generated-dungeon-marker[data-site-offset="right"]:hover { transform: translate(calc(-50% + 48px), -91%) scale(1.06); }
+.generated-dungeon-marker[data-site-offset="down"]:hover { transform: translate(-50%, calc(-91% + 48px)) scale(1.06); }
+.generated-dungeon-marker[data-site-offset="left"]:hover { transform: translate(calc(-50% - 48px), -91%) scale(1.06); }
 .generated-dungeon-marker:focus-visible,
 .generated-dungeon-marker.is-selected { outline: 3px solid #fff0a8; outline-offset: 4px; filter: brightness(1.18); }
 
@@ -13051,7 +13071,7 @@ body.is-battle-preparation-open { overflow: hidden; }
 .village-request-flow h2,
 .village-service-routes h2 { margin: 4px 0 0; color: #31564e; font: 800 19px/1.1 Georgia, "Yu Mincho", serif; }
 .village-request-flow > header > strong { color: #875f27; font-size: 12px; }
-.village-request-flow ol { position: relative; display: grid; grid-template-columns: repeat(5, 1fr); margin: 14px 0; padding: 0; list-style: none; }
+.village-request-flow ol { position: relative; display: grid; grid-template-columns: repeat(4, 1fr); margin: 14px 0; padding: 0; list-style: none; }
 .village-request-flow ol::before { position: absolute; top: 14px; right: 8%; left: 8%; height: 2px; content: ""; background: #d0c3a4; }
 .village-request-flow li { z-index: 1; display: grid; justify-items: center; gap: 5px; color: #857c6d; text-align: center; font-size: 9px; }
 .village-request-flow li i { width: 29px; height: 29px; display: grid; place-items: center; border: 2px solid #cfc3a7; border-radius: 50%; background: #f1ead7; font-style: normal; font-weight: 900; }
@@ -13065,6 +13085,7 @@ body.is-battle-preparation-open { overflow: hidden; }
 .village-current-request small { color: #987039; font-size: 8px; }
 .village-current-request strong { margin-top: 3px; color: #31534c; }
 .village-current-request p { margin: 4px 0 0; color: #746c5e; font-size: 10px; }
+.village-request-requirement { display: block; margin-top: 7px; color: #765620; font-size: 9px; font-style: normal; font-weight: 800; line-height: 1.45; }
 .village-current-request button { min-width: 190px; padding: 10px 13px; color: #fff0bb; border: 1px solid #b99243; background: linear-gradient(#497a70, #315d56); font-weight: 800; }
 
 .village-facility-layout { display: grid; grid-template-columns: minmax(190px, 245px) minmax(0, 1fr); gap: 10px; }
@@ -14449,7 +14470,7 @@ body.is-battle-preparation-open { overflow: hidden; }
 .village-choice-action:disabled {
   cursor: not-allowed;
   filter: grayscale(.65);
-  opacity: .5;
+  opacity: .62;
 }
 
 .village-choice-action small,
@@ -14458,6 +14479,7 @@ body.is-battle-preparation-open { overflow: hidden; }
 .village-choice-action small { color: #98763c; font-size: 7px; }
 .village-choice-action strong { margin-top: 2px; color: #31564f; font-size: 11px; }
 .village-choice-action p { margin: 3px 0 0; color: #7b7365; font-size: 8px; line-height: 1.35; }
+.village-action-reason { display: block; margin-top: 5px; color: #8a3e34; font-size: 8px; font-style: normal; font-weight: 800; line-height: 1.35; }
 .village-choice-action > b { color: #4d7168; font-size: 8px; white-space: nowrap; }
 
 .village-choice-section > .adventure-facility-board {
@@ -15110,6 +15132,7 @@ body.is-village-focus .village-central-visual.is-tavern-interior {
 .village-choice-overlay .village-choice-action small { color: #d6b55d; }
 .village-choice-overlay .village-choice-action strong { color: #fff0b8; }
 .village-choice-overlay .village-choice-action p { color: rgba(229, 226, 207, .62); }
+.village-choice-overlay .village-action-reason { color: #ffd29f; }
 .village-choice-overlay .village-choice-action > b { color: #efd17e; }
 
 .village-action-window .village-overlay-actions { padding: 15px; }
@@ -16520,6 +16543,24 @@ body.is-location-focus .village-central-status article > strong { font-size: cla
   .personal-map-explore strong { font-size: 14px; }
   .personal-map-destinations { grid-template-columns: 1fr; gap: 9px; }
   .personal-map-destinations > button { min-height: 52px; padding: 10px; }
+
+  /* On narrow portrait maps, exact site actions take precedence only over the
+     overlapping regional move chips. The transparent layer still lets all
+     other regional targets receive pointer input. */
+  .generated-site-marker-layer { z-index: 9; }
+  .generated-site-marker {
+    min-width: 44px;
+    min-height: 44px;
+    touch-action: manipulation;
+  }
+  .generated-dungeon-marker[data-site-offset="up"] { transform: translate(-50%, calc(-88% - 64px)); }
+  .generated-dungeon-marker[data-site-offset="right"] { transform: translate(calc(-50% + 64px), -88%); }
+  .generated-dungeon-marker[data-site-offset="down"] { transform: translate(-50%, calc(-88% + 64px)); }
+  .generated-dungeon-marker[data-site-offset="left"] { transform: translate(calc(-50% - 64px), -88%); }
+  .generated-dungeon-marker[data-site-offset="up"]:hover { transform: translate(-50%, calc(-91% - 64px)) scale(1.06); }
+  .generated-dungeon-marker[data-site-offset="right"]:hover { transform: translate(calc(-50% + 64px), -91%) scale(1.06); }
+  .generated-dungeon-marker[data-site-offset="down"]:hover { transform: translate(-50%, calc(-91% + 64px)) scale(1.06); }
+  .generated-dungeon-marker[data-site-offset="left"]:hover { transform: translate(calc(-50% - 64px), -91%) scale(1.06); }
 
   .left-info-drawer .back-menu-content {
     top: max(calc(var(--compact-topbar-height) + 24px), 18dvh);

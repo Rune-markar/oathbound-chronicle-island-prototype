@@ -54,6 +54,8 @@ import {
   setGeneratedOccupationPolicy,
 } from "./generated-resistance-system.js";
 
+export { approveGeneratedStrategicDecision } from "./generated-campaign-system.js";
+
 export const GENERATED_WORLD_DEFAULTS = Object.freeze({
   version: 14,
   seed: "eldoria-317",
@@ -106,6 +108,15 @@ export const GENERATED_TRAVEL_MODES = Object.freeze({
 
 function normalizedTravelModePreference(value) {
   return typeof value === "string" && GENERATED_TRAVEL_MODES[value] ? value : null;
+}
+
+function capPendingStrategicDecisions(decisions) {
+  const values = decisions ?? [];
+  const campaignProposals = values.filter((decision) => decision.type === "generated_campaign_proposal");
+  return [
+    ...values.filter((decision) => decision.type !== "generated_campaign_proposal"),
+    ...campaignProposals,
+  ].slice(-24);
 }
 
 function generatedWorldRuntimeKey(generatedState) {
@@ -632,7 +643,7 @@ export function createGeneratedWorldState(options = {}, dateState = null) {
     barbarians: preserveBarbarianState(options.barbarians),
     simulationFidelity: preserveSimulationFidelityPlan(options.simulationFidelity),
     pendingStrategicDecisions: Array.isArray(options.pendingStrategicDecisions)
-      ? structuredClone(options.pendingStrategicDecisions.slice(-24))
+      ? structuredClone(capPendingStrategicDecisions(options.pendingStrategicDecisions))
       : [],
     intelligence: createWorldIntelligenceState(options.intelligence),
     lastTravel: options.lastTravel && typeof options.lastTravel === "object" ? structuredClone(options.lastTravel) : null,
@@ -901,6 +912,30 @@ export function resolveGeneratedResistanceResponse(state, occupationId, response
   return next;
 }
 
+export function dismissGeneratedStrategicDecision(state, decisionId) {
+  if (!state.player?.sovereign) throw new Error("国家戦略判断を見送れるのは主権者だけです。");
+  const decisions = state.generatedWorld?.pendingStrategicDecisions ?? [];
+  const decision = decisions.find((entry) => entry.id === decisionId);
+  if (!decision) throw new Error("見送る国家戦略判断がありません。");
+  const next = structuredClone(state);
+  next.generatedWorld.pendingStrategicDecisions = (next.generatedWorld.pendingStrategicDecisions ?? []).filter((entry) => (
+    entry.id !== decisionId
+    && !(decision.type === "generated_campaign_proposal" && entry.type === "generated_campaign_proposal")
+  ));
+  next.player.history ??= [];
+  next.player.history.unshift({
+    id: `strategic-decision:${next.turn ?? 0}:${decision.id}`,
+    type: "strategic_decision",
+    title: `${decision.title ?? "国家戦略提案"}を見送る`,
+    detail: `${decision.summary ?? "不可逆な決定を保留していた。"} 現行方針を維持した。`,
+    summary: "不可逆な提案を見送り、現行方針を維持した。",
+    year: next.year,
+    month: next.month,
+  });
+  next.player.history = next.player.history.slice(0, 60);
+  return next;
+}
+
 export function getKnownGeneratedWorldWarView(state) {
   const generatedState = createGeneratedWorldState(state.generatedWorld ?? {}, state);
   const view = getGeneratedWorldWarView(state);
@@ -991,6 +1026,32 @@ function recordNearbyWorldEvents(state, runtime, generatedState, events) {
   return recorded.intelligence;
 }
 
+function strategicDecisionSlot(decision) {
+  if (decision?.type === "generated_campaign_proposal") return "generated_campaign_proposal";
+  if (decision?.type === "generated_world_war_response" && decision.worldWarId) return `generated_world_war_response:${decision.worldWarId}`;
+  if (decision?.type === "generated_resistance_response" && decision.occupationId) return `generated_resistance_response:${decision.occupationId}`;
+  if (decision?.id?.startsWith("strategic-approval-") && decision.nationId) return `strategic_approval:${decision.nationId}`;
+  return decision?.id ?? null;
+}
+
+function strategicDecisionProducer(decision) {
+  if (decision?.id?.startsWith("strategic-approval-")) return "geopolitics";
+  if (decision?.type === "generated_world_war_response") return "worldWars";
+  if (decision?.type === "generated_resistance_response") return "resistance";
+  return null;
+}
+
+function mergePendingStrategicDecisions(current, updates, refreshedProducers = {}) {
+  const merged = new Map();
+  const retained = (current ?? []).filter((decision) => !refreshedProducers[strategicDecisionProducer(decision)]);
+  [...retained, ...(updates ?? [])].forEach((decision) => {
+    const slot = strategicDecisionSlot(decision) ?? Symbol("pending-strategic-decision");
+    if (merged.has(slot)) merged.delete(slot);
+    merged.set(slot, decision);
+  });
+  return capPendingStrategicDecisions([...merged.values()]);
+}
+
 export function advanceGeneratedWorldGeopolitics(state) {
   const generatedState = createGeneratedWorldState(state.generatedWorld ?? {}, state);
   const baseRuntime = buildGeneratedWorld(state);
@@ -1031,6 +1092,11 @@ export function advanceGeneratedWorldGeopolitics(state) {
     ...worldWarResult.pendingStrategicDecisions,
     ...resistanceResult.pendingStrategicDecisions,
   ];
+  const refreshedStrategicProducers = {
+    geopolitics: baseline.lastAdvancedPeriod !== advancedGeopolitics.lastAdvancedPeriod,
+    worldWars: (generatedState.worldWars?.lastAdvancedPeriod ?? null) !== worldWarResult.worldWars.lastAdvancedPeriod,
+    resistance: (generatedState.resistance?.lastAdvancedPeriod ?? null) !== resistanceResult.resistance.lastAdvancedPeriod,
+  };
   const geopolitics = locateGeopoliticalEvents(runtime, resistanceResult.geopolitics);
   const currentWarEvents = worldWarResult.worldWars.events.filter((event) => event.period === periodFor(state));
   const currentGeopoliticalEvents = geopolitics.events.filter((event) => event.period === periodFor(state));
@@ -1044,10 +1110,7 @@ export function advanceGeneratedWorldGeopolitics(state) {
       worldWars: worldWarResult.worldWars,
       resistance: resistanceResult.resistance,
       intelligence,
-      pendingStrategicDecisions: [
-        ...(generatedState.pendingStrategicDecisions ?? []).filter((decision) => decision.period !== geopolitics.lastAdvancedPeriod),
-        ...pendingStrategicDecisions,
-      ].slice(-24),
+      pendingStrategicDecisions: mergePendingStrategicDecisions(generatedState.pendingStrategicDecisions, pendingStrategicDecisions, refreshedStrategicProducers),
     },
   };
 }
@@ -1622,6 +1685,7 @@ export function moveGeneratedExpeditionToRegion(state, destinationId, options = 
   const runtime = buildGeneratedWorld(refreshed);
   const generatedState = cloneGeneratedWorldState(refreshed.generatedWorld);
   const from = effectiveExpeditionRegion(runtime, generatedState);
+  const fromTile = effectiveExpeditionTile(runtime, generatedState, from);
   const legacyTile = tileById(runtime, destinationId);
   const destination = regionById(runtime, destinationId) ?? regionById(runtime, legacyTile?.regionId);
   if (!destination) throw new RangeError("存在しない地方です。");
@@ -1663,6 +1727,7 @@ export function moveGeneratedExpeditionToRegion(state, destinationId, options = 
       discoveredRegionIds: [...discovered].slice(-512),
       lastTravel: {
         fromRegionId: from.id,
+        fromTileId: fromTile.id,
         destinationRegionId: destination.id,
         mode: travelMode,
         modeName: reachable.name,
@@ -1680,6 +1745,28 @@ export function moveGeneratedExpeditionToRegion(state, destinationId, options = 
     next.player.villageLife.fatigue = Math.min(100, (next.player.villageLife.fatigue ?? 0) + (travelMode === "direct" ? 18 : 6));
   }
   return next;
+}
+
+export function returnGeneratedExpeditionToTravelOrigin(state, travel = state.generatedWorld?.lastTravel) {
+  if (!travel?.fromRegionId || !travel?.destinationRegionId) throw new TypeError("中断した地方移動の記録がありません。");
+  const generatedState = cloneGeneratedWorldState(state.generatedWorld);
+  const runtime = buildGeneratedWorld({ ...state, generatedWorld: generatedState });
+  const origin = regionById(runtime, travel.fromRegionId);
+  if (!origin) throw new RangeError("地方移動の出発地が見つかりません。");
+  const savedOriginTile = tileById(runtime, travel.fromTileId);
+  const originTile = savedOriginTile?.regionId === origin.id ? savedOriginTile : playableTileForRegion(runtime, origin);
+  if (!originTile) throw new Error("地方移動の出発地に帰還できる陸上区画がありません。");
+  return {
+    ...state,
+    generatedWorld: {
+      ...generatedState,
+      expeditionRegionId: origin.id,
+      expeditionTileId: originTile.id,
+      selectedRegionId: origin.id,
+      legacyExpeditionTileId: undefined,
+      legacySelectedTileId: undefined,
+    },
+  };
 }
 
 export function moveGeneratedExpeditionTo(state, destinationId) {

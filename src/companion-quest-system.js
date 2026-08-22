@@ -55,7 +55,9 @@ export function getCompanionQuestView(state) {
 }
 
 export function respondToCompanionQuest(state, memberId, offerId, response) {
-  const next = prepared(state); const { member, agency } = memberAgency(next, memberId); const offer = offerSet(next, member).find((entry) => entry.id === offerId);
+  const next = prepared(state); const { member, agency } = memberAgency(next, memberId);
+  const held = next.player.companionQuests.activeByMember[memberId];
+  const offer = held?.status === "held" && held.id === offerId ? held : offerSet(next, member).find((entry) => entry.id === offerId);
   if (!offer) throw new Error("この期間の仲間依頼ではありません");
   if (!["accept", "hold", "refuse"].includes(response)) throw new Error("返答を選んでください");
   if (response === "refuse") {

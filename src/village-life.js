@@ -429,7 +429,16 @@ function unresolvedGuildQuest(life) {
   return life.quests.find((quest) => quest.source === "guild" && ["accepted", "completed", "reported", "active"].includes(quest.status));
 }
 
-function requirementReason(life, actionId, villageId = null) {
+function questMatchesReportingPlace(quest, place) {
+  if (!quest?.acceptedVillageId || !place?.id) return true;
+  if (quest.acceptedVillageId === place.id) return true;
+  if (!quest.acceptedVillageId.startsWith("village:")) return false;
+  const legacyRegionId = quest.acceptedRegionId ?? quest.acceptedVillageId.slice("village:".length);
+  return Boolean(legacyRegionId && place.regionId === legacyRegionId);
+}
+
+function requirementReason(life, actionId, place = null) {
+  const villageId = place?.id ?? null;
   if (["organize_party", "prepare_party", "train_companion"].includes(actionId) && !life.party.length) return "先に酒場で仲間を募集してください";
   const acceptedGuildQuest = life.quests.find((quest) => quest.source === "guild" && ["accepted", "active"].includes(quest.status));
   if (actionId === "complete_request" && !acceptedGuildQuest) return "先に集落の依頼窓口で依頼を受注してください";
@@ -437,7 +446,7 @@ function requirementReason(life, actionId, villageId = null) {
   if (actionId === "complete_request" && !life.party.some((member) => member.active && member.alive !== false)) return "先に酒場で仲間を集め、パーティーへ編成してください";
   const completedGuildQuest = life.quests.find((quest) => quest.source === "guild" && quest.status === "completed");
   if (actionId === "report_request" && !completedGuildQuest) return "達成済みの依頼を受注した窓口へ持ち帰ってください";
-  if (actionId === "report_request" && villageId && completedGuildQuest?.acceptedVillageId && completedGuildQuest.acceptedVillageId !== villageId) return "この依頼を受注した集落の窓口へ戻ってください";
+  if (actionId === "report_request" && villageId && completedGuildQuest?.acceptedVillageId && !questMatchesReportingPlace(completedGuildQuest, place)) return "この依頼を受注した集落の窓口へ戻ってください";
   if (actionId === "receive_reward" && !life.quests.some((quest) => quest.status === "reported")) return "報酬を受け取れる報告済み依頼がありません";
   if (actionId === "accept_request" && unresolvedGuildQuest(life)) return "受注中の依頼を達成・報告し、報酬を受け取ってください";
   if (actionId === "seek_recommendation" && (life.villageRelations[villageId] ?? 0) < 6) return "この村で関係を6以上築いてください";
@@ -478,7 +487,7 @@ export function getVillageActionAvailability(state, actionId, villageInput = nul
   if (getSettlementScale(place) === "village" && VILLAGE_UNAVAILABLE_ACTION_IDS.has(actionId)) {
     return { allowed: false, reason: "この設備と加工品は町規模の集落でのみ利用できます", cost: definition.cost };
   }
-  const reason = requirementReason(life, actionId, villageId);
+  const reason = requirementReason(life, actionId, place);
   const baseCost = effectiveCost(life, definition);
   const standing = getGuildStanding(life);
   const standingDiscountRate = baseCost > 0 && MERIT_DISCOUNT_ACTIONS.has(actionId) ? standing.discountRate : 0;

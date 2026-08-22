@@ -543,6 +543,55 @@ export function advanceGeneratedWorldWars(runtime, source, regionalDomainSource,
   };
 }
 
+export function resolveGeneratedWorldWarCeasefire(runtime, source, dateState, nationId, targetNationId) {
+  if (!runtime.nationById.has(nationId) || !runtime.nationById.has(targetNationId) || nationId === targetNationId) {
+    throw new Error("停戦対象の国家関係が見つかりません。");
+  }
+  const worldWars = createGeneratedWorldWarState(runtime, source, dateState);
+  const relationKey = pairKey(nationId, targetNationId);
+  const matchingWars = worldWars.activeWars.filter((war) => war.relationKey === relationKey);
+  if (!matchingWars.length) return worldWars;
+
+  const currentPeriod = periodFor(dateState);
+  const matchingIds = new Set(matchingWars.map((war) => war.id));
+  const completedWars = matchingWars.map((sourceWar) => {
+    const war = clone(sourceWar);
+    war.outcome ??= "stalemate";
+    war.settlementId = "negotiated_ceasefire";
+    war.phase = "complete";
+    war.endedPeriod = currentPeriod;
+    war.requiresPlayerDecision = false;
+    const event = warEvent(
+      runtime,
+      war,
+      currentPeriod,
+      "ceasefire",
+      `${nationName(runtime, war.attackerNationId)}・${nationName(runtime, war.defenderNationId)}停戦`,
+      "両国の停戦判断が成立し、国境を変えず戦闘を終えた。",
+      "positive",
+    );
+    war.log = [...war.log.filter((entry) => !(entry.period === currentPeriod && entry.phase === "ceasefire")), {
+      period: currentPeriod,
+      phase: "ceasefire",
+      summary: event.summary,
+    }].slice(-24);
+    return { war, event };
+  });
+  const eventIds = new Set(completedWars.map((entry) => entry.event.id));
+  return {
+    ...worldWars,
+    activeWars: worldWars.activeWars.filter((war) => !matchingIds.has(war.id)),
+    history: [
+      ...worldWars.history.filter((war) => !matchingIds.has(war.id)),
+      ...completedWars.map((entry) => entry.war),
+    ].slice(-MAX_WAR_HISTORY),
+    events: [
+      ...worldWars.events.filter((event) => !eventIds.has(event.id)),
+      ...completedWars.map((entry) => entry.event),
+    ].slice(-MAX_WAR_EVENTS),
+  };
+}
+
 function enrichWar(runtime, war) {
   return {
     ...clone(war),

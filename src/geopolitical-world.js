@@ -687,6 +687,86 @@ export function advanceGeopoliticalWorld(runtime, source, dateState, options = {
   };
 }
 
+export function applyApprovedGeopoliticalDecision(runtime, source, dateState, sourceDecision) {
+  const pullId = sourceDecision?.pullId;
+  if (!PLAYER_APPROVAL_PULL_IDS.has(pullId)) throw new RangeError("承認できる国家戦略判断ではありません。");
+  const nation = runtime.nationById.get(sourceDecision?.nationId);
+  const target = runtime.nationById.get(sourceDecision?.targetNationId);
+  if (!nation || !target || nation.id === target.id) throw new Error("承認対象の国家関係が見つかりません。");
+
+  const snapshot = createGeopoliticalWorldState(runtime, source, dateState);
+  const key = pairKey(nation.id, target.id);
+  const currentRelation = snapshot.relations[key];
+  if (!currentRelation) throw new Error("承認対象の国家関係が見つかりません。");
+  if (pullId === "limited_war" && currentRelation.atWar) throw new Error("対象国とはすでに交戦中です。");
+  if (pullId === "limited_war" && currentRelation.truceMonths > 0) throw new Error("休戦期間中は限定戦争を開始できません。");
+  if (["seek_ceasefire", "accept_ceasefire"].includes(pullId) && !currentRelation.atWar) throw new Error("対象国との戦争が継続していません。");
+  if (pullId === "accept_ceasefire" && (
+    currentRelation.ceasefireOffer?.from !== target.id
+    || currentRelation.ceasefireOffer?.to !== nation.id
+  )) throw new Error("対象国からの有効な停戦案がありません。");
+
+  const decision = {
+    nationId: nation.id,
+    targetNationId: target.id,
+    pullId,
+    score: Number.isFinite(Number(sourceDecision.score)) ? Number(sourceDecision.score) : 100,
+    drivers: [...(sourceDecision.drivers ?? []), driver("主権者承認", 100)],
+  };
+  const nationDeltas = {};
+  const relationDeltas = {};
+  const relationActions = {};
+  applyDecisionEffects(decision, nation.id, nationDeltas, relationDeltas, relationActions);
+  const nationDelta = nationDeltas[nation.id] ?? {};
+  const relationDelta = relationDeltas[key] ?? {};
+  const currentNation = snapshot.nationStates[nation.id];
+  const nextNation = {
+    ...currentNation,
+    cohesion: rounded(currentNation.cohesion + (nationDelta.cohesion ?? 0)),
+    reserves: rounded(currentNation.reserves + (nationDelta.reserves ?? 0)),
+    foodSecurity: rounded(currentNation.foodSecurity + (nationDelta.foodSecurity ?? 0)),
+    readiness: rounded(currentNation.readiness + (nationDelta.readiness ?? 0)),
+    offensiveIntent: rounded(currentNation.offensiveIntent + (nationDelta.offensiveIntent ?? 0)),
+    posture: GEOPOLITICAL_PULL_SET[pullId].posture,
+    lastPullId: pullId,
+    lastTargetNationId: target.id,
+  };
+  const nextRelation = {
+    ...currentRelation,
+    relation: Math.round(clamp(currentRelation.relation + (relationDelta.relation ?? 0), -100, 100)),
+    tension: rounded(currentRelation.tension + (relationDelta.tension ?? 0)),
+    trade: rounded(currentRelation.trade + (relationDelta.trade ?? 0)),
+  };
+  if (pullId === "limited_war") {
+    nextRelation.atWar = true;
+    nextRelation.allied = false;
+    nextRelation.tension = Math.max(88, nextRelation.tension);
+    nextRelation.warMonths = 1;
+    nextRelation.truceMonths = 0;
+    nextRelation.alignmentOffer = null;
+    nextRelation.ceasefireOffer = null;
+    decision.outcome = "war_started";
+  } else if (pullId === "seek_ceasefire") {
+    nextRelation.ceasefireOffer = { from: nation.id, to: target.id, monthsRemaining: 3 };
+    decision.outcome = "proposal_sent";
+  } else {
+    nextRelation.atWar = false;
+    nextRelation.warMonths = 0;
+    nextRelation.crisisMonths = 0;
+    nextRelation.truceMonths = Math.max(12, currentRelation.truceMonths ?? 0);
+    nextRelation.ceasefireOffer = null;
+    decision.outcome = "ceasefire_formed";
+  }
+
+  const approvalEvent = eventCopy(periodFor(dateState), nation, target, decision);
+  return {
+    ...snapshot,
+    nationStates: { ...snapshot.nationStates, [nation.id]: nextNation },
+    relations: { ...snapshot.relations, [key]: nextRelation },
+    events: [...snapshot.events.filter((event) => event.id !== approvalEvent.id), approvalEvent].slice(-MAX_EVENTS),
+  };
+}
+
 function relationStatus(relation) {
   if (relation.atWar) return "戦争";
   if (relation.allied && relation.tension >= 70) return "同盟危機";

@@ -217,6 +217,21 @@ test("compact portrait readability overrides keep identity, navigation, and ledg
   assert.match(readabilityPass, /\.goddess-prologue\.is-selecting \.goddess-character-setup \.character-creation-form input,[\s\S]*?height: 44px;/);
 });
 
+test("compact portrait generated-map sites keep 44px tap targets above regional movement chips", () => {
+  const portraitPass = styleSource.match(/2026-08 mobile portrait readability pass[\s\S]*$/)?.[0] ?? "";
+  assert.match(styleSource, /\.generated-site-marker-layer,[\s\S]*?z-index:\s*7;/);
+  assert.match(styleSource, /\.generated-region-move-layer\s*\{[^}]*z-index:\s*8;/s);
+  assert.match(styleSource, /\.generated-site-marker\s*\{[^}]*width:\s*30px;[^}]*height:\s*30px;/s);
+  assert.match(portraitPass, /\.generated-site-marker-layer\s*\{\s*z-index:\s*9;\s*\}/);
+  assert.match(portraitPass, /\.generated-site-marker\s*\{[^}]*min-width:\s*44px;[^}]*min-height:\s*44px;[^}]*touch-action:\s*manipulation;/s);
+  assert.match(appSource, /data-site-offset/);
+  assert.match(appSource, /Math\.hypot\(entry\.left - left, entry\.top - top\) < 7/);
+  for (const direction of ["up", "right", "down", "left"]) {
+    assert.match(styleSource, new RegExp(`generated-dungeon-marker\\[data-site-offset="${direction}"\\]`));
+    assert.match(portraitPass, new RegExp(`generated-dungeon-marker\\[data-site-offset="${direction}"\\]`));
+  }
+});
+
 test("compact mobile navigation preserves map state and exposes accessible locked and drawer states", () => {
   assert.match(appSource, /mobileMoreOpen: false/);
   assert.match(appSource, /function isCompactMobileShell\(\)[\s\S]*?max-width: 980px\) and \(orientation: portrait\)/);
