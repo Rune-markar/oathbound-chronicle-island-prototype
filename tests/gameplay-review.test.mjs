@@ -130,3 +130,22 @@ test("month-end warnings reuse the cached planning preview", () => {
   assert.match(endMonthFlow, /getTurnWarnings\(state, getPlanningPreview\(\)\)/);
   assert.match(cityPlanFlow, /const preview = getPlanningPreview\(\);\s*const warnings = getTurnWarnings\(state, preview\);/);
 });
+
+test("view-only map renders reuse one state-derived map context", () => {
+  const contextFlow = appSource.match(/function getGeneratedMapContext\(\)[\s\S]*?function generatedSiteSelectionContext/)?.[0] ?? "";
+  const mapFlow = appSource.match(/function renderGeneratedWorldMapLayer\(\)[\s\S]*?function paintGeneratedMapLegend/)?.[0] ?? "";
+
+  assert.match(contextFlow, /generatedMapContextCache\.state === state/);
+  assert.match(contextFlow, /getGeneratedColonizationView\(state\)/);
+  assert.match(contextFlow, /getGeneratedRecognitionView\(state\)/);
+  assert.match(mapFlow, /const mapContext = getGeneratedMapContext\(\)/);
+  assert.match(mapFlow, /generatedSiteSelectionContext\(mapContext\)/);
+  assert.match(mapFlow, /generatedMapRenderCache\.state === state[\s\S]*?generatedMapRenderCache\.signature === renderSignature/);
+  assert.match(mapFlow, /generatedMapRenderCache = \{ state, signature: generatedMapRenderSignature\(\) \}/);
+});
+
+test("autosave snapshots do not replace the live state or invalidate render caches", () => {
+  assert.match(appSource, /const savedState = markChronicleSaved\(state\);/);
+  assert.match(appSource, /localStorage\.setItem\(STORAGE_KEY, JSON\.stringify\(savedState\)\);/);
+  assert.doesNotMatch(appSource, /state = markChronicleSaved\(state\);/);
+});

@@ -515,6 +515,8 @@ let state = normalizeAdventureState(refreshGeneratedWorldForDate(offlineResume.s
 if (state.centralizationCampaign?.ending) state.council.pending = false;
 let toastTimer = null;
 let previewCache = { state: null, value: null };
+let generatedMapContextCache = { state: null, value: null };
+let generatedMapRenderCache = { state: null, signature: null };
 let generatedMapVisualCache = { key: null, url: null, entries: new Map() };
 let tacticalEffectTimer = null;
 let tacticalEffectsPlaying = false;
@@ -805,8 +807,8 @@ function loadState() {
 
 function persist(showMessage = false) {
   if (!chronicleReady) return false;
-  state = markChronicleSaved(state);
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  const savedState = markChronicleSaved(state);
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(savedState));
   if (showMessage) {
     audio.play("save");
     showToast("年代記をこの端末に記録しました。");
@@ -5730,12 +5732,52 @@ function renderGeneratedRegionMoveConfirmation(copy, runtime, viewport) {
   </section>`;
 }
 
-function generatedSiteSelectionContext() {
+function getGeneratedMapContext() {
+  if (generatedMapContextCache.state === state) return generatedMapContextCache.value;
+  const world = getGeneratedWorldView(state);
+  const currentNation = world.runtime.nationById.get(world.expeditionRegion.nationId) ?? world.playerNation;
+  const context = { runtime: world.runtime, region: world.expeditionRegion, nation: currentNation };
+  const { dungeon } = getRegionAdventureSites(state, context);
+  generatedMapContextCache = {
+    state,
+    value: {
+      ...world,
+      currentNation,
+      dungeon,
+      personalMap: getPersonalMapView(state, context),
+      colonization: getGeneratedColonizationView(state),
+      barbarianFrontier: getGeneratedBarbarianView(state),
+      recognition: getGeneratedRecognitionView(state),
+    },
+  };
+  return generatedMapContextCache.value;
+}
+
+function generatedMapRenderSignature() {
+  const selectedSite = view.selectedGeneratedSite;
+  return [
+    view.generatedMapScale,
+    Number(view.generatedPanX) || 0,
+    Number(view.generatedPanY) || 0,
+    view.pendingGeneratedDestinationId ?? "",
+    view.pendingGeneratedTravelMode ?? "",
+    Number(view.generatedConfirmOffsetX) || 0,
+    Number(view.generatedConfirmOffsetY) || 0,
+    selectedSite?.kind ?? "",
+    selectedSite?.id ?? "",
+    view.generatedSiteInfoOpen ? 1 : 0,
+    view.generatedTravel?.destinationName ?? "",
+    view.atlasMode,
+    view.selectedGeneratedNationId ?? "",
+  ].join("|");
+}
+
+function generatedSiteSelectionContext(mapContext = getGeneratedMapContext()) {
   const selection = view.selectedGeneratedSite;
   if (!selection) return null;
   if (selection.kind === "barbarian") {
-    const { runtime, expeditionTile } = getGeneratedWorldView(state);
-    const site = getGeneratedBarbarianView(state).sites.find((entry) => entry.id === selection.id && entry.detected);
+    const { runtime, expeditionTile, barbarianFrontier } = mapContext;
+    const site = barbarianFrontier.sites.find((entry) => entry.id === selection.id && entry.detected);
     if (!site?.tile) {
       view.selectedGeneratedSite = null;
       view.generatedSiteInfoOpen = false;
@@ -5775,7 +5817,7 @@ function generatedSiteSelectionContext() {
     };
   }
   if (selection.kind === "colony") {
-    const colonization = getGeneratedColonizationView(state);
+    const { colonization } = mapContext;
     const candidate = colonization.candidates.find((entry) => entry.tileId === selection.id);
     if (!candidate) {
       view.selectedGeneratedSite = null;
@@ -5863,9 +5905,8 @@ function generatedSiteSelectionContext() {
       return null;
     }
   }
-  const context = currentAdventureContext();
-  const { dungeon } = getRegionAdventureSites(state, context);
-  const personalMap = getPersonalMapView(state, context);
+  const context = { runtime: mapContext.runtime, region: mapContext.expeditionRegion, nation: mapContext.currentNation };
+  const { dungeon, personalMap } = mapContext;
   const location = personalMap.locations.find((entry) => entry.id === selection.id);
   if (selection.kind !== "dungeon" || dungeon.id !== selection.id || !location?.discovered) {
     view.selectedGeneratedSite = null;
@@ -5969,14 +6010,11 @@ function positionGeneratedSiteMarkers(copy, runtime, viewport, dungeon, personal
 }
 
 function renderGeneratedWorldMapLayer() {
-  const { runtime, generatedState, expeditionRegion, expeditionTile, playerNation } = getGeneratedWorldView(state);
-  const currentNation = runtime.nationById.get(expeditionRegion.nationId) ?? playerNation;
-  const { dungeon } = getRegionAdventureSites(state, { runtime, region: expeditionRegion, nation: currentNation });
-  const personalMap = getPersonalMapView(state, { runtime, region: expeditionRegion, nation: currentNation });
-  const colonization = getGeneratedColonizationView(state);
-  const barbarianFrontier = getGeneratedBarbarianView(state);
-  const recognition = getGeneratedRecognitionView(state);
-  const selectedSite = generatedSiteSelectionContext();
+  const renderSignature = generatedMapRenderSignature();
+  if (generatedMapRenderCache.state === state && generatedMapRenderCache.signature === renderSignature) return;
+  const mapContext = getGeneratedMapContext();
+  const { runtime, generatedState, expeditionRegion, expeditionTile, playerNation, dungeon, personalMap, colonization, barbarianFrontier, recognition } = mapContext;
+  const selectedSite = generatedSiteSelectionContext(mapContext);
   const colonyCandidate = selectedSite?.kind === "colony"
     ? colonization.candidates.find((candidate) => candidate.tileId === selectedSite.id) ?? colonization.bestCandidate
     : colonization.bestCandidate;
@@ -6073,6 +6111,7 @@ function renderGeneratedWorldMapLayer() {
   elements.mapCaptionTitle.textContent = focusedNation
     ? `${focusedNation.name} · 世界全図`
     : view.generatedMapScale === "region" ? `現在地｜${expeditionRegion.name}` : `${playerNation.name} · 世界全図`;
+  generatedMapRenderCache = { state, signature: generatedMapRenderSignature() };
 }
 
 function paintGeneratedMapLegend() {

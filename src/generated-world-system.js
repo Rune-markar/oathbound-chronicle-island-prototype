@@ -95,6 +95,7 @@ export const GENERATED_RECOGNITION_RADIUS = 20;
 const DIRECTION_BY_NAME = new Map(SQUARE_CARDINAL_DIRECTIONS.map((direction) => [direction.name, direction]));
 let runtimeCache = { key: null, value: null };
 const generatedWorldViewCache = new WeakMap();
+const generatedObjectExclusionCache = new WeakMap();
 let characterWorldSequence = 0;
 const GENERATED_WORLD_CLOCK_LIMIT = 999 * 24 * 60 - 1;
 const generatedTravelRouteCache = new Map();
@@ -321,9 +322,28 @@ function generatedTileDistance(runtime, left, right) {
   return Math.abs(dx) + Math.abs(right.y - left.y);
 }
 
-function generatedVisualDistance(runtime, left, right) {
-  const dx = squareWrappedDeltaX(left.x, right.x, runtime.terrain.width, runtime.terrain.config.wrapX);
-  return Math.hypot(dx, right.y - left.y);
+function generatedObjectExclusionTiles(runtime) {
+  const cached = generatedObjectExclusionCache.get(runtime);
+  if (cached) return cached;
+  const excluded = new Set();
+  const radius = Math.ceil(GENERATED_OBJECT_MIN_DISTANCE) - 1;
+  for (const object of runtime.nations.objects) {
+    const origin = runtime.tiles[object.tileIndex];
+    if (!origin) continue;
+    for (let dy = -radius; dy <= radius; dy += 1) {
+      const y = origin.y + dy;
+      if (y < 0 || y >= runtime.terrain.height) continue;
+      for (let dx = -radius; dx <= radius; dx += 1) {
+        if (Math.hypot(dx, dy) >= GENERATED_OBJECT_MIN_DISTANCE) continue;
+        let x = origin.x + dx;
+        if (runtime.terrain.config.wrapX) x = (x + runtime.terrain.width) % runtime.terrain.width;
+        if (x < 0 || x >= runtime.terrain.width) continue;
+        excluded.add(squareTileIndex(x, y, runtime.terrain.width));
+      }
+    }
+  }
+  generatedObjectExclusionCache.set(runtime, excluded);
+  return excluded;
 }
 
 function colonyRoadConnection(runtime, nationMap, colony, roadIndex) {
@@ -662,7 +682,7 @@ export function refreshGeneratedWorldForDate(state) {
 }
 
 export function getGeneratedWorldTimeView(state) {
-  const generatedState = createGeneratedWorldState(state?.generatedWorld ?? state ?? {}, state?.generatedWorld ? state : null);
+  const generatedState = state?.generatedWorld ?? state ?? {};
   const elapsedMinutes = clockMinutes(generatedState.expeditionClockMinutes);
   const minuteOfDay = elapsedMinutes % (24 * 60);
   const hour = Math.floor(minuteOfDay / 60);
@@ -670,7 +690,7 @@ export function getGeneratedWorldTimeView(state) {
   const phase = hour < 5 || hour >= 20 ? "night" : hour < 7 ? "dawn" : hour < 17 ? "day" : "dusk";
   const phaseLabels = { night: "夜", dawn: "夜明け", day: "昼", dusk: "夕暮れ" };
   return {
-    period: generatedState.expeditionPeriod,
+    period: generatedState.expeditionPeriod ?? periodFor(state?.generatedWorld ? state : null),
     elapsedMinutes,
     day: Math.floor(elapsedMinutes / (24 * 60)) + 1,
     hour,
@@ -848,14 +868,20 @@ export function getGeneratedWorldView(state) {
 export function getGeneratedRecognitionView(state, radius = GENERATED_RECOGNITION_RADIUS) {
   const world = getGeneratedWorldView(state);
   const recognitionRadius = clampInteger(radius, GENERATED_RECOGNITION_RADIUS, 1, 40);
-  const recognizedTileIds = new Set(world.runtime.tiles.filter((tile) => {
-    const directX = Math.abs(tile.x - world.expeditionTile.x);
-    const dx = world.runtime.terrain.config.wrapX
-      ? Math.min(directX, world.runtime.terrain.width - directX)
-      : directX;
-    const dy = Math.abs(tile.y - world.expeditionTile.y);
-    return dx * dx + dy * dy <= recognitionRadius * recognitionRadius;
-  }).map((tile) => tile.id));
+  const recognizedTileIds = new Set();
+  const radiusSquared = recognitionRadius * recognitionRadius;
+  for (let dy = -recognitionRadius; dy <= recognitionRadius; dy += 1) {
+    const y = world.expeditionTile.y + dy;
+    if (y < 0 || y >= world.runtime.terrain.height) continue;
+    const maximumDx = Math.floor(Math.sqrt(radiusSquared - dy * dy));
+    for (let dx = -maximumDx; dx <= maximumDx; dx += 1) {
+      let x = world.expeditionTile.x + dx;
+      if (world.runtime.terrain.config.wrapX) x = (x + world.runtime.terrain.width) % world.runtime.terrain.width;
+      if (x < 0 || x >= world.runtime.terrain.width) continue;
+      const tile = world.runtime.tiles[squareTileIndex(x, y, world.runtime.terrain.width)];
+      if (tile) recognizedTileIds.add(tile.id);
+    }
+  }
   return {
     radius: recognitionRadius,
     centerTile: world.expeditionTile,
@@ -1381,6 +1407,10 @@ function shippingDestinationsFor(runtime, generatedState) {
 }
 
 export function getGeneratedShippingDestinations(state) {
+  const world = getGeneratedWorldView(state);
+  if (world.generatedState.expeditionPeriod === periodFor(state)) {
+    return shippingDestinationsFor(world.runtime, world.generatedState);
+  }
   const refreshed = refreshGeneratedWorldForDate(state);
   const generatedState = createGeneratedWorldState(refreshed.generatedWorld ?? {}, refreshed);
   const runtime = effectiveRuntimeFor(buildGeneratedWorld(refreshed), generatedState, refreshed);
@@ -1448,13 +1478,12 @@ export function getGeneratedColonizationView(state) {
     ...localSettlements.map((object) => generatedTileDistance(runtime, urbanTile, runtime.tiles[object.tileIndex])),
   ) : 0;
   const maximumExpansionRadius = developedRadius + SETTLEMENT_EXPANSION_WAVE_TILES;
+  const excludedObjectTiles = generatedObjectExclusionTiles(runtime);
   const candidates = !owned || !urbanTile || !roadTiles.size ? [] : expeditionRegion.tileIndices.flatMap((tileIndex) => {
     const tile = runtime.tiles[tileIndex];
     const terrainTile = runtime.terrain.tiles[tileIndex];
     const score = colonizationSuitability(tile, terrainTile, playerNation);
-    if (!tile?.passable || score === null || runtime.nations.objects.some((object) => (
-      generatedVisualDistance(runtime, tile, runtime.tiles[object.tileIndex]) < GENERATED_OBJECT_MIN_DISTANCE
-    ))) return [];
+    if (!tile?.passable || score === null || excludedObjectTiles.has(tile.index)) return [];
     const roadsideDistance = generatedRoadDistance(runtime, expeditionRegion.id, tile, roadTiles);
     const urbanDistance = generatedTileDistance(runtime, urbanTile, tile);
     if (roadsideDistance > ROADSIDE_SETTLEMENT_MAX_OFFSET || urbanDistance > maximumExpansionRadius) return [];

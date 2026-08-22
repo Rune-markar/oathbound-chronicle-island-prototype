@@ -48,9 +48,11 @@ test("irreversible generated-nation decisions are shared in the return chronicle
   assert.ok(resumed.report.pendingDecisions.includes("試験国・停戦受諾"));
 });
 
-test("saving stamps a clone without mutating the live state", () => {
+test("saving stamps a structurally shared snapshot without mutating the live state", () => {
   const source = base();
   const saved = markChronicleSaved(source, 42_000);
   assert.notEqual(saved, source);
+  assert.equal(saved.player, source.player);
+  assert.notEqual(saved.persistence, source.persistence);
   assert.notEqual(saved.persistence.lastSavedAt, source.persistence.lastSavedAt);
 });

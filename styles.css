@@ -2739,7 +2739,7 @@ a:focus-visible,
 .generated-region-move-confirmation > header strong { display: block; }
 .generated-region-move-confirmation > header small { color: #cfae58; font: 800 7px/1 system-ui, sans-serif; letter-spacing: .14em; }
 .generated-region-move-confirmation > header strong { margin-top: 4px; color: #f9e8b7; font: 800 11px/1.2 system-ui, sans-serif; }
-.generated-region-move-confirmation > header button { width: 27px; height: 27px; padding: 0; color: #d9c99e; border: 1px solid rgba(224, 196, 123, .32); background: rgba(255, 255, 255, .04); cursor: pointer; font-size: 15px; }
+.generated-region-move-confirmation > header button { width: 44px; height: 44px; padding: 0; color: #d9c99e; border: 1px solid rgba(224, 196, 123, .32); background: rgba(255, 255, 255, .04); cursor: pointer; font-size: 15px; }
 .generated-region-move-confirmation > h2 { margin: 13px 0 0; color: #fff0bd; font: 800 19px/1.15 Georgia, "Yu Mincho", serif; }
 .generated-region-move-confirmation > p { margin: 4px 0 0; color: rgba(230, 225, 206, .67); font-size: 8px; }
 .generated-travel-mode-options { display: grid; gap: 6px; margin-top: 10px; }
@@ -2762,7 +2762,7 @@ a:focus-visible,
 .generated-region-move-confirmation > div strong { color: #f5d77f; font-size: 12px; }
 .generated-region-move-confirmation > em { display: block; margin-top: 9px; color: #e6c46e; font: normal 800 8px/1.45 system-ui, sans-serif; }
 .generated-region-move-confirmation > footer { display: grid; grid-template-columns: 1fr 1.4fr; gap: 6px; margin-top: 11px; }
-.generated-region-move-confirmation > footer button { min-height: 36px; color: #dcd3b9; border: 1px solid rgba(213, 188, 124, .3); background: rgba(255, 255, 255, .05); cursor: pointer; font: 800 9px/1 system-ui, sans-serif; }
+.generated-region-move-confirmation > footer button { min-height: 44px; color: #dcd3b9; border: 1px solid rgba(213, 188, 124, .3); background: rgba(255, 255, 255, .05); cursor: pointer; font: 800 11px/1 system-ui, sans-serif; }
 .generated-region-move-confirmation > footer button.is-confirm { color: #263d38; border-color: #e1bf63; background: #e2c367; }
 .generated-region-move-confirmation > footer button:disabled { opacity: .45; cursor: not-allowed; filter: grayscale(.35); }
 .generated-region-move-confirmation > footer button:hover { filter: brightness(1.09); }
