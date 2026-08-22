@@ -16315,6 +16315,185 @@ body.is-location-focus .village-central-status article > strong { font-size: cla
   .portrait-guard button:disabled { cursor: wait; opacity: .68; }
 }
 
+/* Control usability pass: prioritize actions that work now and keep blocked
+   options available as reference without forcing them into the main path. */
+.village-available-actions,
+.village-secondary-actions,
+.village-blocked-actions {
+  margin-top: 12px;
+  border: 1px solid rgba(226, 194, 111, .24);
+  background: rgba(3, 18, 18, .38);
+}
+
+.village-available-actions > header,
+.village-secondary-actions > summary,
+.village-blocked-actions > summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 11px;
+}
+
+.village-secondary-actions > summary,
+.village-blocked-actions > summary {
+  cursor: pointer;
+}
+
+.village-available-actions > header span,
+.village-secondary-actions > summary span,
+.village-blocked-actions > summary span,
+.village-available-actions > header strong,
+.village-secondary-actions > summary strong,
+.village-blocked-actions > summary strong,
+.village-available-actions > header small,
+.village-secondary-actions > summary small,
+.village-blocked-actions > summary small {
+  display: block;
+}
+
+.village-available-actions > header strong,
+.village-secondary-actions > summary strong,
+.village-blocked-actions > summary strong {
+  color: #ffe7aa;
+  font-size: 12px;
+}
+
+.village-available-actions > header small,
+.village-secondary-actions > summary small,
+.village-blocked-actions > summary small {
+  margin-top: 3px;
+  color: rgba(231, 226, 205, .64);
+  font-size: 10px;
+}
+
+.village-available-actions > header b,
+.village-secondary-actions > summary b,
+.village-blocked-actions > summary b {
+  color: #e2c26f;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.village-secondary-actions > .village-choice-list,
+.village-blocked-actions > .village-choice-list,
+.village-available-actions > .village-choice-list {
+  margin: 0;
+  padding: 9px;
+  border-top: 1px solid rgba(226, 194, 111, .16);
+}
+
+.village-blocked-actions {
+  border-color: rgba(226, 194, 111, .14);
+  background: rgba(3, 13, 14, .28);
+}
+
+.village-blocked-actions .village-choice-action:disabled {
+  opacity: .7;
+}
+
+.village-action-window .tavern-section-tabs {
+  position: sticky;
+  z-index: 2;
+  top: -15px;
+  margin: 12px 0 10px;
+  padding: 4px;
+  background: rgba(18, 29, 25, .96);
+  box-shadow: 0 6px 14px rgba(2, 9, 9, .24);
+}
+
+.village-action-window .tavern-section-tabs button,
+.village-action-window .guild-contract-board button,
+.village-action-window .tavern-party-board button {
+  min-height: 42px;
+  font-size: 11px;
+}
+
+.village-action-window .guild-contract-board article strong,
+.village-action-window .tavern-party-board article strong {
+  font-size: 13px;
+}
+
+.village-action-window .guild-contract-board article p,
+.village-action-window .tavern-party-board article p {
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.village-action-window .guild-contract-board article em,
+.village-action-window .guild-contract-board article footer,
+.village-action-window .tavern-party-board article mark {
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+@media (max-width: 760px) {
+  body.is-village-focus .village-central-status.is-top-status {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+
+  body.is-village-focus .village-central-status article {
+    min-height: 62px;
+    padding: 7px 5px;
+  }
+
+  body.is-village-focus .village-central-status article > span {
+    display: none;
+  }
+
+  body.is-village-focus .village-central-status small {
+    font-size: 8px;
+    letter-spacing: 0;
+  }
+
+  body.is-village-focus .village-central-status strong,
+  body.is-village-focus .village-central-status strong i {
+    font-size: 13px;
+  }
+
+  body.is-village-focus .village-central-visual.has-top-status .village-choice-overlay,
+  body.is-village-focus .village-central-visual.has-top-status .village-action-window {
+    top: 88px;
+  }
+
+  .village-action-window > header {
+    padding: 9px 11px;
+  }
+
+  .village-action-window > header > div {
+    margin-bottom: 6px;
+  }
+
+  .village-action-window > header h2 {
+    margin-top: 3px;
+    font-size: 20px;
+  }
+
+  .village-action-window > header p {
+    margin-top: 3px;
+    font-size: 11px;
+  }
+
+  .village-action-window .village-overlay-actions {
+    padding: 10px;
+  }
+
+  .village-action-window .village-overlay-heading strong {
+    font-size: 17px;
+  }
+
+  .village-action-window .village-overlay-heading > b,
+  .village-action-window .village-overlay-heading small {
+    font-size: 9px;
+  }
+
+  .village-action-window .guild-contract-board article,
+  .village-action-window .tavern-party-board article {
+    padding: 11px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .ledger-drawer { transition: none; }
 }

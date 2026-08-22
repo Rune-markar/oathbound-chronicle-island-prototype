@@ -5,12 +5,16 @@ import { readFile } from "node:fs/promises";
 const app = await readFile(new URL("../src/app.js", import.meta.url), "utf8");
 const styles = await readFile(new URL("../styles.css", import.meta.url), "utf8");
 
-test("village actions expose blocked reasons in both the panel and full workspace", () => {
+test("village actions expose blocked reasons without crowding out executable choices", () => {
   assert.match(app, /function renderVillageChoiceAction\(village, item\)/);
   assert.match(app, /class="village-action-reason">条件：/);
-  assert.equal((app.match(/map\(\(item\) => renderVillageChoiceAction\(village, item\)\)/g) ?? []).length, 2);
+  assert.match(app, /function renderVillageActionGroups\(village, facility\)/);
+  assert.match(app, /const available = items\.filter\(\(\{ availability \}\) => availability\.allowed\)/);
+  assert.match(app, /const blocked = items\.filter\(\(\{ availability \}\) => !availability\.allowed\)/);
+  assert.equal((app.match(/renderVillageActionGroups\(village, selected\)/g) ?? []).length, 2);
   assert.match(styles, /\.village-action-reason/);
   assert.match(styles, /\.village-choice-overlay \.village-action-reason/);
+  assert.match(styles, /\.village-blocked-actions/);
 });
 
 test("guild guidance distinguishes party-gated dungeons from solo local objectives", () => {

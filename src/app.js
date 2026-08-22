@@ -1267,6 +1267,7 @@ function openCampaignSettlement(villageId, facilityId = null, tavernSection = nu
     view.villageFacilityOpen = true;
   }
   renderPanelFromTop();
+  if (facilityId) focusVillageActionWindow();
 }
 
 function openCampaignLocalAction(action) {
@@ -4598,7 +4599,47 @@ function villageFacilityActions(village, facility) {
 
 function villageFacilityChoiceCount(village, facility) {
   if (facility.id === "market") return Object.keys(MERCHANT_COMMODITIES).length * 2 + 1;
-  return villageFacilityActions(village, facility).length;
+  return villageFacilityActions(village, facility)
+    .filter((item) => getVillageActionAvailability(state, item.id, village).allowed)
+    .length;
+}
+
+function renderVillageActionGroups(village, facility) {
+  const items = villageFacilityActions(village, facility).map((item) => ({
+    item,
+    availability: getVillageActionAvailability(state, item.id, village),
+  }));
+  const available = items.filter(({ availability }) => availability.allowed);
+  const blocked = items.filter(({ availability }) => !availability.allowed);
+  const secondary = ["tavern", "guild"].includes(facility.id);
+  const availableActions = available.map(({ item }) => renderVillageChoiceAction(village, item)).join("");
+  const blockedActions = blocked.map(({ item }) => renderVillageChoiceAction(village, item)).join("");
+  const availableMarkup = !available.length ? "" : secondary
+    ? `<details class="village-secondary-actions"><summary><span><strong>その他の${escapeHtml(facility.name)}行動</strong><small>食事・噂・施設サービス</small></span><b>${available.length}件</b></summary><div class="village-choice-list">${availableActions}</div></details>`
+    : `<section class="village-available-actions"><header><span><small>AVAILABLE NOW</small><strong>今できること</strong></span><b>${available.length}件</b></header><div class="village-choice-list">${availableActions}</div></section>`;
+  const blockedMarkup = !blocked.length ? "" : `<details class="village-blocked-actions"><summary><span><strong>条件を満たすと使える行動</strong><small>必要条件だけ確認できます</small></span><b>${blocked.length}件</b></summary><div class="village-choice-list">${blockedActions}</div></details>`;
+  return `${availableMarkup}${blockedMarkup}`;
+}
+
+function focusVillageActionWindow() {
+  requestAnimationFrame(() => {
+    const windowElement = document.querySelector(".village-action-window");
+    windowElement?.scrollIntoView({ block: "start", inline: "nearest" });
+    const target = [
+      "[data-submit-adventure-contract]:not(:disabled)",
+      "[data-accept-adventure-contract]:not(:disabled)",
+      "[data-tavern-section].is-active",
+      "[data-village-action]:not(:disabled)",
+      "button:not(:disabled)",
+    ].map((selector) => windowElement?.querySelector(selector)).find(Boolean);
+    target?.focus({ preventScroll: true });
+  });
+}
+
+function focusVillageFacilityButton(facilityId) {
+  requestAnimationFrame(() => {
+    document.querySelector(`.village-facility-menu [data-village-facility="${CSS.escape(facilityId)}"]`)?.focus({ preventScroll: true });
+  });
 }
 
 function villageActionCostLabel(availability) {
@@ -4645,7 +4686,16 @@ function beginVillageConversation({ kind, id, facilityId, castId = facilityId, t
 }
 
 function focusVillageConversation() {
-  requestAnimationFrame(() => document.querySelector(".village-conversation [data-village-dialogue-next], .village-conversation [data-npc-conversation-action], .village-conversation [data-village-dialogue-cancel]")?.focus());
+  requestAnimationFrame(() => {
+    const conversation = document.querySelector(".village-conversation");
+    const target = [
+      "[data-village-dialogue-skip]",
+      "[data-npc-conversation-action]:not(:disabled)",
+      "[data-village-dialogue-next]",
+      "[data-village-dialogue-cancel]",
+    ].map((selector) => conversation?.querySelector(selector)).find(Boolean);
+    target?.focus({ preventScroll: true });
+  });
 }
 
 function closeVillageConversation() {
@@ -5009,12 +5059,12 @@ function renderVillagePanel() {
   const life = state.player.villageLife;
   const facilities = getSettlementFacilities(village);
   const selected = facilities.find((facility) => facility.id === view.selectedVillageFacilityId) ?? facilities[0];
-  const actions = villageFacilityActions(village, selected).map((item) => renderVillageChoiceAction(village, item)).join("");
+  const actions = renderVillageActionGroups(village, selected);
   elements.leftPanel.innerHTML = `
     <header class="panel-heading village-heading"><span>PERSONAL VILLAGE / ${escapeHtml(village.regionName)}</span><h1>${escapeHtml(village.name)}</h1><p>${escapeHtml(village.nationName)} · 個人行動</p></header>
     <div class="panel-body village-panel-body">
       <section class="panel-section village-vital-card"><div><small>HP</small><strong>${life.hp}<i> / ${life.maxHp}</i></strong></div><div><small>MP</small><strong>${life.mp}<i> / ${life.maxMp}</i></strong></div><p><b>${escapeHtml(villageConditionSummary(life))}</b><span>財産 ${state.player.metrics.wealth} · 食料 ${life.supplies.food} · 松明 ${life.supplies.torches}</span></p></section>
-      <section class="panel-section"><div class="section-heading"><h2>施設</h2><small>${facilities.length}か所</small></div><nav class="village-panel-facilities">${facilities.map((facility) => `<button type="button" data-village-facility="${facility.id}" class="${facility.id === selected.id ? "is-active" : ""}"><i>${facility.icon}</i><span>${facility.name}</span><small>${villageFacilityChoiceCount(village, facility)}</small></button>`).join("")}</nav></section>
+      <section class="panel-section"><div class="section-heading"><h2>施設</h2><small>${facilities.length}か所</small></div><nav class="village-panel-facilities">${facilities.map((facility) => `<button type="button" data-village-facility="${facility.id}" class="${facility.id === selected.id ? "is-active" : ""}"><i>${facility.icon}</i><span>${facility.name}</span><small>${villageFacilityChoiceCount(village, facility)}行動</small></button>`).join("")}</nav></section>
       <section class="panel-section village-choice-section"><div class="section-heading"><h2>${selected.name}での行動</h2><small>会話して実行</small></div><p class="village-choice-summary">${selected.summary}</p><div class="village-choice-list">${actions}</div>${villageFacilityAdventureContent(selected.id)}</section>
       ${renderSettlementCrimeSection(village)}
       <section class="panel-section village-panel-exits"><button type="button" data-leave-village="career">人物画面へ</button><button type="button" data-leave-village="world">地方地図へ</button></section>
@@ -5271,7 +5321,11 @@ function renderVillageWorkspace() {
   const progress = life.villageProgress[village.id] ?? { buildings: 0, facilityLevel: 1, specialists: 0 };
   const regionalReputation = currentRegionalReputationReport(village);
   const activeParty = life.party.filter((member) => member.active && member.alive !== false);
-  const actions = villageFacilityActions(village, selected).map((item) => renderVillageChoiceAction(village, item)).join("");
+  const actionGroups = renderVillageActionGroups(village, selected);
+  const facilityContent = villageFacilityAdventureContent(selected.id, village);
+  const actionWindowContent = ["tavern", "guild"].includes(selected.id)
+    ? `${facilityContent}${actionGroups}`
+    : `${actionGroups}${facilityContent}`;
   const records = life.actionHistory.filter((record) => record.villageId === village.id).slice(0, 6).map((record) => `
     <li><span>${record.year ?? state.year}年 ${record.month ?? state.month}月</span><strong>${escapeHtml(record.actionName)}</strong><small>${escapeHtml(record.message)}</small></li>`).join("");
   const administrationButton = getCareerStage(state)?.governance && getGovernanceView(state).jurisdiction.territoryIds.includes(village.regionId)
@@ -5295,14 +5349,13 @@ function renderVillageWorkspace() {
         </div>
         ${tavernInterior ? "" : `<section class="village-choice-overlay village-facility-window ${view.villageFacilityOpen ? "has-action-window" : ""}" aria-label="${escapeHtml(village.name)}の施設">
           <header><small>VILLAGE COMMAND</small><div><h2>${escapeHtml(village.name)}</h2><button type="button" data-leave-village="world" aria-label="地方地図へ戻る">×</button></div><p>施設を選び、村人と会話して行動します。</p></header>
-          <nav class="village-overlay-facilities village-facility-menu" aria-label="集落の施設">${facilities.map((facility) => `<button type="button" data-village-facility="${facility.id}" class="${view.villageFacilityOpen && facility.id === selected.id ? "is-active" : ""}" aria-haspopup="dialog" aria-expanded="${view.villageFacilityOpen && facility.id === selected.id}"><i>${facility.icon}</i><span><strong>${escapeHtml(facility.name)}</strong><small>${escapeHtml(facility.summary)}</small></span><b>${villageFacilityChoiceCount(village, facility)}件 <em>→</em></b></button>`).join("")}</nav>
+          <nav class="village-overlay-facilities village-facility-menu" aria-label="集落の施設">${facilities.map((facility) => `<button type="button" data-village-facility="${facility.id}" class="${view.villageFacilityOpen && facility.id === selected.id ? "is-active" : ""}" aria-haspopup="dialog" aria-expanded="${view.villageFacilityOpen && facility.id === selected.id}"><i>${facility.icon}</i><span><strong>${escapeHtml(facility.name)}</strong><small>${escapeHtml(facility.summary)}</small></span><b>${villageFacilityChoiceCount(village, facility)}行動 <em>→</em></b></button>`).join("")}</nav>
         </section>`}
         ${view.villageFacilityOpen ? `<section class="village-choice-overlay village-action-window ${tavernInterior ? "is-facility-interior-window is-tavern-window" : ""}" role="dialog" aria-modal="false" aria-label="${escapeHtml(selected.name)}の行動">
           <header><div><button type="button" class="village-action-back" data-close-village-actions>← 村の施設一覧</button><button type="button" data-leave-village="world" aria-label="地方地図へ戻る">×</button></div><small>${tavernInterior ? "TAVERN / ARRIVED" : `${selected.id.toUpperCase()} / ACTIONS`}</small><h2>${escapeHtml(selected.name)}</h2><p>${tavernInterior ? "酒場へ移動しました。店内で相手と用件を選びます。" : escapeHtml(selected.summary)}</p></header>
           <div class="village-overlay-actions">
-            <div class="village-overlay-heading"><span><small>${tavernInterior ? "AFTER ARRIVAL / AVAILABLE CHOICES" : "AVAILABLE CHOICES"}</small><strong>行動を選ぶ</strong></span><b>${villageFacilityChoiceCount(village, selected)}件</b></div>
-            <div class="village-choice-list">${actions}</div>
-            ${villageFacilityAdventureContent(selected.id, village)}
+            <div class="village-overlay-heading"><span><small>${tavernInterior ? "AFTER ARRIVAL / NEXT ACTION" : "AVAILABLE CHOICES"}</small><strong>${["tavern", "guild"].includes(selected.id) ? "目的を選ぶ" : "行動を選ぶ"}</strong></span><b>${villageFacilityChoiceCount(village, selected)}件実行可</b></div>
+            ${actionWindowContent}
           </div>
         </section>` : ""}
         <div class="village-central-copy"><small>${selected.id.toUpperCase()} / ${escapeHtml(village.regionName)}</small><h2><i>${selected.icon}</i>${escapeHtml(selected.name)}</h2><p>${escapeHtml(selected.summary)}</p><span>${escapeHtml(village.nationName)}</span></div>
@@ -9299,17 +9352,21 @@ document.addEventListener("click", async (event) => {
       return;
     }
     renderPanelFromTop();
+    focusVillageActionWindow();
     return;
   }
   const tavernSection = event.target.closest("[data-tavern-section]");
   if (tavernSection && ["requests", "adventurers", "unique"].includes(tavernSection.dataset.tavernSection)) {
     view.tavernSection = tavernSection.dataset.tavernSection;
     renderPanelFromTop();
+    focusVillageActionWindow();
     return;
   }
   if (event.target.closest("[data-close-village-actions]")) {
+    const facilityId = view.selectedVillageFacilityId;
     view.villageFacilityOpen = false;
     renderPanelFromTop();
+    focusVillageFacilityButton(facilityId);
     return;
   }
   const saleButton = event.target.closest("[data-sell-village-item]");
@@ -10783,6 +10840,31 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && view.characterDetailOpen) {
     view.characterDetailOpen = false;
     renderCharacterDetailModal();
+    return;
+  }
+  if (event.key === "Escape" && view.panel === "village" && view.villageFacilityOpen) {
+    const facilityId = view.selectedVillageFacilityId;
+    view.villageFacilityOpen = false;
+    renderPanelFromTop();
+    focusVillageFacilityButton(facilityId);
+    return;
+  }
+  if (event.key === "Escape" && view.panel === "village") {
+    view.panel = "world";
+    view.shortcutTab = "world";
+    view.atlasMode = "generated";
+    view.generatedMapScale = "region";
+    renderPanelFromTop();
+    return;
+  }
+  if (event.key === "Escape" && view.panel === "location") {
+    view.locationScene = null;
+    view.selectedLocationZoneId = null;
+    view.locationSceneResult = null;
+    view.panel = "world";
+    view.atlasMode = "generated";
+    view.generatedMapScale = "region";
+    renderPanelFromTop();
     return;
   }
   if (event.key === "Escape" && view.ledgerDrawerOpen) {

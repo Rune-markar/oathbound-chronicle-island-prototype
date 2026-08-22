@@ -329,7 +329,8 @@ test("the tavern is entered before its interaction choices are shown", () => {
   assert.match(villageWorkspace, /\$\{tavernInterior \? "" : `<section class="village-choice-overlay village-facility-window/);
   assert.match(villageWorkspace, /is-facility-interior-window is-tavern-window/);
   assert.match(villageWorkspace, /TAVERN \/ ARRIVED/);
-  assert.match(villageWorkspace, /AFTER ARRIVAL \/ AVAILABLE CHOICES/);
+  assert.match(villageWorkspace, /AFTER ARRIVAL \/ NEXT ACTION/);
+  assert.match(villageWorkspace, /\["tavern", "guild"\]\.includes\(selected\.id\) \? "目的を選ぶ" : "行動を選ぶ"/);
   assert.ok(facilityHandler.indexOf("selectedVillageFacilityId") < facilityHandler.indexOf("villageFacilityOpen = true"), "移動先を確定してから施設内の選択肢を開く");
   assert.match(css, /\.village-central-visual\.is-tavern-interior\s*\{[^}]*var\(--village-interior-art\) center \/ cover no-repeat,/s);
   assert.match(css, /\.village-action-window\.is-facility-interior-window\s*\{[^}]*left:\s*clamp\(18px, 2\.2vw, 34px\);/s);
