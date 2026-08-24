@@ -26,6 +26,24 @@ const entry = (value) => Object.freeze({ updatedAt: "2026-08-11", ...value, sour
 
 export const STATUS_ENTRIES = Object.freeze([
   entry({
+    id: "v3-high-resolution-graphics",
+    category: "implemented",
+    area: "Generation V3・表示",
+    title: "全通常導線の高解像度グラフィック",
+    summary: "V3の地形、集落・探索地点、主人公、NPC、敵、取得物を高解像度WebPへ対応し、機能・方向・戦闘・天候の仮記号をSVGへ置換する。",
+    evidence: "地形30種、地点10種、主人公4種族、NPC3役、敵9種、物品6種、軍勢を正本IDから決定論的に解決する。起動、生成、フィールド、遭遇、個人戦、持ち物、軍務、集団戦名簿、世界現象、世界地図へ接続し、未踏・生成待ち・世界外だけを意図した非画像状態として残す。配信用ラスター4点は合計約2.1MBのWebPへ最適化し、世界地図は最大2倍DPRで描画する。全768テストと1280×720・390×844の通常UIで代表経路を確認した。",
+    updatedAt: "2026-08-24",
+    sources: [
+      source("V3アート対応表", "./src/v3-art.js", "terrain / landmark / player / NPC / enemy / item / group battle"),
+      source("V3通常UI", "./src/v3-app.js", "renderField / renderEncounter / renderInventory / drawWorldMap"),
+      source("画像・ベクター接続", "./index.html", "v3-ui-icons.svg / launch / encounter / personal battle"),
+      source("高解像度スタイル", "./v3.css", "WebP atlases / launch hero / DPR canvas / responsive sprites"),
+      source("集団戦人物画", "./src/v3-group-combat.js", "createV3CommandRoster / portraitImage"),
+      source("対応漏れ回帰", "./tests/v3-art.test.mjs", "asset files / all current IDs / no text tokens / DPR"),
+      source("実装・実画面レビュー", "./docs/gameplay-reviews/2026-08-24-v3-high-resolution-graphics.md", "prompt set / desktop / portrait / high DPI / proof limits"),
+    ],
+  }),
+  entry({
     id: "v3-system-integration-kernel",
     category: "implemented",
     area: "Generation V3・共通基盤",
