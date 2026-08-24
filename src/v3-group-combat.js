@@ -21,6 +21,7 @@ import {
   getV3WorldSimulationView,
 } from "./v3-world-simulation.js";
 import { bindV3BattleToStrategicWar } from "./v3-battle-strategy.js";
+import { getV3RaceWorldEffectAt } from "./v3-world-effects.js";
 
 export const V3_GROUP_BATTLE_BRIDGE_KEY = "leviathan-covenant-v3-group-battle-bridge";
 export const V3_GROUP_BATTLE_BRIDGE_VERSION = 1;
@@ -345,7 +346,7 @@ function applyMissionTerrain(map, mission) {
   patches.forEach(([x, y]) => setBattleTerrain(map, { x, y }, terrain));
 }
 
-function generatedArmy(nation, side, commanderId, strength, positions, mission, environment) {
+function generatedArmy(nation, side, commanderId, strength, positions, mission, environment, worldResponse) {
   const specifications = createNationalArmyUnitSpecs({
     nation,
     side,
@@ -365,6 +366,8 @@ function generatedArmy(nation, side, commanderId, strength, positions, mission, 
       facing: side === "enemy" ? "west" : "east",
       supply: 100,
       maxSupply: 100,
+      worldEffectModifiers: worldResponse.modifiers,
+      worldEffectResponses: worldResponse.responses,
       tags: [...specification.tags, "V3_GROUP_BATTLE", `V3_MISSION:${mission.id}`],
     })),
   };
@@ -400,8 +403,10 @@ function createV3GroupBattle(context, state, mission) {
     }),
   ];
   const environment = { accent: tacticalTerrainFor(mission), dominant: tacticalTerrainFor(mission) };
-  const playerArmy = generatedArmy(mission.playerNation, "player", playerCommanderId, 360 + state.player.level * 12, [{ x: 4, y: 3 }, { x: 4, y: 7 }, { x: 4, y: 11 }], mission, environment);
-  const enemyArmy = generatedArmy(mission.enemyNation, "enemy", enemyCommanderId, 345 + state.military.history.length * 10, [{ x: 15, y: 3 }, { x: 15, y: 7 }, { x: 15, y: 11 }], mission, environment);
+  const playerWorldResponse = getV3RaceWorldEffectAt(context, state, mission.playerNation.peopleId, mission.target.x, mission.target.y);
+  const enemyWorldResponse = getV3RaceWorldEffectAt(context, state, mission.enemyNation.peopleId, mission.target.x, mission.target.y);
+  const playerArmy = generatedArmy(mission.playerNation, "player", playerCommanderId, 360 + state.player.level * 12, [{ x: 4, y: 3 }, { x: 4, y: 7 }, { x: 4, y: 11 }], mission, environment, playerWorldResponse);
+  const enemyArmy = generatedArmy(mission.enemyNation, "enemy", enemyCommanderId, 345 + state.military.history.length * 10, [{ x: 15, y: 3 }, { x: 15, y: 7 }, { x: 15, y: 11 }], mission, environment, enemyWorldResponse);
   const battle = createBattleState({
     id: mission.battleId,
     name: mission.title,
@@ -418,7 +423,17 @@ function createV3GroupBattle(context, state, mission) {
     player: getNationalArmySummary(mission.playerNation, playerArmy.specifications),
     enemy: getNationalArmySummary(mission.enemyNation, enemyArmy.specifications),
   };
-  battle.environment = { ...environment, v3Target: clone(mission.target) };
+  battle.environment = {
+    ...environment,
+    v3Target: clone(mission.target),
+    worldEffects: {
+      activeEffectIds: playerWorldResponse.activeEffectIds,
+      celestial: clone(playerWorldResponse.celestial),
+      local: playerWorldResponse.local ? clone(playerWorldResponse.local) : null,
+      playerResponse: clone(playerWorldResponse),
+      enemyResponse: clone(enemyWorldResponse),
+    },
+  };
   return battle;
 }
 

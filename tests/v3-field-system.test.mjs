@@ -4,6 +4,8 @@ import { readFile } from "node:fs/promises";
 import {
   V3_CHUNK_SIZE,
   V3_DETAIL_SCALE,
+  V3_FIELD_VERSION,
+  V3_NEW_MOON_GHOST,
   advanceV3BackgroundGeneration,
   createV3FieldState,
   createV3WorldContext,
@@ -271,6 +273,8 @@ test("V3集団戦は既存の編成・兵站・20×14戦術盤・リザルトを
   assert.equal(handoff.request.battle.map.width, 20);
   assert.equal(handoff.request.battle.map.height, 14);
   assert.equal(handoff.request.roster.length, 3);
+  assert.ok(handoff.request.battle.environment.worldEffects);
+  assert.ok(handoff.request.battle.units.every((unit) => unit.worldEffectModifiers && Array.isArray(unit.worldEffectResponses)));
 
   let preparation = createBattlePreparation({
     battle: handoff.request.battle,
@@ -415,7 +419,33 @@ test("敵との遭遇は戦闘解決でき、V3セーブは同じ世界へ正規
   assert.ok(won.defeatedTiles.includes("1,1"));
   const restored = normalizeV3FieldState(context, JSON.parse(JSON.stringify(won)));
   assert.equal(restored.player.xp, 5);
-  assert.equal(restored.version, 4);
+  assert.equal(restored.version, V3_FIELD_VERSION);
+});
+
+test("新規種族選択と旧保存補完を保持し、新月の夜だけ幽霊が実体化する", () => {
+  const context = createV3WorldContext(fixtureRuntime(), "new-moon-field");
+  const elf = createV3FieldState(context, { playerName: "月見", playerRaceId: "elf" });
+  assert.equal(elf.player.raceId, "elf");
+  const legacy = structuredClone(elf);
+  delete legacy.player.raceId;
+  assert.equal(normalizeV3FieldState(context, legacy).player.raceId, "human");
+
+  const nightMinutes = 21 * 60;
+  const night = { ...elf, clock: { ...elf.clock, elapsedMinutes: nightMinutes }, clockMinutes: nightMinutes };
+  let manifested = null;
+  for (let y = 0; y < context.height && !manifested; y += 1) {
+    for (let x = 0; x < context.width && !manifested; x += 1) {
+      const entity = getV3TileEntity(context, x, y, night);
+      if (entity?.id === V3_NEW_MOON_GHOST.id) manifested = { x, y, entity };
+    }
+  }
+  assert.ok(manifested);
+  assert.equal(manifested.entity.raceId, "spirit");
+  assert.equal(manifested.entity.manifested, true);
+
+  const dayMinutes = 8 * 60;
+  const day = { ...elf, clock: { ...elf.clock, elapsedMinutes: dayMinutes }, clockMinutes: dayMinutes };
+  assert.notEqual(getV3TileEntity(context, manifested.x, manifested.y, day)?.id, V3_NEW_MOON_GHOST.id);
 });
 
 test("個人戦の退避は失敗時の被害を保ちつつ、再試行ごとに再判定される", () => {

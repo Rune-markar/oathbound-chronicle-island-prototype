@@ -237,6 +237,19 @@ test("race, equipment, terrain, formation state, and commander range compose eff
   assert.equal(elfStats.breakdown.race, "エルフ");
 });
 
+test("種族ワールドエフェクト補正は部隊状態へ保存され、有効戦闘能力へ合成される", () => {
+  const baseline = duel();
+  const affected = duel();
+  const unit = affected.units.find((entry) => entry.id === "cavalry");
+  unit.worldEffectModifiers = { attack: 1.2, defense: 1.08 };
+  unit.worldEffectResponses = [{ ruleId: "full-moon-demon", label: "満月魔力潮" }];
+  const baseStats = getEffectiveStats(baseline, "cavalry");
+  const affectedStats = getEffectiveStats(affected, "cavalry");
+  assert.ok(affectedStats.attack > baseStats.attack * 1.19);
+  assert.ok(affectedStats.defense > baseStats.defense * 1.07);
+  assert.equal(affectedStats.breakdown.worldEffects, "満月魔力潮");
+});
+
 test("units outside command range keep their last order and reject direct orders", () => {
   const battle = duel();
   battle.commanders[0].commandRange = 0;

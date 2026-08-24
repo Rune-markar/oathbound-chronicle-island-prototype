@@ -68,6 +68,31 @@ test("regional production makes grain cheaper in farmland and iron cheaper in mo
   assert.ok(ironMarket.goods.iron.stock > grainMarket.goods.iron.stock);
 });
 
+test("戦時市場効果は同じ市場の商品価格・在庫・実売買へ商品別に反映される", () => {
+  const state = fixture("wartime-market");
+  const marketEffect = {
+    effectId: "wartime_scarcity",
+    name: "戦時物資高騰",
+    priceMultiplier: 1.05,
+    commodityPriceMultipliers: { grain: 1.2, iron: 1.28 },
+    commodityStockMultipliers: { grain: 0.7, iron: 0.8 },
+    summary: "試験戦争による軍需と輸送難",
+  };
+  const peace = getSettlementMarket(state, grainTown);
+  const war = getSettlementMarket(state, grainTown, { marketEffect });
+  assert.ok(war.goods.grain.buyPrice > peace.goods.grain.buyPrice);
+  assert.ok(war.goods.grain.stock < peace.goods.grain.stock);
+  assert.equal(war.goods.grain.worldEffect.effectId, "wartime_scarcity");
+  assert.match(war.worldEffect.summary, /軍需/);
+
+  state.player.locationId = grainTown.id;
+  state.worldEffects = { market: marketEffect };
+  const bought = buyCommodity(state, grainTown, "grain", 1);
+  assert.equal(bought.player.merchantTrade.recentTransactions[0].unitPrice, war.goods.grain.buyPrice);
+  const sold = sellCommodity(bought, grainTown, "grain", 1);
+  assert.equal(sold.player.merchantTrade.recentTransactions[0].unitPrice, war.goods.grain.sellPrice);
+});
+
 test("buying is immutable and enforces wealth, stock, cargo capacity, and current settlement", () => {
   const state = fixture("trade-constraints");
   state.player.locationId = grainTown.id;

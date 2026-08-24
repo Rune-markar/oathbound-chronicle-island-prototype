@@ -159,16 +159,19 @@ test("V3動的世界は事前史・年代再生・月次進行を通常導線の
   assert.ok(dynamicWorld.sources.some((item) => item.href === "./docs/gameplay-reviews/2026-08-24-v3-dynamic-world.md"));
 });
 
-test("V3ワールドエフェクトは気候・月次・詳細投影・保存を通常導線として追跡する", () => {
+test("V3ワールドエフェクトは種族・戦闘・出現・市場への作用を通常導線として追跡する", () => {
   const effects = STATUS_ENTRIES.find((item) => item.id === "v3-world-effects");
   assert.equal(effects?.category, "implemented");
-  for (const term of ["長雨", "暴風雨", "降雪", "吹雪", "砂嵐", "熱波", "濃霧", "降灰", "移動時間", "遭遇危険", "月境界", "保存"]) {
+  for (const term of ["長雨", "暴風雨", "降雪", "吹雪", "砂嵐", "熱波", "濃霧", "降灰", "移動時間", "遭遇危険", "満月", "新月", "霊体", "個人戦", "集団戦", "価格", "在庫", "月境界", "保存"]) {
     assert.match(`${effects.summary} ${effects.evidence}`, new RegExp(term));
   }
-  assert.ok(effects.sources.some((item) => item.href === "./src/v3-world-effects.js" && /createV3WorldEffects/.test(item.ref)));
+  assert.ok(effects.sources.some((item) => item.href === "./src/race-world-effect-system.js" && /evaluateRaceWorldEffects/.test(item.ref)));
+  assert.ok(effects.sources.some((item) => item.href === "./src/v3-world-effects.js" && /getV3WartimeMarketEffect/.test(item.ref)));
+  assert.ok(effects.sources.some((item) => item.href === "./src/v3-group-combat.js"));
   assert.ok(effects.sources.some((item) => item.href === "./src/v3-system-kernel.js" && /world\.effect\.changed/.test(item.ref)));
+  assert.ok(effects.sources.some((item) => item.href === "./tests/race-world-effect-system.test.mjs"));
   assert.ok(effects.sources.some((item) => item.href === "./tests/v3-world-effects.test.mjs"));
-  assert.ok(effects.sources.some((item) => item.href === "./docs/gameplay-reviews/2026-08-24-v3-world-effects.md"));
+  assert.ok(effects.sources.some((item) => item.href === "./docs/gameplay-reviews/2026-08-24-race-reactive-world-effects.md"));
 });
 
 test("種族変容と確率的国家判断をV3通常導線の実装として追跡する", async () => {

@@ -132,19 +132,20 @@ export function createCombatUnit({
   nationId = null, nationName = null, nationalProfileId = null, nationalDoctrineName = null,
   nationalDoctrineSummary = null, nationalTraitId = null, nationalTraitName = null, nationalTraitDescription = null,
   nationalStrength = null, nationalRisk = null, nationalModifiers = {}, nationalTerrainModifiers = {},
+  worldEffectModifiers = {}, worldEffectResponses = [],
   generatedUnit = false, unitGeneration = null,
 } = {}) {
   const unitClass = assertDefinition(UNIT_CLASSES, unitClassId, "兵種");
   const race = assertDefinition(RACES, raceId, "種族");
   if (!id || !name || !commanderId || !isFinitePosition(position)) throw new Error("部隊にはid・name・commanderId・positionが必要です");
-  const maxHp = Math.max(1, Math.round(requestedMaxHp ?? unitClass.stats.hp * (race.modifiers.hp ?? 1) * (nationalModifiers.hp ?? 1)));
+  const maxHp = Math.max(1, Math.round(requestedMaxHp ?? unitClass.stats.hp * (race.modifiers.hp ?? 1) * (nationalModifiers.hp ?? 1) * (worldEffectModifiers.hp ?? 1)));
   return {
     id, name, iconUrl, side, raceId, unitClassId,
     equipmentIds: [...(equipmentIds ?? DEFAULT_EQUIPMENT[unitClassId] ?? [])], commanderId,
     soldierCount: clamp(Math.round(soldierCount), 0, Math.max(1, Math.round(maxSoldierCount))),
     maxSoldierCount: Math.max(1, Math.round(maxSoldierCount)),
     hp: clamp(hp ?? maxHp, 0, maxHp), maxHp,
-    morale: clamp(morale ?? Math.round(unitClass.initial.morale * (race.modifiers.morale ?? 1) * (nationalModifiers.morale ?? 1)), 0, 100),
+    morale: clamp(morale ?? Math.round(unitClass.initial.morale * (race.modifiers.morale ?? 1) * (nationalModifiers.morale ?? 1) * (worldEffectModifiers.morale ?? 1)), 0, 100),
     fatigue: clamp(fatigue, 0, 100),
     supply: clamp(supply, 0, Math.max(1, maxSupply)), maxSupply: Math.max(1, maxSupply), logisticsState: "supplied",
     logisticsConnected: true, lastSupplyConsumption: 0, lastSupplyDelivery: 0, lastSupplySourceId: null,
@@ -165,6 +166,8 @@ export function createCombatUnit({
     nationalTraitId, nationalTraitName, nationalTraitDescription, nationalStrength, nationalRisk,
     nationalModifiers: { ...nationalModifiers },
     nationalTerrainModifiers: Object.fromEntries(Object.entries(nationalTerrainModifiers).map(([terrainId, modifiers]) => [terrainId, { ...modifiers }])),
+    worldEffectModifiers: { ...worldEffectModifiers },
+    worldEffectResponses: worldEffectResponses.map((response) => ({ ...response })),
     generatedUnit: Boolean(generatedUnit),
     unitGeneration: unitGeneration ? structuredClone(unitGeneration) : null,
     order, lastOrder: order, state: "STABLE", engagedWith: [],
@@ -609,6 +612,7 @@ function modifierProduct(unit, property, terrainId = null) {
   unit.equipmentIds.forEach((equipmentId) => { product *= EQUIPMENT[equipmentId]?.modifiers[property] ?? 1; });
   unit.statusEffects.forEach((effect) => { product *= effect.modifiers?.[property] ?? 1; });
   product *= unit.nationalModifiers?.[property] ?? 1;
+  product *= unit.worldEffectModifiers?.[property] ?? 1;
   if (terrainId) product *= unit.nationalTerrainModifiers?.[terrainId]?.[property] ?? 1;
   return product;
 }
@@ -901,6 +905,8 @@ export function getEffectiveStats(battle, unitOrId) {
     nationalDoctrine: unit.nationalDoctrineName ?? "固有軍制なし",
     nationalTrait: unit.nationalTraitName ?? "標準部隊",
     nationalModifier: Number(((unit.nationalModifiers?.attack ?? 1) * (unit.nationalTerrainModifiers?.[terrain.id]?.attack ?? 1)).toFixed(2)),
+    worldEffects: unit.worldEffectResponses?.length ? unit.worldEffectResponses.map((response) => response.label).join("・") : "種族固有反応なし",
+    worldEffectModifier: Number((unit.worldEffectModifiers?.attack ?? 1).toFixed(2)),
     commander: commanded ? `${commander.name}の指揮範囲内` : "指揮範囲外・自律行動",
     commanderModifier: Number(commanderAttack.toFixed(2)),
     terrain: terrain.name,

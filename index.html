@@ -22,6 +22,7 @@
       </div>
       <form class="v3-new-world" id="v3NewWorld" hidden>
         <label><span>名前</span><input id="v3PlayerName" maxlength="24" value="アレク" autocomplete="off" /></label>
+        <label><span>種族</span><select id="v3PlayerRace"><option value="human">人間 · 標準</option><option value="elf">エルフ · 森雨・霧に適応</option><option value="dwarf">ドワーフ · 砂塵・降灰に適応</option><option value="orc">オーク · 戦士型</option></select></label>
         <label><span>世界シード</span><input id="v3WorldSeed" maxlength="80" placeholder="空欄なら新しい世界" autocomplete="off" /></label>
         <p>開始すると、この端末のV3セーブを新しい世界で置き換えます。</p>
         <div><button type="button" id="v3CancelNew">戻る</button><button class="is-primary" type="submit">世界を生成</button></div>
@@ -47,7 +48,7 @@
 
       <section class="v3-play-layout">
         <aside class="v3-status-window" aria-label="主人公の状態">
-          <header><strong id="v3PlayerLabel">アレク</strong><small id="v3LevelLabel">LV 1</small></header>
+          <header><strong id="v3PlayerLabel">アレク</strong><span><small id="v3RaceLabel">人間</small><small id="v3LevelLabel">LV 1</small></span></header>
           <dl><div><dt>HP</dt><dd id="v3HpLabel">34 / 34</dd></div><div><dt>EXP</dt><dd id="v3XpLabel">0</dd></div><div><dt>銀貨</dt><dd id="v3GoldLabel">12</dd></div></dl>
           <div class="v3-hp-track"><i id="v3HpBar"></i></div>
         </aside>
@@ -68,6 +69,7 @@
           <strong id="v3TerrainLabel">草原</strong>
           <span id="v3TerrainEffect">移動10分 · 通常の地勢</span>
           <span class="v3-weather-label" id="v3WeatherLabel">空 平穏 · 移動補正なし</span>
+          <span class="v3-race-effect-label" id="v3RaceEffectLabel">人間 · 種族固有反応なし</span>
           <span id="v3NearbyLabel">周辺を確認中</span>
           <span class="v3-military-summary" id="v3MilitaryLabel">軍務を確認中</span>
           <span id="v3ChunkLabel">周辺生成 9区画</span>

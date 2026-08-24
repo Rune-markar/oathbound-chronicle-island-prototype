@@ -6,14 +6,25 @@ import {
   normalizeStateGameClock,
 } from "./game-clock.js";
 import { fnv1aCharacters, unitFromHash } from "./determinism.js";
-import { applyV3WorldEffectToTile } from "./v3-world-effects.js";
+import { getRaceDefinition } from "./race-list.js";
 import { createIndividualDecisionProfile, TEMPERAMENTS } from "./race-decision-system.js";
+import {
+  applyV3WorldEffectToTile,
+  getV3CelestialEffects,
+  getV3RaceWorldEffectAt,
+} from "./v3-world-effects.js";
 
-export const V3_FIELD_VERSION = 4;
+export const V3_FIELD_VERSION = 5;
 export const V3_DETAIL_SCALE = 8;
 export const V3_CHUNK_SIZE = 16;
 export const V3_INITIAL_CHUNK_RADIUS = 1;
 export const V3_LOCAL_PREGEN_RADIUS = 2;
+export const V3_PLAYER_RACES = Object.freeze({
+  human: Object.freeze({ id: "human", name: "人間", description: "制度と適応力の基準種" }),
+  elf: Object.freeze({ id: "elf", name: "エルフ", description: "森雨と霧に強い自然魔法種" }),
+  dwarf: Object.freeze({ id: "dwarf", name: "ドワーフ", description: "砂塵・降灰に強い地下適応種" }),
+  orc: Object.freeze({ id: "orc", name: "オーク", description: "高い攻撃力を持つ戦士種" }),
+});
 
 export const V3_COMBAT_PRESENTATIONS = Object.freeze({
   personal: Object.freeze({
@@ -70,15 +81,27 @@ const ITEM_TABLE = Object.freeze([
 ]);
 
 const ENEMY_TABLE = Object.freeze([
-  Object.freeze({ id: "green-slime", name: "苔スライム", symbol: "粘", baseHp: 10, power: 3, xp: 5, gold: 2, habitats: ["forest", "marsh", "river", "spring"] }),
-  Object.freeze({ id: "goblin-scout", name: "ゴブリン斥候", symbol: "鬼", baseHp: 16, power: 5, xp: 8, gold: 4, habitats: ["hills", "mountain_range", "cave", "mine", "ruins"] }),
-  Object.freeze({ id: "wild-wolf", name: "灰野狼", symbol: "狼", baseHp: 13, power: 4, xp: 7, gold: 3, habitats: ["grassland", "plains", "forest", "coldland", "snowfield"] }),
-  Object.freeze({ id: "road-bandit", name: "街道の追剥", symbol: "賊", baseHp: 20, power: 6, xp: 11, gold: 7, habitats: ["road", "farmland", "ruins", "grassland", "plains"] }),
-  Object.freeze({ id: "sand-scorpion", name: "砂甲蠍", symbol: "蠍", baseHp: 15, power: 5, xp: 9, gold: 3, habitats: ["desert", "sand_desert", "rocky_desert", "oasis"] }),
-  Object.freeze({ id: "marsh-leech", name: "沼大蛭", symbol: "蛭", baseHp: 12, power: 4, xp: 7, gold: 2, habitats: ["marsh", "delta", "tidal_flat"] }),
-  Object.freeze({ id: "reef-crab", name: "岩礁蟹", symbol: "蟹", baseHp: 18, power: 5, xp: 9, gold: 4, habitats: ["coast", "shoal", "tidal_flat", "bay"] }),
-  Object.freeze({ id: "ember-lizard", name: "火鱗蜥蜴", symbol: "蜥", baseHp: 22, power: 7, xp: 13, gold: 6, habitats: ["volcano", "caldera", "crater"] }),
+  Object.freeze({ id: "green-slime", name: "苔スライム", symbol: "粘", raceId: "slime", baseHp: 10, power: 3, xp: 5, gold: 2, habitats: ["forest", "marsh", "river", "spring"] }),
+  Object.freeze({ id: "goblin-scout", name: "ゴブリン斥候", symbol: "鬼", raceId: "goblin", baseHp: 16, power: 5, xp: 8, gold: 4, habitats: ["hills", "mountain_range", "cave", "mine", "ruins"] }),
+  Object.freeze({ id: "wild-wolf", name: "灰野狼", symbol: "狼", raceId: "beastfolk", baseHp: 13, power: 4, xp: 7, gold: 3, habitats: ["grassland", "plains", "forest", "coldland", "snowfield"] }),
+  Object.freeze({ id: "road-bandit", name: "街道の追剥", symbol: "賊", raceId: "human", baseHp: 20, power: 6, xp: 11, gold: 7, habitats: ["road", "farmland", "ruins", "grassland", "plains"] }),
+  Object.freeze({ id: "sand-scorpion", name: "砂甲蠍", symbol: "蠍", raceId: "scarab", baseHp: 15, power: 5, xp: 9, gold: 3, habitats: ["desert", "sand_desert", "rocky_desert", "oasis"] }),
+  Object.freeze({ id: "marsh-leech", name: "沼大蛭", symbol: "蛭", raceId: "slime", baseHp: 12, power: 4, xp: 7, gold: 2, habitats: ["marsh", "delta", "tidal_flat"] }),
+  Object.freeze({ id: "reef-crab", name: "岩礁蟹", symbol: "蟹", raceId: "seafolk", baseHp: 18, power: 5, xp: 9, gold: 4, habitats: ["coast", "shoal", "tidal_flat", "bay"] }),
+  Object.freeze({ id: "ember-lizard", name: "火鱗蜥蜴", symbol: "蜥", raceId: "lizardman", baseHp: 22, power: 7, xp: 13, gold: 6, habitats: ["volcano", "caldera", "crater"] }),
 ]);
+
+export const V3_NEW_MOON_GHOST = Object.freeze({
+  id: "new-moon-ghost",
+  name: "新月の幽霊",
+  symbol: "霊",
+  raceId: "spirit",
+  baseHp: 18,
+  power: 6,
+  xp: 12,
+  gold: 0,
+  manifestedBy: "new_moon",
+});
 
 function clampInteger(value, fallback, minimum, maximum) {
   const number = Number(value);
@@ -340,6 +363,22 @@ export function getV3TileEntity(context, x, y, state = {}) {
   if (!tile.passable || tile.type.startsWith("settlement-")) return null;
   const key = tileKey(tile.x, tile.y);
   if ((state.defeatedTiles ?? []).includes(key) || (state.collectedTiles ?? []).includes(key) || (state.interactedTiles ?? []).includes(key)) return null;
+  const newMoonActive = getV3CelestialEffects(context, state).active.some((effect) => effect.id === "new_moon");
+  if (newMoonActive && v3HashUnit(context.seed, "new-moon-ghost", tile.x, tile.y) < 0.12) {
+    const spawn = state.player && Number.isInteger(state.player.spawnX) && Number.isInteger(state.player.spawnY)
+      ? { x: state.player.spawnX, y: state.player.spawnY }
+      : { x: tile.x, y: tile.y };
+    const distanceFromArrival = wrappedDetailDistance(context, { x: tile.x, y: tile.y }, spawn);
+    const level = Math.min(5, 1 + Math.floor(distanceFromArrival / 160));
+    return {
+      type: "enemy",
+      ...V3_NEW_MOON_GHOST,
+      level,
+      hp: V3_NEW_MOON_GHOST.baseHp + level * 2,
+      maxHp: V3_NEW_MOON_GHOST.baseHp + level * 2,
+      manifested: true,
+    };
+  }
   const nearby = nearestV3Settlement(context, tile.x, tile.y, 7);
   const roll = v3HashUnit(context.seed, "entity", tile.x, tile.y);
   if (nearby && roll < 0.16) {
@@ -474,10 +513,11 @@ function findSpawn(context) {
 export function createV3FieldState(context, options = {}) {
   const spawn = findSpawn(context);
   const playerName = String(options.playerName ?? "アレク").trim().slice(0, 24) || "アレク";
+  const raceId = getRaceDefinition(options.playerRaceId ?? options.raceId)?.id ?? "human";
   return normalizeStateGameClock({
     version: V3_FIELD_VERSION,
     seed: context.seed,
-    player: { name: playerName, x: spawn.x, y: spawn.y, spawnX: spawn.x, spawnY: spawn.y, hp: 34, maxHp: 34, level: 1, xp: 0, gold: 12, inventory: [] },
+    player: { name: playerName, raceId, x: spawn.x, y: spawn.y, spawnX: spawn.x, spawnY: spawn.y, hp: 34, maxHp: 34, level: 1, xp: 0, gold: 12, inventory: [] },
     steps: 0,
     clockMinutes: 8 * 60,
     generatedChunks: chunkKeysAround(context, spawn.x, spawn.y, V3_INITIAL_CHUNK_RADIUS),
@@ -502,6 +542,7 @@ export function normalizeV3FieldState(context, source = {}) {
     ...fallback.player,
     ...source.player,
     name: String(source.player.name ?? fallback.player.name).slice(0, 24),
+    raceId: getRaceDefinition(source.player.raceId)?.id ?? fallback.player.raceId,
     x: current.passable ? x : fallback.player.x,
     y: current.passable ? y : fallback.player.y,
     hp: clampInteger(source.player.hp, fallback.player.hp, 0, 999),
@@ -588,7 +629,7 @@ export function moveV3Player(context, state, directionName) {
     steps: state.steps + 1,
     generatedChunks,
     discoveredTiles: discoverAround(context, destination.x, destination.y, state.discoveredTiles),
-    messageLog: addLog(state, `${direction.label}へ${destination.travelMinutes}分進んだ。${destination.name}。${destination.worldEffect ? `${destination.worldEffect.name}の影響を受けている。` : ""}`),
+    messageLog: addLog(state, `${direction.label}へ${destination.travelMinutes}分進んだ。${destination.name}。${destination.worldEffect ? `${destination.worldEffect.name}の影響を受けている。${destination.worldEffect.raceResponse.responses.length ? `${destination.worldEffect.raceResponse.summary}。` : ""}` : ""}`),
   }, destination.travelMinutes).state;
   const entity = getV3TileEntity(context, destination.x, destination.y, moved);
   if (!entity) return moved;
@@ -655,11 +696,20 @@ export function resolveV3Encounter(context, state, action) {
       messageLog: addLog(state, action === "talk" ? encounter.message : `${encounter.name}と別れた。`),
     };
   }
+  const encounterX = Number.isInteger(encounter.worldX) ? encounter.worldX : state.player.x;
+  const encounterY = Number.isInteger(encounter.worldY) ? encounter.worldY : state.player.y;
+  const playerWorldResponse = getV3RaceWorldEffectAt(context, state, state.player.raceId ?? "human", encounterX, encounterY);
+  const enemyWorldResponse = getV3RaceWorldEffectAt(context, state, encounter.raceId ?? "human", encounterX, encounterY);
+  const responseNote = [...playerWorldResponse.responses, ...enemyWorldResponse.responses]
+    .map((response) => response.label)
+    .filter((label, index, labels) => labels.indexOf(label) === index)
+    .join("・");
   if (action === "flee") {
     const fleeAttempts = clampInteger(encounter.fleeAttempts, 0, 0, 9999) + 1;
     const escaped = v3HashUnit(context.seed, "flee", fleeAttempts, state.steps, state.player.x, state.player.y) > 0.28;
     if (escaped) return { ...state, pendingEncounter: null, messageLog: addLog(state, `${encounter.name}から逃げ切った。`) };
-    const damage = Math.max(1, encounter.power + encounter.level - 2);
+    const damage = Math.max(1, Math.round((encounter.power + encounter.level - 2)
+      * enemyWorldResponse.modifiers.attack / playerWorldResponse.modifiers.defense));
     return {
       ...state,
       player: { ...state.player, hp: Math.max(1, state.player.hp - damage) },
@@ -668,7 +718,9 @@ export function resolveV3Encounter(context, state, action) {
     };
   }
   if (action !== "fight") return state;
-  const playerDamage = 6 + state.player.level * 2 + Math.floor(v3HashUnit(context.seed, "attack", state.steps, encounter.hp) * 5);
+  const basePlayerDamage = 6 + state.player.level * 2 + Math.floor(v3HashUnit(context.seed, "attack", state.steps, encounter.hp) * 5);
+  const playerDamage = Math.max(1, Math.round(basePlayerDamage
+    * playerWorldResponse.modifiers.attack / enemyWorldResponse.modifiers.defense));
   const enemyHp = encounter.hp - playerDamage;
   if (enemyHp <= 0) {
     const player = levelledPlayer({ ...state.player, xp: state.player.xp + encounter.xp, gold: state.player.gold + encounter.gold });
@@ -680,7 +732,8 @@ export function resolveV3Encounter(context, state, action) {
       messageLog: addLog(state, `${encounter.name}を倒した。経験${encounter.xp}、銀貨${encounter.gold}枚を得た。`),
     };
   }
-  const enemyDamage = Math.max(1, encounter.power + encounter.level - Math.floor(state.player.level / 2));
+  const enemyDamage = Math.max(1, Math.round((encounter.power + encounter.level - Math.floor(state.player.level / 2))
+    * enemyWorldResponse.modifiers.attack / playerWorldResponse.modifiers.defense));
   if (state.player.hp - enemyDamage <= 0) {
     const player = { ...state.player, x: state.player.spawnX, y: state.player.spawnY, hp: state.player.maxHp, gold: Math.floor(state.player.gold / 2) };
     return {
@@ -695,7 +748,7 @@ export function resolveV3Encounter(context, state, action) {
     ...state,
     player: { ...state.player, hp: state.player.hp - enemyDamage },
     pendingEncounter: { ...encounter, hp: enemyHp },
-    messageLog: addLog(state, `${encounter.name}へ${playerDamage}の傷。反撃で${enemyDamage}の傷を負った。`),
+    messageLog: addLog(state, `${encounter.name}へ${playerDamage}の傷。反撃で${enemyDamage}の傷を負った。${responseNote ? ` ${responseNote}が作用した。` : ""}`),
   };
 }
 

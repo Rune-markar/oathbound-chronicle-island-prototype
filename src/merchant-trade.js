@@ -95,14 +95,17 @@ function stockDeltaKey(state, settlementId, commodityId) {
   return `${periodOf(state)}:${settlementId}:${commodityId}`;
 }
 
-function marketGood(state, settlement, definition) {
+function marketGood(state, settlement, definition, marketEffect = null) {
   const supply = supplyScore(settlement, definition);
   const demand = demandScore(settlement, definition);
   const jitter = (hashUnit(state.generatedWorld?.seed ?? state.rngSeed ?? "world", periodOf(state), settlement.id, definition.id) - 0.5) * 0.16;
-  const multiplier = clamp(1.55 - supply * 0.75 + demand * 0.28 + jitter, 0.4, 3);
+  const priceMultiplier = (Number(marketEffect?.priceMultiplier) || 1)
+    * (Number(marketEffect?.commodityPriceMultipliers?.[definition.id]) || 1);
+  const stockMultiplier = Number(marketEffect?.commodityStockMultipliers?.[definition.id]) || 1;
+  const multiplier = clamp((1.55 - supply * 0.75 + demand * 0.28 + jitter) * priceMultiplier, 0.4, 4.5);
   const buyPrice = round1(Math.max(0.4, definition.basePrice * multiplier));
   const sellPrice = round1(Math.max(0.2, buyPrice * 0.78));
-  const baseStock = Math.max(1, Math.round(3 + supply * 15 + settlementSize(settlement) * 4));
+  const baseStock = Math.max(1, Math.round((3 + supply * 15 + settlementSize(settlement) * 4) * stockMultiplier));
   const delta = Number(state.player?.merchantTrade?.marketStockDeltas?.[stockDeltaKey(state, settlement.id, definition.id)]) || 0;
   return {
     commodityId: definition.id,
@@ -113,7 +116,20 @@ function marketGood(state, settlement, definition) {
     stock: Math.max(0, baseStock + delta),
     supply: Math.round(supply * 100),
     demand: Math.round(demand * 100),
+    worldEffect: marketEffect ? {
+      effectId: marketEffect.effectId,
+      name: marketEffect.name,
+      priceMultiplier: Number(priceMultiplier.toFixed(4)),
+      stockMultiplier: Number(stockMultiplier.toFixed(4)),
+    } : null,
   };
+}
+
+function marketEffectFor(state, settlement, options) {
+  return options.marketEffect
+    ?? state.worldEffects?.markets?.[settlement.id]
+    ?? state.worldEffects?.market
+    ?? null;
 }
 
 function ageInMonths(state, report) {
@@ -140,8 +156,9 @@ export function getSettlementMarket(state, settlement, options = {}) {
     });
     return { settlementId: settlement.id, settlementName: settlement.name, exact: false, reports };
   }
-  const goods = Object.fromEntries(Object.values(MERCHANT_COMMODITIES).map((definition) => [definition.id, marketGood(state, settlement, definition)]));
-  return { settlementId: settlement.id, settlementName: settlement.name, period: periodOf(state), exact: true, goods };
+  const marketEffect = marketEffectFor(state, settlement, options);
+  const goods = Object.fromEntries(Object.values(MERCHANT_COMMODITIES).map((definition) => [definition.id, marketGood(state, settlement, definition, marketEffect)]));
+  return { settlementId: settlement.id, settlementName: settlement.name, period: periodOf(state), exact: true, goods, worldEffect: marketEffect ? clone(marketEffect) : null };
 }
 
 export function getMerchantCargoLoad(state) {

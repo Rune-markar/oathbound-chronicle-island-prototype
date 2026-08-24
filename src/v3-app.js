@@ -65,7 +65,7 @@ import {
   normalizeV3WorldSimulation,
   V3_PREHISTORY_MONTHS,
 } from "./v3-world-simulation.js";
-import { getV3WorldEffectsView } from "./v3-world-effects.js";
+import { getV3WartimeMarketEffect, getV3WorldEffectsView } from "./v3-world-effects.js";
 import { createActionResult, isActionResult } from "./action-result.js";
 import { GAME_MINUTES_PER_MONTH, getGameCalendar } from "./game-clock.js";
 import { commitV3Action, getV3Operations, normalizeV3IntegratedState, V3_SYSTEM_REGISTRY } from "./v3-system-kernel.js";
@@ -73,6 +73,7 @@ import { readV3Save, V3_SAVE_VERSION, writeV3Save } from "./v3-save-system.js";
 import { applyV3BattleResultToWorldSimulation } from "./v3-battle-strategy.js";
 import { DECISION_TRAITS, TEMPERAMENTS } from "./race-decision-system.js";
 import { GEOPOLITICAL_PULL_SET } from "./geopolitical-world.js";
+import { getRaceDefinition } from "./race-list.js";
 
 const STORAGE_KEY = "leviathan-covenant-v3-save";
 const WORLD_CONFIG = Object.freeze({ width: 192, height: 120, plateCount: 28, nationCount: 7 });
@@ -88,6 +89,7 @@ const elements = {
   newWorld: document.querySelector("#v3NewWorld"),
   cancelNew: document.querySelector("#v3CancelNew"),
   playerName: document.querySelector("#v3PlayerName"),
+  playerRace: document.querySelector("#v3PlayerRace"),
   worldSeed: document.querySelector("#v3WorldSeed"),
   generation: document.querySelector("#v3Generation"),
   generationLabel: document.querySelector("#v3GenerationLabel"),
@@ -98,6 +100,7 @@ const elements = {
   nationName: document.querySelector("#v3NationName"),
   regionName: document.querySelector("#v3RegionName"),
   playerLabel: document.querySelector("#v3PlayerLabel"),
+  raceLabel: document.querySelector("#v3RaceLabel"),
   levelLabel: document.querySelector("#v3LevelLabel"),
   hpLabel: document.querySelector("#v3HpLabel"),
   hpBar: document.querySelector("#v3HpBar"),
@@ -108,6 +111,7 @@ const elements = {
   terrainLabel: document.querySelector("#v3TerrainLabel"),
   terrainEffect: document.querySelector("#v3TerrainEffect"),
   weatherLabel: document.querySelector("#v3WeatherLabel"),
+  raceEffectLabel: document.querySelector("#v3RaceEffectLabel"),
   worldEffectVisual: document.querySelector("#v3WorldEffectVisual"),
   nearbyLabel: document.querySelector("#v3NearbyLabel"),
   chunkLabel: document.querySelector("#v3ChunkLabel"),
@@ -245,7 +249,7 @@ async function prepareWorld(options, savedField = null, savedWorldSimulation = n
   setGenerationProgress(98, "現在地の周囲を1マス単位へ展開しています。");
   context = createV3WorldContext(runtime, options.seed);
   context.raceDynamics = worldSimulation.generatedWorld.raceDynamics;
-  state = savedField ? normalizeV3FieldState(context, savedField) : createV3FieldState(context, { playerName: options.playerName });
+  state = savedField ? normalizeV3FieldState(context, savedField) : createV3FieldState(context, { playerName: options.playerName, playerRaceId: options.playerRaceId });
   state = normalizeV3IntegratedState(context, state);
   if (savedField) {
     const calendar = getGameCalendar(state.clock);
@@ -283,7 +287,7 @@ async function prepareWorld(options, savedField = null, savedWorldSimulation = n
     clearV3GroupBattleBridge(localStorage);
   }
   context.raceDynamics = worldSimulation.generatedWorld.raceDynamics;
-  worldOptions = { ...WORLD_CONFIG, ...options, playerName: state.player.name };
+  worldOptions = { ...WORLD_CONFIG, ...options, playerName: state.player.name, playerRaceId: state.player.raceId };
   mapHistoryIndex = null;
   selectedNationId = null;
   setGenerationProgress(100, "足元の世界が形になりました。");
@@ -326,7 +330,8 @@ function showToast(message) {
 }
 
 function renderLocalWorldEffect() {
-  const local = getV3WorldEffectsView(context, state).local;
+  const view = getV3WorldEffectsView(context, state);
+  const local = view.local;
   const effectType = local?.motion ?? "clear";
   elements.game.dataset.worldEffect = effectType;
   elements.worldEffectVisual.hidden = !local;
@@ -336,6 +341,9 @@ function renderLocalWorldEffect() {
   elements.weatherLabel.textContent = local
     ? `${local.symbol} ${local.name} · 移動 +${Math.round((local.travelMultiplier - 1) * 100)}% · 遭遇 +${(local.dangerDelta * 100).toFixed(1)}pt`
     : "空 平穏 · 移動補正なし";
+  const moon = view.celestial;
+  elements.raceEffectLabel.className = `v3-race-effect-label${view.raceResponse?.responses.length ? " is-active" : ""}`;
+  elements.raceEffectLabel.textContent = `${view.raceResponse?.peopleName ?? "人間"} · ${view.raceResponse?.summary ?? "種族固有反応なし"} · ${moon.primaryMoon}${moon.phaseName}${moon.active.length ? "（作用中）" : ""}`;
 }
 
 function renderField() {
@@ -492,13 +500,14 @@ function openUnderworld() {
 
 function renderCommerce() {
   const previousScroll = elements.commerceContent.scrollTop;
-  const model = getV3MerchantView(context, state);
+  const model = getV3MerchantView(context, state, worldSimulation);
   const cargoById = Object.fromEntries(model.cargo.map((entry) => [entry.commodityId, entry]));
   const market = model.market;
-  const marketBlock = market ? `<section class="v3-commerce-section"><header><div><small>CURRENT MARKET</small><h2>${escapeHtml(model.marketSettlement.name)}の市場</h2></div><button type="button" data-v3-trade-action="observe">相場を記録</button></header><div class="v3-market-grid">${model.commodities.map((commodity) => {
+  const marketEffectNotice = market?.worldEffect ? `<p class="v3-market-effect"><b>${escapeHtml(market.worldEffect.symbol)} ${escapeHtml(market.worldEffect.name)}</b><span>${escapeHtml(market.worldEffect.summary)}</span></p>` : "";
+  const marketBlock = market ? `<section class="v3-commerce-section"><header><div><small>CURRENT MARKET</small><h2>${escapeHtml(model.marketSettlement.name)}の市場</h2></div><button type="button" data-v3-trade-action="observe">相場を記録</button></header>${marketEffectNotice}<div class="v3-market-grid">${model.commodities.map((commodity) => {
     const good = market.goods[commodity.id];
     const cargo = cargoById[commodity.id];
-    return `<article><header><strong>${escapeHtml(commodity.name)}</strong><small>在庫${good.stock}</small></header><p>仕入 ${good.buyPrice} ／ 売却 ${good.sellPrice}</p><div><button type="button" data-v3-trade-action="buy" data-v3-commodity="${commodity.id}" ${state.player.gold < good.buyPrice || good.stock < 1 ? "disabled" : ""}>1個仕入</button><button type="button" data-v3-trade-action="sell" data-v3-commodity="${commodity.id}" ${cargo?.quantity ? "" : "disabled"}>1個売却${cargo?.quantity ? ` · 所持${cargo.quantity}` : ""}</button></div></article>`;
+    return `<article><header><strong>${escapeHtml(commodity.name)}</strong><small>在庫${good.stock}</small></header><p>仕入 ${good.buyPrice} ／ 売却 ${good.sellPrice}${good.worldEffect ? ` · 戦時価格×${good.worldEffect.priceMultiplier.toFixed(2)}` : ""}</p><div><button type="button" data-v3-trade-action="buy" data-v3-commodity="${commodity.id}" ${state.player.gold < good.buyPrice || good.stock < 1 ? "disabled" : ""}>1個仕入</button><button type="button" data-v3-trade-action="sell" data-v3-commodity="${commodity.id}" ${cargo?.quantity ? "" : "disabled"}>1個売却${cargo?.quantity ? ` · 所持${cargo.quantity}` : ""}</button></div></article>`;
   }).join("")}</div></section>` : `<section class="v3-commerce-section is-empty"><small>CURRENT MARKET</small><h2>市場まで歩く</h2><p>都市・町・村の中心街へ入ると、現地相場と売買操作が開きます。</p></section>`;
   const cargo = `<section class="v3-commerce-section v3-trade-ledger"><header><div><small>PERSONAL TRADE</small><h2>個人商売</h2></div><b>${model.cargoLoad.units}/${model.cargoLoad.unitCapacity}個 · ${model.cargoLoad.weight}/${model.cargoLoad.weightCapacity}重量</b></header><ul>${model.cargo.length ? model.cargo.map((entry) => `<li><strong>${escapeHtml(entry.name)} × ${entry.quantity}</strong><span>平均原価 ${entry.averageCost}</span></li>`).join("") : "<li>積荷なし</li>"}</ul><p>市場${model.knownMarkets.length}か所 · 売却${model.tradeStats.unitsSold}個 · 実現利益${model.tradeStats.realizedProfit >= 0 ? "+" : ""}${model.tradeStats.realizedProfit}</p></section>`;
   let companyBlock;
@@ -551,6 +560,7 @@ function renderGame() {
   elements.nationName.textContent = currentNation?.name ?? location.nationName;
   elements.regionName.textContent = location.regionName;
   elements.playerLabel.textContent = state.player.name;
+  elements.raceLabel.textContent = getRaceDefinition(state.player.raceId)?.name ?? "人間";
   elements.levelLabel.textContent = `LV ${state.player.level}`;
   elements.hpLabel.textContent = `${state.player.hp} / ${state.player.maxHp}`;
   elements.hpBar.style.width = `${Math.max(0, state.player.hp / state.player.maxHp * 100)}%`;
@@ -843,9 +853,23 @@ function renderWorldPanels(map) {
   });
   renderCurrentPolity(map);
   const effects = getV3WorldEffectsView(context, state, map.isCurrent ? null : map);
+  const moon = effects.celestial;
+  const raceResponses = effects.raceResponse?.responses ?? [];
+  const effectLocation = getV3LocationSummary(context, state);
+  const effectNationId = map.tileNationIds[effectLocation.tile.macroIndex] ?? null;
+  const effectNation = map.nationById.get(effectNationId);
+  const wartimeMarket = getV3WartimeMarketEffect({
+    activeWars: map.activeWars,
+    nationId: effectNationId,
+    nationName: effectNation?.name,
+    regionId: effectLocation.region?.id,
+  });
   elements.worldEffects.innerHTML = `
-    <header><span><small>WORLD EFFECTS</small><strong>世界現象</strong></span><b>${effects.fronts.length}域</b></header>
+    <header><span><small>WORLD EFFECTS</small><strong>世界現象</strong></span><b>${effects.fronts.length}域${effects.activeGlobal.length ? `＋${effects.activeGlobal.length}天体` : ""}</b></header>
     <p class="v3-world-effect-local"><strong>${effects.local ? `${escapeHtml(effects.local.symbol)} ${escapeHtml(effects.local.name)}` : "現在座標は平穏"}</strong><span>${effects.local ? `移動 +${Math.round((effects.local.travelMultiplier - 1) * 100)}% · 遭遇 +${(effects.local.dangerDelta * 100).toFixed(1)}pt` : "移動・遭遇補正なし"}</span></p>
+    <p class="v3-world-effect-celestial"><strong>${escapeHtml(moon.symbol)} ${escapeHtml(moon.primaryMoon)} · ${escapeHtml(moon.phaseName)}</strong><span>${moon.active.length ? `${escapeHtml(moon.active[0].description)}（夜間作用中）` : `周期${moon.cycleDay}/${moon.cycleDays}日 · ${moon.isNight ? "夜間" : "日中"}`}</span></p>
+    <p class="v3-world-effect-race${raceResponses.length ? " is-active" : ""}"><strong>${escapeHtml(effects.raceResponse?.peopleName ?? "人間")}への作用</strong><span>${escapeHtml(effects.raceResponse?.summary ?? "種族固有反応なし")}${raceResponses.length ? ` · ${escapeHtml(raceResponses.map((response) => response.summary).join(" "))}` : ""}</span></p>
+    ${wartimeMarket ? `<p class="v3-world-effect-market"><strong>${escapeHtml(wartimeMarket.symbol)} ${escapeHtml(wartimeMarket.name)}</strong><span>${escapeHtml(wartimeMarket.summary)}</span></p>` : ""}
     <ul>${effects.fronts.map((front) => `<li class="is-${escapeHtml(front.motion)}"><i style="--effect-color:${escapeHtml(front.color)}">${escapeHtml(front.symbol)}</i><span><strong>${escapeHtml(front.name)}</strong><small>${escapeHtml(front.regionName ?? "洋上・無主地")} · 強度${front.intensity} · 半径${Math.round(front.radius)}区画</small></span><em>最大+${front.travelPenaltyPercent}%</em></li>`).join("") || "<li><span><strong>大きな現象なし</strong><small>この月に記録対象となる前線はありません。</small></span></li>"}</ul>`;
 
   const activeNations = map.nations.filter((nation) => regionCountFor(map, nation.id) > 0);
@@ -1104,7 +1128,7 @@ elements.cancelNew.addEventListener("click", () => {
 elements.newWorld.addEventListener("submit", async (event) => {
   event.preventDefault();
   const seed = elements.worldSeed.value.trim() || createSeed();
-  await prepareWorld({ ...WORLD_CONFIG, seed, playerName: elements.playerName.value.trim() || "アレク" });
+  await prepareWorld({ ...WORLD_CONFIG, seed, playerName: elements.playerName.value.trim() || "アレク", playerRaceId: elements.playerRace.value });
 });
 elements.continueButton.addEventListener("click", async () => {
   const saved = readSave();
@@ -1151,9 +1175,9 @@ document.addEventListener("click", (event) => {
   if (tradeAction) {
     try {
       let next = state;
-      if (tradeAction.dataset.v3TradeAction === "observe") next = observeV3Market(context, state);
-      if (tradeAction.dataset.v3TradeAction === "buy") next = buyV3Commodity(context, state, tradeAction.dataset.v3Commodity, 1);
-      if (tradeAction.dataset.v3TradeAction === "sell") next = sellV3Commodity(context, state, tradeAction.dataset.v3Commodity, 1);
+      if (tradeAction.dataset.v3TradeAction === "observe") next = observeV3Market(context, state, worldSimulation);
+      if (tradeAction.dataset.v3TradeAction === "buy") next = buyV3Commodity(context, state, tradeAction.dataset.v3Commodity, 1, worldSimulation);
+      if (tradeAction.dataset.v3TradeAction === "sell") next = sellV3Commodity(context, state, tradeAction.dataset.v3Commodity, 1, worldSimulation);
       commitStateAction(next, {
         source: "merchant-trade",
         event: actionEvent(`merchant.${tradeAction.dataset.v3TradeAction}`, "merchant-trade", "市場取引を台帳へ記録", { commodityId: tradeAction.dataset.v3Commodity ?? null }),

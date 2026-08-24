@@ -24,7 +24,7 @@ V3は、生成済みの国家・地方・街道・集落を1マス単位の詳�
 - 歩行、世界地図、商会、裏社会は同じゲーム時計と月境界を使う。時間を進めた領域は`ActionResult`自身が宣言するため、どの画面から月を進めても各システムを一度だけ進行し、12か月観測の出来事も実際の発生月を保ってV6セーブへ保存する
 - 移動先周辺を優先しながら、待機中に離れたチャンクも1区画ずつ生成して端末内へ保存する
 
-詳細な生成・保存境界は [V3設計](./V3_DESIGN.md)、種族変容と確率判断は [実装仕様](./docs/superpowers/specs/2026-08-24-race-transformative-probabilistic-decision-system.md)、システム間の規格化と検証は [ゲームシステム規格化・統合レビュー](./docs/gameplay-reviews/2026-08-24-system-integration-rationalization.md)、複合地理の生成条件と実画面検証は [天地創造・複合地理レビュー](./docs/gameplay-reviews/2026-08-24-terrain-world-creation.md)、現象域の計算・表示・実プレイ結果は [V3ワールドエフェクトレビュー](./docs/gameplay-reviews/2026-08-24-v3-world-effects.md) を参照してください。
+詳細な生成・保存境界は [V3設計](./V3_DESIGN.md)、種族変容と確率判断は [実装仕様](./docs/superpowers/specs/2026-08-24-race-transformative-probabilistic-decision-system.md)、システム間の規格化と検証は [ゲームシステム規格化・統合レビュー](./docs/gameplay-reviews/2026-08-24-system-integration-rationalization.md)、複合地理の生成条件と実画面検証は [天地創造・複合地理レビュー](./docs/gameplay-reviews/2026-08-24-terrain-world-creation.md)、気象・天体・戦争を種族、戦闘、出現、市場へ接続した結果は [種族作用型ワールドエフェクトレビュー](./docs/gameplay-reviews/2026-08-24-race-reactive-world-effects.md) を参照してください。
 
 ## 画面方針
 

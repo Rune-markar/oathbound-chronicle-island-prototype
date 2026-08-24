@@ -9,6 +9,7 @@ import { applyV3BattleResultToWorldSimulation, bindV3BattleToStrategicWar } from
 import { readV3Save, writeV3Save } from "../src/v3-save-system.js";
 import { commitV3Action, normalizeV3IntegratedState } from "../src/v3-system-kernel.js";
 import { createV3WorldSimulation } from "../src/v3-world-simulation.js";
+import { V3_WORLD_EFFECTS_VERSION } from "../src/v3-world-effects.js";
 
 function integratedFixture() {
   const options = createGeneratedWorldState({ seed: "v3-integrated-kernel", width: 24, height: 16, plateCount: 4, nationCount: 3 });
@@ -79,7 +80,7 @@ test("V3 save registry upgrades version three and aligns its canonical clock to 
   assert.equal(migrated.worldSimulation.generatedWorld.tacticalOutcomeReceipts["legacy-battle"], "318-1");
   const saved = writeV3Save(adapter, "v3", migrated);
   assert.equal(saved.systemVersions["system-kernel"], 2);
-  assert.equal(saved.systemVersions["world-effects"], 1);
+  assert.equal(saved.systemVersions["world-effects"], V3_WORLD_EFFECTS_VERSION);
   assert.equal(saved.systemVersions["merchant-company"], 2);
   assert.equal(saved.systemVersions["world-simulation"], 2);
   assert.equal(saved.systemVersions["race-decisions"], 2);

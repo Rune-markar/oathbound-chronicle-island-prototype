@@ -1,8 +1,21 @@
 import { fnv1aCharacters, unitFromHash } from "./determinism.js";
-import { getGameCalendar } from "./game-clock.js";
+import {
+  GAME_DAYS_PER_MONTH,
+  GAME_CLOCK_EPOCH,
+  GAME_MINUTES_PER_DAY,
+  GAME_MONTHS_PER_YEAR,
+  getGameCalendar,
+} from "./game-clock.js";
+import { evaluateRaceWorldEffects } from "./race-world-effect-system.js";
 
-export const V3_WORLD_EFFECTS_VERSION = 1;
+export const V3_WORLD_EFFECTS_VERSION = 2;
 export const V3_WORLD_EFFECT_FRONT_LIMIT = 9;
+export const V3_PRIMARY_MOON_CYCLE_DAYS = 30;
+
+export const V3_CELESTIAL_EFFECT_DEFINITIONS = Object.freeze({
+  full_moon: Object.freeze({ id: "full_moon", name: "満月", symbol: "満", description: "主月の魔力潮が魔族系種族を強める。" }),
+  new_moon: Object.freeze({ id: "new_moon", name: "新月", symbol: "新", description: "主月の光が消え、霊体が実体化して地上へ現れる。" }),
+});
 
 const clamp = (value, minimum = 0, maximum = 1) => Math.min(maximum, Math.max(minimum, Number(value) || 0));
 const hashUnit = (seed, ...parts) => unitFromHash(fnv1aCharacters(`${seed}:${parts.join(":")}`));
@@ -68,6 +81,57 @@ function calendarFor(source = {}) {
     return { year: Math.max(1, source.year), month: Math.min(12, Math.max(1, source.month)) };
   }
   return getGameCalendar(source.clock);
+}
+
+function detailedCalendarFor(source = {}) {
+  if (source?.clock) return getGameCalendar(source.clock);
+  if (Number.isFinite(source?.clockMinutes)) return getGameCalendar({ elapsedMinutes: source.clockMinutes });
+  if (Number.isInteger(source?.year) && Number.isInteger(source?.month)) {
+    const epochIndex = GAME_CLOCK_EPOCH.year * GAME_MONTHS_PER_YEAR + GAME_CLOCK_EPOCH.month - 1;
+    const requestedIndex = source.year * GAME_MONTHS_PER_YEAR + Math.min(12, Math.max(1, source.month)) - 1;
+    const monthOffset = Math.max(0, requestedIndex - epochIndex);
+    const day = Math.min(GAME_DAYS_PER_MONTH, Math.max(1, Math.round(Number(source.day) || 1)));
+    const hour = Math.min(23, Math.max(0, Math.round(Number(source.hour) || 12)));
+    return getGameCalendar({ elapsedMinutes: monthOffset * GAME_DAYS_PER_MONTH * GAME_MINUTES_PER_DAY + (day - 1) * GAME_MINUTES_PER_DAY + hour * 60 });
+  }
+  return getGameCalendar();
+}
+
+function moonPhaseForDay(cycleDay) {
+  if (cycleDay === 1) return { id: "new_moon", name: "新月", symbol: "新" };
+  if (cycleDay <= 7) return { id: "waxing_crescent", name: "満ちる細月", symbol: "◔" };
+  if (cycleDay <= 14) return { id: "waxing", name: "満ちる月", symbol: "◑" };
+  if (cycleDay === 15) return { id: "full_moon", name: "満月", symbol: "満" };
+  if (cycleDay <= 22) return { id: "waning", name: "欠ける月", symbol: "◐" };
+  return { id: "waning_crescent", name: "欠ける細月", symbol: "◕" };
+}
+
+export function getV3CelestialEffects(context, state = {}) {
+  const calendar = detailedCalendarFor(state);
+  const absoluteDay = Math.floor(calendar.elapsedMinutes / GAME_MINUTES_PER_DAY);
+  const cycleDay = ((absoluteDay % V3_PRIMARY_MOON_CYCLE_DAYS) + V3_PRIMARY_MOON_CYCLE_DAYS) % V3_PRIMARY_MOON_CYCLE_DAYS + 1;
+  const phase = moonPhaseForDay(cycleDay);
+  const isNight = calendar.hour >= 20 || calendar.hour < 5;
+  const primaryMoon = context?.runtime?.terrain?.astronomy?.moons?.[0] ?? "主月";
+  const activeDefinition = isNight ? V3_CELESTIAL_EFFECT_DEFINITIONS[phase.id] : null;
+  const active = activeDefinition ? [{
+    ...activeDefinition,
+    type: activeDefinition.id,
+    strength: 1,
+    source: "celestial",
+    moonName: primaryMoon,
+  }] : [];
+  return {
+    primaryMoon,
+    cycleDays: V3_PRIMARY_MOON_CYCLE_DAYS,
+    cycleDay,
+    phaseId: phase.id,
+    phaseName: phase.name,
+    symbol: phase.symbol,
+    isNight,
+    active,
+    calendar: { year: calendar.year, month: calendar.month, day: calendar.day, hour: calendar.hour, minute: calendar.minute },
+  };
 }
 
 function isWater(tile) {
@@ -278,9 +342,46 @@ export function getV3WorldEffectAt(context, effectsOrState, detailX, detailY) {
   return strongest;
 }
 
+export function getV3ActiveWorldEffects(context, state, detailX = state?.player?.x, detailY = state?.player?.y, effectsOverride = null, dateState = null) {
+  const local = Number.isFinite(detailX) && Number.isFinite(detailY)
+    ? getV3WorldEffectAt(context, effectsOverride ?? state, detailX, detailY)
+    : null;
+  const celestial = getV3CelestialEffects(context, dateState ?? state);
+  return {
+    local,
+    celestial,
+    active: [...(local ? [local] : []), ...celestial.active],
+  };
+}
+
+export function getV3RaceWorldEffectAt(context, state, peopleId, detailX = state?.player?.x, detailY = state?.player?.y, effectsOverride = null, dateState = null) {
+  const effects = getV3ActiveWorldEffects(context, state, detailX, detailY, effectsOverride, dateState);
+  return {
+    ...evaluateRaceWorldEffects(peopleId ?? "human", effects.active, { isNight: effects.celestial.isNight }),
+    local: effects.local,
+    celestial: effects.celestial,
+  };
+}
+
+function adjustedLocalEffect(context, state, effect, peopleId, detailX, detailY, dateState = null, effectsOverride = null) {
+  if (!effect) return null;
+  const response = getV3RaceWorldEffectAt(context, state, peopleId, detailX, detailY, effectsOverride ?? state?.worldEffects, dateState);
+  const travelMultiplier = 1 + (effect.travelMultiplier - 1) * response.modifiers.travelPenaltyMultiplier;
+  const dangerDelta = effect.dangerDelta * response.modifiers.dangerDeltaMultiplier;
+  return {
+    ...effect,
+    baseTravelMultiplier: effect.travelMultiplier,
+    baseDangerDelta: effect.dangerDelta,
+    travelMultiplier,
+    dangerDelta,
+    raceResponse: response,
+  };
+}
+
 export function applyV3WorldEffectToTile(context, state, tile) {
   if (!tile?.macroTile || !tile.passable) return { ...tile, worldEffect: null };
-  const effect = getV3WorldEffectAt(context, state, tile.x, tile.y);
+  const rawEffect = getV3WorldEffectAt(context, state, tile.x, tile.y);
+  const effect = adjustedLocalEffect(context, state, rawEffect, state?.player?.raceId ?? "human", tile.x, tile.y);
   if (!effect) return { ...tile, worldEffect: null };
   const baseTravelMinutes = Math.max(0, Number(tile.travelMinutes) || 0);
   const travelMinutes = Math.max(baseTravelMinutes, Math.ceil(baseTravelMinutes * effect.travelMultiplier));
@@ -289,14 +390,21 @@ export function applyV3WorldEffectToTile(context, state, tile) {
     baseTravelMinutes,
     travelMinutes,
     dangerBias: Math.max(0, Number(tile.dangerBias) || 0) + effect.dangerDelta,
-    effectNote: `${effect.name}: ${effect.description}`,
+    effectNote: `${effect.name}: ${effect.description}${effect.raceResponse.responses.length ? ` / ${effect.raceResponse.summary}` : ""}`,
     worldEffect: effect,
   };
 }
 
 export function getV3WorldEffectsView(context, state, dateState = null) {
   const effects = dateState ? createV3WorldEffects(context, dateState) : (state.worldEffects ?? createV3WorldEffects(context, calendarFor(state)));
-  const local = state?.player ? getV3WorldEffectAt(context, effects, state.player.x, state.player.y) : null;
+  const rawLocal = state?.player ? getV3WorldEffectAt(context, effects, state.player.x, state.player.y) : null;
+  const local = state?.player
+    ? adjustedLocalEffect(context, state, rawLocal, state.player.raceId ?? "human", state.player.x, state.player.y, dateState, effects)
+    : null;
+  const celestial = getV3CelestialEffects(context, dateState ?? state);
+  const raceResponse = state?.player
+    ? evaluateRaceWorldEffects(state.player.raceId ?? "human", [...(rawLocal ? [rawLocal] : []), ...celestial.active], { isNight: celestial.isNight })
+    : null;
   return {
     period: effects.period,
     year: effects.year,
@@ -312,5 +420,46 @@ export function getV3WorldEffectsView(context, state, dateState = null) {
       };
     }),
     local,
+    celestial,
+    activeGlobal: celestial.active,
+    raceResponse,
+  };
+}
+
+export function getV3WartimeMarketEffect({ activeWars = [], nationId = null, nationName = null, regionId = null } = {}) {
+  if (!nationId) return null;
+  const wars = activeWars.filter((war) => war?.attackerNationId === nationId || war?.defenderNationId === nationId);
+  if (!wars.length) return null;
+  const targeted = wars.filter((war) => war.targetRegionId && war.targetRegionId === regionId).length;
+  const severity = Math.min(3, 1 + Math.max(0, wars.length - 1) * 0.5 + targeted * 0.75);
+  const basePressure = 1 + 0.035 * severity;
+  const commodityPriceMultipliers = {
+    grain: 1 + 0.09 * severity,
+    timber: 1 + 0.045 * severity,
+    herbs: 1 + 0.075 * severity,
+    iron: 1 + 0.11 * severity,
+    wool: 1 + 0.035 * severity,
+    salt: 1 + 0.06 * severity,
+  };
+  const commodityStockMultipliers = {
+    grain: 1 - 0.08 * severity,
+    timber: 1 - 0.035 * severity,
+    herbs: 1 - 0.065 * severity,
+    iron: 1 - 0.075 * severity,
+    wool: 1 - 0.025 * severity,
+    salt: 1 - 0.05 * severity,
+  };
+  return {
+    id: `wartime-scarcity:${nationId}:${wars.map((war) => war.id).sort().join("+")}`,
+    effectId: "wartime_scarcity",
+    name: "戦時物資高騰",
+    symbol: "戦",
+    severity: Number(severity.toFixed(2)),
+    warIds: wars.map((war) => war.id),
+    targeted,
+    priceMultiplier: basePressure,
+    commodityPriceMultipliers,
+    commodityStockMultipliers,
+    summary: `${nationName ?? nationId}は${wars.length}件の戦争中。軍需と輸送難で穀物・薬草・鉄・塩を中心に高騰。`,
   };
 }

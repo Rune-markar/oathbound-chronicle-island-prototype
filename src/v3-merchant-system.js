@@ -31,6 +31,8 @@ import {
 import { createActionResult } from "./action-result.js";
 import { advanceStateGameClock, getGameCalendar, normalizeStateGameClock } from "./game-clock.js";
 import { getV3DetailedTile } from "./v3-field-system.js";
+import { getV3WorldSimulationView } from "./v3-world-simulation.js";
+import { getV3WartimeMarketEffect } from "./v3-world-effects.js";
 
 export const V3_MERCHANT_VERSION = 2;
 
@@ -102,12 +104,27 @@ export function getV3CurrentMarket(context, state) {
   return distance <= settlementRadius(tile.settlement.settlementLevel) ? clone(tile.settlement) : null;
 }
 
-function tradeAdapter(context, state, settlement = null) {
+function wartimeMarketEffect(context, worldSimulation, settlement) {
+  if (!worldSimulation || !settlement) return null;
+  const map = getV3WorldSimulationView(context.runtime, worldSimulation);
+  const nationId = map.regionById.get(settlement.regionId)?.nationId ?? settlement.nationId ?? null;
+  const nation = map.nationById.get(nationId);
+  return getV3WartimeMarketEffect({
+    activeWars: map.activeWars,
+    nationId,
+    nationName: nation?.name ?? settlement.nationName,
+    regionId: settlement.regionId,
+  });
+}
+
+function tradeAdapter(context, state, settlement = null, worldSimulation = null) {
   const calendar = getGameCalendar(normalizeStateGameClock(state).clock);
+  const marketEffect = wartimeMarketEffect(context, worldSimulation, settlement);
   return {
     year: calendar.year,
     month: calendar.month,
     generatedWorld: { seed: context.seed },
+    worldEffects: marketEffect ? { market: marketEffect } : {},
     player: {
       locationId: settlement?.id ?? null,
       metrics: { wealth: state.player.gold },
@@ -123,25 +140,25 @@ function applyTradeAdapter(state, adapter, message) {
   return state;
 }
 
-export function observeV3Market(context, state) {
+export function observeV3Market(context, state, worldSimulation = null) {
   const next = prepared(state);
   const settlement = getV3CurrentMarket(context, next);
   if (!settlement) throw new Error("集落の市場まで歩いてください");
-  return applyTradeAdapter(next, observeSettlementMarket(tradeAdapter(context, next, settlement), settlement), `${settlement.name}の相場を商人手帳へ記録した。`);
+  return applyTradeAdapter(next, observeSettlementMarket(tradeAdapter(context, next, settlement, worldSimulation), settlement), `${settlement.name}の相場を商人手帳へ記録した。`);
 }
 
-export function buyV3Commodity(context, state, commodityId, quantity = 1) {
+export function buyV3Commodity(context, state, commodityId, quantity = 1, worldSimulation = null) {
   const next = prepared(state);
   const settlement = getV3CurrentMarket(context, next);
   if (!settlement) throw new Error("集落の市場まで歩いてください");
-  return applyTradeAdapter(next, buyCommodity(tradeAdapter(context, next, settlement), settlement, commodityId, quantity), `${settlement.name}で${MERCHANT_COMMODITIES[commodityId].name}を${quantity}個仕入れた。`);
+  return applyTradeAdapter(next, buyCommodity(tradeAdapter(context, next, settlement, worldSimulation), settlement, commodityId, quantity), `${settlement.name}で${MERCHANT_COMMODITIES[commodityId].name}を${quantity}個仕入れた。`);
 }
 
-export function sellV3Commodity(context, state, commodityId, quantity = 1) {
+export function sellV3Commodity(context, state, commodityId, quantity = 1, worldSimulation = null) {
   const next = prepared(state);
   const settlement = getV3CurrentMarket(context, next);
   if (!settlement) throw new Error("集落の市場まで歩いてください");
-  const adapter = sellCommodity(tradeAdapter(context, next, settlement), settlement, commodityId, quantity);
+  const adapter = sellCommodity(tradeAdapter(context, next, settlement, worldSimulation), settlement, commodityId, quantity);
   const transaction = adapter.player.merchantTrade.recentTransactions[0];
   return applyTradeAdapter(next, adapter, `${settlement.name}で${MERCHANT_COMMODITIES[commodityId].name}を売却。利益${transaction.profit >= 0 ? "+" : ""}${transaction.profit}。`);
 }
@@ -287,12 +304,12 @@ export function advanceV3CompanyMonth(context, state) {
   });
 }
 
-export function getV3MerchantView(context, state) {
+export function getV3MerchantView(context, state, worldSimulation = null) {
   const next = prepared(state);
   const current = getV3CurrentMarket(context, next);
   const adapter = companyAdapter(context, next);
   const companyView = getMerchantCompanyView(adapter);
-  const market = current ? getSettlementMarket(tradeAdapter(context, next, current), current) : null;
+  const market = current ? getSettlementMarket(tradeAdapter(context, next, current, worldSimulation), current) : null;
   return {
     marketSettlement: current,
     market,

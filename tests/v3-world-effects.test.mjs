@@ -14,6 +14,9 @@ import {
   V3_WORLD_EFFECTS_VERSION,
   applyV3WorldEffectToTile,
   createV3WorldEffects,
+  getV3CelestialEffects,
+  getV3RaceWorldEffectAt,
+  getV3WartimeMarketEffect,
   getV3WorldEffectAt,
   getV3WorldEffectsView,
   normalizeV3WorldEffectsState,
@@ -112,6 +115,50 @@ test("旧V3状態は現在月の世界現象を加算し、世界地図用ビュ
   }
 });
 
+test("主月の30日周期は夜の新月と満月をシステム効果として返す", () => {
+  const { context } = fixture();
+  const base = createV3FieldState(context);
+  const newMoonMinutes = 21 * 60;
+  const newMoon = getV3CelestialEffects(context, { ...base, clock: { ...base.clock, elapsedMinutes: newMoonMinutes }, clockMinutes: newMoonMinutes });
+  assert.equal(newMoon.phaseId, "new_moon");
+  assert.equal(newMoon.active[0].id, "new_moon");
+  assert.equal(newMoon.primaryMoon, context.runtime.terrain.astronomy.moons[0]);
+
+  const fullMoonMinutes = 14 * 24 * 60 + 21 * 60;
+  const fullMoonState = { ...base, clock: { ...base.clock, elapsedMinutes: fullMoonMinutes }, clockMinutes: fullMoonMinutes };
+  const fullMoon = getV3CelestialEffects(context, fullMoonState);
+  assert.equal(fullMoon.phaseId, "full_moon");
+  assert.equal(fullMoon.active[0].id, "full_moon");
+  assert.ok(getV3RaceWorldEffectAt(context, fullMoonState, "demon").modifiers.magicPower > 1);
+});
+
+test("同じ長雨でも種族生態により実移動時間と危険度が変わる", () => {
+  const { context } = fixture();
+  const base = createV3FieldState(context);
+  const effects = manualFront(base, "rain");
+  const humanState = { ...base, player: { ...base.player, raceId: "human" }, worldEffects: effects };
+  const elfState = { ...base, player: { ...base.player, raceId: "elf" }, worldEffects: effects };
+  const tile = getV3DetailedTile(context, base.player.x, base.player.y);
+  const human = applyV3WorldEffectToTile(context, humanState, tile);
+  const elf = applyV3WorldEffectToTile(context, elfState, tile);
+  assert.ok(elf.travelMinutes <= human.travelMinutes);
+  assert.ok(elf.dangerBias < human.dangerBias);
+  assert.match(elf.effectNote, /森雨同調/);
+});
+
+test("戦争中の国家は地域と交戦数から商品別の高騰・在庫圧力を返す", () => {
+  const marketEffect = getV3WartimeMarketEffect({
+    nationId: "nation-a",
+    nationName: "試験国",
+    regionId: "region-front",
+    activeWars: [{ id: "war-1", attackerNationId: "nation-a", defenderNationId: "nation-b", targetRegionId: "region-front" }],
+  });
+  assert.equal(marketEffect.effectId, "wartime_scarcity");
+  assert.ok(marketEffect.commodityPriceMultipliers.iron > marketEffect.commodityPriceMultipliers.wool);
+  assert.ok(marketEffect.commodityStockMultipliers.grain < 1);
+  assert.match(marketEffect.summary, /戦争中/);
+});
+
 test("V3通常画面は現象レイヤー、現地演出、影響説明、低モーション契約を持つ", async () => {
   const [index, app, styles] = await Promise.all([
     readFile(new URL("../index.html", import.meta.url), "utf8"),
@@ -121,9 +168,13 @@ test("V3通常画面は現象レイヤー、現地演出、影響説明、低モ
   assert.match(index, /data-v3-map-layer="effects"/);
   assert.match(index, /id="v3WorldEffectVisual"/);
   assert.match(index, /id="v3WeatherLabel"/);
+  assert.match(index, /id="v3PlayerRace"/);
+  assert.match(index, /id="v3RaceEffectLabel"/);
   assert.match(index, /id="v3WorldEffects"/);
   assert.match(app, /drawWorldEffectFronts/);
   assert.match(app, /renderLocalWorldEffect/);
+  assert.match(app, /raceResponse/);
+  assert.match(app, /getV3WartimeMarketEffect/);
   assert.match(app, /最大\+\$\{front\.travelPenaltyPercent\}%/);
   assert.match(app, /function closeWorldMap\(\)/);
   for (const motion of ["rain", "storm", "snow", "blizzard", "sandstorm", "heatwave", "fog", "ashfall"]) {
