@@ -49,7 +49,10 @@ test("village population advances through town and city thresholds on monthly si
   assert.equal(settlement.level, "town");
   assert.ok(settlement.population >= SETTLEMENT_POPULATION_THRESHOLDS.town);
   assert.ok(advanced.generatedWorld.regionalDomains.events.some((event) => event.settlementId === village.id && event.toLevel === "town"));
-  assert.equal(getGeneratedRegionalDomainView(advanced).nationMap.objects.find((object) => object.id === village.id).type, "town");
+  const effectiveTown = getGeneratedRegionalDomainView(advanced).nationMap.objects.find((object) => object.id === village.id);
+  assert.equal(effectiveTown.type, "town");
+  assert.equal(effectiveTown.name, `${village.baseName}の町`);
+  assert.ok(effectiveTown.functionIds.length > 0);
 
   advanced.generatedWorld.regionalDomains.settlementStates[village.id] = {
     ...advanced.generatedWorld.regionalDomains.settlementStates[village.id],
@@ -124,4 +127,7 @@ test("one region can become an independent polity and a regional lordship can be
   assert.equal(effective.regionById.get(region.id).nationId, "free-border-march");
   assert.equal(effective.nationById.get("free-border-march").regionCount, 1);
   assert.equal(effective.nationById.get("free-border-march").name, "自由辺境領");
+  assert.equal(effective.nationById.get("free-border-march").government, "辺境諸侯政");
+  assert.equal(effective.nationById.get("free-border-march").polity.governmentName, "辺境諸侯政");
+  assert.ok(effective.nationById.get("free-border-march").capitalName);
 });

@@ -221,6 +221,41 @@ test("absolute national indicators do not turn a one-unit difference into a 100-
   assert.notDeepEqual([profiles["equal-a"].capability, profiles["equal-b"].capability], [30, 100]);
 });
 
+test("political institutions add bounded capability, commerce, and state-capacity differences", () => {
+  const runtime = getGeneratedWorldView(createWorld("institutional-profile-contract")).runtime;
+  const template = runtime.nations.nations[0];
+  const institutionalRuntime = {
+    nations: {
+      nations: [
+        {
+          ...template,
+          id: "centralized",
+          yields: { ...template.yields },
+          polity: { modifiers: { stateCapacity: 7, commerce: 1, cohesion: 1, mobilization: 6, localAutonomy: -5 } },
+        },
+        {
+          ...template,
+          id: "commercial",
+          yields: { ...template.yields },
+          polity: { modifiers: { stateCapacity: 2, commerce: 9, cohesion: -1, mobilization: -2, localAutonomy: 8 } },
+        },
+      ],
+      borderSegments: [],
+    },
+  };
+  const profiles = deriveGeopoliticalProfiles(institutionalRuntime);
+  assert.ok(profiles.centralized.stateCapacity > profiles.commercial.stateCapacity);
+  assert.ok(profiles.commercial.commerceBase > profiles.centralized.commerceBase);
+  assert.ok(profiles.centralized.capability > profiles.commercial.capability);
+  assert.deepEqual(profiles.commercial.institutionalModifiers, {
+    stateCapacity: 2,
+    commerce: 9,
+    cohesion: -1,
+    mobilization: -2,
+    localAutonomy: 8,
+  });
+});
+
 test("the unaffiliated player's abilities, selected nation, and expedition position never enter national decisions", () => {
   const baseline = createWorld("player-independent-world");
   const altered = structuredClone(baseline);

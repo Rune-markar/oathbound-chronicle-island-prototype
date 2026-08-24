@@ -131,6 +131,13 @@ function frontierFor(runtime, key) {
 export function deriveGeopoliticalProfiles(runtime) {
   const nations = runtime.nations.nations;
   return Object.fromEntries(nations.map((nation) => {
+    const institutionalModifiers = {
+      stateCapacity: Number(nation.polity?.modifiers?.stateCapacity) || 0,
+      commerce: Number(nation.polity?.modifiers?.commerce) || 0,
+      cohesion: Number(nation.polity?.modifiers?.cohesion) || 0,
+      mobilization: Number(nation.polity?.modifiers?.mobilization) || 0,
+      localAutonomy: Number(nation.polity?.modifiers?.localAutonomy) || 0,
+    };
     const populationScale = logarithmicScore(nation.populationPotential, 4, 7.2);
     const productionScale = logarithmicScore(nation.yields.production, 1, 3.8);
     const commerceScale = logarithmicScore(nation.yields.commerce, 0, 2.8);
@@ -140,7 +147,8 @@ export function deriveGeopoliticalProfiles(runtime) {
     const foodSupportRatio = nation.yields.food * 2600 / Math.max(1, nation.populationPotential);
     const foodBase = clamp(50 + (foodSupportRatio - 1) * 140, 15, 90);
     const capability = clamp(10 + populationScale * 0.38 + productionScale * 0.28
-      + commerceScale * 0.18 + territoryScale * 0.16);
+      + commerceScale * 0.18 + territoryScale * 0.16
+      + institutionalModifiers.mobilization + institutionalModifiers.stateCapacity * 0.3);
     const borderSegments = runtime.nations.borderSegments.filter((segment) => segment.nations.includes(nation.id));
     const naturalStrength = borderSegments.length
       ? borderSegments.reduce((sum, segment) => sum + Number(segment.naturalStrength ?? 0), 0) / borderSegments.length
@@ -148,13 +156,14 @@ export function deriveGeopoliticalProfiles(runtime) {
     const neighborIds = [...new Set(borderSegments.flatMap((segment) => segment.nations).filter((id) => id !== nation.id))].sort();
     const terrainDefense = rounded(16 + nation.mountainShare * 34 + naturalStrength * 42 + (neighborIds.length ? 0 : 18));
     const stateCapacity = rounded(22 + commerceIntensity * 0.38 + productionIntensity * 0.24
-      + Math.min(18, nation.capital.suitability / 18) - Math.max(0, nation.regionCount - 5) * 1.5);
+      + Math.min(18, nation.capital.suitability / 18) - Math.max(0, nation.regionCount - 5) * 1.5
+      + institutionalModifiers.stateCapacity);
     return [nation.id, {
       nationId: nation.id,
       capability: rounded(capability),
       foodBase: rounded(foodBase),
       foodSupportRatio: Number(foodSupportRatio.toFixed(3)),
-      commerceBase: rounded(commerceIntensity),
+      commerceBase: rounded(commerceIntensity + institutionalModifiers.commerce),
       economicScale: rounded(commerceScale),
       productionBase: rounded(productionIntensity),
       stateCapacity,
@@ -162,6 +171,7 @@ export function deriveGeopoliticalProfiles(runtime) {
       maritimeAccess: rounded(nation.coastalShare * 100),
       neighborIds,
       borderCount: borderSegments.length,
+      institutionalModifiers,
     }];
   }));
 }
@@ -196,10 +206,10 @@ function derivePairStructures(runtime, profiles) {
 
 function initialNationState(seed, nation, profile) {
   return {
-    cohesion: rounded(48 + profile.stateCapacity * 0.22 + (hashUnit(seed, nation.id, "cohesion") - 0.5) * 12),
+    cohesion: rounded(48 + profile.stateCapacity * 0.22 + profile.institutionalModifiers.cohesion + (hashUnit(seed, nation.id, "cohesion") - 0.5) * 12),
     reserves: rounded(38 + profile.commerceBase * 0.28 + (hashUnit(seed, nation.id, "reserves") - 0.5) * 10),
     foodSecurity: rounded(profile.foodBase + (hashUnit(seed, nation.id, "food") - 0.5) * 8),
-    readiness: rounded(28 + profile.productionBase * 0.24 + profile.terrainDefense * 0.08),
+    readiness: rounded(28 + profile.productionBase * 0.24 + profile.terrainDefense * 0.08 + profile.institutionalModifiers.mobilization),
     offensiveIntent: rounded(10 + profile.capability * 0.1 + hashUnit(seed, nation.id, "intent") * 10),
     posture: "情勢観察",
     lastPullId: null,

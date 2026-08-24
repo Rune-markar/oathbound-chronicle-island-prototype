@@ -3139,7 +3139,7 @@ function renderGeneratedWorldPanel() {
   const shippingDestinations = getGeneratedShippingDestinations(state);
   const currentPort = runtime.nations.objects.find((object) => object.maritime && object.tileIndex === expeditionTile.index) ?? null;
   const nationOptions = runtime.nations.nations.filter((nation) => !nation.dissolved).map((nation) => `
-    <option value="${nation.id}" ${nation.id === playerNation.id ? "selected" : ""}>${escapeHtml(nation.name)} · ${escapeHtml(nation.government)}</option>
+    <option value="${nation.id}" ${nation.id === playerNation.id ? "selected" : ""}>${escapeHtml(nation.name)} · ${escapeHtml(nation.polity?.formName ?? nation.government)}</option>
   `).join("");
   const shippingButtons = shippingDestinations.map((entry) => `
     <button type="button" data-generated-shipping-site-id="${entry.siteId}" ${entry.canMove ? "" : "disabled"}>
@@ -3159,6 +3159,7 @@ function renderGeneratedWorldPanel() {
       <header><div><small>CURRENT REGION · ${escapeHtml(expeditionRegion.status === "independent" ? "独立勢力" : expeditionRegion.status === "transferred" ? "支配移管地域" : "国家構成地域")}</small><h2>${escapeHtml(expeditionRegion.name)}</h2><p>${escapeHtml(generatedRegionTerrainLabel(expeditionRegion))} · ${escapeHtml(expeditionRegion.officeTitle)}${expeditionRegion.lordName ? ` ${escapeHtml(expeditionRegion.lordName)}` : "（空位）"}</p></div><strong class="generated-movement-dial" style="--movement:${Math.min(100, generatedState.expeditionMovement / 8 * 100)}%"><b>${generatedState.expeditionMovement}</b><small>/ 8</small></strong></header>
       <div>
         <span><small>現在の支配勢力</small><strong>${escapeHtml(currentNation.name)}</strong></span>
+        <span><small>国家体制</small><strong>${escapeHtml(currentNation.polity?.formName ?? currentNation.government)} · ${escapeHtml(currentNation.polity?.politicalSystemName ?? currentNation.government)}</strong></span>
         <span><small>地勢</small><strong>${escapeHtml(GENERATED_RELIEF_LABELS[expeditionRegion.dominantRelief] ?? expeditionRegion.dominantRelief)}</strong></span>
         <span><small>人口 / 世界時刻</small><strong>${formatValue(expeditionRegion.population)} · 第${worldTime.day}日 ${worldTime.timeLabel}</strong></span>
       </div>
@@ -3186,18 +3187,25 @@ function renderWorldNations() {
   const naturalBorders = borderSegments.filter((segment) => segment.natural).length;
   const neighborIds = new Set(borderSegments.flatMap((segment) => segment.nations).filter((id) => id !== selected.id));
   const neighbors = [...neighborIds].map((id) => runtime.nationById.get(id)).filter(Boolean);
+  const urbanFunctionCounts = [...runtime.nations.objects.filter((object) => object.nationId === selected.id && object.settlementLevel).reduce((counts, object) => {
+    for (const urbanFunction of object.functions ?? []) counts.set(urbanFunction.name, (counts.get(urbanFunction.name) ?? 0) + 1);
+    return counts;
+  }, new Map())].sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0], "ja"));
   const cards = activeNations.map((nation) => `
     <button type="button" class="world-nation-card ${nation.id === selected.id ? "is-active" : ""}" data-generated-nation="${nation.id}">
       <span class="world-sigil" style="--nation-color:${nation.color}">${escapeHtml(nation.shortName.slice(0, 1))}</span>
-      <span><strong>${escapeHtml(nation.name)}</strong><small>国家Lv.${nation.nationLevel ?? "—"} · ${escapeHtml(nation.government)}<br>${escapeHtml(nation.peopleName)} · ${nation.regionCount}地方</small></span>
+      <span><strong>${escapeHtml(nation.name)}</strong><small>国家Lv.${nation.nationLevel ?? "—"} · ${escapeHtml(nation.polity?.formName ?? nation.government)} / ${escapeHtml(nation.polity?.politicalSystemName ?? nation.government)}<br>${escapeHtml(nation.peopleName)} · ${nation.regionCount}地方</small></span>
       <em>${nation.id === playerNation.id ? "自国" : `${Math.round(nation.areaShare * 100)}%`}</em>
     </button>
   `).join("");
   return `
     <section class="world-dossier" style="--nation-color:${selected.color}">
-      <header><span class="world-sigil large">${escapeHtml(selected.shortName.slice(0, 1))}</span><div><small>国家レベル ${selected.nationLevel ?? "—"} · ${escapeHtml(selected.government)} · ${escapeHtml(selected.peopleName)}</small><h2>${escapeHtml(selected.name)}</h2><b>${selected.regionCount}地方から成る国家</b></div></header>
-      <p>${escapeHtml(selected.settlementStyle)}を基盤とし、主産業は${escapeHtml(selected.economy)}。国家は複数地域の集合であり、地域の割譲・占領・独立に応じて国境線も更新されます。</p>
+      <header><span class="world-sigil large">${escapeHtml(selected.shortName.slice(0, 1))}</span><div><small>国家レベル ${selected.nationLevel ?? "—"} · ${escapeHtml(selected.government)} · ${escapeHtml(selected.peopleName)}</small><h2>${escapeHtml(selected.name)}</h2><b>${escapeHtml(selected.capitalName ?? `${selected.capitalTitle ?? "首都"}${selected.shortName}`)} · ${escapeHtml(selected.rulerTitle ?? "元首")}</b></div></header>
+      <p>${escapeHtml(selected.settlementStyle)}を基盤とし、主産業は${escapeHtml(selected.economy)}。${escapeHtml(selected.polity?.formName ?? selected.government)}という国家形態を、${escapeHtml(selected.polity?.politicalSystemName ?? selected.government)}で運営します。</p>
       <div class="generated-nation-facts">
+        <span><small>国家形態</small><strong>${escapeHtml(selected.polity?.formName ?? selected.government)}</strong></span>
+        <span><small>政治制度</small><strong>${escapeHtml(selected.polity?.politicalSystemName ?? selected.government)}</strong></span>
+        <span><small>国家元首</small><strong>${escapeHtml(selected.rulerTitle ?? "不明")}</strong></span>
         <span><small>構成地域</small><strong>${selected.regionCount}</strong></span>
         <span><small>地形区画</small><strong>${selected.tileCount}</strong></span>
         <span><small>人口力</small><strong>${formatValue(selected.populationPotential)}</strong></span>
@@ -3206,6 +3214,7 @@ function renderWorldNations() {
         <span><small>自然国境</small><strong>${borderSegments.length ? Math.round(naturalBorders / borderSegments.length * 100) : 100}%</strong></span>
         <span><small>隣接国家</small><strong>${neighbors.length}</strong></span>
       </div>
+      <div class="world-link-row" aria-label="国内の都市機能">${urbanFunctionCounts.map(([name, count]) => `<span class="world-link-chip is-confirmed">${escapeHtml(name)} ${count}</span>`).join("")}</div>
       <div class="world-link-row">${selectedRegions.map((region) => `<button type="button" class="world-link-chip is-confirmed" data-generated-region-id="${region.id}" title="${escapeHtml(`${region.officeTitle} · 人口 ${formatValue(region.population)}`)}">${escapeHtml(region.name)} · ${escapeHtml(region.officeTitle)}</button>`).join("")}</div>
       <div class="world-relation-note">${neighbors.length ? `国境を接する国家：${neighbors.map((nation) => escapeHtml(nation.name)).join(" / ")}` : "他国と陸上国境を接していません。"}</div>
     </section>
@@ -3213,7 +3222,7 @@ function renderWorldNations() {
       <div class="section-heading"><h2>生成国家一覧</h2><small>${activeNations.length}か国</small></div>
       <div class="world-nation-list">${cards}</div>
     </section>
-    <p class="world-source-note">各国は複数地域に分かれ、辺境には辺境伯、内地には地方伯、王都には総督職が置かれます。地域支配の交代や独立は同じ地域台帳に保存されます。</p>
+    <p class="world-source-note">地方官職は国家形態ごとに変わります。地域支配の交代や独立は同じ地域台帳に保存されます。</p>
   `;
 }
 

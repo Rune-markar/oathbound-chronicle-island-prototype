@@ -343,13 +343,20 @@ export function getV3TileEntity(context, x, y, state = {}) {
   const roll = v3HashUnit(context.seed, "entity", tile.x, tile.y);
   if (nearby && roll < 0.16) {
     const roleRoll = v3HashUnit(context.seed, "npc-role", tile.x, tile.y);
-    const role = tile.onRoad && roleRoll < 0.3 ? "merchant" : roleRoll < 0.62 ? "villager" : "adventurer";
+    const gameplay = nearby.settlement.gameplay ?? {};
+    const merchantThreshold = Math.min(0.58, Math.max(0.08,
+      0.12 + (tile.onRoad ? 0.18 : 0) + (Number(gameplay.merchantBias) || 0)));
+    const villagerThreshold = Math.min(0.84, Math.max(merchantThreshold + 0.12,
+      0.68 - (Number(gameplay.adventurerBias) || 0)));
+    const role = roleRoll < merchantThreshold ? "merchant" : roleRoll < villagerThreshold ? "villager" : "adventurer";
+    const functionName = nearby.settlement.primaryFunction?.name ?? "集落";
+    const merchantPrice = Math.min(8, Math.max(3, 5 + (Number(gameplay.merchantPriceModifier) || 0)));
     const definitions = {
-      merchant: { name: "旅商人", symbol: "商", message: `${nearby.settlement.name}へ品を運ぶ途中らしい。`, price: 5 },
-      villager: { name: `${nearby.settlement.name}の村人`, symbol: "人", message: "近くの道と魔物の噂を教えてくれた。" },
-      adventurer: { name: "巡回中の冒険者", symbol: "冒", message: `${nearby.settlement.name}周辺を警戒している。` },
+      merchant: { name: "旅商人", symbol: "商", message: `${nearby.settlement.name}の${functionName}へ品を運ぶ途中らしい。`, price: merchantPrice },
+      villager: { name: `${nearby.settlement.name}の住民`, symbol: "人", message: `${functionName}の仕事と近くの道について教えてくれた。` },
+      adventurer: { name: "巡回中の冒険者", symbol: "冒", message: `${nearby.settlement.name}の${functionName}周辺を警戒している。` },
     };
-    return { type: "npc", role, ...definitions[role], settlementId: nearby.settlement.id };
+    return { type: "npc", role, ...definitions[role], settlementId: nearby.settlement.id, settlementFunctionName: functionName };
   }
   if (tile.onRoad && roll < 0.025) return { type: "npc", role: "merchant", name: "街道商人", symbol: "商", message: "遠国へ向かう行商人だ。", price: 5 };
   const habitats = new Set([tile.type, ...(tile.geographyTags ?? [])]);
@@ -673,9 +680,12 @@ export function getV3LocationSummary(context, state) {
   const minutes = state.clockMinutes % (24 * 60);
   return {
     tile,
+    nation: tile.nation,
+    region: tile.region,
     nationName: tile.nation?.name ?? "無主地",
     regionName: tile.region?.name ?? "未踏地方",
     nearestSettlement: nearby,
+    nearestSettlementFunction: nearby?.settlement?.primaryFunction ?? null,
     day: Math.floor(state.clockMinutes / (24 * 60)) + 1,
     time: `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`,
   };

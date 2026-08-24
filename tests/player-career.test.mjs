@@ -208,6 +208,9 @@ test("independence expands the same governance model instead of replacing it", (
   assert.equal(state.player.stage, "independent_ruler");
   assert.equal(state.player.governmentFormId, "republic");
   assert.equal(state.player.title, "執政官");
+  assert.equal(state.generatedWorld.regionalDomains.independentPolities.player_realm.polity.formId, "republic");
+  assert.equal(state.generatedWorld.regionalDomains.independentPolities.player_realm.polity.politicalSystemName, "代議共和制");
+  assert.equal(state.generatedWorld.regionalDomains.independentPolities.player_realm.polity.rulerTitle, "執政官");
   assert.equal(governance.jurisdiction.sovereign, true);
   assert.deepEqual(new Set(governance.jurisdiction.territoryIds), new Set(["orta", "nereia"]));
   assert.ok(governance.executable.some((item) => item.id === "declare_war" && item.scope === "nation"));

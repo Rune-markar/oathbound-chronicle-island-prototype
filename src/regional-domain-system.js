@@ -2,6 +2,7 @@ import {
   GENERATED_WORLD_OBJECT_TYPES,
   settlementLevelForPopulation,
 } from "./nation-generation.js";
+import { deriveNationPolity, deriveSettlementFunctions, formatSettlementName } from "./world-polity-system.js";
 
 export const REGIONAL_DOMAIN_SCHEMA_VERSION = 1;
 export const REGIONAL_DOMAIN_EVENT_LIMIT = 240;
@@ -13,10 +14,6 @@ function periodFor(dateState) {
   const year = Number.isInteger(dateState?.year) ? dateState.year : 317;
   const month = Number.isInteger(dateState?.month) ? dateState.month : 4;
   return `${year}-${month}`;
-}
-
-function settlementName(baseName, level) {
-  return `${baseName}${level === "city" ? "市" : level === "town" ? "町" : "村"}`;
 }
 
 function colorFor(text) {
@@ -115,6 +112,7 @@ export function createRegionalDomainState(runtime, source = null, dateState = nu
     shortName: polity.shortName ?? polity.name.replace(/独立領|自由領|共和国|王国/g, ""),
     color: /^#[0-9a-f]{6}$/i.test(polity.color ?? "") ? polity.color : colorFor(id),
     government: polity.government ?? "独立地域政権",
+    polity: polity.polity && typeof polity.polity === "object" ? clone(polity.polity) : null,
     peopleId: polity.peopleId ?? null,
     peopleName: polity.peopleName ?? "地域住民",
     settlementStyle: polity.settlementStyle ?? "地域自治集落",
@@ -192,14 +190,14 @@ function effectiveNationMap(runtime, domains) {
     };
   });
   const regionById = new Map(regions.map((region) => [region.id, region]));
-  const objects = runtime.nations.objects.map((object) => {
+  let objects = runtime.nations.objects.map((object) => {
     const region = regionById.get(object.regionId);
     const settlement = domains.settlementStates[object.id];
     const assetId = ["fort", "castle"].includes(object.type) ? `${object.type}:${object.id}` : object.settlementLevel ? `facility:${object.id}` : null;
     const asset = assetId ? domains.assetStates[assetId] : null;
     if (!settlement) return { ...object, nationId: region?.nationId ?? object.nationId, condition: asset?.condition ?? 100, available: asset?.available ?? true };
-    const preservesSpecialRole = Boolean(object.maritime) || ["castle", "fort"].includes(object.type);
-    return {
+    const preservesSpecialRole = Boolean(object.maritime || object.capitalCity) || ["castle", "fort"].includes(object.type);
+    const effectiveObject = {
       ...object,
       nationId: region?.nationId ?? object.nationId,
       type: preservesSpecialRole ? object.type : settlement.level,
@@ -207,13 +205,14 @@ function effectiveNationMap(runtime, domains) {
       settlementLevel: settlement.level,
       population: settlement.population,
       growthRate: settlement.growthRate,
-      name: preservesSpecialRole ? object.name : settlementName(object.baseName, settlement.level),
+      name: preservesSpecialRole ? object.name : formatSettlementName(object.baseName, settlement.level),
       importance: preservesSpecialRole ? object.importance : settlement.level === "city" ? 3 : settlement.level === "town" ? 2 : 1,
       condition: asset?.condition ?? 100,
       available: asset?.available ?? true,
     };
+    return effectiveObject;
   });
-  const objectById = new Map(objects.map((object) => [object.id, object]));
+  let objectById = new Map(objects.map((object) => [object.id, object]));
   const roads = (runtime.nations.roads ?? []).map((road) => ({
     ...road,
     condition: domains.assetStates[`road:${road.id}`]?.condition ?? 100,
@@ -260,7 +259,7 @@ function effectiveNationMap(runtime, domains) {
   });
   const baseNationById = new Map(runtime.nations.nations.map((nation) => [nation.id, nation]));
   const allNationIds = [...new Set([...baseNationById.keys(), ...Object.keys(domains.independentPolities)])];
-  const nations = allNationIds.map((nationId) => {
+  let nations = allNationIds.map((nationId) => {
     const polity = domains.independentPolities[nationId];
     const ownedRegions = regions.filter((region) => region.nationId === nationId);
     const ownedObjects = objects.filter((object) => object.nationId === nationId);
@@ -273,6 +272,9 @@ function effectiveNationMap(runtime, domains) {
     const unchangedBaseNation = !polity
       && ownedRegions.length === origin.regionIds.length
       && origin.regionIds.every((regionId) => ownedRegions.some((region) => region.id === regionId));
+    const polityProfile = polity?.polity ?? origin.polity;
+    const capitalSettlement = capitalObject?.settlementLevel ? capitalObject : ownedObjects.find((object) => object.settlementLevel) ?? null;
+    const capitalSeat = ownedObjects.find((object) => object.type === "castle") ?? null;
     return {
       ...origin,
       ...(polity ?? {}),
@@ -281,6 +283,9 @@ function effectiveNationMap(runtime, domains) {
       shortName: polity?.shortName ?? origin.shortName,
       color: polity?.color ?? origin.color,
       government: polity?.government ?? origin.government,
+      polity: polityProfile,
+      rulerTitle: polityProfile?.rulerTitle ?? origin.rulerTitle,
+      capitalTitle: polityProfile?.capitalTitle ?? origin.capitalTitle,
       peopleId: polity?.peopleId ?? origin.peopleId,
       peopleName: polity?.peopleName ?? origin.peopleName,
       settlementStyle: polity?.settlementStyle ?? origin.settlementStyle,
@@ -293,6 +298,13 @@ function effectiveNationMap(runtime, domains) {
       roadIds: roads.filter((road) => road.nationIds.includes(nationId)).map((road) => road.id),
       portIds: ownedObjects.filter((object) => object.maritime).map((object) => object.id),
       seaRouteIds: seaRoutes.filter((route) => route.nationIds.includes(nationId)).map((route) => route.id),
+      capitalName: capitalSettlement?.name ?? capitalSeat?.name ?? origin.capitalName,
+      capitalSettlementObjectId: capitalSettlement?.id ?? null,
+      capitalSeatObjectId: capitalSeat?.id ?? null,
+      urbanFunctionCounts: Object.fromEntries([...ownedObjects.filter((object) => object.settlementLevel).reduce((counts, object) => {
+        for (const functionId of object.functionIds ?? []) counts.set(functionId, (counts.get(functionId) ?? 0) + 1);
+        return counts;
+      }, new Map())].sort()),
       tileCount,
       areaShare: Number((tileCount / Math.max(1, runtime.nations.summary.claimedLandTiles)).toFixed(4)),
       populationPotential: unchangedBaseNation ? origin.populationPotential : ownedRegions.reduce((sum, region) => sum + region.population, 0),
@@ -300,7 +312,46 @@ function effectiveNationMap(runtime, domains) {
       dissolved: ownedRegions.length === 0,
     };
   });
-  const nationById = new Map(nations.map((nation) => [nation.id, nation]));
+  let nationById = new Map(nations.map((nation) => [nation.id, nation]));
+  objects = objects.map((object) => {
+    if (!object.settlementLevel) return object;
+    const nation = nationById.get(object.nationId);
+    const region = regionById.get(object.regionId);
+    const capitalCity = object.id === nation?.capitalSettlementObjectId;
+    const effectiveObject = {
+      ...object,
+      capitalCity,
+      name: object.type === "castle"
+        ? `${nation?.shortName ?? object.baseName}${nation?.polity?.seatLabel ?? "中央政庁"}`
+        : capitalCity
+          ? formatSettlementName(object.baseName, object.settlementLevel, { capitalCity: true, capitalTitle: nation?.capitalTitle ?? "首都" })
+          : object.maritime
+            ? object.name
+            : formatSettlementName(object.baseName, object.settlementLevel),
+    };
+    const functionProfile = deriveSettlementFunctions({
+      object: effectiveObject,
+      tile: runtime.terrain.tiles[effectiveObject.tileIndex],
+      region,
+      nation,
+      roads,
+    });
+    return functionProfile ? { ...effectiveObject, ...functionProfile } : effectiveObject;
+  });
+  objectById = new Map(objects.map((object) => [object.id, object]));
+  nations = nations.map((nation) => {
+    const ownedObjects = objects.filter((object) => object.nationId === nation.id);
+    const capitalSettlement = objectById.get(nation.capitalSettlementObjectId);
+    return {
+      ...nation,
+      capitalName: capitalSettlement?.name ?? nation.capitalName,
+      urbanFunctionCounts: Object.fromEntries([...ownedObjects.filter((object) => object.settlementLevel).reduce((counts, object) => {
+        for (const functionId of object.functionIds ?? []) counts.set(functionId, (counts.get(functionId) ?? 0) + 1);
+        return counts;
+      }, new Map())].sort()),
+    };
+  });
+  nationById = new Map(nations.map((nation) => [nation.id, nation]));
   const visualRevision = [
     ...regions.map((region) => `${region.id}:${region.nationId}`),
     ...objects.filter((object) => object.settlementLevel).map((object) => `${object.id}:${object.settlementLevel}`),
@@ -482,12 +533,14 @@ export function declareRegionIndependence(runtime, source, regionId, options = {
   const polityId = options.polityId ?? `independent-${regionId}`;
   const previousNationId = next.regionStates[regionId].nationId;
   const originNation = runtime.nationById.get(region.nationId);
+  const polity = options.polity ?? originNation?.polity ?? deriveNationPolity({ peopleId: originNation?.peopleId ?? "human" });
   next.independentPolities[polityId] = {
     id: polityId,
     name: options.name ?? `${region.name.replace(/地方$/, "")}独立領`,
     shortName: options.shortName ?? region.name.replace(/地方$/, ""),
     color: options.color ?? colorFor(polityId),
     government: options.government ?? "独立地域政権",
+    polity: { ...polity, governmentName: options.government ?? polity.governmentName ?? "独立地域政権" },
     peopleId: originNation?.peopleId ?? null,
     peopleName: originNation?.peopleName ?? "地域住民",
     settlementStyle: originNation?.settlementStyle ?? "地域自治集落",

@@ -102,6 +102,7 @@ import {
   normalizeGeneratedWorldState,
   setGeneratedPlayerNation,
 } from "./generated-world-system.js";
+import { derivePolityForForm } from "./world-polity-system.js";
 import {
   CENTRALIZATION_STAGES,
   HISTORY_POLICIES,
@@ -1229,6 +1230,10 @@ export function performCareerAction(state, actionId, delegation = {}) {
       name: `${next.player.name}の${government?.name ?? "独立国"}`,
       shortName: next.player.name,
       government: government?.name ?? "独立地域政権",
+      polity: derivePolityForForm(next.player.governmentFormId, {
+        governmentName: government?.name ?? "独立地域政権",
+        rulerTitle: next.player.title,
+      }),
       founderId: next.player.id,
       founderName: next.player.name,
       officeTitle: next.player.title,

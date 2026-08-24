@@ -310,6 +310,13 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .v3-world-dossier p > strong { color: #e5d181; }
 .v3-world-dossier p > small { color: #8fa098; letter-spacing: 0; }
 .v3-world-dossier .v3-dossier-war { display: block; padding: 6px; border-left: 2px solid #ad685e; background: #241a1a; }
+.v3-world-current-polity { background: #10272a !important; box-shadow: inset 0 0 0 2px #243c3c; }
+.v3-dossier-settlement { display: grid; gap: 4px; margin-top: 9px; padding-top: 8px; border-top: 1px solid #465c56; }
+.v3-dossier-settlement > small { color: #d8c576; font-weight: 900; letter-spacing: .12em; }
+.v3-dossier-settlement > strong { color: #f0ead0; font: 800 15px Georgia, "Yu Mincho", serif; }
+.v3-dossier-settlement > span { color: #aebbb3; font-size: 9px; }
+.v3-dossier-settlement > div { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
+.v3-dossier-settlement > div > i { padding: 3px 6px; border: 1px solid #6e7962; border-radius: 999px; color: #e1d68f; background: #203635; font-size: 9px; font-style: normal; font-weight: 800; }
 .v3-world-chronicle ol, .v3-world-chronicle { min-height: 0; }
 .v3-world-chronicle ol { display: grid; gap: 0; margin: 8px 0 0; padding: 0; list-style: none; }
 .v3-world-chronicle li { display: grid; padding: 7px 0; border-top: 1px solid #2e433d; }

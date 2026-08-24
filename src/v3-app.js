@@ -138,6 +138,7 @@ const elements = {
   worldHistoryLabel: document.querySelector("#v3WorldHistoryLabel"),
   worldStats: document.querySelector("#v3WorldStats"),
   worldNationList: document.querySelector("#v3WorldNationList"),
+  worldMapDossier: document.querySelector("#v3WorldMapDossier"),
   worldDossier: document.querySelector("#v3WorldDossier"),
   worldChronicle: document.querySelector("#v3WorldChronicle"),
   worldMapPosition: document.querySelector("#v3WorldMapPosition"),
@@ -489,7 +490,7 @@ function renderGame() {
   elements.terrainLabel.textContent = location.tile.name;
   elements.terrainEffect.textContent = `${location.tile.passable ? `移動${location.tile.travelMinutes}分` : "通行不能"} · ${location.tile.terrainNote}`;
   elements.nearbyLabel.textContent = location.nearestSettlement
-    ? `${location.nearestSettlement.settlement.name}まで約${Math.round(location.nearestSettlement.distance)}歩`
+    ? `${location.nearestSettlement.settlement.name}（${location.nearestSettlementFunction?.name ?? "集落"}）まで約${Math.round(location.nearestSettlement.distance)}歩`
     : "近くに集落はない";
   elements.chunkLabel.textContent = `詳細生成 ${state.generatedChunks.length}区画 · ${state.steps}歩`;
   elements.messages.innerHTML = state.messageLog.map((message, index) => `<p${index === 0 ? ' class="is-latest"' : ""}>${escapeHtml(message)}</p>`).join("");
@@ -628,6 +629,35 @@ function regionCountFor(map, nationId) {
   return [...map.regionById.values()].filter((region) => region.nationId === nationId).length;
 }
 
+function renderCurrentPolity(map) {
+  const location = getV3LocationSummary(context, state);
+  const nationId = map.tileNationIds[location.tile.macroIndex] ?? null;
+  const nation = map.nationById.get(nationId) ?? null;
+  const polity = nation?.polity;
+  const nearby = location.nearestSettlement;
+  const settlement = nearby
+    ? map.objects.find((object) => object.id === nearby.settlement.id) ?? nearby.settlement
+    : null;
+  const functionNames = settlement?.functions?.map((entry) => entry.name) ?? [];
+  if (!nation) {
+    elements.worldMapDossier.innerHTML = `<header><div><small>${map.isCurrent ? "CURRENT LOCATION" : "HISTORICAL LOCATION"}</small><strong>無主地</strong><span>${escapeHtml(formatWorldPeriod(map))}</span></div></header><p>この時点では国家の統治下にありません。</p>`;
+    return;
+  }
+  elements.worldMapDossier.innerHTML = `
+    <header><i style="--nation-color:${escapeHtml(nation.color)}"></i><div><small>${map.isCurrent ? "CURRENT LOCATION" : "HISTORICAL LOCATION"}</small><strong>${escapeHtml(nation.name)}</strong><span>${escapeHtml(formatWorldPeriod(map))}</span></div></header>
+    <dl>
+      <div><dt>国家形態</dt><dd>${escapeHtml(polity?.formName ?? nation.government ?? "不明")}</dd></div>
+      <div><dt>政治制度</dt><dd>${escapeHtml(polity?.politicalSystemName ?? nation.government ?? "不明")}</dd></div>
+      <div><dt>元首</dt><dd>${escapeHtml(polity?.rulerTitle ?? nation.rulerTitle ?? "不明")}</dd></div>
+      <div><dt>首都</dt><dd>${escapeHtml(nation.capitalName ?? `${polity?.capitalTitle ?? nation.capitalTitle ?? "首都"}${nation.shortName ?? ""}`)}</dd></div>
+    </dl>
+    <div class="v3-dossier-settlement">
+      <small>NEAREST SETTLEMENT</small>
+      <strong>${escapeHtml(settlement?.name ?? "近隣集落なし")}</strong>
+      ${settlement ? `<span>${Math.round(nearby.distance)}歩 · 人口 ${Number(settlement.population ?? 0).toLocaleString("ja-JP")}</span><div>${functionNames.length ? functionNames.map((name) => `<i>${escapeHtml(name)}</i>`).join("") : "<i>都市機能未分類</i>"}</div>` : "<span>32歩以内に集落はありません。</span>"}
+    </div>`;
+}
+
 function renderWorldPanels(map) {
   const historyMaximum = Math.max(0, worldSimulation.history.length - 1);
   elements.worldHistory.max = String(historyMaximum);
@@ -644,6 +674,7 @@ function renderWorldPanels(map) {
     button.classList.toggle("is-active", active);
     button.setAttribute("aria-pressed", String(active));
   });
+  renderCurrentPolity(map);
 
   const activeNations = map.nations.filter((nation) => regionCountFor(map, nation.id) > 0);
   const settlementCount = map.objects.filter((object) => object.settlementLevel).length;
@@ -660,7 +691,8 @@ function renderWorldPanels(map) {
     const warText = dossier.wars.length
       ? dossier.wars.map((war) => `${escapeHtml(map.nationById.get(war.attackerNationId)?.name ?? war.attackerName ?? "不明勢力")} 対 ${escapeHtml(map.nationById.get(war.defenderNationId)?.name ?? war.defenderName ?? "不明勢力")}`).join(" / ")
       : "交戦なし";
-    elements.worldDossier.innerHTML = `<header><i style="--nation-color:${escapeHtml(dossier.nation.color)}"></i><div><small>${dossier.isHistorical ? "HISTORICAL POLITY" : "NATION DOSSIER"}</small><strong>${escapeHtml(dossier.nation.name)}</strong><span>${escapeHtml(dossier.nation.government ?? "統治形態不明")}</span></div></header><dl><div><dt>領域</dt><dd>${dossier.regions.length}地方</dd></div><div><dt>人口</dt><dd>${Math.round(dossier.population).toLocaleString("ja-JP")}人</dd></div><div><dt>集落</dt><dd>都${dossier.settlementCounts.city}・町${dossier.settlementCounts.town}・村${dossier.settlementCounts.village}</dd></div><div><dt>隣国</dt><dd>${dossier.neighbors.length}勢力</dd></div>${condition ? `<div><dt>結束</dt><dd>${condition.cohesion}</dd></div><div><dt>備蓄</dt><dd>${condition.reserves}</dd></div><div><dt>態勢</dt><dd>${escapeHtml(condition.posture)}</dd></div><div><dt>緊張関係</dt><dd>${relationWarning}</dd></div>` : ""}</dl><p class="v3-dossier-war">${warText}</p>${dossier.latestAction ? `<p><strong>直近の判断</strong><span>${escapeHtml(dossier.latestAction.title)}</span><small>${escapeHtml(dossier.latestAction.summary)}</small></p>` : ""}`;
+    const polity = dossier.nation.polity;
+    elements.worldDossier.innerHTML = `<header><i style="--nation-color:${escapeHtml(dossier.nation.color)}"></i><div><small>${dossier.isHistorical ? "HISTORICAL POLITY" : "NATION DOSSIER"}</small><strong>${escapeHtml(dossier.nation.name)}</strong><span>${escapeHtml(polity?.formName ?? dossier.nation.government ?? "統治形態不明")} / ${escapeHtml(polity?.politicalSystemName ?? dossier.nation.government ?? "制度不明")}</span></div></header><dl><div><dt>元首</dt><dd>${escapeHtml(polity?.rulerTitle ?? dossier.nation.rulerTitle ?? "不明")}</dd></div><div><dt>首都</dt><dd>${escapeHtml(dossier.nation.capitalName ?? `${polity?.capitalTitle ?? dossier.nation.capitalTitle ?? "首都"}${dossier.nation.shortName ?? ""}`)}</dd></div><div><dt>領域</dt><dd>${dossier.regions.length}地方</dd></div><div><dt>人口</dt><dd>${Math.round(dossier.population).toLocaleString("ja-JP")}人</dd></div><div><dt>集落</dt><dd>都${dossier.settlementCounts.city}・町${dossier.settlementCounts.town}・村${dossier.settlementCounts.village}</dd></div><div><dt>隣国</dt><dd>${dossier.neighbors.length}勢力</dd></div>${condition ? `<div><dt>結束</dt><dd>${condition.cohesion}</dd></div><div><dt>備蓄</dt><dd>${condition.reserves}</dd></div><div><dt>態勢</dt><dd>${escapeHtml(condition.posture)}</dd></div><div><dt>緊張関係</dt><dd>${relationWarning}</dd></div>` : ""}</dl><p class="v3-dossier-war">${warText}</p>${dossier.latestAction ? `<p><strong>直近の判断</strong><span>${escapeHtml(dossier.latestAction.title)}</span><small>${escapeHtml(dossier.latestAction.summary)}</small></p>` : ""}`;
   }
 
   const maximumPeriod = periodNumber(map.period);

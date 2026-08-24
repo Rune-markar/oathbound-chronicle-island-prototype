@@ -10,6 +10,7 @@ import {
   getV3CombatPresentation,
   getV3DetailedTile,
   getV3FieldView,
+  getV3LocationSummary,
   getV3TileEntity,
   moveV3Player,
   normalizeV3FieldState,
@@ -38,7 +39,12 @@ import { executeBattleTurn } from "../src/tactical-battle.js";
 function fixtureRuntime() {
   const width = 8;
   const height = 8;
-  const nation = { id: "nation-1", name: "試験王国", color: "#668855" };
+  const nation = {
+    id: "nation-1",
+    name: "試験王国",
+    color: "#668855",
+    polity: { formName: "王国", politicalSystemName: "封建君主制", rulerTitle: "国王", capitalTitle: "王都" },
+  };
   const region = { id: "region-1", nationId: nation.id, name: "試験地方" };
   const tiles = Array.from({ length: width * height }, (_, index) => {
     const x = index % width;
@@ -58,7 +64,23 @@ function fixtureRuntime() {
       riverId: y === 5 ? "river-1" : null,
     };
   });
-  const settlement = { id: "village-1", name: "試験村", settlementLevel: "village", importance: 1, population: 600, nationId: nation.id, regionId: region.id, tileIndex: 27, x: 3, y: 3 };
+  const settlement = {
+    id: "village-1",
+    name: "試験村",
+    settlementLevel: "village",
+    importance: 1,
+    population: 600,
+    nationId: nation.id,
+    regionId: region.id,
+    tileIndex: 27,
+    x: 3,
+    y: 3,
+    primaryFunction: { id: "commercial_city", name: "商業都市" },
+    functionIds: ["commercial_city"],
+    functions: [{ id: "commercial_city", name: "商業都市" }],
+    services: ["market"],
+    gameplay: { merchantBias: 0.18, adventurerBias: 0, merchantPriceModifier: -2 },
+  };
   return {
     terrain: { width, height, seed: "v3-fixture", config: { width, height, wrapX: true } },
     tiles,
@@ -307,6 +329,9 @@ test("村の周辺には村人・冒険者・商人、野外には敵とアイ�
   assert.ok(entities.some((entity) => entity.type === "item"));
   assert.ok(entities.some((entity) => entity.type === "npc" && ["villager", "adventurer"].includes(entity.role)));
   assert.ok(entities.some((entity) => entity.type === "npc" && entity.role === "merchant"));
+  const localMerchants = entities.filter((entity) => entity.type === "npc" && entity.role === "merchant" && entity.settlementId === "village-1");
+  assert.ok(localMerchants.length > 0);
+  assert.ok(localMerchants.every((merchant) => merchant.price === 3 && merchant.settlementFunctionName === "商業都市"));
   const fieldState = createV3FieldState(context);
   const startingEnemies = [];
   for (let dy = -40; dy <= 40; dy += 1) {
@@ -317,6 +342,17 @@ test("村の周辺には村人・冒険者・商人、野外には敵とアイ�
   }
   assert.ok(startingEnemies.length > 0);
   assert.ok(startingEnemies.every((entity) => entity.level === 1));
+});
+
+test("現在地要約は国家体制と最寄り集落の都市機能を参照できる", () => {
+  const context = createV3WorldContext(fixtureRuntime());
+  const summary = getV3LocationSummary(context, {
+    player: { x: 3 * V3_DETAIL_SCALE + 4, y: 3 * V3_DETAIL_SCALE + 4 },
+    clockMinutes: 8 * 60,
+  });
+  assert.equal(summary.nation.polity.formName, "王国");
+  assert.equal(summary.nearestSettlement.settlement.name, "試験村");
+  assert.equal(summary.nearestSettlementFunction.name, "商業都市");
 });
 
 test("敵を発見すると敵の手前で止まり、探索中と同じ詳細マップが個人戦になる", () => {
@@ -412,6 +448,7 @@ test("既定入口はV3フィールドで、個人戦はフィールド内、集
   assert.match(index, /GENERATION V3/);
   assert.match(index, /id="v3Field"/);
   assert.match(index, /id="v3WorldCanvas"/);
+  assert.match(index, /id="v3WorldMapDossier"/);
   assert.match(index, /id="v3PersonalBattleStatus"/);
   assert.match(index, /id="v3PersonalBattleCommands"/);
   assert.match(index, /id="v3MilitaryButton"/);
@@ -421,6 +458,8 @@ test("既定入口はV3フィールドで、個人戦はフィールド内、集
   assert.match(app, /createV3GroupBattleHandoff/);
   assert.match(app, /startV3MilitaryMission\(context, state, worldSimulation\)/);
   assert.match(app, /legacy-v2\.html/);
+  assert.match(app, /polity\?\.politicalSystemName/);
+  assert.match(styles, /\.v3-world-current-polity/);
   assert.match(styles, /\.v3-game\.is-personal-battle \.v3-field-shell/);
   assert.match(styles, /\.v3-tile\.is-oasis/);
   assert.match(styles, /\.v3-tile\.is-volcano/);

@@ -115,17 +115,33 @@ test("human, beastfolk, and dwarf capitals follow their background habitats", ()
 test("generated states expose geographic government, economy, population, and shared borders", () => {
   const world = generateTerrain(TERRAIN_OPTIONS);
   const politics = generateNations(world, { count: 7 });
+  assert.equal(politics.version, 9);
+  assert.equal(politics.config.polityModelVersion, 1);
+  assert.deepEqual(politics.config.polityReferenceIds, ["fantasy-glossary-polities-cities"]);
   assert.ok(politics.borderSegments.length > 0);
   assert.ok(Object.keys(politics.sharedBorderLengths).length > 0);
   assert.equal(politics.summary.naturalBorderSegmentCount + politics.summary.artificialBorderSegmentCount, politics.summary.borderSegmentCount);
   assert.ok(politics.borderSegments.every((segment) => segment.frontierType && typeof segment.natural === "boolean"));
   for (const nation of politics.nations) {
     assert.ok(nation.government.length > 0);
+    assert.equal(nation.government, nation.polity.governmentName);
+    assert.ok(nation.polity.formId && nation.polity.politicalSystemId);
+    assert.ok(nation.rulerTitle && nation.capitalTitle && nation.capitalName);
+    assert.ok(nation.capitalSettlementObjectId && nation.capitalSeatObjectId);
+    assert.ok(Object.keys(nation.urbanFunctionCounts).length > 0);
     assert.ok(nation.economy.length > 0);
     assert.ok(nation.populationPotential > 0);
     assert.ok(nation.tileCount > 0);
     assert.ok(nation.meanFertility >= 0 && nation.meanFertility <= 100);
   }
+  assert.ok(politics.regions.every((region) => {
+    const nation = politics.nations.find((entry) => entry.id === region.nationId);
+    return Object.values(nation.polity.officeTitles).includes(region.officeTitle);
+  }));
+  assert.ok(politics.objects.filter((object) => object.settlementLevel).every((object) => (
+    object.functionIds.length > 0 && object.primaryFunction.id && object.services.length > 0 && object.gameplay
+  )));
+  assert.ok(politics.summary.settlementFunctionCounts.capital >= politics.nations.length);
 });
 
 test("natural-frontier policy reduces artificial straight-line borders", () => {

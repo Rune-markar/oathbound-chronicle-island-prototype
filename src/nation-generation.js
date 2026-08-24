@@ -5,6 +5,14 @@ import {
   squareWrappedDeltaX,
 } from "./square-grid.js";
 import { getRaceCategory, requireRaceDefinition } from "./race-list.js";
+import {
+  WORLD_POLITY_MODEL_REFERENCES,
+  WORLD_POLITY_MODEL_VERSION,
+  deriveNationPolity,
+  deriveSettlementFunctions,
+  formatSettlementName,
+  regionalOfficeTitle,
+} from "./world-polity-system.js";
 
 const NATION_COLORS = Object.freeze([
   "#d45d57", "#d89b45", "#d4c25a", "#73a85b",
@@ -455,10 +463,6 @@ export function settlementLevelForPopulation(population) {
   return "village";
 }
 
-function settlementName(baseName, level) {
-  return `${baseName}${level === "city" ? "市" : level === "town" ? "町" : "村"}`;
-}
-
 function settlementPopulation(tile, seed, nation, region, localIndex, role) {
   const variation = hashUnit(seed, nation.index, region.index, tile.index, localIndex, "settlement-population");
   const natural = Math.round(
@@ -574,7 +578,7 @@ function buildWorldObjects(world, nations, regions, ownerIndex, seed, reservedTi
       tileIndex: capital.index,
       x: capital.x,
       y: capital.y,
-      name: `${nation.shortName}王城`,
+      name: `${nation.shortName}${nation.polity.seatLabel}`,
       importance: 3,
       regionId: regions.find((region) => region.capital && region.nationId === nation.id)?.id ?? null,
     });
@@ -607,7 +611,7 @@ function buildWorldObjects(world, nations, regions, ownerIndex, seed, reservedTi
         const castle = objects.find((object) => object.id === `${nation.id}-castle`);
         Object.assign(castle, {
           settlementLevel: "city",
-          baseName: `${nation.shortName}王城`,
+          baseName: nation.shortName,
           population: 12000,
           growthRate: 0.003,
           regionSeat: true,
@@ -624,7 +628,7 @@ function buildWorldObjects(world, nations, regions, ownerIndex, seed, reservedTi
     const population = settlementPopulation(selected, seed, nation, region, 0, role);
     const settlementLevel = settlementLevelForPopulation(population);
     const stemOffset = Math.floor(hashUnit(seed, nation.index, region.index, "settlement-names") * VILLAGE_NAME_STEMS.length);
-    const baseName = `${nation.shortName}${VILLAGE_NAME_STEMS[stemOffset]}`;
+    const baseName = region.capital ? nation.shortName : `${nation.shortName}${VILLAGE_NAME_STEMS[stemOffset]}`;
     objects.push({
       id: `${region.id}-settlement-1`,
       type: settlementLevel,
@@ -644,7 +648,10 @@ function buildWorldObjects(world, nations, regions, ownerIndex, seed, reservedTi
       tileIndex: selected.index,
       x: selected.x,
       y: selected.y,
-      name: settlementName(baseName, settlementLevel),
+      name: formatSettlementName(baseName, settlementLevel, {
+        capitalCity: role === "capital-city",
+        capitalTitle: nation.polity.capitalTitle,
+      }),
       importance: settlementLevel === "city" ? 3 : 2,
     });
   }
@@ -980,7 +987,7 @@ function buildRoadsideSettlements(world, nations, regions, objects, trunkRoads, 
         tileIndex: selected.index,
         x: selected.x,
         y: selected.y,
-        name: settlementName(baseName, settlementLevel),
+        name: formatSettlementName(baseName, settlementLevel),
         importance: 1,
       });
     }
@@ -1224,21 +1231,6 @@ function addStrategicCrossingForts(world, regions, objects, roads, seed) {
   return added;
 }
 
-function governmentFor(stats, archetype) {
-  if (archetype.id === "dwarf") return { government: "坑道都市連邦", suffix: "坑道国" };
-  if (archetype.id === "beastfolk") return { government: "森林氏族同盟", suffix: "氏族同盟" };
-  if (archetype.id === "elf") return { government: "森王庭連合", suffix: "森王国" };
-  if (archetype.id === "lizardman") return { government: "水郷氏族連合", suffix: "河国" };
-  if (archetype.id === "goblin") return { government: "工房集落評議会", suffix: "工房国" };
-  if (archetype.id === "giant") return { government: "高峰氏族領", suffix: "峰国" };
-  if (stats.mountainShare >= 0.34) return { government: "山岳連邦", suffix: "連邦" };
-  if (stats.coastalShare >= 0.32 && stats.commercePerTile >= 0.62) return { government: "海洋都市同盟", suffix: "都市同盟" };
-  if (stats.meanFertility >= 59 && stats.flatShare >= 0.48) return { government: "農耕王政", suffix: "王国" };
-  if (stats.productionPerTile >= 2.05) return { government: "諸侯公国", suffix: "公国" };
-  if (stats.meanFreshwater >= 0.48) return { government: "河川共和政", suffix: "共和国" };
-  return { government: "地域王政", suffix: "王国" };
-}
-
 function primaryEconomy(stats) {
   const entries = [
     ["農耕", stats.food],
@@ -1273,8 +1265,8 @@ function buildNationRecords(world, seeds, ownerIndex, seed) {
       commercePerTile: commerce / Math.max(1, tiles.length),
       productionPerTile: production / Math.max(1, tiles.length),
     };
-    const government = governmentFor(stats, entry.archetype);
     const nationLevel = nationLevelForTerritory(tiles.length, meanNationSize);
+    const polity = deriveNationPolity({ peopleId: entry.archetype.id, stats, nationLevel });
     const villageLimitBase = NATION_LEVEL_VILLAGE_BASELINES[nationLevel];
     const initialVillageLimit = initialVillageLimitForNationLevel(nationLevel, seed, index);
     let rootIndex = Math.floor(hashUnit(seed, index, entry.tile.index, "name") * NAME_ROOTS.length);
@@ -1286,10 +1278,13 @@ function buildNationRecords(world, seeds, ownerIndex, seed) {
     return {
       id: `nation-${index + 1}`,
       index,
-      name: `${rootName}${government.suffix}`,
+      name: `${rootName}${polity.nationSuffix}`,
       shortName: rootName,
       color: NATION_COLORS[index % NATION_COLORS.length],
-      government: government.government,
+      government: polity.governmentName,
+      polity,
+      rulerTitle: polity.rulerTitle,
+      capitalTitle: polity.capitalTitle,
       economy: primaryEconomy(stats),
       peopleId: entry.archetype.id,
       peopleName: entry.archetype.name,
@@ -1567,9 +1562,12 @@ export function validateNationWorld(world, nationWorld) {
     if (nationWorld.tileNationIds[nation.capitalIndex] !== nation.id) issues.push(`${nation.name} does not own its capital.`);
     if (nation.tileCount < 1) issues.push(`${nation.name} has no territory.`);
     if (!nation.peopleId || !nation.settlementStyle) issues.push(`${nation.name} has no people or settlement background.`);
+    if (!nation.polity?.formId || !nation.polity?.politicalSystemId || !nation.polity?.rulerTitle || !nation.polity?.capitalTitle) issues.push(`${nation.name} has an incomplete polity profile.`);
+    if (nation.government !== nation.polity?.governmentName) issues.push(`${nation.name} has inconsistent government labels.`);
     if (!(nation.capital.habitatMatch >= 0 && nation.capital.habitatMatch <= 1)) issues.push(`${nation.name} has an invalid capital habitat match.`);
     const castles = (nationWorld.objects ?? []).filter((object) => object.nationId === nation.id && object.type === "castle");
-    if (castles.length !== 1 || castles[0]?.tileIndex !== nation.capitalIndex) issues.push(`${nation.name} has no castle on its capital tile.`);
+    if (castles.length !== 1 || castles[0]?.tileIndex !== nation.capitalIndex) issues.push(`${nation.name} has no central seat on its capital tile.`);
+    if (castles[0] && !castles[0].name.includes(nation.polity?.seatLabel ?? "")) issues.push(`${nation.name} has an inconsistent central seat title.`);
     if (!nation.regionIds?.length) issues.push(`${nation.name} is not composed of any regions.`);
     if (nation.tileCount >= 2 && nation.regionIds?.length < 2) issues.push(`${nation.name} is not divided into multiple administrative regions.`);
     if (!nation.regionIds?.includes(nation.capitalRegionId)) issues.push(`${nation.name} has no capital region.`);
@@ -1591,7 +1589,9 @@ export function validateNationWorld(world, nationWorld) {
     if (!region.tileIndices.every((index) => nationWorld.tileRegionIds[index] === region.id)) issues.push(`${region.name} has inconsistent tile membership.`);
     if (!region.tileIndices.every((index) => nationWorld.tileNationIds[index] === region.nationId)) issues.push(`${region.name} crosses a national boundary.`);
     if (region.neighborIds.some((neighborId) => !(nationWorld.regions ?? []).some((candidate) => candidate.id === neighborId))) issues.push(`${region.name} has an invalid neighbor.`);
-    if (!region.officeTitle) issues.push(`${region.name} has no regional lordship office.`);
+    if (!region.officeTitle) issues.push(`${region.name} has no regional office.`);
+    const regionNation = nationWorld.nations.find((nation) => nation.id === region.nationId);
+    if (regionNation && region.officeTitle !== regionalOfficeTitle(regionNation.polity, region)) issues.push(`${region.name} has an office title inconsistent with its polity.`);
     if (region.settlementIds?.length && !region.roadHubObjectId) issues.push(`${region.name} has settlements but no road hub.`);
   }
   const objectIds = new Set();
@@ -1603,6 +1603,7 @@ export function validateNationWorld(world, nationWorld) {
     if (!tile || !isLand(tile)) issues.push(`World object ${object.id} is not placed on land.`);
     if (tile && nationWorld.tileNationIds[object.tileIndex] !== object.nationId) issues.push(`World object ${object.id} is outside its nation.`);
     if (object.settlementLevel && (object.settlementLevel !== settlementLevelForPopulation(object.population) || !object.baseName)) issues.push(`Settlement ${object.id} has an invalid population level.`);
+    if (object.settlementLevel && (!object.functionIds?.length || !object.primaryFunction?.id || !Array.isArray(object.services) || !object.gameplay)) issues.push(`Settlement ${object.id} has no urban-function profile.`);
     if (object.maritime && (!MARITIME_OBJECT_TYPES.has(object.type) || !tile || !isCoastal(tile, world) || !object.seaAccessTileIndices?.length)) issues.push(`Maritime settlement ${object.id} has no valid sea access.`);
     if (object.placement === "roadside-expansion" && (!(object.roadsideDistance >= 0) || object.roadsideDistance > ROADSIDE_SETTLEMENT_MAX_OFFSET || !(object.expansionWave >= 1))) {
       issues.push(`Roadside settlement ${object.id} is outside its staged road corridor.`);
@@ -1725,7 +1726,8 @@ export function generateNations(world, options = {}) {
     region.frontier = neighborRegions.some((neighbor) => neighbor.nationId !== region.nationId);
     region.status = "integrated";
     region.uninhabited = localSettlements.length === 0;
-    region.officeTitle = region.capital ? "王都総督" : region.frontier ? "辺境伯" : "地方伯";
+    const nation = baseNations.find((candidate) => candidate.id === region.nationId);
+    region.officeTitle = regionalOfficeTitle(nation?.polity, region);
     region.seatObjectId = localSettlements.find((object) => object.regionSeat)?.id ?? localSettlements[0]?.id ?? null;
     region.roadHubObjectId = roadNetwork.hubObjectIds[region.id] ?? region.seatObjectId;
     region.settlementIds = localSettlements.map((object) => object.id);
@@ -1733,6 +1735,18 @@ export function generateNations(world, options = {}) {
     region.seaRouteIds = maritimeNetwork.routes.filter((route) => route.regionIds.includes(region.id)).map((route) => route.id);
     region.population = localSettlements.reduce((sum, object) => sum + object.population, 0);
   });
+  for (const object of objects.filter((entry) => entry.settlementLevel)) {
+    const nation = baseNations.find((candidate) => candidate.id === object.nationId);
+    object.frontierSettlement = isFrontierTile(world.tiles[object.tileIndex], world, ownerIndex);
+    const urbanProfile = deriveSettlementFunctions({
+      object,
+      tile: world.tiles[object.tileIndex],
+      region: regionById.get(object.regionId),
+      nation,
+      roads: roadNetwork.roads,
+    });
+    Object.assign(object, urbanProfile);
+  }
   const objectsByNation = objects.reduce((groups, object) => {
     if (!groups.has(object.nationId)) groups.set(object.nationId, []);
     groups.get(object.nationId).push(object);
@@ -1742,16 +1756,29 @@ export function generateNations(world, options = {}) {
     const nationObjects = objectsByNation.get(nation.id) ?? [];
     const nationRegions = regional.regions.filter((region) => region.nationId === nation.id);
     const initialVillageCount = nationObjects.filter((object) => object.settlementLevel === "village").length;
+    const capitalRegion = nationRegions.find((region) => region.capital) ?? nationRegions[0];
+    const capitalSettlement = nationObjects.find((object) => object.capitalCity)
+      ?? nationObjects.find((object) => object.regionSeat && object.regionId === capitalRegion?.id)
+      ?? null;
+    const capitalSeat = nationObjects.find((object) => object.type === "castle") ?? null;
+    const urbanFunctionCounts = Object.fromEntries([...nationObjects.filter((object) => object.settlementLevel).reduce((counts, object) => {
+      for (const functionId of object.functionIds ?? []) counts.set(functionId, (counts.get(functionId) ?? 0) + 1);
+      return counts;
+    }, new Map())].sort());
     return {
       ...nation,
       regionIds: nationRegions.map((region) => region.id),
       regionCount: nationRegions.length,
-      capitalRegionId: nationRegions.find((region) => region.capital)?.id ?? nationRegions[0]?.id,
+      capitalRegionId: capitalRegion?.id,
       objectIds: nationObjects.map((object) => object.id),
       objectCounts: Object.fromEntries(Object.keys(GENERATED_WORLD_OBJECT_TYPES).map((type) => [type, nationObjects.filter((object) => object.type === type).length])),
       roadIds: roadNetwork.roads.filter((road) => road.nationIds.includes(nation.id)).map((road) => road.id),
       portIds: nationObjects.filter((object) => object.maritime).map((object) => object.id),
       seaRouteIds: maritimeNetwork.routes.filter((route) => route.nationIds.includes(nation.id)).map((route) => route.id),
+      capitalName: capitalSettlement?.name ?? capitalSeat?.name ?? `${nation.capitalTitle}${nation.shortName}`,
+      capitalSettlementObjectId: capitalSettlement?.id ?? null,
+      capitalSeatObjectId: capitalSeat?.id ?? null,
+      urbanFunctionCounts,
       initialVillageCount,
       settlementPopulation: nationObjects.reduce((sum, object) => sum + (object.population ?? 0), 0),
     };
@@ -1780,6 +1807,8 @@ export function generateNations(world, options = {}) {
       nationLevelBasis: "relative-territory-size",
       nationLevelVillageBaselines: NATION_LEVEL_VILLAGE_BASELINES,
       nationVillageLimitMinimumShare: NATION_VILLAGE_LIMIT_MINIMUM_SHARE,
+      polityModelVersion: WORLD_POLITY_MODEL_VERSION,
+      polityReferenceIds: Object.freeze(WORLD_POLITY_MODEL_REFERENCES.map((reference) => reference.id)),
     }),
     nations,
     regions: regional.regions,
@@ -1816,6 +1845,10 @@ export function generateNations(world, options = {}) {
       initialVillageCount: nations.reduce((sum, nation) => sum + nation.initialVillageCount, 0),
       initialVillageLimit: nations.reduce((sum, nation) => sum + nation.initialVillageLimit, 0),
       settlementPopulation: objects.reduce((sum, object) => sum + (object.population ?? 0), 0),
+      settlementFunctionCounts: Object.fromEntries([...objects.filter((object) => object.settlementLevel).reduce((counts, object) => {
+        for (const functionId of object.functionIds ?? []) counts.set(functionId, (counts.get(functionId) ?? 0) + 1);
+        return counts;
+      }, new Map())].sort()),
       peopleCounts: Object.fromEntries([...nations.reduce((counts, nation) => {
         counts.set(nation.peopleId, (counts.get(nation.peopleId) ?? 0) + 1);
         return counts;

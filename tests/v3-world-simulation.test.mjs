@@ -84,6 +84,12 @@ test("現在と過去年代は別の地図ビューを作り、国家詳細を�
   assert.ok(dossier.regions.length > 0);
   assert.ok(dossier.settlements.length > 0);
   assert.ok(dossier.condition);
+  assert.ok(dossier.nation.polity?.formName);
+  assert.ok(dossier.nation.polity?.politicalSystemName);
+  assert.ok(dossier.nation.capitalName);
+  const historicalDossier = getV3NationDossier(runtime, simulation, historical.nations.find((entry) => !entry.dissolved).id, 0);
+  assert.ok(historicalDossier.nation.polity?.formName);
+  assert.ok(historicalDossier.nation.capitalName);
 });
 
 test("V3世界セーブはJSON往復後も現在年月・動的国境・年代記を正規化する", () => {
@@ -105,9 +111,12 @@ test("V3通常地図に政治・地形・地方・戦争レイヤー、年代再
   assert.match(index, /id="v3WorldHistory"/);
   assert.match(index, /data-v3-world-advance="1"/);
   assert.match(index, /id="v3WorldDossier"/);
+  assert.match(index, /id="v3WorldMapDossier"/);
   assert.match(index, /id="v3WorldChronicle"/);
   assert.match(app, /buildV3WorldPrehistory/);
   assert.match(app, /getV3NationDossier/);
+  assert.match(app, /renderCurrentPolity/);
   assert.match(styles, /\.v3-world-map-workspace/);
   assert.match(styles, /\.v3-world-nation-list/);
+  assert.match(styles, /\.v3-dossier-settlement/);
 });

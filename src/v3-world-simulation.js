@@ -55,6 +55,17 @@ function generatedStateFor(simulation) {
   };
 }
 
+function compactPolity(polity) {
+  if (!polity || typeof polity !== "object") return null;
+  return {
+    ...polity,
+    officeTitles: { ...(polity.officeTitles ?? {}) },
+    sovereignty: { ...(polity.sovereignty ?? {}) },
+    modifiers: { ...(polity.modifiers ?? {}) },
+    sourceReferenceIds: [...(polity.sourceReferenceIds ?? [])],
+  };
+}
+
 function compactNation(nation) {
   return {
     id: nation.id,
@@ -62,6 +73,10 @@ function compactNation(nation) {
     shortName: nation.shortName ?? nation.name,
     color: nation.color,
     government: nation.government ?? "統治形態不明",
+    polity: compactPolity(nation.polity),
+    rulerTitle: nation.rulerTitle ?? nation.polity?.rulerTitle ?? null,
+    capitalTitle: nation.capitalTitle ?? nation.polity?.capitalTitle ?? null,
+    capitalName: nation.capitalName ?? null,
     peopleName: nation.peopleName ?? "住民",
     regionCount: nation.regionIds?.length ?? nation.regionCount ?? 0,
     population: Math.round(Number(nation.settlementPopulation ?? nation.populationPotential) || 0),
@@ -170,22 +185,30 @@ function normalizeSnapshot(runtime, source) {
   )));
   if (!Object.keys(regionOwners).length) return null;
   const nations = (Array.isArray(source.nations) ? source.nations : []).filter((nation) => nation && typeof nation.id === "string")
-    .map((nation) => ({
-      id: nation.id,
-      name: String(nation.name ?? nation.id),
-      shortName: String(nation.shortName ?? nation.name ?? nation.id),
-      color: /^#[0-9a-f]{6}$/i.test(nation.color ?? "") ? nation.color : "#78837a",
-      government: String(nation.government ?? "統治形態不明"),
-      peopleName: String(nation.peopleName ?? "住民"),
-      regionCount: Math.max(0, Math.round(Number(nation.regionCount) || 0)),
-      population: Math.max(0, Math.round(Number(nation.population) || 0)),
-      settlementCounts: {
-        city: Math.max(0, Math.round(Number(nation.settlementCounts?.city) || 0)),
-        town: Math.max(0, Math.round(Number(nation.settlementCounts?.town) || 0)),
-        village: Math.max(0, Math.round(Number(nation.settlementCounts?.village) || 0)),
-      },
-      dissolved: Boolean(nation.dissolved),
-    }));
+    .map((nation) => {
+      const fallback = runtime.nationById.get(nation.id);
+      const polity = compactPolity(nation.polity) ?? compactPolity(fallback?.polity);
+      return {
+        id: nation.id,
+        name: String(nation.name ?? nation.id),
+        shortName: String(nation.shortName ?? nation.name ?? nation.id),
+        color: /^#[0-9a-f]{6}$/i.test(nation.color ?? "") ? nation.color : "#78837a",
+        government: String(nation.government ?? fallback?.government ?? "統治形態不明"),
+        polity,
+        rulerTitle: String(nation.rulerTitle ?? polity?.rulerTitle ?? fallback?.rulerTitle ?? ""),
+        capitalTitle: String(nation.capitalTitle ?? polity?.capitalTitle ?? fallback?.capitalTitle ?? ""),
+        capitalName: String(nation.capitalName ?? fallback?.capitalName ?? ""),
+        peopleName: String(nation.peopleName ?? "住民"),
+        regionCount: Math.max(0, Math.round(Number(nation.regionCount) || 0)),
+        population: Math.max(0, Math.round(Number(nation.population) || 0)),
+        settlementCounts: {
+          city: Math.max(0, Math.round(Number(nation.settlementCounts?.city) || 0)),
+          town: Math.max(0, Math.round(Number(nation.settlementCounts?.town) || 0)),
+          village: Math.max(0, Math.round(Number(nation.settlementCounts?.village) || 0)),
+        },
+        dissolved: Boolean(nation.dissolved),
+      };
+    });
   const [fallbackYear, fallbackMonth] = source.period.split("-").map(Number);
   return {
     period: source.period,
