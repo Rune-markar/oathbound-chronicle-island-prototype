@@ -35,6 +35,7 @@ import {
 } from "../src/battle-preparation.js";
 import { createBattleResult } from "../src/battle-results.js";
 import { executeBattleTurn } from "../src/tactical-battle.js";
+import { createRaceDecisionWorldState, TEMPERAMENT_IDS } from "../src/race-decision-system.js";
 
 function fixtureRuntime() {
   const width = 8;
@@ -317,6 +318,7 @@ test("V3集団戦の戦闘前編成を中止すると作戦地点から再開で
 test("村の周辺には村人・冒険者・商人、野外には敵とアイテムが決定論的に現れる", () => {
   const runtime = fixtureRuntime();
   const context = createV3WorldContext(runtime, "encounter-fixture");
+  context.raceDynamics = createRaceDecisionWorldState(runtime, null, { year: 317, month: 4 });
   const emptyState = { defeatedTiles: [], collectedTiles: [], interactedTiles: [] };
   const entities = [];
   for (let y = 0; y < context.height; y += 1) {
@@ -329,6 +331,11 @@ test("村の周辺には村人・冒険者・商人、野外には敵とアイ�
   assert.ok(entities.some((entity) => entity.type === "item"));
   assert.ok(entities.some((entity) => entity.type === "npc" && ["villager", "adventurer"].includes(entity.role)));
   assert.ok(entities.some((entity) => entity.type === "npc" && entity.role === "merchant"));
+  assert.ok(entities.filter((entity) => entity.type === "npc").every((entity) => (
+    TEMPERAMENT_IDS.includes(entity.temperamentId)
+      && Object.keys(entity.decisionTraits).length === 6
+      && entity.populationGroupIds.length === 2
+  )));
   const localMerchants = entities.filter((entity) => entity.type === "npc" && entity.role === "merchant" && entity.settlementId === "village-1");
   assert.ok(localMerchants.length > 0);
   assert.ok(localMerchants.every((merchant) => merchant.price === 3 && merchant.settlementFunctionName === "商業都市"));

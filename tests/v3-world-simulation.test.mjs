@@ -13,7 +13,7 @@ import {
   normalizeV3WorldSimulation,
   V3_PRESENT_DATE,
 } from "../src/v3-world-simulation.js";
-import { getTemperamentShares, TEMPERAMENT_IDS } from "../src/race-decision-system.js";
+import { analyzeRaceDecisionBalance, getTemperamentShares, TEMPERAMENT_IDS } from "../src/race-decision-system.js";
 
 const OPTIONS = Object.freeze({ seed: "v3-world-simulation-fixture", width: 72, height: 48, plateCount: 11, nationCount: 3 });
 
@@ -58,6 +58,7 @@ test("50年事前史は人口・気質・統治者・国家判断を一つの決
   const simulation = await buildV3WorldPrehistory(runtime, options, { months: 600 });
   assert.equal(simulation.prehistoryMonths, 600);
   assert.equal(simulation.generatedWorld.raceDynamics.lastAdvancedPeriod, "317-4");
+  assert.equal(Object.keys(simulation.generatedWorld.raceDynamics.characterProfiles).length, 9);
   assert.ok(Object.values(simulation.generatedWorld.raceDynamics.nationProfiles).some((profile) => profile.leader.generation > 1));
   let compositionChanged = false;
   for (const [raceId, raceState] of Object.entries(simulation.generatedWorld.raceDynamics.races)) {
@@ -68,6 +69,9 @@ test("50年事前史は人口・気質・統治者・国家判断を一つの決
     if (TEMPERAMENT_IDS.some((id) => Math.abs(shares[id] - initialShares[id]) > 0.005)) compositionChanged = true;
   }
   assert.equal(compositionChanged, true);
+  const balance = analyzeRaceDecisionBalance(simulation.generatedWorld.raceDynamics);
+  assert.ok(balance.maximumProjectionError < 0.02);
+  assert.equal(balance.fixedCharacterCount, 9);
   const decisions = simulation.generatedWorld.geopolitics.events.filter((event) => event.alternatives?.length);
   assert.ok(decisions.length > 0);
   for (const event of decisions.slice(-8)) {
@@ -122,6 +126,7 @@ test("現在と過去年代は別の地図ビューを作り、国家詳細を�
   assert.ok(dossier.decisionProfile);
   assert.equal(Object.keys(dossier.decisionProfile.traits).length, 6);
   assert.equal(Object.keys(dossier.decisionProfile.temperamentShares).length, 4);
+  assert.deepEqual(Object.keys(dossier.decisionProfile.populationGroups), ["regional", "socialClass", "faith"]);
   const historicalDossier = getV3NationDossier(runtime, simulation, historical.nations.find((entry) => !entry.dissolved).id, 0);
   assert.ok(historicalDossier.nation.polity?.formName);
   assert.ok(historicalDossier.nation.capitalName);
@@ -153,8 +158,11 @@ test("V3通常地図に政治・地形・地方・戦争レイヤー、年代再
   assert.match(app, /renderCurrentPolity/);
   assert.match(app, /renderDecisionProfile/);
   assert.match(app, /直近判断の確率分布/);
+  assert.match(app, /POPULATION PROJECTIONS/);
+  assert.match(app, /長期均衡/);
   assert.match(styles, /\.v3-world-map-workspace/);
   assert.match(styles, /\.v3-world-nation-list/);
   assert.match(styles, /\.v3-dossier-settlement/);
   assert.match(styles, /\.v3-temperament-grid/);
+  assert.match(styles, /\.v3-population-groups/);
 });

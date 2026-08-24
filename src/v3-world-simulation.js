@@ -15,6 +15,7 @@ import {
   preserveRaceDecisionWorldState,
 } from "./race-decision-system.js";
 import { deriveNationPolity } from "./world-polity-system.js";
+import { UNIQUE_CHARACTERS } from "./unique-characters.js";
 
 export const V3_WORLD_SIMULATION_VERSION = 2;
 export const V3_PRESENT_DATE = Object.freeze({ year: 317, month: 4 });
@@ -23,6 +24,7 @@ export const V3_PREHISTORY_REGIONAL_CADENCE_MONTHS = 4;
 export const V3_HISTORY_SNAPSHOT_LIMIT = 120;
 
 const simulationViewCache = new WeakMap();
+const FIXED_WORLD_CHARACTERS = Object.freeze(Object.values(UNIQUE_CHARACTERS));
 
 const clamp = (value, minimum, maximum) => Math.min(maximum, Math.max(minimum, Number(value) || 0));
 
@@ -243,7 +245,9 @@ export function createV3WorldSimulation(runtime, options = {}, dateState = V3_PR
     month: clamp(Math.round(dateState?.month ?? V3_PRESENT_DATE.month), 1, 12),
   };
   const generatedWorld = createGeneratedWorldState(options, date);
-  generatedWorld.raceDynamics = createRaceDecisionWorldState(runtime, generatedWorld.raceDynamics, date);
+  generatedWorld.raceDynamics = createRaceDecisionWorldState(runtime, generatedWorld.raceDynamics, date, {
+    fixedCharacters: FIXED_WORLD_CHARACTERS,
+  });
   const simulation = {
     version: V3_WORLD_SIMULATION_VERSION,
     year: date.year,
@@ -268,7 +272,9 @@ export function normalizeV3WorldSimulation(runtime, options = {}, source = null)
     month: clamp(Math.round(source.month ?? V3_PRESENT_DATE.month), 1, 12),
   };
   const generatedWorld = createGeneratedWorldState({ ...options, ...(source.generatedWorld ?? {}) }, date);
-  generatedWorld.raceDynamics = createRaceDecisionWorldState(runtime, generatedWorld.raceDynamics, date);
+  generatedWorld.raceDynamics = createRaceDecisionWorldState(runtime, generatedWorld.raceDynamics, date, {
+    fixedCharacters: FIXED_WORLD_CHARACTERS,
+  });
   const simulation = {
     version: V3_WORLD_SIMULATION_VERSION,
     year: date.year,
@@ -551,7 +557,10 @@ export function getV3NationDossier(runtime, simulation, nationId, historyIndex =
   let condition = null;
   let relations = [];
   let latestAction = null;
-  const decisionProfile = deriveNationDecisionProfile(runtime, map.raceDynamics, nationId, nation);
+  const decisionProfile = deriveNationDecisionProfile(runtime, map.raceDynamics, nationId, {
+    ...nation,
+    regionIds: regions.map((region) => region.id),
+  });
   if (map.isCurrent) {
     const geopolitics = getGeneratedGeopoliticalView(generatedStateFor(simulation));
     condition = geopolitics.geopolitics.nationStates[nationId] ?? null;

@@ -10,7 +10,7 @@ import { V3_SYSTEM_KERNEL_VERSION, V3_SYSTEM_REGISTRY } from "./v3-system-kernel
 import { V3_WORLD_SIMULATION_VERSION, V3_PRESENT_DATE } from "./v3-world-simulation.js";
 import { RACE_DECISION_SCHEMA_VERSION } from "./race-decision-system.js";
 
-export const V3_SAVE_VERSION = 5;
+export const V3_SAVE_VERSION = 6;
 
 function currentModule(id, version) {
   return { id, version, legacyVersion: version };
@@ -36,6 +36,29 @@ function migrateWorldSimulationV1ToV2(raw) {
       generatedWorld: {
         ...(raw.worldSimulation.generatedWorld ?? {}),
         tacticalOutcomeReceipts: tacticalOutcomeReceipts(raw.worldSimulation.generatedWorld),
+      },
+    },
+  };
+}
+
+function migrateRaceDecisionsV1ToV2(raw) {
+  const dynamics = raw.worldSimulation?.generatedWorld?.raceDynamics;
+  if (!dynamics || typeof dynamics !== "object") return raw;
+  return {
+    ...raw,
+    worldSimulation: {
+      ...raw.worldSimulation,
+      generatedWorld: {
+        ...(raw.worldSimulation.generatedWorld ?? {}),
+        raceDynamics: {
+          ...dynamics,
+          schemaVersion: RACE_DECISION_SCHEMA_VERSION,
+          races: Object.fromEntries(Object.entries(dynamics.races ?? {}).map(([raceId, race]) => [raceId, {
+            ...race,
+            populationGroups: race?.populationGroups ?? {},
+          }])),
+          characterProfiles: dynamics.characterProfiles ?? {},
+        },
       },
     },
   };
@@ -71,13 +94,18 @@ export const V3_SAVE_REGISTRY = createSaveRegistry({
       legacyVersion: (raw) => Number(raw.worldSimulation?.version) || 1,
       migrations: { 1: migrateWorldSimulationV1ToV2 },
     },
-    currentModule("race-decisions", RACE_DECISION_SCHEMA_VERSION),
+    {
+      id: "race-decisions",
+      version: RACE_DECISION_SCHEMA_VERSION,
+      legacyVersion: (raw) => Number(raw.worldSimulation?.generatedWorld?.raceDynamics?.schemaVersion) || 1,
+      migrations: { 1: migrateRaceDecisionsV1ToV2 },
+    },
     currentModule("system-kernel", V3_SYSTEM_KERNEL_VERSION),
     ...V3_SYSTEM_REGISTRY.modules.map(({ id, version }) => currentModule(id, version)),
     currentModule("domain-events", 1),
   ],
   migrate(raw) {
-    if (![3, 4, V3_SAVE_VERSION].includes(raw?.version) || !raw.world?.seed || !raw.field) return null;
+    if (![3, 4, 5, V3_SAVE_VERSION].includes(raw?.version) || !raw.world?.seed || !raw.field) return null;
     const field = migrateLegacyClock(raw.field, raw.worldSimulation);
     const calendar = getGameCalendar(field.clock);
     return {

@@ -370,6 +370,18 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .v3-temperament-grid meter::-webkit-meter-bar { height: 5px; border: 0; border-radius: 0; background: #0a1b1d; }
 .v3-temperament-grid meter::-webkit-meter-optimum-value { background: #b6a14f; }
 .v3-temperament-grid meter::-moz-meter-bar { background: #b6a14f; }
+.v3-population-groups { display: grid; gap: 5px; padding: 6px; background: #102426; }
+.v3-population-groups > header { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 3px 8px; }
+.v3-population-groups > header span { color: #8fa39e; font-size: 8px; }
+.v3-population-groups > section { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 3px 6px; align-items: center; }
+.v3-population-groups > section > small { grid-row: 1 / span 4; color: #d8c576; font-size: 8px; font-weight: 900; letter-spacing: .08em; }
+.v3-population-groups > section > span { display: flex; min-width: 0; justify-content: space-between; gap: 6px; color: #b9c5bf; font-size: 8px; }
+.v3-population-groups > section b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.v3-population-groups > section i { flex: none; color: #e2ce78; font-style: normal; }
+.v3-decision-balance { display: flex !important; flex-wrap: wrap; justify-content: space-between; gap: 2px 8px; margin: 0 !important; padding: 5px 6px !important; background: #102426; }
+.v3-decision-balance strong, .v3-decision-balance span { font-size: 8px; }
+.v3-decision-balance[data-status="stable"] strong { color: #91c1a4; }
+.v3-decision-balance[data-status="watch"] strong { color: #e0b56b; }
 .v3-world-dossier .v3-decision-axes { grid-template-columns: repeat(3, 1fr); gap: 4px; margin: 0; }
 .v3-world-dossier .v3-decision-axes div { padding: 3px 4px; background: #102426; border: 0; }
 .v3-decision-axes dd[data-sign="positive"] { color: #e2ce78; }
@@ -497,7 +509,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   .v3-world-map > header { grid-template-columns: minmax(0, 1fr) auto auto; gap: 7px; }
   .v3-world-map h1 { font-size: 21px; }
   .v3-world-map > header p { display: none; }
-  .v3-world-map > header button { min-height: 44px; padding: 5px 8px; border-width: 1px; box-shadow: none; font-size: 9px; }
+  .v3-world-map > header button { min-width: 44px; min-height: 44px; padding: 5px 8px; border-width: 1px; box-shadow: none; font-size: 9px; }
   .v3-world-date { min-width: 82px; padding: 5px 7px; }
   .v3-world-date strong { font-size: 11px; }
   .v3-world-layers { gap: 4px; }

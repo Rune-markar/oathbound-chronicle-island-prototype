@@ -400,7 +400,7 @@ function renderEncounter() {
     return;
   }
   elements.encounterSymbol.textContent = encounter.symbol;
-  elements.encounterType.textContent = encounter.role === "merchant" ? "TRAVELING MERCHANT" : "FIELD ENCOUNTER";
+  elements.encounterType.textContent = `${encounter.role === "merchant" ? "TRAVELING MERCHANT" : "FIELD ENCOUNTER"}${encounter.temperamentName ? ` · ${encounter.temperamentName}` : ""}`;
   elements.encounterTitle.textContent = encounter.name;
   elements.encounterText.textContent = encounter.message;
   elements.encounterActions.innerHTML = `${encounter.role === "merchant" ? `<button class="is-primary" type="button" data-v3-encounter="buy">薬草を買う · 銀貨${encounter.price ?? 5}</button>` : '<button class="is-primary" type="button" data-v3-encounter="talk">話す</button>'}<button type="button" data-v3-encounter="leave">別れる</button>`;
@@ -776,11 +776,21 @@ function renderDecisionProfile(profile, latestAction, peopleName) {
     <span><b>${escapeHtml(GEOPOLITICAL_PULL_SET[entry.id]?.name ?? entry.id)}</b><i>${Math.round((Number(entry.probability) || 0) * 100)}%</i></span>
   `).join("");
   const agendas = (profile.historicalAgendas ?? []).slice(-2).map((agenda) => `<li>${escapeHtml(agenda.title)}</li>`).join("");
+  const populationGroups = Object.values(profile.populationGroups ?? {}).map((dimension) => {
+    const groups = (dimension.groups ?? []).slice(0, dimension.id === "regional" ? 3 : 4).map((group) => {
+      const temperament = group.representativeTemperament;
+      return `<span><b>${escapeHtml(group.name)}</b><i>${escapeHtml(temperament?.name ?? "混合")} ${Math.round((Number(temperament?.share) || 0) * 100)}%</i></span>`;
+    }).join("");
+    return groups ? `<section><small>${escapeHtml(dimension.name)}</small>${groups}</section>` : "";
+  }).join("");
+  const balance = profile.balance;
   return `
     <section class="v3-decision-profile" aria-label="${escapeHtml(peopleName)}の気質構成と国家意思決定">
       <header><small>RACE DYNAMICS</small><strong>${escapeHtml(peopleName)} · ${escapeHtml(profile.representativeTemperament?.name ?? "混合気質")}</strong><span>統治者 ${escapeHtml(TEMPERAMENTS[profile.leader?.temperamentId]?.name ?? "個性不明")}</span></header>
       <div class="v3-temperament-grid">${temperamentEntries.map((entry) => `<span><b>${escapeHtml(entry.name)}</b><i>${entry.percent}%</i><meter min="0" max="100" value="${entry.percent}" aria-label="${escapeHtml(entry.name)} ${entry.percent}%"></meter></span>`).join("")}</div>
+      ${populationGroups ? `<div class="v3-population-groups"><header><small>POPULATION PROJECTIONS</small><span>同じ人口を地方・階級・信仰で集計</span></header>${populationGroups}</div>` : ""}
       <dl class="v3-decision-axes">${axes}</dl>
+      ${balance ? `<p class="v3-decision-balance" data-status="${escapeHtml(balance.status)}"><strong>長期均衡 ${balance.status === "stable" ? "安定" : "要観察"}</strong><span>多様性 ${Math.round(balance.diversity * 100)}%${balance.warnings.length ? ` · ${escapeHtml(balance.warnings.join(" / "))}` : ""}</span></p>` : ""}
       ${probabilities ? `<div class="v3-decision-probabilities"><small>直近判断の確率分布</small>${probabilities}</div>` : ""}
       ${agendas ? `<div class="v3-decision-agendas"><small>歴史アジェンダ</small><ul>${agendas}</ul></div>` : ""}
     </section>`;

@@ -5,8 +5,29 @@ import {
   RACE_DECISION_TRAIT_IDS,
 } from "./race-list.js";
 
-export const RACE_DECISION_SCHEMA_VERSION = 1;
+export const RACE_DECISION_SCHEMA_VERSION = 2;
 export const RACE_DECISION_EVENT_LIMIT = 192;
+
+export const POPULATION_GROUP_DIMENSIONS = Object.freeze({
+  regional: Object.freeze({ id: "regional", name: "地方" }),
+  socialClass: Object.freeze({ id: "socialClass", name: "階級" }),
+  faith: Object.freeze({ id: "faith", name: "信仰" }),
+});
+
+const POPULATION_GROUP_DIMENSION_IDS = Object.freeze(Object.keys(POPULATION_GROUP_DIMENSIONS));
+
+const SOCIAL_CLASS_GROUPS = Object.freeze([
+  Object.freeze({ id: "class:commoner", name: "生活共同体", weight: 0.62, temperamentBias: { submissive: 1.12, cooperative: 1.08 } }),
+  Object.freeze({ id: "class:merchant", name: "交易・職能層", weight: 0.16, temperamentBias: { cooperative: 1.34, independent: 1.08 } }),
+  Object.freeze({ id: "class:warrior", name: "軍務層", weight: 0.14, temperamentBias: { militant: 1.58, independent: 1.12 } }),
+  Object.freeze({ id: "class:elite", name: "統治・有力層", weight: 0.08, temperamentBias: { militant: 1.12, submissive: 1.3 } }),
+]);
+
+const FAITH_GROUPS = Object.freeze([
+  Object.freeze({ id: "faith:ancestral", name: "祖霊・在地信仰", weight: 0.46, temperamentBias: { cooperative: 1.08, independent: 1.2 } }),
+  Object.freeze({ id: "faith:institutional", name: "制度宗派", weight: 0.34, temperamentBias: { submissive: 1.32, cooperative: 1.06 } }),
+  Object.freeze({ id: "faith:reformist", name: "改革・新興信仰", weight: 0.2, temperamentBias: { militant: 1.14, cooperative: 1.2, independent: 1.18 } }),
+]);
 
 export const DECISION_TRAITS = Object.freeze({
   militarism: Object.freeze({ id: "militarism", name: "武断性", negative: "協調的", positive: "武力・強制的" }),
@@ -149,6 +170,137 @@ function normalizeTemperamentPopulation(source, population) {
   return result;
 }
 
+function normalizeGroupDefinitions(definitions = {}) {
+  return Object.fromEntries(POPULATION_GROUP_DIMENSION_IDS.map((dimensionId) => {
+    const entries = Array.isArray(definitions?.[dimensionId]) ? definitions[dimensionId] : [];
+    const seen = new Set();
+    const normalized = entries.filter((entry) => entry && typeof entry.id === "string" && !seen.has(entry.id)).map((entry) => {
+      seen.add(entry.id);
+      return {
+        id: entry.id.slice(0, 180),
+        dimensionId,
+        name: String(entry.name ?? entry.id).slice(0, 120),
+        populationWeight: Math.max(0.000001, Number(entry.populationWeight ?? entry.weight) || 0),
+        temperamentBias: Object.fromEntries(TEMPERAMENT_IDS.map((id) => [id, clamp(entry.temperamentBias?.[id] ?? 1, 0.15, 4)])),
+        regionId: typeof entry.regionId === "string" ? entry.regionId : null,
+        nationId: typeof entry.nationId === "string" ? entry.nationId : null,
+      };
+    });
+    return [dimensionId, normalized];
+  }));
+}
+
+function populationGroupSourceEntries(source, dimensionId) {
+  const dimension = source?.[dimensionId];
+  if (Array.isArray(dimension)) return dimension;
+  return dimension && typeof dimension === "object" ? Object.values(dimension) : [];
+}
+
+function sourceGroupDefinition(group, dimensionId) {
+  return {
+    id: group.id,
+    dimensionId,
+    name: group.name,
+    populationWeight: Math.max(0.000001, Number(group.population) || 0),
+    temperamentBias: Object.fromEntries(TEMPERAMENT_IDS.map((id) => [id, 1])),
+    regionId: group.regionId ?? null,
+    nationId: group.nationId ?? null,
+  };
+}
+
+function fitPopulationGroupDimension(definitions, sourceEntries, targetPopulation, targetTemperaments) {
+  const sourceById = new Map(sourceEntries.filter((entry) => entry && typeof entry.id === "string").map((entry) => [entry.id, entry]));
+  const mergedDefinitions = [...definitions];
+  for (const source of sourceEntries) {
+    if (source?.id && !mergedDefinitions.some((entry) => entry.id === source.id)) {
+      mergedDefinitions.push(sourceGroupDefinition(source, source.dimensionId));
+    }
+  }
+  if (!mergedDefinitions.length) return {};
+  const rawRowWeights = mergedDefinitions.map((definition) => {
+    const preservedPopulation = Number(sourceById.get(definition.id)?.population);
+    return Number.isFinite(preservedPopulation) && preservedPopulation > 0
+      ? preservedPopulation
+      : definition.populationWeight;
+  });
+  const rowWeightTotal = rawRowWeights.reduce((sum, value) => sum + value, 0) || mergedDefinitions.length;
+  const rowTargets = rawRowWeights.map((weight) => targetPopulation * weight / rowWeightTotal);
+  const matrix = mergedDefinitions.map((definition, rowIndex) => {
+    const preserved = sourceById.get(definition.id)?.temperamentPopulation;
+    const values = TEMPERAMENT_IDS.map((temperamentId) => {
+      const sourceValue = Number(preserved?.[temperamentId]);
+      if (Number.isFinite(sourceValue) && sourceValue >= 0) return Math.max(0.0000001, sourceValue);
+      return Math.max(0.0000001,
+        rowTargets[rowIndex] * (Number(targetTemperaments[temperamentId]) || 0) / Math.max(1, targetPopulation)
+          * definition.temperamentBias[temperamentId]);
+    });
+    return values;
+  });
+  for (let iteration = 0; iteration < 12; iteration += 1) {
+    matrix.forEach((row, rowIndex) => {
+      const total = row.reduce((sum, value) => sum + value, 0) || 1;
+      row.forEach((value, columnIndex) => { row[columnIndex] = value * rowTargets[rowIndex] / total; });
+    });
+    TEMPERAMENT_IDS.forEach((temperamentId, columnIndex) => {
+      const total = matrix.reduce((sum, row) => sum + row[columnIndex], 0) || 1;
+      const target = Math.max(0, Number(targetTemperaments[temperamentId]) || 0);
+      matrix.forEach((row) => { row[columnIndex] = row[columnIndex] * target / total; });
+    });
+  }
+  return Object.fromEntries(mergedDefinitions.map((definition, rowIndex) => {
+    const source = sourceById.get(definition.id);
+    const temperamentPopulation = Object.fromEntries(TEMPERAMENT_IDS.map((temperamentId, columnIndex) => [
+      temperamentId,
+      fixed(matrix[rowIndex][columnIndex], 3),
+    ]));
+    const population = fixed(TEMPERAMENT_IDS.reduce((sum, id) => sum + temperamentPopulation[id], 0), 3);
+    return [definition.id, {
+      id: definition.id,
+      dimensionId: definition.dimensionId,
+      name: definition.name,
+      population,
+      temperamentPopulation,
+      regionId: definition.regionId ?? source?.regionId ?? null,
+      nationId: definition.nationId ?? source?.nationId ?? null,
+    }];
+  }));
+}
+
+function createPopulationGroups(source, definitions, population, temperamentPopulation) {
+  const normalizedDefinitions = normalizeGroupDefinitions(definitions);
+  return Object.fromEntries(POPULATION_GROUP_DIMENSION_IDS.map((dimensionId) => {
+    const sourceEntries = populationGroupSourceEntries(source, dimensionId);
+    const resolvedDefinitions = normalizedDefinitions[dimensionId].length
+      ? normalizedDefinitions[dimensionId]
+      : sourceEntries.map((entry) => sourceGroupDefinition(entry, dimensionId));
+    return [dimensionId, fitPopulationGroupDimension(
+      resolvedDefinitions,
+      sourceEntries,
+      population,
+      temperamentPopulation,
+    )];
+  }));
+}
+
+export function getPopulationGroupShares(group) {
+  const population = Math.max(0.001, Number(group?.population) || 0);
+  return Object.fromEntries(TEMPERAMENT_IDS.map((id) => [
+    id,
+    fixed((Number(group?.temperamentPopulation?.[id]) || 0) / population, 6),
+  ]));
+}
+
+export function getRacePopulationGroups(raceState, dimensionId = null) {
+  const dimensions = dimensionId ? [dimensionId] : POPULATION_GROUP_DIMENSION_IDS;
+  return Object.fromEntries(dimensions.filter((id) => POPULATION_GROUP_DIMENSIONS[id]).map((id) => [
+    id,
+    Object.values(raceState?.populationGroups?.[id] ?? {}).map((group) => ({
+      ...group,
+      temperamentShares: getPopulationGroupShares(group),
+    })),
+  ]));
+}
+
 export function getTemperamentShares(raceState) {
   const population = Math.max(1, Number(raceState?.population) || 0);
   return Object.fromEntries(TEMPERAMENT_IDS.map((id) => [
@@ -172,7 +324,7 @@ function normalizeAgenda(source) {
   };
 }
 
-export function createRaceState({ raceId, seed, population = 1, source = null } = {}) {
+export function createRaceState({ raceId, seed, population = 1, source = null, groupDefinitions = null } = {}) {
   if (typeof raceId !== "string" || !raceId) throw new TypeError("RaceState requires a raceId.");
   const total = Math.max(1, fixed(source?.population ?? population, 3));
   const baseTraits = source?.baseTraits
@@ -180,10 +332,12 @@ export function createRaceState({ raceId, seed, population = 1, source = null } 
     : deriveSeededRaceBaseTraits(raceId, seed);
   const initialShares = initialTemperamentShares(raceId, baseTraits, seed);
   const initialPopulation = Object.fromEntries(TEMPERAMENT_IDS.map((id) => [id, initialShares[id] * total]));
+  const temperamentPopulation = normalizeTemperamentPopulation(source?.temperamentPopulation ?? initialPopulation, total);
   return {
     raceId,
     baseTraits,
-    temperamentPopulation: normalizeTemperamentPopulation(source?.temperamentPopulation ?? initialPopulation, total),
+    temperamentPopulation,
+    populationGroups: createPopulationGroups(source?.populationGroups, groupDefinitions, total, temperamentPopulation),
     experience: experienceRecord(source?.experience ?? DEFAULT_EXPERIENCE),
     historicalAgendas: (Array.isArray(source?.historicalAgendas) ? source.historicalAgendas : [])
       .map(normalizeAgenda).filter(Boolean).slice(-MAX_AGENDAS),
@@ -210,8 +364,26 @@ function preserveNationProfile(source) {
   };
 }
 
+function preserveCharacterProfile(source) {
+  if (!source || typeof source.id !== "string" || typeof source.raceId !== "string") return null;
+  return {
+    id: source.id,
+    name: String(source.name ?? source.id).slice(0, 120),
+    raceId: source.raceId,
+    roleId: ROLE_TRAIT_MODIFIERS[source.roleId] ? source.roleId : "citizen",
+    temperamentId: TEMPERAMENTS[source.temperamentId] ? source.temperamentId : "cooperative",
+    individualOffsets: offsetRecord(source.individualOffsets, 20),
+    populationGroupIds: Array.isArray(source.populationGroupIds)
+      ? source.populationGroupIds.filter((id) => typeof id === "string").slice(0, 8)
+      : [],
+    source: String(source.source ?? "fixed-character").slice(0, 80),
+    generatedPeriod: typeof source.generatedPeriod === "string" ? source.generatedPeriod : null,
+  };
+}
+
 export function preserveRaceDecisionWorldState(source) {
-  if (!source || typeof source !== "object" || Number(source.schemaVersion) !== RACE_DECISION_SCHEMA_VERSION) return null;
+  const sourceVersion = Number(source?.schemaVersion);
+  if (!source || typeof source !== "object" || ![1, RACE_DECISION_SCHEMA_VERSION].includes(sourceVersion)) return null;
   const races = {};
   for (const [raceId, raceState] of Object.entries(source.races ?? {})) {
     if (raceState && typeof raceId === "string") races[raceId] = createRaceState({
@@ -226,6 +398,11 @@ export function preserveRaceDecisionWorldState(source) {
     const preserved = preserveNationProfile(profile);
     if (preserved && nationId === preserved.nationId) nationProfiles[nationId] = preserved;
   }
+  const characterProfiles = {};
+  for (const [characterId, profile] of Object.entries(source.characterProfiles ?? {})) {
+    const preserved = preserveCharacterProfile(profile);
+    if (preserved && characterId === preserved.id) characterProfiles[characterId] = preserved;
+  }
   return {
     schemaVersion: RACE_DECISION_SCHEMA_VERSION,
     seed: typeof source.seed === "string" ? source.seed : null,
@@ -233,6 +410,7 @@ export function preserveRaceDecisionWorldState(source) {
     lastAdvancedPeriod: typeof source.lastAdvancedPeriod === "string" ? source.lastAdvancedPeriod : null,
     races,
     nationProfiles,
+    characterProfiles,
     events: (Array.isArray(source.events) ? source.events : []).filter((event) => event && typeof event.id === "string")
       .slice(-RACE_DECISION_EVENT_LIMIT).map((event) => ({ ...event })),
   };
@@ -248,6 +426,43 @@ function populationsByRace(runtime) {
     result[raceId] = (result[raceId] ?? 0) + nationPopulation(nation);
     return result;
   }, {});
+}
+
+function populationGroupDefinitions(runtime, raceId, seed) {
+  const regional = runtime.nations.regions.filter((region) => {
+    const nation = runtime.nationById.get(region.nationId)
+      ?? runtime.nations.nations.find((entry) => entry.id === region.nationId);
+    return (nation?.peopleId ?? "human") === raceId;
+  }).map((region) => ({
+    id: `region:${region.id}`,
+    name: region.name ?? region.id,
+    populationWeight: Math.max(1, Number(region.population) || Number(region.tileCount) || 1),
+    temperamentBias: Object.fromEntries(TEMPERAMENT_IDS.map((id) => [
+      id,
+      fixed(0.88 + hashUnit(seed, raceId, region.id, "regional-temperament", id) * 0.24, 6),
+    ])),
+    regionId: region.id,
+    nationId: region.nationId,
+  }));
+  if (!regional.length) regional.push({
+    id: `region:${raceId}:diaspora`,
+    name: `${normalizedPeopleDefinition(raceId).name}離散共同体`,
+    populationWeight: 1,
+    temperamentBias: {},
+    regionId: null,
+    nationId: null,
+  });
+  return {
+    regional,
+    socialClass: SOCIAL_CLASS_GROUPS.map((entry) => ({
+      ...entry,
+      populationWeight: entry.weight * (0.92 + hashUnit(seed, raceId, entry.id, "population") * 0.16),
+    })),
+    faith: FAITH_GROUPS.map((entry) => ({
+      ...entry,
+      populationWeight: entry.weight * (0.92 + hashUnit(seed, raceId, entry.id, "population") * 0.16),
+    })),
+  };
 }
 
 function politicalAuthority(polity) {
@@ -283,8 +498,25 @@ export function deriveNationCultureTraits(nation) {
   }, 35);
 }
 
-function chooseTemperament(raceState, seed, subjectId) {
-  const shares = getTemperamentShares(raceState);
+function sharesForPopulationGroups(raceState, groupIds = []) {
+  const selected = [];
+  for (const groupId of groupIds) {
+    for (const dimensionId of POPULATION_GROUP_DIMENSION_IDS) {
+      const group = raceState?.populationGroups?.[dimensionId]?.[groupId];
+      if (group) selected.push(getPopulationGroupShares(group));
+    }
+  }
+  if (!selected.length) return getTemperamentShares(raceState);
+  const weights = Object.fromEntries(TEMPERAMENT_IDS.map((id) => [
+    id,
+    selected.reduce((sum, shares) => sum + (Number(shares[id]) || 0), 0) / selected.length,
+  ]));
+  const total = TEMPERAMENT_IDS.reduce((sum, id) => sum + weights[id], 0) || 1;
+  return Object.fromEntries(TEMPERAMENT_IDS.map((id) => [id, weights[id] / total]));
+}
+
+function chooseTemperament(raceState, seed, subjectId, groupIds = []) {
+  const shares = sharesForPopulationGroups(raceState, groupIds);
   const roll = hashUnit(seed, subjectId, "temperament");
   let cursor = 0;
   for (const id of TEMPERAMENT_IDS) {
@@ -325,9 +557,12 @@ export function getRepresentativeTemperament(raceState) {
 export function createIndividualDecisionProfile(raceState, seed, options = {}) {
   const subjectId = String(options.subjectId ?? "anonymous");
   const roleId = ROLE_TRAIT_MODIFIERS[options.roleId] ? options.roleId : "citizen";
+  const populationGroupIds = Array.isArray(options.populationGroupIds)
+    ? options.populationGroupIds.filter((id) => typeof id === "string").slice(0, 8)
+    : [];
   const temperamentId = TEMPERAMENTS[options.temperamentId]
     ? options.temperamentId
-    : chooseTemperament(raceState, seed, subjectId);
+    : chooseTemperament(raceState, seed, subjectId, populationGroupIds);
   const offsets = options.individualOffsets
     ? offsetRecord(options.individualOffsets, 20)
     : individualOffsets(seed, subjectId);
@@ -341,7 +576,96 @@ export function createIndividualDecisionProfile(raceState, seed, options = {}) {
   const traits = Object.fromEntries(RACE_DECISION_TRAIT_IDS.map((id) => [id, clampTrait(
     (Number(raceState?.baseTraits?.[id]) || 0) + temperament[id] + offsets[id] + role[id] + agendaModifiers[id],
   )]));
-  return { id: subjectId, subjectId, raceId: raceState.raceId, roleId, temperamentId, individualOffsets: offsets, traits };
+  return {
+    id: subjectId,
+    subjectId,
+    raceId: raceState.raceId,
+    roleId,
+    temperamentId,
+    individualOffsets: offsets,
+    populationGroupIds,
+    traits,
+  };
+}
+
+function characterRoleId(character) {
+  const roleText = `${character?.gameplay?.role ?? character?.role ?? ""} ${character?.biography?.occupation ?? ""}`;
+  if (character?.gameplay?.commander || /将|軍|騎士|指揮|戦士/.test(roleText)) return "commander";
+  if (/外交|折衝|交渉|受付|商|交易/.test(roleText)) return "diplomat";
+  if (/領主|長|首長|村長|自治/.test(roleText)) return "local_leader";
+  if (/王|皇|君主|統治/.test(roleText)) return "ruler";
+  return "citizen";
+}
+
+function authoredTemperamentId(character, raceState, seed) {
+  const text = [
+    character?.personality?.temperament,
+    ...(character?.personality?.values ?? []),
+    ...(character?.personality?.traits ?? []),
+    character?.gameplay?.role,
+    character?.gameplay?.policy,
+    character?.gameplay?.doctrine,
+    character?.biography?.goal,
+  ].filter(Boolean).join(" ");
+  const patterns = {
+    militant: /勇|武|戦|軍|攻勢|征服|動員|強硬|容赦|先陣|反撃/g,
+    submissive: /忠節|服従|秩序|維持|生存|慎重|規律|義務/g,
+    cooperative: /交渉|外交|合議|共存|調停|契約|協約|救済|穏やか|帰還|守る/g,
+    independent: /自由|自治|独立|個人|放浪|反権力|自ら|開拓/g,
+  };
+  const shares = getTemperamentShares(raceState);
+  const scored = TEMPERAMENT_IDS.map((id) => {
+    const matches = text.match(patterns[id])?.length ?? 0;
+    return { id, score: Math.log(Math.max(0.0001, shares[id])) + matches * 0.72 + hashUnit(seed, character.id, id, "authored-temperament") * 0.08 };
+  }).sort((left, right) => right.score - left.score || left.id.localeCompare(right.id));
+  return scored[0].id;
+}
+
+export function createFixedCharacterDecisionProfiles(raceWorld, characters = [], seed = raceWorld?.seed, period = null) {
+  const list = Array.isArray(characters) ? characters : Object.values(characters ?? {});
+  const profiles = { ...(raceWorld?.characterProfiles ?? {}) };
+  for (const character of list) {
+    const id = String(character?.id ?? character?.identity?.id ?? "");
+    const raceId = String(character?.raceId ?? character?.identity?.raceId ?? "human");
+    const raceState = raceWorld?.races?.[raceId];
+    if (!id || !raceState) continue;
+    const preserved = preserveCharacterProfile(profiles[id]);
+    const roleId = preserved?.roleId ?? characterRoleId(character);
+    const populationGroupIds = preserved?.populationGroupIds?.length
+      ? preserved.populationGroupIds
+      : [roleId === "commander" ? "class:warrior" : roleId === "ruler" ? "class:elite" : roleId === "diplomat" ? "class:merchant" : "class:commoner"];
+    profiles[id] = {
+      id,
+      name: String(character.name ?? character.identity?.name ?? id),
+      raceId,
+      roleId,
+      temperamentId: preserved?.temperamentId ?? authoredTemperamentId(character, raceState, seed),
+      individualOffsets: preserved?.individualOffsets ?? individualOffsets(seed, id),
+      populationGroupIds,
+      source: "UNIQUE_CHARACTERS",
+      generatedPeriod: preserved?.generatedPeriod ?? period,
+    };
+  }
+  return profiles;
+}
+
+export function deriveFixedCharacterDecisionProfile(raceWorld, characterId) {
+  const stored = preserveCharacterProfile(raceWorld?.characterProfiles?.[characterId]);
+  const raceState = stored ? raceWorld?.races?.[stored.raceId] : null;
+  if (!stored || !raceState) return null;
+  return {
+    ...stored,
+    ...createIndividualDecisionProfile(raceState, raceWorld.seed, {
+      subjectId: stored.id,
+      roleId: stored.roleId,
+      temperamentId: stored.temperamentId,
+      individualOffsets: stored.individualOffsets,
+      populationGroupIds: stored.populationGroupIds,
+    }),
+    name: stored.name,
+    source: stored.source,
+    generatedPeriod: stored.generatedPeriod,
+  };
 }
 
 function createNationProfile(runtime, raceState, nation, period, source = null) {
@@ -373,29 +697,45 @@ function createNationProfile(runtime, raceState, nation, period, source = null) 
   };
 }
 
-export function createRaceDecisionWorldState(runtime, source = null, dateState = null) {
+export function createRaceDecisionWorldState(runtime, source = null, dateState = null, options = {}) {
   const preserved = preserveRaceDecisionWorldState(source);
   const seed = String(preserved?.seed ?? runtime.terrain.seed);
   const period = periodFor(dateState);
   const populations = populationsByRace(runtime);
   const races = { ...(preserved?.races ?? {}) };
   for (const [raceId, population] of Object.entries(populations)) {
-    races[raceId] = createRaceState({ raceId, seed, population, source: races[raceId] });
+    races[raceId] = createRaceState({
+      raceId,
+      seed,
+      population,
+      source: races[raceId],
+      groupDefinitions: populationGroupDefinitions(runtime, raceId, seed),
+    });
   }
   const nationProfiles = { ...(preserved?.nationProfiles ?? {}) };
   for (const nation of runtime.nations.nations) {
     const raceId = nation.peopleId ?? "human";
     nationProfiles[nation.id] = createNationProfile(runtime, races[raceId], nation, period, nationProfiles[nation.id]);
   }
-  return {
+  const state = {
     schemaVersion: RACE_DECISION_SCHEMA_VERSION,
     seed,
     establishedPeriod: preserved?.establishedPeriod ?? period,
     lastAdvancedPeriod: preserved?.lastAdvancedPeriod ?? period,
     races,
     nationProfiles,
+    characterProfiles: { ...(preserved?.characterProfiles ?? {}) },
     events: preserved?.events ?? [],
   };
+  if (options.fixedCharacters) {
+    state.characterProfiles = createFixedCharacterDecisionProfiles(
+      state,
+      options.fixedCharacters,
+      seed,
+      period,
+    );
+  }
+  return state;
 }
 
 function agendaRelationModifiers(raceState) {
@@ -408,6 +748,61 @@ function agendaRelationModifiers(raceState) {
   return Object.fromEntries(Object.entries(result).map(([id, value]) => [id, Math.round(clamp(value, -60, 60))]));
 }
 
+function aggregatePopulationGroups(groups) {
+  const population = groups.reduce((sum, group) => sum + (Number(group.population) || 0), 0);
+  const temperamentPopulation = Object.fromEntries(TEMPERAMENT_IDS.map((id) => [
+    id,
+    groups.reduce((sum, group) => sum + (Number(group.temperamentPopulation?.[id]) || 0), 0),
+  ]));
+  return {
+    population: fixed(population, 3),
+    temperamentPopulation,
+    temperamentShares: getPopulationGroupShares({ population, temperamentPopulation }),
+  };
+}
+
+function nationPopulationGroupContext(runtime, raceState, nation) {
+  const runtimeNation = runtime.nationById.get(nation.id) ?? nation;
+  const regionIds = new Set(nation.regionIds ?? runtimeNation.regionIds ?? []);
+  const result = {};
+  for (const dimensionId of POPULATION_GROUP_DIMENSION_IDS) {
+    const allGroups = Object.values(raceState.populationGroups?.[dimensionId] ?? {});
+    const selected = dimensionId === "regional" && regionIds.size
+      ? allGroups.filter((group) => regionIds.has(group.regionId))
+      : allGroups;
+    const effective = selected.length ? selected : allGroups;
+    const aggregate = aggregatePopulationGroups(effective);
+    result[dimensionId] = {
+      id: dimensionId,
+      name: POPULATION_GROUP_DIMENSIONS[dimensionId].name,
+      ...aggregate,
+      groups: effective.slice().sort((left, right) => right.population - left.population || left.id.localeCompare(right.id)).map((group) => ({
+        id: group.id,
+        name: group.name,
+        population: group.population,
+        temperamentShares: getPopulationGroupShares(group),
+        representativeTemperament: TEMPERAMENT_IDS.map((id) => ({ ...TEMPERAMENTS[id], share: getPopulationGroupShares(group)[id] }))
+          .sort((left, right) => right.share - left.share || left.id.localeCompare(right.id))[0],
+      })),
+    };
+  }
+  return result;
+}
+
+function representativeTraitsForShares(raceState, shares) {
+  const globalTraits = deriveRaceRepresentativeTraits(raceState);
+  const globalShares = getTemperamentShares(raceState);
+  return Object.fromEntries(RACE_DECISION_TRAIT_IDS.map((id) => {
+    const localTemperament = TEMPERAMENT_IDS.reduce((sum, temperamentId) => (
+      sum + TEMPERAMENTS[temperamentId].traits[id] * (Number(shares?.[temperamentId]) || 0)
+    ), 0);
+    const globalTemperament = TEMPERAMENT_IDS.reduce((sum, temperamentId) => (
+      sum + TEMPERAMENTS[temperamentId].traits[id] * globalShares[temperamentId]
+    ), 0);
+    return [id, clampTrait(globalTraits[id] + localTemperament - globalTemperament)];
+  }));
+}
+
 function deriveNationDecisionProfileFromState(runtime, raceWorld, nationId, nationOverride = null) {
   const nation = nationOverride?.id === nationId
     ? nationOverride
@@ -417,6 +812,8 @@ function deriveNationDecisionProfileFromState(runtime, raceWorld, nationId, nati
     ?? createNationProfile(runtime, raceWorld.races[nation.peopleId ?? "human"], nation, raceWorld.lastAdvancedPeriod);
   const raceState = raceWorld.races[stored.raceId];
   const representativeTraits = deriveRaceRepresentativeTraits(raceState);
+  const populationGroups = nationPopulationGroupContext(runtime, raceState, nation);
+  const regionalTraits = representativeTraitsForShares(raceState, populationGroups.regional?.temperamentShares);
   const leader = createIndividualDecisionProfile(raceState, runtime.terrain.seed, {
     subjectId: stored.leader.id,
     roleId: stored.leader.roleId,
@@ -425,6 +822,7 @@ function deriveNationDecisionProfileFromState(runtime, raceWorld, nationId, nati
   });
   const traits = Object.fromEntries(RACE_DECISION_TRAIT_IDS.map((id) => [id, clampTrait(
     representativeTraits[id]
+      + (regionalTraits[id] - representativeTraits[id]) * 0.45
       + (Number(stored.cultureTraits[id]) || 0)
       + TEMPERAMENTS[leader.temperamentId].traits[id] * 0.18
       + leader.individualOffsets[id] * 0.55
@@ -437,9 +835,11 @@ function deriveNationDecisionProfileFromState(runtime, raceWorld, nationId, nati
     representativeTraits,
     representativeTemperament: getRepresentativeTemperament(raceState),
     temperamentShares: getTemperamentShares(raceState),
+    populationGroups,
     experience: { ...raceState.experience },
     historicalAgendas: raceState.historicalAgendas.map((agenda) => ({ ...agenda })),
     relationModifiers: agendaRelationModifiers(raceState),
+    balance: raceBalanceReport(raceState),
     cultureTraits: { ...stored.cultureTraits },
     leader,
   };
@@ -463,6 +863,60 @@ function movePopulation(population, from, to, fraction) {
   const amount = Math.min(population[from], population[from] * clamp(fraction, 0, 0.08));
   population[from] -= amount;
   population[to] += amount;
+}
+
+function populationGroupEventMultiplier(group, type, event) {
+  if (group.dimensionId === "regional") {
+    if (event.targetRegionId) return group.regionId === event.targetRegionId ? 1.85 : 0.55;
+    return 0.88 + hashUnit(event.seed ?? "group-event", group.id, type) * 0.24;
+  }
+  if (group.dimensionId === "socialClass") {
+    if (["war", "war_victory", "war_defeat"].includes(type)) {
+      return { "class:warrior": 1.6, "class:elite": 1.12, "class:commoner": 0.82, "class:merchant": 0.72 }[group.id] ?? 1;
+    }
+    if (type === "prosperity" || type === "contact") return group.id === "class:merchant" ? 1.42 : 0.92;
+    if (type === "domination") return group.id === "class:elite" ? 1.3 : 0.96;
+  }
+  if (group.dimensionId === "faith") {
+    if (type === "persecution") return { "faith:reformist": 1.5, "faith:institutional": 1.14, "faith:ancestral": 0.86 }[group.id] ?? 1;
+    if (type === "domination") return group.id === "faith:institutional" ? 1.28 : 0.94;
+    if (type === "contact") return group.id === "faith:reformist" ? 1.34 : 0.93;
+  }
+  return 1;
+}
+
+function reconcilePopulationGroups(before, after, event = {}) {
+  const populationGroups = {};
+  const loss = Math.max(0, before.population - after.population);
+  for (const dimensionId of POPULATION_GROUP_DIMENSION_IDS) {
+    const groups = Object.values(before.populationGroups?.[dimensionId] ?? {});
+    if (!groups.length) {
+      populationGroups[dimensionId] = {};
+      continue;
+    }
+    const exposures = groups.map((group) => Math.max(0.000001,
+      group.population * populationGroupEventMultiplier(group, String(event.type ?? "growth"), event)));
+    const exposureTotal = exposures.reduce((sum, value) => sum + value, 0) || 1;
+    const sourceEntries = groups.map((group, index) => {
+      const nextPopulation = loss > 0
+        ? Math.max(0.001, group.population - loss * exposures[index] / exposureTotal)
+        : Math.max(0.001, group.population * after.population / Math.max(0.001, before.population));
+      const temperamentPopulation = normalizeTemperamentPopulation(group.temperamentPopulation, nextPopulation);
+      const intensity = clamp(event.intensity ?? 0) / 100 * populationGroupEventMultiplier(group, String(event.type ?? ""), event);
+      for (const [from, to, rate] of EVENT_TRANSITIONS[event.type] ?? []) {
+        movePopulation(temperamentPopulation, from, to, rate * intensity);
+      }
+      return { ...group, population: nextPopulation, temperamentPopulation };
+    });
+    const definitions = sourceEntries.map((group) => sourceGroupDefinition(group, dimensionId));
+    populationGroups[dimensionId] = fitPopulationGroupDimension(
+      definitions,
+      sourceEntries,
+      after.population,
+      after.temperamentPopulation,
+    );
+  }
+  return { ...after, populationGroups };
 }
 
 const EVENT_TRANSITIONS = Object.freeze({
@@ -504,6 +958,7 @@ export function applyRaceSocialEvent(source, event = {}) {
     population: source.population,
     source,
   });
+  const baseline = raceState;
   const type = String(event.type ?? "");
   const intensity = clamp(event.intensity ?? 50) / 100;
   const experienceId = {
@@ -519,7 +974,7 @@ export function applyRaceSocialEvent(source, event = {}) {
   raceState.temperamentPopulation = normalizeTemperamentPopulation(population, raceState.population);
   if (event.casualties) raceState = applyCasualties(raceState, event.casualties);
   raceState.lastUpdatedPeriod = event.period ?? raceState.lastUpdatedPeriod;
-  return raceState;
+  return reconcilePopulationGroups(baseline, raceState, event);
 }
 
 function addAgenda(raceState, agenda) {
@@ -542,8 +997,15 @@ function casualtiesByNation(beforeWorldWars, afterWorldWars) {
     const previous = before.get(war.id);
     const attackerLoss = Math.max(0, (Number(war.attacker?.casualties) || 0) - (Number(previous?.attacker?.casualties) || 0));
     const defenderLoss = Math.max(0, (Number(war.defender?.casualties) || 0) - (Number(previous?.defender?.casualties) || 0));
-    losses[war.attackerNationId] = (losses[war.attackerNationId] ?? 0) + attackerLoss;
-    losses[war.defenderNationId] = (losses[war.defenderNationId] ?? 0) + defenderLoss;
+    for (const [nationId, casualties] of [[war.attackerNationId, attackerLoss], [war.defenderNationId, defenderLoss]]) {
+      const current = losses[nationId] ?? { casualties: 0, targetRegionId: war.targetRegionId ?? null, largestRegionalLoss: 0 };
+      current.casualties += casualties;
+      if (casualties > current.largestRegionalLoss) {
+        current.targetRegionId = war.targetRegionId ?? null;
+        current.largestRegionalLoss = casualties;
+      }
+      losses[nationId] = current;
+    }
   }
   return losses;
 }
@@ -574,7 +1036,11 @@ function applyNaturalGrowth(raceState) {
   const shares = getTemperamentShares(raceState);
   for (const id of TEMPERAMENT_IDS) population[id] = Math.max(0, population[id] + growth * shares[id]);
   const total = TEMPERAMENT_IDS.reduce((sum, id) => sum + population[id], 0);
-  return { ...raceState, population: fixed(total, 3), temperamentPopulation: normalizeTemperamentPopulation(population, total) };
+  return reconcilePopulationGroups(raceState, {
+    ...raceState,
+    population: fixed(total, 3),
+    temperamentPopulation: normalizeTemperamentPopulation(population, total),
+  }, { type: "growth", intensity: 0 });
 }
 
 function socialEventRecord(period, raceId, type, detail = {}) {
@@ -618,10 +1084,17 @@ export function advanceRaceDecisionWorld(runtime, source, dateState, context = {
   }
 
   const losses = casualtiesByNation(context.beforeWorldWars, context.worldWars);
-  for (const [nationId, casualties] of Object.entries(losses)) {
+  for (const [nationId, loss] of Object.entries(losses)) {
+    const casualties = Number(loss.casualties) || 0;
     const raceId = raceIdForNation(runtime, nationId);
     if (!raceId || !next.races[raceId] || casualties <= 0) continue;
-    next.races[raceId] = applyRaceSocialEvent(next.races[raceId], { type: "war", intensity: 4, casualties, period });
+    next.races[raceId] = applyRaceSocialEvent(next.races[raceId], {
+      type: "war",
+      intensity: 4,
+      casualties,
+      period,
+      targetRegionId: loss.targetRegionId,
+    });
     currentEvents.push(socialEventRecord(period, raceId, "war_casualties", {
       subjectId: nationId,
       title: `${normalizedPeopleDefinition(raceId).name}の戦争人口選択`,
@@ -649,9 +1122,19 @@ export function advanceRaceDecisionWorld(runtime, source, dateState, context = {
     const subjectRaceId = raceIdForNation(runtime, occupation.formerNationId);
     const occupierRaceId = raceIdForNation(runtime, occupation.occupierNationId);
     if (!subjectRaceId || !next.races[subjectRaceId]) continue;
-    next.races[subjectRaceId] = applyRaceSocialEvent(next.races[subjectRaceId], { type: "domination", intensity: 4, period });
+    next.races[subjectRaceId] = applyRaceSocialEvent(next.races[subjectRaceId], {
+      type: "domination",
+      intensity: 4,
+      period,
+      targetRegionId: occupation.regionId,
+    });
     if (occupation.policyId === "security" || occupation.resistance >= 72) {
-      next.races[subjectRaceId] = applyRaceSocialEvent(next.races[subjectRaceId], { type: "persecution", intensity: 3, period });
+      next.races[subjectRaceId] = applyRaceSocialEvent(next.races[subjectRaceId], {
+        type: "persecution",
+        intensity: 3,
+        period,
+        targetRegionId: occupation.regionId,
+      });
       if (occupation.months >= 12 && occupierRaceId) addAgenda(next.races[subjectRaceId], {
         id: `persecution:${subjectRaceId}:${occupierRaceId}`,
         title: `${normalizedPeopleDefinition(occupierRaceId).name}による迫害の記憶`,
@@ -771,10 +1254,64 @@ export function chooseProbabilisticDecision(profile, options, config = {}) {
   };
 }
 
+function raceBalanceReport(raceState) {
+  const shares = getTemperamentShares(raceState);
+  const minimumShare = Math.min(...Object.values(shares));
+  const maximumShare = Math.max(...Object.values(shares));
+  const diversity = 1 - TEMPERAMENT_IDS.reduce((sum, id) => sum + shares[id] ** 2, 0);
+  const traits = deriveRaceRepresentativeTraits(raceState);
+  const warnings = [];
+  if (!Number.isFinite(raceState.population) || raceState.population <= 0) warnings.push("人口が不正");
+  if (minimumShare < 0.01) warnings.push("気質の消失リスク");
+  if (maximumShare > 0.88) warnings.push("単一気質への過集中");
+  if (Math.max(...Object.values(traits).map(Math.abs)) >= 96) warnings.push("代表軸が上限付近");
+  let maximumProjectionError = 0;
+  for (const dimensionId of POPULATION_GROUP_DIMENSION_IDS) {
+    const groups = Object.values(raceState.populationGroups?.[dimensionId] ?? {});
+    if (!groups.length) {
+      warnings.push(`${POPULATION_GROUP_DIMENSIONS[dimensionId].name}構成なし`);
+      continue;
+    }
+    const aggregate = aggregatePopulationGroups(groups);
+    maximumProjectionError = Math.max(maximumProjectionError, Math.abs(aggregate.population - raceState.population));
+    for (const id of TEMPERAMENT_IDS) {
+      maximumProjectionError = Math.max(maximumProjectionError,
+        Math.abs(aggregate.temperamentPopulation[id] - raceState.temperamentPopulation[id]));
+    }
+  }
+  if (maximumProjectionError > Math.max(0.1, raceState.population * 0.000001)) warnings.push("群人口投影の不一致");
+  return {
+    raceId: raceState.raceId,
+    status: warnings.length ? "watch" : "stable",
+    population: raceState.population,
+    minimumTemperamentShare: fixed(minimumShare, 6),
+    maximumTemperamentShare: fixed(maximumShare, 6),
+    diversity: fixed(diversity / 0.75, 6),
+    maximumProjectionError: fixed(maximumProjectionError, 6),
+    warnings,
+  };
+}
+
+export function analyzeRaceDecisionBalance(source) {
+  const races = Object.values(source?.races ?? {}).map(raceBalanceReport);
+  const warnings = races.flatMap((race) => race.warnings.map((warning) => `${race.raceId}: ${warning}`));
+  return {
+    schemaVersion: RACE_DECISION_SCHEMA_VERSION,
+    status: warnings.length ? "watch" : "stable",
+    raceCount: races.length,
+    fixedCharacterCount: Object.keys(source?.characterProfiles ?? {}).length,
+    minimumDiversity: races.length ? Math.min(...races.map((race) => race.diversity)) : 0,
+    maximumProjectionError: races.length ? Math.max(...races.map((race) => race.maximumProjectionError)) : 0,
+    races,
+    warnings,
+  };
+}
+
 export function getRaceDecisionWorldView(runtime, source, dateState = null) {
   const state = createRaceDecisionWorldState(runtime, source, dateState);
   return {
     state,
+    balance: analyzeRaceDecisionBalance(state),
     races: Object.values(state.races).map((raceState) => ({
       raceId: raceState.raceId,
       raceName: normalizedPeopleDefinition(raceState.raceId).name,
@@ -784,8 +1321,10 @@ export function getRaceDecisionWorldView(runtime, source, dateState = null) {
       representativeTraits: deriveRaceRepresentativeTraits(raceState),
       experience: { ...raceState.experience },
       historicalAgendas: raceState.historicalAgendas.map((agenda) => ({ ...agenda })),
+      populationGroups: getRacePopulationGroups(raceState),
     })),
     nations: Object.values(deriveNationDecisionProfiles(runtime, state)),
+    characters: Object.keys(state.characterProfiles).map((id) => deriveFixedCharacterDecisionProfile(state, id)).filter(Boolean),
     events: [...state.events].reverse(),
   };
 }

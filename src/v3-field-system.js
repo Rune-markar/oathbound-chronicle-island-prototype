@@ -7,6 +7,7 @@ import {
 } from "./game-clock.js";
 import { fnv1aCharacters, unitFromHash } from "./determinism.js";
 import { applyV3WorldEffectToTile } from "./v3-world-effects.js";
+import { createIndividualDecisionProfile, TEMPERAMENTS } from "./race-decision-system.js";
 
 export const V3_FIELD_VERSION = 4;
 export const V3_DETAIL_SCALE = 8;
@@ -356,9 +357,22 @@ export function getV3TileEntity(context, x, y, state = {}) {
       villager: { name: `${nearby.settlement.name}の住民`, symbol: "人", message: `${functionName}の仕事と近くの道について教えてくれた。` },
       adventurer: { name: "巡回中の冒険者", symbol: "冒", message: `${nearby.settlement.name}の${functionName}周辺を警戒している。` },
     };
-    return { type: "npc", role, ...definitions[role], settlementId: nearby.settlement.id, settlementFunctionName: functionName };
+    return enrichV3NpcEntity(context, tile, {
+      type: "npc",
+      role,
+      ...definitions[role],
+      settlementId: nearby.settlement.id,
+      settlementFunctionName: functionName,
+    });
   }
-  if (tile.onRoad && roll < 0.025) return { type: "npc", role: "merchant", name: "街道商人", symbol: "商", message: "遠国へ向かう行商人だ。", price: 5 };
+  if (tile.onRoad && roll < 0.025) return enrichV3NpcEntity(context, tile, {
+    type: "npc",
+    role: "merchant",
+    name: "街道商人",
+    symbol: "商",
+    message: "遠国へ向かう行商人だ。",
+    price: 5,
+  });
   const habitats = new Set([tile.type, ...(tile.geographyTags ?? [])]);
   const matchingEnemies = ENEMY_TABLE.filter((entry) => entry.habitats.some((id) => habitats.has(id)));
   const dangerBias = tile.dangerBias ?? (tile.type === "forest" || tile.type === "mountain" ? 0.035 : 0);
@@ -379,6 +393,36 @@ export function getV3TileEntity(context, x, y, state = {}) {
     return { type: "item", ...item };
   }
   return null;
+}
+
+function enrichV3NpcEntity(context, tile, entity) {
+  if (entity?.type !== "npc") return entity;
+  const subjectId = String(entity.id ?? `field-npc:${tile.x},${tile.y}`);
+  const raceId = String(entity.raceId ?? tile.nation?.peopleId ?? "human");
+  const raceState = context.raceDynamics?.races?.[raceId];
+  if (!raceState) return { ...entity, id: subjectId, raceId };
+  const roleId = entity.role === "merchant" ? "diplomat" : entity.role === "adventurer" ? "local_leader" : "citizen";
+  const classGroupId = entity.role === "merchant"
+    ? "class:merchant"
+    : entity.role === "adventurer" ? "class:warrior" : "class:commoner";
+  const populationGroupIds = [tile.region?.id ? `region:${tile.region.id}` : null, classGroupId].filter(Boolean);
+  const profile = createIndividualDecisionProfile(raceState, context.seed, {
+    subjectId,
+    roleId,
+    temperamentId: entity.temperamentId,
+    individualOffsets: entity.individualDecisionOffsets,
+    populationGroupIds,
+  });
+  return {
+    ...entity,
+    id: subjectId,
+    raceId,
+    temperamentId: profile.temperamentId,
+    temperamentName: TEMPERAMENTS[profile.temperamentId].name,
+    decisionTraits: profile.traits,
+    individualDecisionOffsets: profile.individualOffsets,
+    populationGroupIds,
+  };
 }
 
 export function v3ChunkPosition(context, x, y) {
@@ -467,7 +511,7 @@ export function normalizeV3FieldState(context, source = {}) {
     gold: clampInteger(source.player.gold, 0, 0, 999999),
     inventory: Array.isArray(source.player.inventory) ? source.player.inventory.filter((item) => item?.id && item?.name).slice(0, 64) : [],
   };
-  const pendingEncounter = source.pendingEncounter && typeof source.pendingEncounter === "object"
+  let pendingEncounter = source.pendingEncounter && typeof source.pendingEncounter === "object"
     ? {
       ...source.pendingEncounter,
       ...(source.pendingEncounter.type === "enemy" ? {
@@ -478,6 +522,15 @@ export function normalizeV3FieldState(context, source = {}) {
       } : {}),
     }
     : null;
+  if (pendingEncounter?.type === "npc" && !pendingEncounter.decisionTraits) {
+    const [encounterX, encounterY] = String(pendingEncounter.tileKey ?? `${player.x},${player.y}`).split(",").map(Number);
+    const tile = getV3DetailedTile(
+      context,
+      Number.isFinite(encounterX) ? encounterX : player.x,
+      Number.isFinite(encounterY) ? encounterY : player.y,
+    );
+    pendingEncounter = enrichV3NpcEntity(context, tile, pendingEncounter);
+  }
   return normalizeStateGameClock({
     ...fallback,
     ...source,
