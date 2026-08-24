@@ -170,10 +170,59 @@ let mapHistoryIndex = null;
 let selectedNationId = null;
 let worldAdvanceBusy = false;
 let worldMapReturnFocus = null;
+const modalReturnFocus = { inventory: null, underworld: null, commerce: null };
 const worldChronicleCache = new WeakMap();
 
 function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>'"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[character]));
+}
+
+function focusAvailableElement(element) {
+  if (!element || element.disabled || element.closest("[hidden], details:not([open])")) return false;
+  element.focus();
+  return document.activeElement === element;
+}
+
+function focusFirstAvailable(root, selectors, fallback = null) {
+  for (const selector of selectors) {
+    for (const candidate of root?.querySelectorAll(selector) ?? []) {
+      if (focusAvailableElement(candidate)) return candidate;
+    }
+  }
+  return focusAvailableElement(fallback) ? fallback : null;
+}
+
+function getActionFocusSignature(element) {
+  if (!element) return null;
+  const entries = Object.entries(element.dataset).filter(([key]) => key.startsWith("v3"));
+  return entries.length ? Object.fromEntries(entries) : null;
+}
+
+function restoreActionFocus(root, signature) {
+  if (!signature) return false;
+  const candidate = [...root.querySelectorAll("button, input, select, summary")].find((element) => (
+    Object.entries(signature).every(([key, value]) => element.dataset[key] === value)
+  ));
+  return focusAvailableElement(candidate);
+}
+
+function rememberModalFocus(name, fallback) {
+  const active = document.activeElement;
+  modalReturnFocus[name] = active instanceof HTMLElement && active !== document.body ? active : fallback;
+}
+
+function closeModal(name) {
+  const settings = {
+    inventory: [elements.inventoryModal, elements.inventoryButton],
+    underworld: [elements.underworldModal, elements.underworldButton],
+    commerce: [elements.commerceModal, elements.commerceButton],
+  }[name];
+  if (!settings) return;
+  const [modal, fallback] = settings;
+  modal.hidden = true;
+  const returnTarget = modalReturnFocus[name]?.isConnected ? modalReturnFocus[name] : fallback;
+  modalReturnFocus[name] = null;
+  requestAnimationFrame(() => returnTarget?.focus());
 }
 
 function createSeed() {
@@ -301,7 +350,7 @@ async function prepareWorld(options, savedField = null, savedWorldSimulation = n
     requestAnimationFrame(() => (state.pendingEncounter?.type === "group-battle"
       ? elements.encounterActions.querySelector("button")
       : elements.field.querySelector(".is-player"))?.focus());
-  }
+  } else requestAnimationFrame(() => elements.field.querySelector(".is-player")?.focus());
   scheduleBackgroundGeneration();
   window.__v3Game = {
     get state() { return state; },
@@ -433,6 +482,14 @@ function renderInventory() {
   elements.inventoryList.innerHTML = items.length ? items.map((item, index) => `<button type="button" data-v3-use-item="${index}" ${item.heal && state.player.hp < state.player.maxHp ? "" : "disabled"}><i>${escapeHtml(item.id === "medicinal-herb" ? "草" : item.id === "wild-berries" ? "実" : "物")}</i><span><strong>${escapeHtml(item.name)}</strong><small>${item.heal ? `HPを${item.heal}回復` : "素材"}</small></span><b>${item.heal ? "使う" : "所持"}</b></button>`).join("") : "<p>道具はまだ持っていない。</p>";
 }
 
+function focusInventoryPrimaryAction() {
+  focusFirstAvailable(
+    elements.inventoryList,
+    ["[data-v3-use-item]:not(:disabled)"],
+    elements.inventoryModal.querySelector("[data-v3-close='inventory']"),
+  );
+}
+
 function criminalMemberOptions(members, preferredSkills = [], includeEmpty = false) {
   const ranked = [...members].sort((left, right) => {
     const fit = (member) => preferredSkills.reduce((sum, skill) => sum + (Number(member.skills?.[skill]) || 0), 0);
@@ -481,19 +538,20 @@ function renderUnderworld() {
 }
 
 function focusUnderworldPrimaryAction() {
-  const primary = elements.underworldContent.querySelector([
-    "[data-v3-personal-crime]:not(:disabled)",
-    "[data-v3-criminal-broker]:not(:disabled)",
-    "[data-v3-criminal-recruit]:not(:disabled)",
-    "[data-v3-criminal-form]:not(:disabled)",
+  focusFirstAvailable(elements.underworldContent, [
     "[data-v3-criminal-decision]:not(:disabled)",
     "[data-v3-criminal-report]:not(:disabled)",
+    "[data-v3-criminal-cycle]:not(:disabled)",
+    "[data-v3-criminal-form]:not(:disabled)",
+    "[data-v3-criminal-broker]:not(:disabled)",
+    "[data-v3-criminal-recruit]:not(:disabled)",
     "[data-v3-criminal-order]:not(:disabled)",
-  ].join(", "));
-  (primary ?? elements.underworldModal.querySelector("[data-v3-close='underworld']"))?.focus();
+    "[data-v3-personal-crime]:not(:disabled)",
+  ], elements.underworldModal.querySelector("[data-v3-close='underworld']"));
 }
 
 function openUnderworld() {
+  rememberModalFocus("underworld", elements.underworldButton);
   elements.underworldModal.hidden = false;
   renderUnderworld();
   focusUnderworldPrimaryAction();
@@ -539,17 +597,27 @@ function renderCommerce() {
 }
 
 function focusCommercePrimaryAction() {
-  const primary = elements.commerceContent.querySelector([
-    '[data-v3-trade-action="observe"]:not(:disabled)',
-    '[data-v3-company-found]:not(:disabled)',
+  focusFirstAvailable(elements.commerceContent, [
+    '[data-v3-incident]:not(:disabled)',
     '[data-v3-charter-decision]:not(:disabled)',
+    '[data-v3-company-found]:not(:disabled)',
     '[data-v3-charter-start]:not(:disabled)',
     '[data-v3-company-hire]:not(:disabled)',
     '[data-v3-route-secure]:not(:disabled)',
     '[data-v3-branch-open]:not(:disabled)',
     '[data-v3-company-month]:not(:disabled)',
-  ].join(", "));
-  (primary ?? elements.commerceModal.querySelector("[data-v3-close='commerce']"))?.focus();
+    '[data-v3-trade-action="observe"]:not(:disabled)',
+    '[data-v3-trade-action="buy"]:not(:disabled)',
+    '[data-v3-trade-action="sell"]:not(:disabled)',
+  ], elements.commerceModal.querySelector("[data-v3-close='commerce']"));
+}
+
+function rerenderCommerceWithFocus(actionElement) {
+  const signature = getActionFocusSignature(actionElement);
+  renderGame();
+  requestAnimationFrame(() => {
+    if (!restoreActionFocus(elements.commerceContent, signature)) focusCommercePrimaryAction();
+  });
 }
 
 function renderGame() {
@@ -597,9 +665,9 @@ function movePlayer(direction) {
   renderGame();
   if (!encounterBeforeMove && state.pendingEncounter?.type === "enemy") {
     requestAnimationFrame(() => elements.personalBattleCommands.querySelector("button")?.focus());
-  } else if (!encounterBeforeMove && state.pendingEncounter?.type === "group-battle") {
+  } else if (!encounterBeforeMove && state.pendingEncounter) {
     requestAnimationFrame(() => elements.encounterActions.querySelector("button")?.focus());
-  }
+  } else requestAnimationFrame(() => elements.field.querySelector(".is-player")?.focus());
 }
 
 function applyEncounterAction(action) {
@@ -610,6 +678,7 @@ function applyEncounterAction(action) {
   saveGame();
   renderGame();
   if (state.pendingEncounter?.type === "enemy") elements.personalBattleCommands.querySelector("button")?.focus();
+  else if (state.pendingEncounter) elements.encounterActions.querySelector("button")?.focus();
   else elements.field.querySelector(".is-player")?.focus();
 }
 
@@ -1051,10 +1120,23 @@ function closeWorldMap() {
   requestAnimationFrame(() => returnTarget?.focus());
 }
 
-async function advanceWorld(months = 1) {
+function restoreWorldMapActionFocus(signature) {
+  if (restoreActionFocus(elements.worldMap, signature)) return;
+  if (focusAvailableElement(elements.worldHistory)) return;
+  focusAvailableElement(elements.worldMap.querySelector("[data-v3-close='map']"));
+}
+
+function redrawWorldMapWithFocus(actionElement) {
+  const signature = getActionFocusSignature(actionElement);
+  drawWorldMap();
+  requestAnimationFrame(() => restoreWorldMapActionFocus(signature));
+}
+
+async function advanceWorld(months = 1, actionElement = document.activeElement) {
   const amount = Number(months) === 12 ? 12 : 1;
   if (worldAdvanceBusy || !worldSimulation) return;
   if (amount === 12 && !window.confirm("世界を12か月進めます。戦争や国境が変化する場合があります。続けますか？")) return;
+  const focusSignature = getActionFocusSignature(actionElement);
   const location = getV3LocationSummary(context, state);
   const previousNation = getV3NationAtTile(runtime, worldSimulation, location.tile.macroIndex)?.name ?? "無主地";
   worldAdvanceBusy = true;
@@ -1074,6 +1156,7 @@ async function advanceWorld(months = 1) {
   } finally {
     worldAdvanceBusy = false;
     drawWorldMap();
+    requestAnimationFrame(() => restoreWorldMapActionFocus(focusSignature));
   }
 }
 
@@ -1083,15 +1166,17 @@ function handleAction(action) {
   if (action === "underworld") return openUnderworld();
   if (action === "military") return handleMilitaryAction();
   if (action === "commerce") {
+    rememberModalFocus("commerce", elements.commerceButton);
     elements.commerceModal.hidden = false;
     renderCommerce();
     focusCommercePrimaryAction();
     return;
   }
   if (action === "menu") {
+    rememberModalFocus("inventory", elements.inventoryButton);
     elements.inventoryModal.hidden = false;
     renderInventory();
-    elements.inventoryModal.querySelector("[data-v3-close='inventory']").focus();
+    focusInventoryPrimaryAction();
     return;
   }
   if (action === "reset" && window.confirm("この端末のV3冒険を消して、起動画面へ戻りますか？")) {
@@ -1137,23 +1222,27 @@ elements.continueButton.addEventListener("click", async () => {
 });
 
 document.addEventListener("click", (event) => {
-  const mapLayerId = event.target.closest("[data-v3-map-layer]")?.dataset.v3MapLayer;
+  const mapLayerAction = event.target.closest("[data-v3-map-layer]");
+  const mapLayerId = mapLayerAction?.dataset.v3MapLayer;
   if (mapLayerId) {
     mapLayer = mapLayerId;
-    drawWorldMap();
+    redrawWorldMapWithFocus(mapLayerAction);
     return;
   }
-  const nationId = event.target.closest("[data-v3-select-nation]")?.dataset.v3SelectNation;
+  const nationAction = event.target.closest("[data-v3-select-nation]");
+  const nationId = nationAction?.dataset.v3SelectNation;
   if (nationId) {
     selectedNationId = nationId;
-    drawWorldMap();
+    redrawWorldMapWithFocus(nationAction);
     return;
   }
-  const worldAdvance = event.target.closest("[data-v3-world-advance]")?.dataset.v3WorldAdvance;
-  if (worldAdvance) return advanceWorld(Number(worldAdvance));
-  if (event.target.closest("[data-v3-history-current]")) {
+  const worldAdvanceAction = event.target.closest("[data-v3-world-advance]");
+  const worldAdvance = worldAdvanceAction?.dataset.v3WorldAdvance;
+  if (worldAdvance) return advanceWorld(Number(worldAdvance), worldAdvanceAction);
+  const historyCurrentAction = event.target.closest("[data-v3-history-current]");
+  if (historyCurrentAction) {
     mapHistoryIndex = null;
-    drawWorldMap();
+    redrawWorldMapWithFocus(historyCurrentAction);
     return;
   }
   const move = event.target.closest("[data-v3-move]")?.dataset.v3Move;
@@ -1183,36 +1272,39 @@ document.addEventListener("click", (event) => {
         source: "merchant-trade",
         event: actionEvent(`merchant.${tradeAction.dataset.v3TradeAction}`, "merchant-trade", "市場取引を台帳へ記録", { commodityId: tradeAction.dataset.v3Commodity ?? null }),
       });
-      saveGame(); renderGame(); showToast("交易台帳を更新しました。");
+      saveGame(); rerenderCommerceWithFocus(tradeAction); showToast("交易台帳を更新しました。");
     } catch (error) { showToast(error.message); }
     return;
   }
   const foundStrategy = event.target.closest("[data-v3-company-found]")?.dataset.v3CompanyFound;
   if (foundStrategy) {
-    try { commitStateAction(foundV3MerchantCompany(context, state, { strategyId: foundStrategy, name: document.querySelector("#v3CompanyName")?.value }), { source: "merchant-company", event: actionEvent("merchant.company.founded", "merchant-company", "商会を設立") }); saveGame(); renderGame(); showToast("商会を設立しました。"); }
+    const actionElement = event.target.closest("[data-v3-company-found]");
+    try { commitStateAction(foundV3MerchantCompany(context, state, { strategyId: foundStrategy, name: document.querySelector("#v3CompanyName")?.value }), { source: "merchant-company", event: actionEvent("merchant.company.founded", "merchant-company", "商会を設立") }); saveGame(); rerenderCommerceWithFocus(actionElement); showToast("商会を設立しました。"); }
     catch (error) { showToast(error.message); }
     return;
   }
   if (event.target.closest("[data-v3-company-invest]")) {
-    try { commitStateAction(contributeV3CompanyCapital(state, 10), { source: "merchant-company", event: actionEvent("merchant.company.funded", "merchant-company", "商会へ追加出資", { amount: 10 }) }); saveGame(); renderGame(); }
+    const actionElement = event.target.closest("[data-v3-company-invest]");
+    try { commitStateAction(contributeV3CompanyCapital(state, 10), { source: "merchant-company", event: actionEvent("merchant.company.funded", "merchant-company", "商会へ追加出資", { amount: 10 }) }); saveGame(); rerenderCommerceWithFocus(actionElement); }
     catch (error) { showToast(error.message); }
     return;
   }
   const charterStart = event.target.closest("[data-v3-charter-start]");
   if (charterStart) {
-    try { commitStateAction(startV3CharterApplication(context, state, charterStart.dataset.v3CharterStart, charterStart.dataset.v3Filing), { source: "merchant-company", event: actionEvent("merchant.charter.started", "merchant-company", "営業資格を申請", { nationId: charterStart.dataset.v3CharterStart }) }); saveGame(); renderGame(); }
+    try { commitStateAction(startV3CharterApplication(context, state, charterStart.dataset.v3CharterStart, charterStart.dataset.v3Filing), { source: "merchant-company", event: actionEvent("merchant.charter.started", "merchant-company", "営業資格を申請", { nationId: charterStart.dataset.v3CharterStart }) }); saveGame(); rerenderCommerceWithFocus(charterStart); }
     catch (error) { showToast(error.message); }
     return;
   }
   const charterDecision = event.target.closest("[data-v3-charter-decision]");
   if (charterDecision) {
-    try { commitStateAction(resolveV3CharterApplication(context, state, charterDecision.dataset.v3Application, charterDecision.dataset.v3CharterDecision), { source: "merchant-company", event: actionEvent("merchant.charter.resolved", "merchant-company", "営業資格申請を決着", { applicationId: charterDecision.dataset.v3Application }) }); saveGame(); renderGame(); }
+    try { commitStateAction(resolveV3CharterApplication(context, state, charterDecision.dataset.v3Application, charterDecision.dataset.v3CharterDecision), { source: "merchant-company", event: actionEvent("merchant.charter.resolved", "merchant-company", "営業資格申請を決着", { applicationId: charterDecision.dataset.v3Application }) }); saveGame(); rerenderCommerceWithFocus(charterDecision); }
     catch (error) { showToast(error.message); }
     return;
   }
   const hire = event.target.closest("[data-v3-company-hire]")?.dataset.v3CompanyHire;
   if (hire) {
-    try { commitStateAction(recruitV3CompanyStaff(context, state, hire), { source: "merchant-company", event: actionEvent("merchant.staff.recruited", "merchant-company", "商会人員を採用", { candidateId: hire }) }); saveGame(); renderGame(); }
+    const actionElement = event.target.closest("[data-v3-company-hire]");
+    try { commitStateAction(recruitV3CompanyStaff(context, state, hire), { source: "merchant-company", event: actionEvent("merchant.staff.recruited", "merchant-company", "商会人員を採用", { candidateId: hire }) }); saveGame(); rerenderCommerceWithFocus(actionElement); }
     catch (error) { showToast(error.message); }
     return;
   }
@@ -1226,7 +1318,7 @@ document.addEventListener("click", (event) => {
         approachId: form.querySelector("[data-v3-route-approach]").value,
         leaderId: form.querySelector("[data-v3-route-leader]").value,
       }), { source: "merchant-company", event: actionEvent("merchant.route.secured", "merchant-company", "交易販路を確保") });
-      saveGame(); renderGame();
+      saveGame(); rerenderCommerceWithFocus(event.target.closest("[data-v3-route-secure]"));
     } catch (error) { showToast(error.message); }
     return;
   }
@@ -1238,28 +1330,34 @@ document.addEventListener("click", (event) => {
         launchId: form.querySelector("[data-v3-branch-launch]").value,
         managerId: form.querySelector("[data-v3-branch-manager]").value,
       }), { source: "merchant-company", event: actionEvent("merchant.branch.opening", "merchant-company", "支店開設を開始") });
-      saveGame(); renderGame();
+      saveGame(); rerenderCommerceWithFocus(event.target.closest("[data-v3-branch-open]"));
     } catch (error) { showToast(error.message); }
     return;
   }
   if (event.target.closest("[data-v3-company-month]")) {
-    try { commitStateAction(advanceV3CompanyMonth(context, state), { source: "merchant-company" }); saveGame(); renderGame(); }
+    const actionElement = event.target.closest("[data-v3-company-month]");
+    try { commitStateAction(advanceV3CompanyMonth(context, state), { source: "merchant-company" }); saveGame(); rerenderCommerceWithFocus(actionElement); }
     catch (error) { showToast(error.message); }
     return;
   }
   const incident = event.target.closest("[data-v3-incident]");
   if (incident) {
-    try { commitStateAction(resolveV3CompanyIncident(state, incident.dataset.v3Incident, incident.dataset.v3Decision), { source: "merchant-company", event: actionEvent("merchant.incident.resolved", "merchant-company", "街道事故を解決", { incidentId: incident.dataset.v3Incident }) }); saveGame(); renderGame(); }
+    try { commitStateAction(resolveV3CompanyIncident(state, incident.dataset.v3Incident, incident.dataset.v3Decision), { source: "merchant-company", event: actionEvent("merchant.incident.resolved", "merchant-company", "街道事故を解決", { incidentId: incident.dataset.v3Incident }) }); saveGame(); rerenderCommerceWithFocus(incident); }
     catch (error) { showToast(error.message); }
     return;
   }
   const itemIndex = event.target.closest("[data-v3-use-item]")?.dataset.v3UseItem;
   if (itemIndex !== undefined) {
+    const actionElement = event.target.closest("[data-v3-use-item]");
+    const signature = getActionFocusSignature(actionElement);
     const next = useV3Item(state, Number(itemIndex));
     if (next === state) return showToast("今は使う必要がない。");
     commitStateAction(next, { source: "inventory", event: actionEvent("inventory.item.used", "inventory", "所持品を使用", { itemIndex: Number(itemIndex) }) });
     saveGame();
     renderGame();
+    requestAnimationFrame(() => {
+      if (!restoreActionFocus(elements.inventoryList, signature)) focusInventoryPrimaryAction();
+    });
     return;
   }
   const personalCrime = event.target.closest("[data-v3-personal-crime]")?.dataset.v3PersonalCrime;
@@ -1296,9 +1394,7 @@ document.addEventListener("click", (event) => {
   if (action) return handleAction(action);
   const close = event.target.closest("[data-v3-close]")?.dataset.v3Close;
   if (close === "map") closeWorldMap();
-  if (close === "inventory") elements.inventoryModal.hidden = true;
-  if (close === "underworld") elements.underworldModal.hidden = true;
-  if (close === "commerce") elements.commerceModal.hidden = true;
+  if (["inventory", "underworld", "commerce"].includes(close)) closeModal(close);
 });
 
 elements.worldHistory.addEventListener("input", () => {
@@ -1324,9 +1420,9 @@ document.addEventListener("keydown", (event) => {
   if (!state || /INPUT|TEXTAREA|SELECT/.test(event.target.tagName)) return;
   if (event.key === "Escape") {
     if (!elements.worldMap.hidden) closeWorldMap();
-    else if (!elements.inventoryModal.hidden) elements.inventoryModal.hidden = true;
-    else if (!elements.underworldModal.hidden) elements.underworldModal.hidden = true;
-    else if (!elements.commerceModal.hidden) elements.commerceModal.hidden = true;
+    else if (!elements.inventoryModal.hidden) closeModal("inventory");
+    else if (!elements.underworldModal.hidden) closeModal("underworld");
+    else if (!elements.commerceModal.hidden) closeModal("commerce");
     return;
   }
   if (state.pendingEncounter?.type === "enemy") {
