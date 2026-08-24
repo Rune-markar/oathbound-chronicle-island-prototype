@@ -36,25 +36,26 @@ test("現状台帳のローカル出典と開始画面の導線が存在する",
   assert.match(statusPage, /src="\.\/src\/project-status\.js"/);
 });
 
-test("犯罪プレーの通常導線、六行動、帰結を実装済みとして追跡する", async () => {
+test("V3の単独犯罪と六作戦の組織運営を現行導線として追跡する", async () => {
   assert.equal(STATUS_LEDGER_META.lastAuditedAt, "2026-08-24");
+  assert.equal(STATUS_LEDGER_META.projectGeneration, "ver3");
   const crime = STATUS_ENTRIES.find((item) => item.id === "criminal-play-flow");
   assert.ok(crime, "criminal-play-flow ledger entry is required");
   assert.equal(crime.category, "implemented");
-  ["窃盗", "恐喝", "強盗", "密輸", "破壊工作", "暗殺"].forEach((action) => {
+  ["V3", "実在集落", "街道", "窃盗", "恐喝", "強盗", "V3専用セーブ"].forEach((action) => {
     assert.match(`${crime.summary} ${crime.evidence}`, new RegExp(action));
   });
-  assert.ok(crime.sources.some((item) => item.href === "./src/crime-system.js" && /getCrimeStatusView/.test(item.ref)));
-  assert.ok(crime.sources.some((item) => item.href === "./src/app.js" && /renderSettlementCrimeSection/.test(item.ref)));
-  assert.ok(crime.sources.some((item) => item.href === "./tests/criminal-ui.test.mjs"));
+  assert.ok(crime.sources.some((item) => item.href === "./src/v3-criminal-organization-system.js" && /resolveV3PersonalCrime/.test(item.ref)));
+  assert.ok(crime.sources.some((item) => item.href === "./src/v3-app.js" && /renderUnderworld/.test(item.ref)));
+  assert.ok(crime.sources.some((item) => item.href === "./tests/v3-criminal-organization-system.test.mjs"));
   const organization = STATUS_ENTRIES.find((item) => item.id === "criminal-organization");
   assert.equal(organization?.category, "implemented");
-  ["単独犯", "人材", "一味", "犯罪組織", "誘拐", "暗殺", "月次"].forEach((term) => {
+  ["V3", "単独犯", "人材", "一味", "犯罪組織", "恐喝", "強盗", "密輸", "破壊工作", "誘拐", "暗殺", "30日"].forEach((term) => {
     assert.match(`${organization.summary} ${organization.evidence}`, new RegExp(term));
   });
-  assert.ok(organization.sources.some((item) => item.href === "./src/criminal-organization-system.js" && /issueCriminalOperationOrder/.test(item.ref)));
-  assert.ok(organization.sources.some((item) => item.href === "./src/app.js" && /renderCriminalOrganizationBoard/.test(item.ref)));
-  assert.ok(organization.sources.some((item) => item.href === "./tests/criminal-organization-system.test.mjs"));
+  assert.ok(organization.sources.some((item) => item.href === "./src/v3-criminal-organization-system.js" && /issueV3CriminalOperation/.test(item.ref)));
+  assert.ok(organization.sources.some((item) => item.href === "./src/v3-app.js" && /renderUnderworld/.test(item.ref)));
+  assert.ok(organization.sources.some((item) => item.href === "./tests/v3-criminal-organization-system.test.mjs"));
 
   const projectRoot = new URL("../", import.meta.url);
   const [readme, manual, changelog] = await Promise.all([
@@ -62,16 +63,15 @@ test("犯罪プレーの通常導線、六行動、帰結を実装済みとし�
     readFile(new URL("MANUAL.md", projectRoot), "utf8"),
     readFile(new URL("CHANGELOG.md", projectRoot), "utf8"),
   ]);
-  assert.match(readme, /通常のキャリア.*非合法/s);
+  assert.match(readme, /唯一の開発正本/);
+  assert.match(readme, /V3では現在の詳細マス.*実在集落.*街道/s);
   ["窃盗", "恐喝", "強盗", "密輸", "破壊工作", "暗殺"].forEach((action) => assert.match(readme, new RegExp(action)));
-  assert.match(manual, /犯罪プレー/);
-  assert.match(manual, /対象.*管轄.*準備.*見込報酬.*最大刑罰/s);
-  assert.match(manual, /同行者.*承諾.*拒否.*通報.*離脱/s);
-  assert.match(manual, /盗品.*故買屋.*手配.*隠れ家.*出頭.*服役.*逃亡.*亡命.*追放.*恩赦/s);
-  assert.match(manual, /主権者.*権力濫用/s);
-  assert.match(manual, /暗殺.*拘束.*ゲーム終了/s);
-  assert.match(changelog, /Unreleased — 2026-08-18/);
-  assert.match(changelog, /犯罪.*保存.*移行.*政治.*歴史.*テスト/s);
+  assert.match(manual, /V3：単独犯から犯罪組織へ/);
+  assert.match(manual, /詳細フィールド.*実際に到達.*対象.*管轄.*危険度.*見込報酬/s);
+  assert.match(manual, /一味.*同時1件.*犯罪組織.*同時3件.*30日/s);
+  assert.match(manual, /身代金.*交渉材料.*解放.*身請け.*見捨て/s);
+  assert.match(changelog, /Generation V3.*唯一の開発正本/s);
+  assert.match(changelog, /V3詳細フィールド.*単独犯罪.*V3専用セーブ/s);
 });
 
 test("世界終局の二経路を生成世界へ接続済みとして追跡する", () => {

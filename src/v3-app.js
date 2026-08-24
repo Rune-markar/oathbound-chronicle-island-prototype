@@ -14,6 +14,21 @@ import {
   useV3Item,
   V3_DETAIL_SCALE,
 } from "./v3-field-system.js";
+import {
+  advanceV3CriminalCycle,
+  discoverV3CriminalBroker,
+  distributeV3CriminalProfits,
+  formV3CriminalOrganization,
+  fundV3CriminalOrganization,
+  getV3CriminalView,
+  issueV3CriminalOperation,
+  normalizeV3CriminalState,
+  recruitV3CriminalMember,
+  resolveV3CriminalDecision,
+  resolveV3CriminalReport,
+  resolveV3PersonalCrime,
+  withdrawV3CriminalOrganization,
+} from "./v3-criminal-organization-system.js";
 
 const STORAGE_KEY = "leviathan-covenant-v3-save";
 const WORLD_CONFIG = Object.freeze({ width: 192, height: 120, plateCount: 28, nationCount: 7 });
@@ -57,6 +72,7 @@ const elements = {
   personalBattleHpBar: document.querySelector("#v3PersonalBattleHpBar"),
   personalBattleHpLabel: document.querySelector("#v3PersonalBattleHpLabel"),
   personalBattleCommands: document.querySelector("#v3PersonalBattleCommands"),
+  underworldButton: document.querySelector('[data-v3-action="underworld"]'),
   mapButton: document.querySelector('[data-v3-action="map"]'),
   inventoryButton: document.querySelector('[data-v3-action="menu"]'),
   encounterModal: document.querySelector("#v3EncounterModal"),
@@ -67,6 +83,8 @@ const elements = {
   encounterActions: document.querySelector("#v3EncounterActions"),
   inventoryModal: document.querySelector("#v3InventoryModal"),
   inventoryList: document.querySelector("#v3InventoryList"),
+  underworldModal: document.querySelector("#v3UnderworldModal"),
+  underworldContent: document.querySelector("#v3UnderworldContent"),
   worldMap: document.querySelector("#v3WorldMap"),
   worldCanvas: document.querySelector("#v3WorldCanvas"),
   worldMapPosition: document.querySelector("#v3WorldMapPosition"),
@@ -131,6 +149,7 @@ async function prepareWorld(options, savedField = null) {
   setGenerationProgress(92, "現在地の周囲を1マス単位へ展開しています。");
   context = createV3WorldContext(runtime, options.seed);
   state = savedField ? normalizeV3FieldState(context, savedField) : createV3FieldState(context, { playerName: options.playerName });
+  normalizeV3CriminalState(context, state);
   worldOptions = { ...WORLD_CONFIG, ...options, playerName: state.player.name };
   setGenerationProgress(100, "足元の世界が形になりました。");
   saveGame();
@@ -139,7 +158,14 @@ async function prepareWorld(options, savedField = null) {
   elements.game.hidden = false;
   renderGame();
   scheduleBackgroundGeneration();
-  window.__v3Game = { get state() { return state; }, get context() { return context; }, get runtime() { return runtime; }, move: movePlayer };
+  window.__v3Game = {
+    get state() { return state; },
+    get context() { return context; },
+    get runtime() { return runtime; },
+    move: movePlayer,
+    openUnderworld,
+    get criminalView() { return getV3CriminalView(context, state); },
+  };
 }
 
 function showToast(message) {
@@ -182,6 +208,7 @@ function renderEncounter() {
   elements.movementPad.hidden = Boolean(personalEnemy);
   elements.mapButton.disabled = Boolean(personalEnemy);
   elements.inventoryButton.disabled = Boolean(personalEnemy);
+  elements.underworldButton.disabled = Boolean(personalEnemy);
   elements.encounterModal.hidden = !encounter || Boolean(personalEnemy);
   if (!encounter) return;
   if (personalEnemy) {
@@ -201,6 +228,71 @@ function renderEncounter() {
 function renderInventory() {
   const items = state.player.inventory;
   elements.inventoryList.innerHTML = items.length ? items.map((item, index) => `<button type="button" data-v3-use-item="${index}" ${item.heal && state.player.hp < state.player.maxHp ? "" : "disabled"}><i>${escapeHtml(item.id === "medicinal-herb" ? "草" : item.id === "wild-berries" ? "実" : "物")}</i><span><strong>${escapeHtml(item.name)}</strong><small>${item.heal ? `HPを${item.heal}回復` : "素材"}</small></span><b>${item.heal ? "使う" : "所持"}</b></button>`).join("") : "<p>道具はまだ持っていない。</p>";
+}
+
+function criminalMemberOptions(members, preferredSkills = [], includeEmpty = false) {
+  const ranked = [...members].sort((left, right) => {
+    const fit = (member) => preferredSkills.reduce((sum, skill) => sum + (Number(member.skills?.[skill]) || 0), 0);
+    return fit(right) - fit(left) || right.loyalty - left.loyalty;
+  });
+  return `${includeEmpty ? '<option value="">支援なし</option>' : ""}${ranked.map((member) => `<option value="${escapeHtml(member.id)}">${escapeHtml(member.name)} · ${escapeHtml(member.role)} · 忠誠${member.loyalty}</option>`).join("")}`;
+}
+
+function renderUnderworld() {
+  const previousScroll = elements.underworldContent.scrollTop;
+  const model = getV3CriminalView(context, state);
+  const organization = model.organization;
+  const lastResult = model.lastResult
+    ? `<aside class="v3-criminal-result"><strong>直前の${escapeHtml(model.lastResult.actionName)}：${escapeHtml(model.lastResult.outcomeName)}</strong><span>${escapeHtml(model.lastResult.targetName)}${model.lastResult.reward ? ` · 銀貨+${model.lastResult.reward}` : model.lastResult.fine ? ` · 罰金${model.lastResult.fine}` : ""}</span></aside>`
+    : "";
+  const personalActions = model.personalActions.map((action) => `<article class="v3-criminal-action${action.available ? "" : " is-locked"}"><header><strong>${escapeHtml(action.shortName)}</strong><b>${escapeHtml(action.riskLabel)}</b></header><h3>${escapeHtml(action.target.name)}</h3><p>${escapeHtml(action.description)}</p><footer><span>見込 銀貨+${action.reward}</span><button type="button" data-v3-personal-crime="${action.id}" ${action.available ? "" : "disabled"}>${action.available ? "本人で実行" : escapeHtml(action.lockedReason)}</button></footer></article>`).join("");
+  const brokerBlock = model.localBroker
+    ? `<article class="v3-broker-card is-known"><div><small>LOCAL BROKER</small><strong>${escapeHtml(model.localBroker.name)}</strong><span>${escapeHtml(model.localBroker.settlementName ?? model.location.regionName)} · 信頼${model.localBroker.trust ?? 0}</span></div><b>接触済み</b></article>`
+    : `<article class="v3-broker-card"><div><small>LOCAL BROKER</small><strong>現地の仲介人を探す</strong><span>${escapeHtml(model.brokerReason ?? "路地へ銀貨1を持って行く")}</span></div><button type="button" data-v3-criminal-broker ${model.canSearchBroker ? "" : "disabled"}>探索 · 銀貨1</button></article>`;
+  const candidates = organization.candidates.length
+    ? organization.candidates.map((candidate) => `<button type="button" data-v3-criminal-recruit="${escapeHtml(candidate.id)}" ${state.player.gold >= candidate.fee ? "" : "disabled"}><strong>${escapeHtml(candidate.name)} · ${escapeHtml(candidate.role)}</strong><small>${escapeHtml(candidate.specialties.join("・"))} · 忠誠${candidate.loyalty} · 契約銀貨${candidate.fee}</small></button>`).join("")
+    : `<p>${organization.brokerKnown ? model.location.canManage ? "この地方の候補者は全員確認済みです。" : "仲介人のいる集落へ戻ると人員を手配できます。" : "単独実績を作り、現地の仲介人を見つけると候補者が現れます。"}</p>`;
+  const formation = organization.stage === "solo"
+    ? `<section class="v3-criminal-section"><header><div><small>FORM A CREW</small><h2>一味を結成</h2></div><b>${escapeHtml(organization.formationReason)}</b></header><label class="v3-criminal-name"><span>組織名</span><input id="v3CriminalOrganizationName" maxlength="24" value="${escapeHtml(`${state.player.name}一味`)}"></label><button class="is-primary" type="button" data-v3-criminal-form ${organization.canForm ? "" : "disabled"}>銀貨2で一味を結成</button></section>`
+    : "";
+  const members = organization.members.length
+    ? organization.members.map((member) => `<li><span><strong>${escapeHtml(member.name)}</strong><small>${escapeHtml(member.role)} · ${escapeHtml(member.specialties.join("・"))}</small></span><span><b>${escapeHtml(member.statusName)}</b><small>忠誠 ${member.loyalty}</small></span></li>`).join("")
+    : "<li><span>構成員はいない。</span></li>";
+  const decisions = organization.pendingDecisions.map((decision) => `<article class="v3-criminal-decision"><header><strong>${decision.kind === "captive_disposition" ? `${escapeHtml(decision.targetName)}の処遇` : `${escapeHtml(decision.memberName)}が拘束された`}</strong><span>判断待ち</span></header><div>${decision.options.map((option) => `<button type="button" data-v3-criminal-decision="${escapeHtml(decision.id)}" data-v3-criminal-choice="${option.id}"><strong>${escapeHtml(option.name)}</strong><small>${escapeHtml(option.description)}</small></button>`).join("")}</div></article>`).join("");
+  const activeOrders = organization.activeOrders.length
+    ? organization.activeOrders.map((order) => `<li><span><strong>${escapeHtml(order.name)} · ${escapeHtml(order.target.name)}</strong><small>${escapeHtml(order.assignedMembers.map((member) => member.name).join("・"))} · ${escapeHtml(order.approachName)}</small></span>${order.status === "report_ready" ? `<button type="button" data-v3-criminal-report="${escapeHtml(order.id)}">報告を確認</button>` : `<b>あと${order.remainingMonths}か月</b>`}</li>`).join("")
+    : "<li><span>進行中の指示はない。</span></li>";
+  const operationCards = organization.operations.map((operation) => {
+    const membersReady = organization.availableMembers.length >= operation.minimumCrew;
+    const disabled = !operation.unlocked || !membersReady;
+    const reason = operation.lockedReason ?? (!membersReady ? `待機中の構成員${operation.minimumCrew}名が必要です` : null);
+    return `<article class="v3-operation-card${disabled ? " is-locked" : ""}" data-v3-operation-card="${escapeHtml(operation.id)}"><header><div><small>${escapeHtml(operation.riskLabel)}</small><h3>${escapeHtml(operation.name)}</h3></div><b>${operation.durationMonths}か月</b></header><strong>${escapeHtml(operation.target.name)}</strong><p>${escapeHtml(operation.preparationRequirements.join(" · "))}</p><dl><div><dt>作戦金</dt><dd>${operation.treasuryCost}</dd></div><div><dt>見込</dt><dd>${escapeHtml(operation.expectedReward.text)}</dd></div><div><dt>必要影響力</dt><dd>${operation.minimumInfluence}</dd></div></dl><label>責任者<select data-v3-criminal-leader ${disabled ? "disabled" : ""}>${criminalMemberOptions(organization.availableMembers, operation.preferredRoles)}</select></label><label>支援役<select data-v3-criminal-support ${disabled ? "disabled" : ""}>${criminalMemberOptions(organization.availableMembers, operation.preferredRoles, true)}</select></label><label>方針<select data-v3-criminal-approach ${disabled ? "disabled" : ""}><option value="cautious">慎重 · 露見を抑える</option><option value="balanced" selected>均衡</option><option value="bold">大胆 · 収益優先</option></select></label><button type="button" data-v3-criminal-order ${disabled ? "disabled" : ""}>${disabled ? escapeHtml(reason) : "この人員で指示"}</button></article>`;
+  }).join("");
+  const completedOrders = organization.completedOrders.length
+    ? organization.completedOrders.slice(0, 5).map((order) => `<li><strong>${escapeHtml(order.name)} · ${escapeHtml(order.target?.name ?? "対象")}</strong><span>${escapeHtml(model.outcomeLabels[order.outcome] ?? order.outcome)}</span></li>`).join("")
+    : "<li>完了報告はまだない。</li>";
+  const organizationBoard = organization.formed ? `<section class="v3-criminal-organization"><header><div><small>${organization.stage === "network" ? "CRIMINAL ORGANIZATION" : "CREW"}</small><h2>${escapeHtml(organization.name)}</h2><p>${escapeHtml(organization.nextStageReason)}</p></div><dl><div><dt>影響力</dt><dd>${organization.influence}</dd></div><div><dt>組織金庫</dt><dd>${organization.treasury}</dd></div><div><dt>指示枠</dt><dd>${organization.activeOrderCount} / ${organization.activeOrderLimit}</dd></div></dl></header>${decisions}<div class="v3-criminal-finance"><button type="button" data-v3-criminal-fund ${state.player.gold < 1 ? "disabled" : ""}>銀貨1を出資</button><button type="button" data-v3-criminal-withdraw ${organization.treasury < 1 ? "disabled" : ""}>銀貨1を引出</button><button type="button" data-v3-criminal-distribute ${organization.treasury < Math.max(1, organization.members.length) ? "disabled" : ""}>構成員へ利益分配</button></div><section class="v3-criminal-columns"><div class="v3-criminal-section"><header><div><small>MEMBERS</small><h2>構成員</h2></div><b>${organization.members.length}名</b></header><ul class="v3-criminal-roster">${members}</ul><details><summary>追加人員を手配</summary><div class="v3-criminal-candidates">${candidates}</div></details></div><div class="v3-criminal-section"><header><div><small>ACTIVE ORDERS</small><h2>進行中の指示</h2></div><button type="button" data-v3-criminal-cycle ${organization.activeOrders.some((order) => order.status === "active") ? "" : "disabled"}>一か月潜伏</button></header><ul class="v3-active-orders">${activeOrders}</ul></div></section><section class="v3-criminal-section"><header><div><small>DELEGATED OPERATIONS</small><h2>作戦を指示</h2></div><b>${escapeHtml(model.location.regionName)}</b></header><div class="v3-operation-grid">${operationCards}</div></section><section class="v3-criminal-section"><header><div><small>REPORT ARCHIVE</small><h2>完了報告</h2></div></header><ul class="v3-completed-orders">${completedOrders}</ul></section></section>` : "";
+  elements.underworldContent.innerHTML = `<section class="v3-underworld-summary"><div><small>CURRENT PLACE</small><strong>${escapeHtml(model.location.settlement?.name ?? model.location.tile.name)}</strong><span>${escapeHtml(model.location.regionName)}</span></div><div><small>CAREER</small><strong>${escapeHtml(model.stageName)}</strong><span>${escapeHtml(model.stageDescription)}</span></div><div><small>WANTED</small><strong>${escapeHtml(model.status.heatLabel)}</strong><span>手配 ${model.status.heat}</span></div><div><small>PERIOD</small><strong>${escapeHtml(model.cycleLabel)}</strong><span>銀貨 ${state.player.gold}</span></div></section>${lastResult}<section class="v3-criminal-section"><header><div><small>PERSONAL CRIME</small><h2>本人で動く</h2></div><b>現地対象のみ</b></header><div class="v3-criminal-action-grid">${personalActions}</div></section><section class="v3-criminal-section"><header><div><small>UNDERWORLD CONTACT</small><h2>仲介人と人員</h2></div></header>${brokerBlock}${organization.stage === "solo" ? `<div class="v3-criminal-candidates">${candidates}</div>` : ""}</section>${formation}${organizationBoard}`;
+  elements.underworldContent.scrollTop = previousScroll;
+}
+
+function focusUnderworldPrimaryAction() {
+  const primary = elements.underworldContent.querySelector([
+    "[data-v3-personal-crime]:not(:disabled)",
+    "[data-v3-criminal-broker]:not(:disabled)",
+    "[data-v3-criminal-recruit]:not(:disabled)",
+    "[data-v3-criminal-form]:not(:disabled)",
+    "[data-v3-criminal-decision]:not(:disabled)",
+    "[data-v3-criminal-report]:not(:disabled)",
+    "[data-v3-criminal-order]:not(:disabled)",
+  ].join(", "));
+  (primary ?? elements.underworldModal.querySelector("[data-v3-close='underworld']"))?.focus();
+}
+
+function openUnderworld() {
+  elements.underworldModal.hidden = false;
+  renderUnderworld();
+  focusUnderworldPrimaryAction();
 }
 
 function renderGame() {
@@ -224,6 +316,7 @@ function renderGame() {
   renderField();
   renderEncounter();
   renderInventory();
+  if (!elements.underworldModal.hidden) renderUnderworld();
 }
 
 function movePlayer(direction) {
@@ -327,6 +420,7 @@ function openWorldMap() {
 function handleAction(action) {
   if (state.pendingEncounter?.type === "enemy") return showToast("個人戦を決着させてください。");
   if (action === "map") return openWorldMap();
+  if (action === "underworld") return openUnderworld();
   if (action === "menu") {
     elements.inventoryModal.hidden = false;
     renderInventory();
@@ -336,6 +430,18 @@ function handleAction(action) {
   if (action === "reset" && window.confirm("この端末のV3冒険を消して、起動画面へ戻りますか？")) {
     localStorage.removeItem(STORAGE_KEY);
     location.reload();
+  }
+}
+
+function applyUnderworldAction(action) {
+  try {
+    state = action();
+    saveGame();
+    renderGame();
+    showToast(state.messageLog[0]);
+    requestAnimationFrame(focusUnderworldPrimaryAction);
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : String(error));
   }
 }
 
@@ -373,11 +479,40 @@ document.addEventListener("click", (event) => {
     renderGame();
     return;
   }
+  const personalCrime = event.target.closest("[data-v3-personal-crime]")?.dataset.v3PersonalCrime;
+  if (personalCrime) return applyUnderworldAction(() => resolveV3PersonalCrime(context, state, personalCrime));
+  if (event.target.closest("[data-v3-criminal-broker]")) return applyUnderworldAction(() => discoverV3CriminalBroker(context, state));
+  const recruit = event.target.closest("[data-v3-criminal-recruit]")?.dataset.v3CriminalRecruit;
+  if (recruit) return applyUnderworldAction(() => recruitV3CriminalMember(context, state, recruit));
+  if (event.target.closest("[data-v3-criminal-form]")) {
+    const name = elements.underworldContent.querySelector("#v3CriminalOrganizationName")?.value;
+    return applyUnderworldAction(() => formV3CriminalOrganization(context, state, name));
+  }
+  if (event.target.closest("[data-v3-criminal-fund]")) return applyUnderworldAction(() => fundV3CriminalOrganization(context, state, 1));
+  if (event.target.closest("[data-v3-criminal-withdraw]")) return applyUnderworldAction(() => withdrawV3CriminalOrganization(context, state, 1));
+  if (event.target.closest("[data-v3-criminal-distribute]")) return applyUnderworldAction(() => distributeV3CriminalProfits(context, state));
+  if (event.target.closest("[data-v3-criminal-cycle]")) return applyUnderworldAction(() => advanceV3CriminalCycle(context, state));
+  const report = event.target.closest("[data-v3-criminal-report]")?.dataset.v3CriminalReport;
+  if (report) return applyUnderworldAction(() => resolveV3CriminalReport(context, state, report));
+  const decision = event.target.closest("[data-v3-criminal-decision]");
+  if (decision) return applyUnderworldAction(() => resolveV3CriminalDecision(context, state, decision.dataset.v3CriminalDecision, decision.dataset.v3CriminalChoice));
+  const orderButton = event.target.closest("[data-v3-criminal-order]");
+  if (orderButton) {
+    const card = orderButton.closest("[data-v3-operation-card]");
+    const input = {
+      optionId: card.dataset.v3OperationCard,
+      leaderId: card.querySelector("[data-v3-criminal-leader]")?.value,
+      supportId: card.querySelector("[data-v3-criminal-support]")?.value || null,
+      approach: card.querySelector("[data-v3-criminal-approach]")?.value,
+    };
+    return applyUnderworldAction(() => issueV3CriminalOperation(context, state, input));
+  }
   const action = event.target.closest("[data-v3-action]")?.dataset.v3Action;
   if (action) return handleAction(action);
   const close = event.target.closest("[data-v3-close]")?.dataset.v3Close;
   if (close === "map") elements.worldMap.hidden = true;
   if (close === "inventory") elements.inventoryModal.hidden = true;
+  if (close === "underworld") elements.underworldModal.hidden = true;
 });
 
 document.addEventListener("keydown", (event) => {
@@ -385,6 +520,7 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
     if (!elements.worldMap.hidden) elements.worldMap.hidden = true;
     else if (!elements.inventoryModal.hidden) elements.inventoryModal.hidden = true;
+    else if (!elements.underworldModal.hidden) elements.underworldModal.hidden = true;
     return;
   }
   if (state.pendingEncounter?.type === "enemy") {

@@ -26,7 +26,7 @@
         <p>開始すると、この端末のV3セーブを新しい世界で置き換えます。</p>
         <div><button type="button" id="v3CancelNew">戻る</button><button class="is-primary" type="submit">世界を生成</button></div>
       </form>
-      <a class="v3-legacy-link" href="./legacy-v2.html">V2 開発版を開く</a>
+      <a class="v3-legacy-link" href="./legacy-v2.html">V2 比較アーカイブを開く</a>
       <footer><span>V3 FIELD PROTOTYPE</span><span>端末内オートセーブ</span></footer>
     </section>
 
@@ -42,7 +42,7 @@
     <main class="v3-game" id="v3Game" hidden>
       <header class="v3-game-header">
         <div><small id="v3NationName">生成世界</small><strong id="v3RegionName">現在地</strong></div>
-        <div class="v3-header-actions"><button type="button" data-v3-action="map">世界地図</button><button type="button" data-v3-action="menu">道具</button></div>
+        <div class="v3-header-actions"><button type="button" data-v3-action="underworld">裏社会</button><button type="button" data-v3-action="map">世界地図</button><button type="button" data-v3-action="menu">道具</button></div>
       </header>
 
       <section class="v3-play-layout">
@@ -99,6 +99,13 @@
         <header><div><small>ITEMS</small><h2 id="v3InventoryTitle">道具</h2></div><button type="button" data-v3-close="inventory" aria-label="道具を閉じる">×</button></header>
         <div id="v3InventoryList"></div>
         <footer><button class="is-danger" type="button" data-v3-action="reset">このV3冒険を初期化</button></footer>
+      </article>
+    </section>
+
+    <section class="v3-underworld" id="v3UnderworldModal" role="dialog" aria-modal="true" aria-labelledby="v3UnderworldTitle" hidden>
+      <article class="v3-underworld-card">
+        <header><div><small>UNDERWORLD / V3 CAREER</small><h1 id="v3UnderworldTitle">裏社会</h1><p>今いる場所で本人が動き、仲介人と人員を集め、作戦を委ねる。</p></div><button type="button" data-v3-close="underworld">閉じる</button></header>
+        <div id="v3UnderworldContent"></div>
       </article>
     </section>
 
