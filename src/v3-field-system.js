@@ -6,6 +6,7 @@ import {
   normalizeStateGameClock,
 } from "./game-clock.js";
 import { fnv1aCharacters, unitFromHash } from "./determinism.js";
+import { applyV3WorldEffectToTile } from "./v3-world-effects.js";
 
 export const V3_FIELD_VERSION = 4;
 export const V3_DETAIL_SCALE = 8;
@@ -144,6 +145,7 @@ export function createV3WorldContext(runtime, seed = runtime?.terrain?.seed) {
   return {
     seed: String(seed ?? "v3-world"),
     runtime,
+    detailScale: V3_DETAIL_SCALE,
     width,
     height,
     chunkColumns: Math.ceil(width / V3_CHUNK_SIZE),
@@ -333,7 +335,7 @@ export function getV3DetailedTile(context, requestedX, requestedY) {
 }
 
 export function getV3TileEntity(context, x, y, state = {}) {
-  const tile = getV3DetailedTile(context, x, y);
+  const tile = applyV3WorldEffectToTile(context, state, getV3DetailedTile(context, x, y));
   if (!tile.passable || tile.type.startsWith("settlement-")) return null;
   const key = tileKey(tile.x, tile.y);
   if ((state.defeatedTiles ?? []).includes(key) || (state.collectedTiles ?? []).includes(key) || (state.interactedTiles ?? []).includes(key)) return null;
@@ -524,7 +526,7 @@ export function moveV3Player(context, state, directionName) {
   if (!direction) throw new RangeError("不明な移動方向です。");
   if (state.pendingEncounter) return { ...state, messageLog: addLog(state, "目の前の相手に対処する必要がある。") };
   const position = normalizedPosition(context, state.player.x + direction.dx, state.player.y + direction.dy);
-  const destination = getV3DetailedTile(context, position.x, position.y);
+  const destination = applyV3WorldEffectToTile(context, state, getV3DetailedTile(context, position.x, position.y));
   if (!destination.passable) return { ...state, messageLog: addLog(state, `${destination.name}には進めない。`) };
   const generatedChunks = unique([...state.generatedChunks, ...chunkKeysAround(context, destination.x, destination.y, V3_INITIAL_CHUNK_RADIUS)]).slice(-12000);
   const moved = advanceStateGameClock({
@@ -533,7 +535,7 @@ export function moveV3Player(context, state, directionName) {
     steps: state.steps + 1,
     generatedChunks,
     discoveredTiles: discoverAround(context, destination.x, destination.y, state.discoveredTiles),
-    messageLog: addLog(state, `${direction.label}へ${destination.travelMinutes}分進んだ。${destination.name}。`),
+    messageLog: addLog(state, `${direction.label}へ${destination.travelMinutes}分進んだ。${destination.name}。${destination.worldEffect ? `${destination.worldEffect.name}の影響を受けている。` : ""}`),
   }, destination.travelMinutes).state;
   const entity = getV3TileEntity(context, destination.x, destination.y, moved);
   if (!entity) return moved;
@@ -665,7 +667,9 @@ export function getV3FieldView(context, state, radiusX = 6, radiusY = 5) {
       const x = wrapped(state.player.x + dx, context.width);
       const y = state.player.y + dy;
       const generated = y >= 0 && y < context.height && isV3ChunkGenerated(context, state, x, y);
-      const tile = generated ? getV3DetailedTile(context, x, y) : { x, y, type: "ungenerated", name: "生成中", symbol: "", passable: false };
+      const tile = generated
+        ? applyV3WorldEffectToTile(context, state, getV3DetailedTile(context, x, y))
+        : { x, y, type: "ungenerated", name: "生成中", symbol: "", passable: false, worldEffect: null };
       const visible = discovered.has(tileKey(x, y));
       const entity = visible && generated ? getV3TileEntity(context, x, y, state) : null;
       tiles.push({ ...tile, dx, dy, generated, visible, entity, player: dx === 0 && dy === 0 });
@@ -675,7 +679,7 @@ export function getV3FieldView(context, state, radiusX = 6, radiusY = 5) {
 }
 
 export function getV3LocationSummary(context, state) {
-  const tile = getV3DetailedTile(context, state.player.x, state.player.y);
+  const tile = applyV3WorldEffectToTile(context, state, getV3DetailedTile(context, state.player.x, state.player.y));
   const nearby = nearestV3Settlement(context, tile.x, tile.y, 32);
   const calendar = getGameCalendar(normalizeStateGameClock(state).clock);
   return {

@@ -54,6 +54,7 @@
 
         <section class="v3-field-shell" aria-label="1マス単位の冒険フィールド">
           <div class="v3-field" id="v3Field" role="grid" aria-label="周辺フィールド"></div>
+          <div class="v3-world-effect-visual" id="v3WorldEffectVisual" aria-hidden="true" hidden></div>
           <div class="v3-field-vignette" aria-hidden="true"></div>
           <aside class="v3-personal-battle-status" id="v3PersonalBattleStatus" aria-live="polite" hidden>
             <header><small>PERSONAL BATTLE / 現在のフィールド</small><b id="v3PersonalBattleLevel">LV 1</b></header>
@@ -66,6 +67,7 @@
           <small id="v3ClockLabel">第1日 08:00</small>
           <strong id="v3TerrainLabel">草原</strong>
           <span id="v3TerrainEffect">移動10分 · 通常の地勢</span>
+          <span class="v3-weather-label" id="v3WeatherLabel">空 平穏 · 移動補正なし</span>
           <span id="v3NearbyLabel">周辺を確認中</span>
           <span class="v3-military-summary" id="v3MilitaryLabel">軍務を確認中</span>
           <span id="v3ChunkLabel">周辺生成 9区画</span>
@@ -125,6 +127,7 @@
         <button type="button" data-v3-map-layer="terrain" aria-pressed="false">地形</button>
         <button type="button" data-v3-map-layer="regions" aria-pressed="false">地方</button>
         <button type="button" data-v3-map-layer="wars" aria-pressed="false">戦争</button>
+        <button type="button" data-v3-map-layer="effects" aria-pressed="false">現象</button>
       </nav>
       <div class="v3-world-map-workspace">
         <section class="v3-world-map-stage" aria-label="世界地図と年代操作">
@@ -136,12 +139,13 @@
         </section>
         <aside class="v3-world-intelligence" aria-label="世界情勢">
           <section class="v3-world-dossier v3-world-current-polity" id="v3WorldMapDossier" aria-label="現在地の国家体制と都市機能" aria-live="polite"></section>
+          <section class="v3-world-effects" id="v3WorldEffects" aria-label="世界現象と現在地への影響" aria-live="polite"></section>
           <section class="v3-world-summary"><header><small>WORLD STATE</small><strong>世界情勢</strong></header><div id="v3WorldStats"></div><div class="v3-world-nation-list" id="v3WorldNationList" aria-label="国家一覧"></div></section>
           <section class="v3-world-dossier" id="v3WorldDossier" aria-live="polite"><p>地図か国家一覧から勢力を選択してください。</p></section>
           <section class="v3-world-chronicle"><header><small>CHRONICLE</small><strong>年代記</strong></header><ol id="v3WorldChronicle"></ol></section>
         </aside>
       </div>
-      <footer><span><i class="is-player"></i>現在地</span><span id="v3WorldMissionLegend" hidden><i class="is-mission"></i>軍務作戦地</span><span><i class="is-city"></i>都市・町・村</span><span><i class="is-road"></i>街道</span><span><i class="is-site"></i>地形地点</span><strong id="v3WorldMapPosition">現在地</strong><div><button type="button" data-v3-world-advance="1">1か月進める</button><button type="button" data-v3-world-advance="12">12か月観測</button></div></footer>
+      <footer><span><i class="is-player"></i>現在地</span><span id="v3WorldMissionLegend" hidden><i class="is-mission"></i>軍務作戦地</span><span id="v3WorldEffectLegend" hidden><i class="is-effect"></i>現象域</span><span><i class="is-city"></i>都市・町・村</span><span><i class="is-road"></i>街道</span><span><i class="is-site"></i>地形地点</span><strong id="v3WorldMapPosition">現在地</strong><div><button type="button" data-v3-world-advance="1">1か月進める</button><button type="button" data-v3-world-advance="12">12か月観測</button></div></footer>
     </section>
 
     <div class="v3-toast" id="v3Toast" role="status" aria-live="polite"></div>

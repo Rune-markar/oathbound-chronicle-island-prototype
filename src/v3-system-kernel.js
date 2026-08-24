@@ -25,8 +25,14 @@ import {
   normalizeRegisteredSystems,
 } from "./system-registry.js";
 import { advanceV3WorldSimulation } from "./v3-world-simulation.js";
+import {
+  V3_WORLD_EFFECTS_VERSION,
+  getV3WorldEffectAt,
+  normalizeV3WorldEffectsState,
+  setV3WorldEffectsPeriod,
+} from "./v3-world-effects.js";
 
-export const V3_SYSTEM_KERNEL_VERSION = 1;
+export const V3_SYSTEM_KERNEL_VERSION = 2;
 
 const clone = (value) => structuredClone(value);
 
@@ -94,6 +100,35 @@ export const V3_SYSTEM_REGISTRY = createSystemRegistry([
     id: "clock",
     version: 1,
     normalize: (_context, state) => normalizeStateGameClock(state),
+  },
+  {
+    id: "world-effects",
+    version: V3_WORLD_EFFECTS_VERSION,
+    dependsOn: ["clock"],
+    normalize: (context, state) => normalizeV3WorldEffectsState(context, state),
+    onMonth: (context, state, transition) => {
+      const previous = getV3WorldEffectAt(context, state, state.player.x, state.player.y);
+      const next = setV3WorldEffectsPeriod(context, state, transition.calendar);
+      const current = getV3WorldEffectAt(context, next, next.player.x, next.player.y);
+      const summary = current
+        ? `${transition.calendar.year}年${transition.calendar.month}月、現在地は${current.name}の影響下に入った。`
+        : previous
+          ? `${transition.calendar.year}年${transition.calendar.month}月、現在地の${previous.name}は収まった。`
+          : `${transition.calendar.year}年${transition.calendar.month}月、現在地の空模様は平穏。`;
+      return createActionResult(next, { events: [{
+        id: `world-effects:month:${transition.calendar.absoluteMonthIndex}`,
+        type: "world.effect.changed",
+        source: "world-effects",
+        visibility: "known",
+        summary,
+        locationIds: [current?.regionId ?? previous?.regionId].filter(Boolean),
+        payload: {
+          previousEffect: previous?.type ?? null,
+          currentEffect: current?.type ?? null,
+          frontCount: next.worldEffects.fronts.length,
+        },
+      }] });
+    },
   },
   {
     id: "military",

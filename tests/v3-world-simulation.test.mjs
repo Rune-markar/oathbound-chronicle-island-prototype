@@ -107,7 +107,7 @@ test("V3通常地図に政治・地形・地方・戦争レイヤー、年代再
     readFile(new URL("../src/v3-app.js", import.meta.url), "utf8"),
     readFile(new URL("../v3.css", import.meta.url), "utf8"),
   ]);
-  for (const layer of ["nations", "terrain", "regions", "wars"]) assert.match(index, new RegExp(`data-v3-map-layer="${layer}"`));
+  for (const layer of ["nations", "terrain", "regions", "wars", "effects"]) assert.match(index, new RegExp(`data-v3-map-layer="${layer}"`));
   assert.match(index, /id="v3WorldHistory"/);
   assert.match(index, /data-v3-world-advance="1"/);
   assert.match(index, /id="v3WorldDossier"/);

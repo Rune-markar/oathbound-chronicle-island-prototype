@@ -65,6 +65,7 @@ import {
   normalizeV3WorldSimulation,
   V3_PREHISTORY_MONTHS,
 } from "./v3-world-simulation.js";
+import { getV3WorldEffectsView } from "./v3-world-effects.js";
 import { createActionResult, isActionResult } from "./action-result.js";
 import { GAME_MINUTES_PER_MONTH, getGameCalendar } from "./game-clock.js";
 import { commitV3Action, getV3Operations, normalizeV3IntegratedState, V3_SYSTEM_REGISTRY } from "./v3-system-kernel.js";
@@ -104,6 +105,8 @@ const elements = {
   clockLabel: document.querySelector("#v3ClockLabel"),
   terrainLabel: document.querySelector("#v3TerrainLabel"),
   terrainEffect: document.querySelector("#v3TerrainEffect"),
+  weatherLabel: document.querySelector("#v3WeatherLabel"),
+  worldEffectVisual: document.querySelector("#v3WorldEffectVisual"),
   nearbyLabel: document.querySelector("#v3NearbyLabel"),
   chunkLabel: document.querySelector("#v3ChunkLabel"),
   messages: document.querySelector("#v3Messages"),
@@ -141,6 +144,8 @@ const elements = {
   worldStats: document.querySelector("#v3WorldStats"),
   worldNationList: document.querySelector("#v3WorldNationList"),
   worldMapDossier: document.querySelector("#v3WorldMapDossier"),
+  worldEffects: document.querySelector("#v3WorldEffects"),
+  worldEffectLegend: document.querySelector("#v3WorldEffectLegend"),
   worldDossier: document.querySelector("#v3WorldDossier"),
   worldChronicle: document.querySelector("#v3WorldChronicle"),
   worldMapPosition: document.querySelector("#v3WorldMapPosition"),
@@ -158,6 +163,7 @@ let mapLayer = "nations";
 let mapHistoryIndex = null;
 let selectedNationId = null;
 let worldAdvanceBusy = false;
+let worldMapReturnFocus = null;
 const worldChronicleCache = new WeakMap();
 
 function escapeHtml(value) {
@@ -293,6 +299,7 @@ async function prepareWorld(options, savedField = null, savedWorldSimulation = n
     get context() { return context; },
     get runtime() { return runtime; },
     get worldSimulation() { return worldSimulation; },
+    get worldEffects() { return getV3WorldEffectsView(context, state); },
     get operations() { return getV3Operations(context, state); },
     get domainEvents() { return state.domainEvents?.entries ?? []; },
     get systemVersions() { return V3_SYSTEM_REGISTRY.versions; },
@@ -311,6 +318,19 @@ function showToast(message) {
   elements.toast.textContent = message;
   elements.toast.classList.add("is-visible");
   toastTimer = setTimeout(() => elements.toast.classList.remove("is-visible"), 1800);
+}
+
+function renderLocalWorldEffect() {
+  const local = getV3WorldEffectsView(context, state).local;
+  const effectType = local?.motion ?? "clear";
+  elements.game.dataset.worldEffect = effectType;
+  elements.worldEffectVisual.hidden = !local;
+  elements.worldEffectVisual.className = `v3-world-effect-visual${local ? ` is-${escapeHtml(effectType)}` : ""}`;
+  elements.worldEffectVisual.style.setProperty("--effect-strength", String(local?.strength ?? 0));
+  elements.weatherLabel.className = `v3-weather-label is-${local ? escapeHtml(effectType) : "clear"}`;
+  elements.weatherLabel.textContent = local
+    ? `${local.symbol} ${local.name} · 移動 +${Math.round((local.travelMultiplier - 1) * 100)}% · 遭遇 +${(local.dangerDelta * 100).toFixed(1)}pt`
+    : "空 平穏 · 移動補正なし";
 }
 
 function renderField() {
@@ -339,7 +359,9 @@ function renderField() {
     const labelParts = [hidden ? "未踏" : tile.name];
     if (tile.player) labelParts.push(`${state.player.name}の現在地`);
     if ((!hidden || militaryTarget) && visibleEntity) labelParts.push(visibleEntity.name);
-    return `<button type="button" role="gridcell" class="v3-tile is-${escapeHtml(hidden && !militaryTarget ? "fog" : tile.type)}${tile.player ? " is-player" : ""}${personalEnemy && tile.player ? " is-combat-player" : ""}${encounterTile ? " is-combat-enemy" : ""}${militaryTarget ? " is-military-target" : ""}${adjacent ? " is-adjacent" : ""}" data-x="${tile.x}" data-y="${tile.y}" ${adjacent && tile.passable && !state.pendingEncounter ? `data-v3-move="${direction}"` : ""} aria-label="${escapeHtml(labelParts.join("、"))}" tabindex="${tile.player ? "0" : "-1"}">${symbol}</button>`;
+    if (!hidden && tile.worldEffect) labelParts.push(`${tile.worldEffect.name}の影響下`);
+    const effectClass = !hidden && tile.worldEffect ? ` has-world-effect is-effect-${escapeHtml(tile.worldEffect.motion)}` : "";
+    return `<button type="button" role="gridcell" class="v3-tile is-${escapeHtml(hidden && !militaryTarget ? "fog" : tile.type)}${tile.player ? " is-player" : ""}${personalEnemy && tile.player ? " is-combat-player" : ""}${encounterTile ? " is-combat-enemy" : ""}${militaryTarget ? " is-military-target" : ""}${adjacent ? " is-adjacent" : ""}${effectClass}" data-x="${tile.x}" data-y="${tile.y}" ${adjacent && tile.passable && !state.pendingEncounter ? `data-v3-move="${direction}"` : ""} aria-label="${escapeHtml(labelParts.join("、"))}" tabindex="${tile.player ? "0" : "-1"}">${symbol}</button>`;
   }).join("");
 }
 
@@ -537,6 +559,7 @@ function renderGame() {
     : "近くに集落はない";
   elements.chunkLabel.textContent = `詳細生成 ${state.generatedChunks.length}区画 · ${state.steps}歩`;
   elements.messages.innerHTML = state.messageLog.map((message, index) => `<p${index === 0 ? ' class="is-latest"' : ""}>${escapeHtml(message)}</p>`).join("");
+  renderLocalWorldEffect();
   renderField();
   renderEncounter();
   renderMilitary();
@@ -653,6 +676,48 @@ function colorMix(color, target, amount) {
   return `#${source.map((value, index) => Math.round(value + (destination[index] - value) * amount).toString(16).padStart(2, "0")).join("")}`;
 }
 
+function colorAlpha(color, alpha) {
+  if (!/^#[0-9a-f]{6}$/i.test(color ?? "")) return `rgba(160, 190, 190, ${alpha})`;
+  const values = [1, 3, 5].map((index) => Number.parseInt(color.slice(index, index + 2), 16));
+  return `rgba(${values.join(", ")}, ${alpha})`;
+}
+
+function drawWorldEffectFronts(drawing, effects, scale) {
+  const mapWidth = runtime.terrain.width * scale;
+  drawing.save();
+  for (const front of effects.fronts) {
+    const radius = front.radius * scale;
+    for (const wrapOffset of [-mapWidth, 0, mapWidth]) {
+      const x = front.x * scale + scale / 2 + wrapOffset;
+      const y = front.y * scale + scale / 2;
+      const gradient = drawing.createRadialGradient(x, y, 0, x, y, radius);
+      gradient.addColorStop(0, colorAlpha(front.color, 0.58));
+      gradient.addColorStop(0.58, colorAlpha(front.color, 0.3));
+      gradient.addColorStop(1, colorAlpha(front.color, 0));
+      drawing.fillStyle = gradient;
+      drawing.beginPath();
+      drawing.arc(x, y, radius, 0, Math.PI * 2);
+      drawing.fill();
+      drawing.strokeStyle = colorAlpha(front.color, 0.9);
+      drawing.lineWidth = Math.max(1, front.intensity * 0.65);
+      drawing.setLineDash([front.intensity * 2 + 1, 3]);
+      drawing.beginPath();
+      drawing.arc(x, y, radius * 0.72, 0, Math.PI * 2);
+      drawing.stroke();
+    }
+    drawing.setLineDash([]);
+    drawing.fillStyle = "#fff8dc";
+    drawing.strokeStyle = "rgba(4, 16, 18, .9)";
+    drawing.lineWidth = 2;
+    drawing.font = "bold 8px sans-serif";
+    drawing.textAlign = "center";
+    drawing.textBaseline = "middle";
+    drawing.strokeText(front.symbol, front.x * scale + scale / 2, front.y * scale + scale / 2);
+    drawing.fillText(front.symbol, front.x * scale + scale / 2, front.y * scale + scale / 2);
+  }
+  drawing.restore();
+}
+
 function regionMapColor(color, regionId) {
   let hash = 0;
   for (const character of String(regionId)) hash = (Math.imul(hash, 31) + character.charCodeAt(0)) >>> 0;
@@ -733,6 +798,11 @@ function renderWorldPanels(map) {
     button.setAttribute("aria-pressed", String(active));
   });
   renderCurrentPolity(map);
+  const effects = getV3WorldEffectsView(context, state, map.isCurrent ? null : map);
+  elements.worldEffects.innerHTML = `
+    <header><span><small>WORLD EFFECTS</small><strong>世界現象</strong></span><b>${effects.fronts.length}域</b></header>
+    <p class="v3-world-effect-local"><strong>${effects.local ? `${escapeHtml(effects.local.symbol)} ${escapeHtml(effects.local.name)}` : "現在座標は平穏"}</strong><span>${effects.local ? `移動 +${Math.round((effects.local.travelMultiplier - 1) * 100)}% · 遭遇 +${(effects.local.dangerDelta * 100).toFixed(1)}pt` : "移動・遭遇補正なし"}</span></p>
+    <ul>${effects.fronts.map((front) => `<li class="is-${escapeHtml(front.motion)}"><i style="--effect-color:${escapeHtml(front.color)}">${escapeHtml(front.symbol)}</i><span><strong>${escapeHtml(front.name)}</strong><small>${escapeHtml(front.regionName ?? "洋上・無主地")} · 強度${front.intensity} · 半径${Math.round(front.radius)}区画</small></span><em>最大+${front.travelPenaltyPercent}%</em></li>`).join("") || "<li><span><strong>大きな現象なし</strong><small>この月に記録対象となる前線はありません。</small></span></li>"}</ul>`;
 
   const activeNations = map.nations.filter((nation) => regionCountFor(map, nation.id) > 0);
   const settlementCount = map.objects.filter((object) => object.settlementLevel).length;
@@ -765,6 +835,7 @@ function renderWorldPanels(map) {
 
 function drawWorldMap() {
   const map = currentMapView();
+  const effects = getV3WorldEffectsView(context, state, map.isCurrent ? null : map);
   if (!selectedNationId || !map.nationById.has(selectedNationId) || regionCountFor(map, selectedNationId) === 0) {
     const location = getV3LocationSummary(context, state);
     selectedNationId = map.tileNationIds[location.tile.macroIndex] ?? map.nations.find((nation) => regionCountFor(map, nation.id) > 0)?.id ?? null;
@@ -779,14 +850,15 @@ function drawWorldMap() {
   drawing.fillStyle = "#214650";
   drawing.fillRect(0, 0, canvas.width, canvas.height);
   const warRegionIds = new Set(map.activeWars.map((war) => war.targetRegionId).filter(Boolean));
+  elements.worldEffectLegend.hidden = mapLayer !== "effects";
   for (const tile of runtime.tiles) {
     const nationId = map.tileNationIds[tile.index] ?? null;
     const nationColor = map.nationById.get(nationId)?.color;
     let color = TERRAIN_COLORS[tile.terrain] ?? (tile.passable ? "#74865d" : "#315e68");
-    if (tile.passable && mapLayer !== "terrain" && nationColor) color = nationColor;
+    if (tile.passable && !["terrain", "effects"].includes(mapLayer) && nationColor) color = nationColor;
     if (tile.passable && mapLayer === "regions" && tile.regionId) color = regionMapColor(color, tile.regionId);
     if (tile.passable && nationId === selectedNationId) color = colorMix(color, "#ffffff", 0.18);
-    drawing.globalAlpha = tile.passable ? mapLayer === "terrain" ? 0.94 : 0.82 : 1;
+    drawing.globalAlpha = tile.passable ? ["terrain", "effects"].includes(mapLayer) ? 0.94 : 0.82 : 1;
     drawing.fillStyle = color;
     drawing.fillRect(tile.x * scale, tile.y * scale, scale, scale);
     const tags = new Set(tile.geographyTags ?? []);
@@ -809,7 +881,7 @@ function drawWorldMap() {
       drawing.fillRect(tile.x * scale, tile.y * scale, scale, scale);
     }
   }
-  drawing.globalAlpha = mapLayer === "terrain" ? 0.35 : mapLayer === "regions" ? 0.5 : 0.62;
+  drawing.globalAlpha = ["terrain", "effects"].includes(mapLayer) ? 0.35 : mapLayer === "regions" ? 0.5 : 0.62;
   drawing.strokeStyle = mapLayer === "regions" ? "#172823" : "#f0d99c";
   drawing.lineWidth = mapLayer === "wars" ? 1.5 : 1;
   const visibleBorders = mapLayer === "regions" ? runtime.nations.regionBorderSegments ?? [] : map.borderSegments;
@@ -835,6 +907,7 @@ function drawWorldMap() {
     }
     drawing.stroke();
   }
+  if (mapLayer === "effects") drawWorldEffectFronts(drawing, effects, scale);
   drawing.globalAlpha = 1;
   for (const object of map.objects) {
     if (!object.settlementLevel) continue;
@@ -882,10 +955,20 @@ function drawWorldMap() {
 }
 
 function openWorldMap() {
+  worldMapReturnFocus = document.activeElement instanceof HTMLElement && document.activeElement !== document.body
+    ? document.activeElement
+    : elements.mapButton;
   elements.worldMap.hidden = false;
   mapHistoryIndex = null;
   drawWorldMap();
   elements.worldMap.querySelector("[data-v3-close='map']").focus();
+}
+
+function closeWorldMap() {
+  elements.worldMap.hidden = true;
+  const returnTarget = worldMapReturnFocus?.isConnected ? worldMapReturnFocus : elements.mapButton;
+  worldMapReturnFocus = null;
+  requestAnimationFrame(() => returnTarget?.focus());
 }
 
 async function advanceWorld(months = 1) {
@@ -1132,7 +1215,7 @@ document.addEventListener("click", (event) => {
   const action = event.target.closest("[data-v3-action]")?.dataset.v3Action;
   if (action) return handleAction(action);
   const close = event.target.closest("[data-v3-close]")?.dataset.v3Close;
-  if (close === "map") elements.worldMap.hidden = true;
+  if (close === "map") closeWorldMap();
   if (close === "inventory") elements.inventoryModal.hidden = true;
   if (close === "underworld") elements.underworldModal.hidden = true;
   if (close === "commerce") elements.commerceModal.hidden = true;
@@ -1160,7 +1243,7 @@ elements.worldCanvas.addEventListener("click", (event) => {
 document.addEventListener("keydown", (event) => {
   if (!state || /INPUT|TEXTAREA|SELECT/.test(event.target.tagName)) return;
   if (event.key === "Escape") {
-    if (!elements.worldMap.hidden) elements.worldMap.hidden = true;
+    if (!elements.worldMap.hidden) closeWorldMap();
     else if (!elements.inventoryModal.hidden) elements.inventoryModal.hidden = true;
     else if (!elements.underworldModal.hidden) elements.underworldModal.hidden = true;
     else if (!elements.commerceModal.hidden) elements.commerceModal.hidden = true;

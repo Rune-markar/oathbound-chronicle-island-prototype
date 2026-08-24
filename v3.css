@@ -109,6 +109,29 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .v3-combatants .v3-player-sprite, .v3-combatants .v3-entity { width: 56%; }
 .v3-combatants .v3-entity { margin-left: -18%; translate: 0 -12%; }
 .v3-field-vignette { position: absolute; inset: 0; box-shadow: inset 0 0 60px 16px rgba(5,15,16,.46); pointer-events: none; }
+.v3-world-effect-visual { position: absolute; z-index: 2; inset: 0; opacity: calc(.3 + var(--effect-strength, .5) * .28); pointer-events: none; mix-blend-mode: screen; }
+.v3-world-effect-visual::before, .v3-world-effect-visual::after { content: ""; position: absolute; inset: -20%; pointer-events: none; }
+.v3-world-effect-visual.is-rain::before { background: repeating-linear-gradient(105deg, transparent 0 15px, rgba(167,216,229,.58) 16px 17px, transparent 18px 31px); background-size: 48px 58px; animation: v3-effect-rain .72s linear infinite; }
+.v3-world-effect-visual.is-storm { background: rgba(40,65,82,.2); }
+.v3-world-effect-visual.is-storm::before { background: repeating-linear-gradient(108deg, transparent 0 11px, rgba(178,218,231,.72) 12px 14px, transparent 15px 26px); background-size: 42px 48px; animation: v3-effect-rain .42s linear infinite; }
+.v3-world-effect-visual.is-storm::after { background: rgba(225,240,255,.58); opacity: 0; animation: v3-effect-lightning 5.2s steps(1) infinite; }
+.v3-world-effect-visual.is-snow::before { background-image: radial-gradient(circle, rgba(255,255,255,.88) 0 2px, transparent 2.5px), radial-gradient(circle, rgba(239,250,250,.72) 0 1.5px, transparent 2px); background-position: 0 0, 22px 28px; background-size: 44px 52px, 35px 43px; animation: v3-effect-snow 7s linear infinite; }
+.v3-world-effect-visual.is-blizzard::before { background: repeating-linear-gradient(102deg, transparent 0 12px, rgba(244,252,255,.8) 13px 17px, transparent 18px 28px); background-size: 54px 36px; animation: v3-effect-blizzard .8s linear infinite; filter: blur(.5px); }
+.v3-world-effect-visual.is-sandstorm { background: linear-gradient(90deg, rgba(155,103,46,.1), rgba(232,190,105,.28), rgba(134,83,39,.12)); mix-blend-mode: soft-light; }
+.v3-world-effect-visual.is-sandstorm::before { background: repeating-linear-gradient(174deg, transparent 0 12px, rgba(250,212,134,.38) 13px 17px, transparent 18px 31px); background-size: 70px 42px; animation: v3-effect-sand 1.15s linear infinite; filter: blur(1px); }
+.v3-world-effect-visual.is-heatwave { background: repeating-radial-gradient(ellipse at 50% 115%, rgba(235,120,56,.22) 0 5%, transparent 7% 14%); mix-blend-mode: overlay; animation: v3-effect-heat 2.8s ease-in-out infinite alternate; }
+.v3-world-effect-visual.is-fog::before, .v3-world-effect-visual.is-fog::after { background: radial-gradient(ellipse at 25% 44%, rgba(213,230,226,.55), transparent 38%), radial-gradient(ellipse at 75% 62%, rgba(190,214,210,.5), transparent 42%); filter: blur(10px); animation: v3-effect-fog 12s ease-in-out infinite alternate; }
+.v3-world-effect-visual.is-fog::after { translate: -12% 4%; animation-direction: alternate-reverse; animation-duration: 16s; }
+.v3-world-effect-visual.is-ashfall::before { background-image: radial-gradient(circle, rgba(80,67,62,.8) 0 1.5px, transparent 2px), radial-gradient(circle, rgba(151,133,124,.72) 0 1px, transparent 1.5px); background-position: 0 0, 17px 19px; background-size: 31px 37px, 27px 33px; animation: v3-effect-ash 8s linear infinite; }
+.v3-tile.has-world-effect::before { content: ""; position: absolute; z-index: 1; inset: 0; border: 1px solid rgba(226,239,232,.12); pointer-events: none; }
+@keyframes v3-effect-rain { to { background-position: -48px 58px; } }
+@keyframes v3-effect-lightning { 0%, 8%, 11%, 100% { opacity: 0; } 9%, 10% { opacity: .8; } }
+@keyframes v3-effect-snow { to { background-position: 20px 52px, 4px 71px; } }
+@keyframes v3-effect-blizzard { to { background-position: -108px 36px; } }
+@keyframes v3-effect-sand { to { background-position: 140px 0; } }
+@keyframes v3-effect-heat { from { transform: scaleY(.98); filter: blur(0); } to { transform: scaleY(1.03); filter: blur(1.5px); } }
+@keyframes v3-effect-fog { to { translate: 18% -3%; } }
+@keyframes v3-effect-ash { to { background-position: 10px 74px, 2px 85px; } }
 @keyframes v3-enemy-pulse { from { filter: brightness(.96); } to { filter: brightness(1.22); } }
 @keyframes v3-military-pulse { from { filter: brightness(.95); } to { filter: brightness(1.18); } }
 
@@ -135,6 +158,8 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .v3-place-window small { color: #dbc879; font-weight: 800; }
 .v3-place-window strong { font-family: Georgia, "Yu Mincho", serif; font-size: 17px; }
 .v3-place-window span { color: #b7c3ba; font-size: 10px; }
+.v3-place-window .v3-weather-label { overflow: hidden; padding: 4px 6px; border-left: 2px solid #73877e; background: #102729; color: #dbe6df; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
+.v3-place-window .v3-weather-label:not(.is-clear) { border-left-color: #d4c16e; color: #fff1bd; }
 .v3-place-window .v3-military-summary { margin-top: 3px; padding-top: 5px; border-top: 1px solid #536761; color: #d6c47b; font-weight: 800; }
 .v3-place-window .v3-military-summary.is-active { color: #ffe7a0; }
 .v3-command-area { display: grid; grid-template-columns: minmax(0, 1fr) 144px; gap: 12px; min-height: 152px; padding: 12px max(16px, calc((100vw - 1180px) / 2)) max(12px, env(safe-area-inset-bottom)); border-top: 1px solid #52685f; background: #071416; }
@@ -311,6 +336,21 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .v3-world-dossier p > small { color: #8fa098; letter-spacing: 0; }
 .v3-world-dossier .v3-dossier-war { display: block; padding: 6px; border-left: 2px solid #ad685e; background: #241a1a; }
 .v3-world-current-polity { background: #10272a !important; box-shadow: inset 0 0 0 2px #243c3c; }
+.v3-world-effects { background: #101f25 !important; }
+.v3-world-effects > header > span { display: grid; }
+.v3-world-effects > header > span > small { color: #d8c576; font-size: 8px; font-weight: 900; letter-spacing: .12em; }
+.v3-world-effects > header > span > strong { font: 800 16px Georgia, "Yu Mincho", serif; }
+.v3-world-effects > header > b { color: #f1df98; font-size: 11px; }
+.v3-world-effect-local { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 7px 0; padding: 6px 7px; border-left: 2px solid #d4c16e; background: #172c30; }
+.v3-world-effect-local strong { color: #fff1bd; font-size: 11px; }
+.v3-world-effect-local span { color: #aabbb6; font-size: 8px; text-align: right; }
+.v3-world-effects ul { display: grid; gap: 3px; margin: 0; padding: 0; list-style: none; }
+.v3-world-effects li { display: grid; grid-template-columns: 27px minmax(0, 1fr) auto; align-items: center; gap: 6px; min-height: 34px; padding: 4px 5px; border: 1px solid #31494b; background: #0c1b1e; }
+.v3-world-effects li > i { display: grid; place-items: center; width: 25px; height: 25px; border: 1px solid color-mix(in srgb, var(--effect-color) 72%, white); border-radius: 50%; background: color-mix(in srgb, var(--effect-color) 52%, #0b1b1d); color: #fff9df; font-size: 9px; font-style: normal; font-weight: 900; }
+.v3-world-effects li > span { display: grid; min-width: 0; }
+.v3-world-effects li strong { color: #eceddf; font-size: 9px; }
+.v3-world-effects li small { overflow: hidden; color: #8fa29e; font-size: 7px; letter-spacing: 0; text-overflow: ellipsis; white-space: nowrap; }
+.v3-world-effects li em { color: #ddc979; font-size: 8px; font-style: normal; font-weight: 800; }
 .v3-dossier-settlement { display: grid; gap: 4px; margin-top: 9px; padding-top: 8px; border-top: 1px solid #465c56; }
 .v3-dossier-settlement > small { color: #d8c576; font-weight: 900; letter-spacing: .12em; }
 .v3-dossier-settlement > strong { color: #f0ead0; font: 800 15px Georgia, "Yu Mincho", serif; }
@@ -329,6 +369,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .v3-world-map > footer i { display: block; width: 14px; height: 8px; background: #f4e5b5; }
 .v3-world-map > footer i.is-player { width: 12px; height: 12px; border: 2px solid #fff; border-radius: 50%; background: none; }
 .v3-world-map > footer i.is-mission { width: 12px; height: 12px; border: 2px solid #ffd878; border-radius: 50%; background: #74231f; }
+.v3-world-map > footer i.is-effect { height: 10px; border: 1px dashed #e9d78b; border-radius: 50%; background: radial-gradient(circle, #6ea6bd, transparent 70%); }
 .v3-world-map > footer i.is-road { height: 2px; background: #e4d5a0; }
 .v3-world-map > footer i.is-site { width: 9px; height: 9px; rotate: 45deg; background: #d98758; }
 .v3-world-map > footer > strong { margin-left: auto; color: #d9c979; }

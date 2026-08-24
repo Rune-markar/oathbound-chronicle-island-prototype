@@ -27,7 +27,9 @@ test("one crossed clock boundary advances world merchant crime and domain events
   assert.deepEqual([getGameCalendar(result.state.clock).year, getGameCalendar(result.state.clock).month], [317, 5]);
   assert.equal(result.crossedMonths.length, 1);
   assert.ok(getDomainEvents(result.state).some((entry) => entry.type === "criminal.month.advanced"));
+  assert.ok(getDomainEvents(result.state).some((entry) => entry.type === "world.effect.changed"));
   assert.ok(getDomainEvents(result.state).some((entry) => entry.type === "clock.advanced"));
+  assert.equal(result.state.worldEffects.period, "317-5");
   assert.equal(result.state.clockMinutes, result.state.clock.elapsedMinutes);
 });
 
@@ -76,7 +78,8 @@ test("V3 save registry upgrades version three and aligns its canonical clock to 
   assert.equal(migrated.worldSimulation.version, 2);
   assert.equal(migrated.worldSimulation.generatedWorld.tacticalOutcomeReceipts["legacy-battle"], "318-1");
   const saved = writeV3Save(adapter, "v3", migrated);
-  assert.equal(saved.systemVersions["system-kernel"], 1);
+  assert.equal(saved.systemVersions["system-kernel"], 2);
+  assert.equal(saved.systemVersions["world-effects"], 1);
   assert.equal(saved.systemVersions["merchant-company"], 2);
   assert.equal(saved.systemVersions["world-simulation"], 2);
 });
