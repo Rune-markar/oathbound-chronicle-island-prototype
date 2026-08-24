@@ -24,7 +24,7 @@ V3は、生成済みの国家・地方・街道・集落を1マス単位の詳�
 - 歩行、世界地図、商会、裏社会は同じゲーム時計と月境界を使う。時間を進めた領域は`ActionResult`自身が宣言するため、どの画面から月を進めても各システムを一度だけ進行し、12か月観測の出来事も実際の発生月を保ってV6セーブへ保存する
 - 移動先周辺を優先しながら、待機中に離れたチャンクも1区画ずつ生成して端末内へ保存する
 
-詳細な生成・保存境界は [V3設計](./V3_DESIGN.md)、種族変容と確率判断は [実装仕様](./docs/superpowers/specs/2026-08-24-race-transformative-probabilistic-decision-system.md)、システム間の規格化と検証は [ゲームシステム規格化・統合レビュー](./docs/gameplay-reviews/2026-08-24-system-integration-rationalization.md)、複合地理の生成条件と実画面検証は [天地創造・複合地理レビュー](./docs/gameplay-reviews/2026-08-24-terrain-world-creation.md)、気象・天体・戦争を種族、戦闘、出現、市場へ接続した結果は [種族作用型ワールドエフェクトレビュー](./docs/gameplay-reviews/2026-08-24-race-reactive-world-effects.md) を参照してください。
+詳細な生成・保存境界は [V3設計](./V3_DESIGN.md)、V2世界構築の共有境界と実画面検証は [V2世界構築・V3統合レビュー](./docs/gameplay-reviews/2026-08-24-v2-world-generation-v3-integration.md)、種族変容と確率判断は [実装仕様](./docs/superpowers/specs/2026-08-24-race-transformative-probabilistic-decision-system.md)、システム間の規格化と検証は [ゲームシステム規格化・統合レビュー](./docs/gameplay-reviews/2026-08-24-system-integration-rationalization.md)、複合地理の生成条件と実画面検証は [天地創造・複合地理レビュー](./docs/gameplay-reviews/2026-08-24-terrain-world-creation.md)、気象・天体・戦争を種族、戦闘、出現、市場へ接続した結果は [種族作用型ワールドエフェクトレビュー](./docs/gameplay-reviews/2026-08-24-race-reactive-world-effects.md) を参照してください。
 
 ## 画面方針
 
@@ -200,4 +200,4 @@ python -m http.server 4180
 npm run check
 ```
 
-人物経歴・管轄・建議・共有認可は `src/player-career.js`、町起点の名声記録と地方間伝搬は `src/regional-reputation.js`、生成地域の人口・集落成長・領主・支配勢力は `src/regional-domain-system.js`、生成戦争の共通正面解決は `src/generated-war-core.js`、生成国家間戦争は `src/generated-world-war-system.js`、併合後抵抗は `src/generated-resistance-system.js`、国家進行は `src/monthly-simulation.js`、三幕・外交交渉・人物政治・外国意図は `src/campaign-system.js`、公開入口は `src/simulation.js`、都市・武将の派生計算は `src/realm-model.js`、町政は `src/town-administration.js`、州郡統治は `src/administration-model.js`、履歴イベント・圧力・因果グラフ・年代記編纂は `src/history-model.js`、生成世界統計は生成世界台帳から `src/app.js` が表示し、固定シナリオの作戦・講和・占領政策は `src/war-system.js`、固定戦域側の戦争判断は `src/war-ai.js`、音響生成は `src/audio.js`、画面制御は `src/app.js` に分けています。外部ライブラリ、外部音源、外部通信は使用しません。
+V2/V3共通の地形→国家→地方→街道→集落生成は `src/world-generation.js`、V2の生成世界状態・地方移動互換は `src/generated-world-system.js`、V3の新規開始と詳細投影は `src/v3-app.js` / `src/v3-field-system.js` が担当します。人物経歴・管轄・建議・共有認可は `src/player-career.js`、町起点の名声記録と地方間伝搬は `src/regional-reputation.js`、生成地域の人口・集落成長・領主・支配勢力は `src/regional-domain-system.js`、生成戦争の共通正面解決は `src/generated-war-core.js`、生成国家間戦争は `src/generated-world-war-system.js`、併合後抵抗は `src/generated-resistance-system.js`、国家進行は `src/monthly-simulation.js`、三幕・外交交渉・人物政治・外国意図は `src/campaign-system.js`、公開入口は `src/simulation.js`、都市・武将の派生計算は `src/realm-model.js`、町政は `src/town-administration.js`、州郡統治は `src/administration-model.js`、履歴イベント・圧力・因果グラフ・年代記編纂は `src/history-model.js`、生成世界統計は生成世界台帳から `src/app.js` が表示し、固定シナリオの作戦・講和・占領政策は `src/war-system.js`、固定戦域側の戦争判断は `src/war-ai.js`、音響生成は `src/audio.js`、画面制御は `src/app.js` に分けています。外部ライブラリ、外部音源、外部通信は使用しません。

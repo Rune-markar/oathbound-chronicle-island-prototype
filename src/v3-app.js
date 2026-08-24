@@ -1,7 +1,7 @@
 import {
-  buildGeneratedWorldAsync,
   createGeneratedWorldState,
 } from "./generated-world-system.js";
+import { buildWorldGenerationAsync } from "./world-generation.js";
 import {
   advanceV3BackgroundGeneration,
   createV3FieldState,
@@ -235,7 +235,7 @@ async function prepareWorld(options, savedField = null, savedWorldSimulation = n
   elements.generationLabel.textContent = savedField ? "世界を読み戻しています" : "概算世界を構築しています";
   setGenerationProgress(0, "地形の輪郭を定めています。");
   const generatedWorld = createGeneratedWorldState(options);
-  runtime = await buildGeneratedWorldAsync(generatedWorld, ({ progress, label }) => setGenerationProgress(progress * 0.68, label));
+  runtime = await buildWorldGenerationAsync(generatedWorld, ({ progress, label }) => setGenerationProgress(progress * 0.68, label));
   if (savedWorldSimulation) {
     setGenerationProgress(86, "保存された国境と年代記を読み戻しています。");
     worldSimulation = normalizeV3WorldSimulation(runtime, options, savedWorldSimulation);
@@ -307,6 +307,7 @@ async function prepareWorld(options, savedField = null, savedWorldSimulation = n
     get state() { return state; },
     get context() { return context; },
     get runtime() { return runtime; },
+    get worldGeneration() { return runtime?.worldGeneration ?? null; },
     get worldSimulation() { return worldSimulation; },
     get worldEffects() { return getV3WorldEffectsView(context, state); },
     get operations() { return getV3Operations(context, state); },

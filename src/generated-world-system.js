@@ -1,12 +1,16 @@
-import { generateTerrain } from "./terrain-generation.js";
 import { fnv1aCharacters, unitFromHash } from "./determinism.js";
 import {
   GENERATED_OBJECT_MIN_DISTANCE,
   GENERATED_WORLD_OBJECT_TYPES,
   ROADSIDE_SETTLEMENT_MAX_OFFSET,
   SETTLEMENT_EXPANSION_WAVE_TILES,
-  generateNations,
 } from "./nation-generation.js";
+import {
+  buildWorldGeneration,
+  buildWorldGenerationAsync,
+  clearWorldGenerationRuntimeCache,
+  worldGenerationRuntimeKey,
+} from "./world-generation.js";
 import { SQUARE_CARDINAL_DIRECTIONS, squareTileIndex, squareWrappedDeltaX } from "./square-grid.js";
 import {
   advanceGeopoliticalWorld,
@@ -105,7 +109,6 @@ export const GENERATED_COLONY_REQUIRED_REPUTATION = 25;
 export const GENERATED_RECOGNITION_RADIUS = 20;
 
 const DIRECTION_BY_NAME = new Map(SQUARE_CARDINAL_DIRECTIONS.map((direction) => [direction.name, direction]));
-let runtimeCache = { key: null, value: null };
 const generatedWorldViewCache = new WeakMap();
 const generatedObjectExclusionCache = new WeakMap();
 let characterWorldSequence = 0;
@@ -131,7 +134,7 @@ function capPendingStrategicDecisions(decisions) {
 }
 
 function generatedWorldRuntimeKey(generatedState) {
-  return ["regional-hd-v10-geographic-features", generatedState.seed, generatedState.width, generatedState.height, generatedState.plateCount, generatedState.nationCount].join("|");
+  return worldGenerationRuntimeKey(generatedState);
 }
 
 function cloneGeneratedWorldState(value) {
@@ -757,31 +760,7 @@ export function advanceGeneratedWorldTime(state, elapsedMinutes) {
 export function buildGeneratedWorld(stateOrGeneratedWorld) {
   const source = stateOrGeneratedWorld?.generatedWorld ?? stateOrGeneratedWorld ?? {};
   const generatedState = createGeneratedWorldState(source, stateOrGeneratedWorld?.generatedWorld ? stateOrGeneratedWorld : null);
-  const key = generatedWorldRuntimeKey(generatedState);
-  if (runtimeCache.key === key) return runtimeCache.value;
-  const terrain = generateTerrain({
-    seed: generatedState.seed,
-    width: generatedState.width,
-    height: generatedState.height,
-    plateCount: generatedState.plateCount,
-    wrapX: true,
-  });
-  const nations = generateNations(terrain, {
-    count: generatedState.nationCount,
-    seed: `${generatedState.seed}:nations`,
-  });
-  runtimeCache = {
-    key,
-    value: {
-      key,
-      terrain,
-      nations,
-      tiles: nations.tiles,
-      nationById: new Map(nations.nations.map((nation) => [nation.id, nation])),
-      regionById: new Map(nations.regions.map((region) => [region.id, region])),
-    },
-  };
-  return runtimeCache.value;
+  return buildWorldGeneration(generatedState);
 }
 
 export function ensureGeneratedWorldPlayerLocation(state, preparedRuntime = null) {
@@ -807,56 +786,10 @@ export function ensureGeneratedWorldPlayerLocation(state, preparedRuntime = null
   return state;
 }
 
-function yieldGenerationFrame() {
-  return new Promise((resolve) => {
-    if (typeof globalThis.requestAnimationFrame === "function") globalThis.requestAnimationFrame(() => resolve());
-    else setTimeout(resolve, 0);
-  });
-}
-
 export async function buildGeneratedWorldAsync(stateOrGeneratedWorld, onProgress = () => {}) {
   const source = stateOrGeneratedWorld?.generatedWorld ?? stateOrGeneratedWorld ?? {};
   const generatedState = createGeneratedWorldState(source, stateOrGeneratedWorld?.generatedWorld ? stateOrGeneratedWorld : null);
-  const key = generatedWorldRuntimeKey(generatedState);
-  if (runtimeCache.key === key) {
-    onProgress({ progress: 100, stage: "complete", label: "生成済みの世界を確認しました" });
-    return runtimeCache.value;
-  }
-
-  onProgress({ progress: 8, stage: "seed", label: "世界シードを準備しています" });
-  await yieldGenerationFrame();
-  onProgress({ progress: 18, stage: "terrain", label: "地形テンプレートを配置しています" });
-  await yieldGenerationFrame();
-  const terrain = generateTerrain({
-    seed: generatedState.seed,
-    width: generatedState.width,
-    height: generatedState.height,
-    plateCount: generatedState.plateCount,
-    wrapX: true,
-  });
-  onProgress({ progress: 66, stage: "terrain", label: "海岸・水系・火山・遺跡を確定しました" });
-  await yieldGenerationFrame();
-  onProgress({ progress: 72, stage: "nations", label: "種族の適地に国家を築いています" });
-  await yieldGenerationFrame();
-  const nations = generateNations(terrain, {
-    count: generatedState.nationCount,
-    seed: `${generatedState.seed}:nations`,
-  });
-  onProgress({ progress: 94, stage: "nations", label: "沿岸都市・海路・開始地点を確定しています" });
-  await yieldGenerationFrame();
-  runtimeCache = {
-    key,
-    value: {
-      key,
-      terrain,
-      nations,
-      tiles: nations.tiles,
-      nationById: new Map(nations.nations.map((nation) => [nation.id, nation])),
-      regionById: new Map(nations.regions.map((region) => [region.id, region])),
-    },
-  };
-  onProgress({ progress: 100, stage: "complete", label: "新しい世界の生成が完了しました" });
-  return runtimeCache.value;
+  return buildWorldGenerationAsync(generatedState, onProgress);
 }
 
 export function getGeneratedWorldView(state) {
@@ -1939,5 +1872,5 @@ export function generatedWorldSaveSummary(state) {
 }
 
 export function clearGeneratedWorldRuntimeCache() {
-  runtimeCache = { key: null, value: null };
+  clearWorldGenerationRuntimeCache();
 }

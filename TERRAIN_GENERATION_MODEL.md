@@ -6,7 +6,7 @@
 
 > 地殻プレート → 隆起・海陸 → 侵食 → 気温・降水 → 流域・河川 → 土壌水分・沖積作用 → 生態系 → 収量・入植適性
 
-この順序により、「山脈と無関係に山が点在する」「川が尾根を越える」「川に近ければ急斜面や沼地でも無条件に最良農地になる」といった不自然さを避ける。実装は [`src/terrain-generation.js`](./src/terrain-generation.js) にあり、シード付き四角タイル世界を返す。
+この順序により、「山脈と無関係に山が点在する」「川が尾根を越える」「川に近ければ急斜面や沼地でも無条件に最良農地になる」といった不自然さを避ける。物理地形は [`src/terrain-generation.js`](./src/terrain-generation.js)、国家・地方・街道・集落は [`src/nation-generation.js`](./src/nation-generation.js) が生成し、実ゲームの共有入口は [`src/world-generation.js`](./src/world-generation.js) が一つのランタイムへまとめる。
 
 これは地球科学の完全な数値シミュレーションではない。4Xゲームで扱える計算量の中で、地形・気候・水系・土地利用の因果を保存するモデルである。
 
@@ -162,6 +162,22 @@
 
 ## 4. API
 
+V2で確立した実ゲーム用アルゴリズムは `buildWorldGeneration()` / `buildWorldGenerationAsync()` を正本とする。V2の保存・地方移動APIは `generated-world-system.js` からこの正本を呼び、Generation V3は新規開始時に正本を直接呼ぶ。同じシードと生成条件なら両世代は同じ地形、国家、地方、街道、集落のオブジェクトを共有する。
+
+```js
+import { buildWorldGenerationAsync } from "./src/world-generation.js";
+
+const runtime = await buildWorldGenerationAsync({
+  seed: "eldoria-317",
+  width: 192,
+  height: 120,
+  plateCount: 28,
+  nationCount: 7,
+});
+```
+
+以下は地形・国家生成器を個別検証する低水準APIである。
+
 ```js
 import {
   generateTerrain,
@@ -206,7 +222,7 @@ const svg = renderTerrainSvg(world, {
 
 ### 4.2 本体ゲームへの統合
 
-[`src/generated-world-system.js`](./src/generated-world-system.js) が生成器と本体のセーブ状態を仲介する。本体の「世界 → 生成世界」では次を実行できる。
+[`src/world-generation.js`](./src/world-generation.js) がV2/V3共通の生成器、[`src/generated-world-system.js`](./src/generated-world-system.js) がV2のセーブ・地方移動互換層、[`src/v3-app.js`](./src/v3-app.js) と [`src/v3-field-system.js`](./src/v3-field-system.js) がV3の新規開始・1マス詳細投影を担当する。V2比較画面では次を実行できる。
 
 - 世界シードと国家数から地形・水系・国家を再生成する。
 - 生成国家からプレイヤー国家を選ぶ。

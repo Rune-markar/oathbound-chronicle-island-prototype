@@ -4,7 +4,7 @@
 
 V3は現在と今後の唯一の開発正本であり、V2の移動画面を改修するものではない。`index.html`、`src/v3-app.js`、`src/v3-field-system.js`、`src/v3-world-simulation.js`、`src/v3-world-effects.js`、`src/v3-merchant-system.js`、`src/v3-criminal-organization-system.js`、`src/v3-group-combat.js`、`v3.css`、localStorageの `leviathan-covenant-v3-save` を独立境界とし、V2の画面とセーブは比較・回帰確認用の `legacy-v2.html` に残す。集団戦へ移る間だけ `leviathan-covenant-v3-group-battle-bridge` を使い、V2セーブへV3状態を混ぜない。新機能はV2だけへ追加せず、V3の入口、状態、UI、保存、通常プレイへ接続した時点を完了とする。
 
-世界構築で再利用するのは `generated-world-system.js` が作る概算世界である。V3は概算世界の地形、国家、地方、街道、集落を入力として読み、旧版の地方間移動、地点選択型個人マップ、画面状態を引き継がない。一方、戦闘ルールは作り直さず、戦闘規模によって表示面だけを分ける。
+世界構築で再利用するのは、V2で確立した地形→国家→地方→街道→集落を `world-generation.js` に分離した共有パイプラインである。V2の `generated-world-system.js` は保存・移動互換のため同じパイプラインを包み、V3は新規開始時に共有パイプラインを直接呼ぶ。V3は生成結果だけを入力として読み、旧版の地方間移動、地点選択型個人マップ、画面状態、セーブを引き継がない。一方、戦闘ルールは作り直さず、戦闘規模によって表示面だけを分ける。
 
 ## 二段階の世界
 
