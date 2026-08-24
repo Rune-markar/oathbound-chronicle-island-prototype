@@ -4,6 +4,23 @@ export const V3_CHUNK_SIZE = 16;
 export const V3_INITIAL_CHUNK_RADIUS = 1;
 export const V3_LOCAL_PREGEN_RADIUS = 2;
 
+export const V3_COMBAT_PRESENTATIONS = Object.freeze({
+  personal: Object.freeze({
+    scale: "personal-units",
+    surface: "field-inline",
+    usesPreparation: false,
+    usesLogistics: false,
+    usesDedicatedResult: false,
+  }),
+  group: Object.freeze({
+    scale: "group-units",
+    surface: "dedicated-tactical",
+    usesPreparation: true,
+    usesLogistics: true,
+    usesDedicatedResult: true,
+  }),
+});
+
 const DIRECTIONS = Object.freeze({
   north: Object.freeze({ dx: 0, dy: -1, label: "北" }),
   east: Object.freeze({ dx: 1, dy: 0, label: "東" }),
@@ -50,6 +67,12 @@ function hashText(value) {
 
 export function v3HashUnit(seed, ...values) {
   return hashText(`${seed}:${values.join(":")}`) / 4294967295;
+}
+
+export function getV3CombatPresentation(combatScale) {
+  return combatScale === "personal" || combatScale === "personal-units"
+    ? V3_COMBAT_PRESENTATIONS.personal
+    : V3_COMBAT_PRESENTATIONS.group;
 }
 
 function wrapped(value, size) {
@@ -318,6 +341,17 @@ export function normalizeV3FieldState(context, source = {}) {
     gold: clampInteger(source.player.gold, 0, 0, 999999),
     inventory: Array.isArray(source.player.inventory) ? source.player.inventory.filter((item) => item?.id && item?.name).slice(0, 64) : [],
   };
+  const pendingEncounter = source.pendingEncounter && typeof source.pendingEncounter === "object"
+    ? {
+      ...source.pendingEncounter,
+      ...(source.pendingEncounter.type === "enemy" ? {
+        combatScale: "personal-units",
+        fleeAttempts: clampInteger(source.pendingEncounter.fleeAttempts, 0, 0, 9999),
+        worldX: wrapped(clampInteger(source.pendingEncounter.worldX, player.x, -context.width * 4, context.width * 4), context.width),
+        worldY: clampInteger(source.pendingEncounter.worldY, player.y, 0, context.height - 1),
+      } : {}),
+    }
+    : null;
   return {
     ...fallback,
     ...source,
@@ -330,7 +364,7 @@ export function normalizeV3FieldState(context, source = {}) {
     collectedTiles: Array.isArray(source.collectedTiles) ? unique(source.collectedTiles).slice(-4000) : [],
     defeatedTiles: Array.isArray(source.defeatedTiles) ? unique(source.defeatedTiles).slice(-4000) : [],
     interactedTiles: Array.isArray(source.interactedTiles) ? unique(source.interactedTiles).slice(-4000) : [],
-    pendingEncounter: source.pendingEncounter && typeof source.pendingEncounter === "object" ? source.pendingEncounter : null,
+    pendingEncounter,
     messageLog: Array.isArray(source.messageLog) ? source.messageLog.map(String).slice(0, 8) : fallback.messageLog,
   };
 }
@@ -388,10 +422,25 @@ export function moveV3Player(context, state, directionName) {
       messageLog: addLog(moved, `${entity.name}を拾った。`),
     };
   }
+  if (entity.type === "enemy") {
+    return {
+      ...moved,
+      player: { ...state.player },
+      pendingEncounter: {
+        ...entity,
+        combatScale: "personal-units",
+        fleeAttempts: 0,
+        worldX: destination.x,
+        worldY: destination.y,
+        tileKey: key,
+      },
+      messageLog: addLog(state, `${direction.label}の${destination.name}に${entity.name}を発見した。足元の地形で個人戦に入る！`),
+    };
+  }
   return {
     ...moved,
     pendingEncounter: { ...entity, tileKey: key },
-    messageLog: addLog(moved, entity.type === "enemy" ? `${entity.name}が現れた！` : `${entity.name}に出会った。`),
+    messageLog: addLog(moved, `${entity.name}に出会った。`),
   };
 }
 
@@ -427,10 +476,16 @@ export function resolveV3Encounter(context, state, action) {
     };
   }
   if (action === "flee") {
-    const escaped = v3HashUnit(context.seed, "flee", state.steps, state.player.x, state.player.y) > 0.28;
+    const fleeAttempts = clampInteger(encounter.fleeAttempts, 0, 0, 9999) + 1;
+    const escaped = v3HashUnit(context.seed, "flee", fleeAttempts, state.steps, state.player.x, state.player.y) > 0.28;
     if (escaped) return { ...state, pendingEncounter: null, messageLog: addLog(state, `${encounter.name}から逃げ切った。`) };
     const damage = Math.max(1, encounter.power + encounter.level - 2);
-    return { ...state, player: { ...state.player, hp: Math.max(1, state.player.hp - damage) }, messageLog: addLog(state, `逃げ切れず、${damage}の傷を負った。`) };
+    return {
+      ...state,
+      player: { ...state.player, hp: Math.max(1, state.player.hp - damage) },
+      pendingEncounter: { ...encounter, fleeAttempts },
+      messageLog: addLog(state, `逃げ切れず、${damage}の傷を負った。`),
+    };
   }
   if (action !== "fight") return state;
   const playerDamage = 6 + state.player.level * 2 + Math.floor(v3HashUnit(context.seed, "attack", state.steps, encounter.hp) * 5);

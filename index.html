@@ -55,6 +55,11 @@
         <section class="v3-field-shell" aria-label="1マス単位の冒険フィールド">
           <div class="v3-field" id="v3Field" role="grid" aria-label="周辺フィールド"></div>
           <div class="v3-field-vignette" aria-hidden="true"></div>
+          <aside class="v3-personal-battle-status" id="v3PersonalBattleStatus" aria-live="polite" hidden>
+            <header><small>PERSONAL BATTLE / 現在のフィールド</small><b id="v3PersonalBattleLevel">LV 1</b></header>
+            <strong id="v3PersonalBattleEnemy">敵</strong>
+            <div><span>敵HP</span><i><b id="v3PersonalBattleHpBar"></b></i><em id="v3PersonalBattleHpLabel">0 / 0</em></div>
+          </aside>
         </section>
 
         <aside class="v3-place-window" aria-live="polite">
@@ -67,20 +72,24 @@
 
       <footer class="v3-command-area">
         <section class="v3-message-window" aria-live="polite"><div id="v3Messages"></div></section>
-        <nav class="v3-dpad" aria-label="移動方向">
+        <nav class="v3-dpad" id="v3MovementPad" aria-label="移動方向">
           <button type="button" data-v3-move="north" aria-label="北へ進む">▲</button>
           <button type="button" data-v3-move="west" aria-label="西へ進む">◀</button>
           <i aria-hidden="true">歩</i>
           <button type="button" data-v3-move="east" aria-label="東へ進む">▶</button>
           <button type="button" data-v3-move="south" aria-label="南へ進む">▼</button>
         </nav>
+        <section class="v3-personal-battle-commands" id="v3PersonalBattleCommands" aria-label="個人戦の行動" hidden>
+          <button class="is-primary" type="button" data-v3-encounter="fight"><strong>攻撃</strong><small>たたかう</small></button>
+          <button type="button" data-v3-encounter="flee"><strong>退避</strong><small>にげる</small></button>
+        </section>
       </footer>
     </main>
 
     <section class="v3-modal" id="v3EncounterModal" role="dialog" aria-modal="true" aria-labelledby="v3EncounterTitle" hidden>
       <article class="v3-encounter-card">
         <i id="v3EncounterSymbol" aria-hidden="true">敵</i>
-        <div><small id="v3EncounterType">ENCOUNTER</small><h2 id="v3EncounterTitle">敵が現れた</h2><p id="v3EncounterText"></p><div class="v3-enemy-hp" id="v3EnemyHp" hidden><span>HP</span><i><b></b></i><strong></strong></div></div>
+        <div><small id="v3EncounterType">FIELD ENCOUNTER</small><h2 id="v3EncounterTitle">旅人に出会った</h2><p id="v3EncounterText"></p></div>
         <footer id="v3EncounterActions"></footer>
       </article>
     </section>

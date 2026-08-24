@@ -50,13 +50,21 @@ const elements = {
   nearbyLabel: document.querySelector("#v3NearbyLabel"),
   chunkLabel: document.querySelector("#v3ChunkLabel"),
   messages: document.querySelector("#v3Messages"),
+  movementPad: document.querySelector("#v3MovementPad"),
+  personalBattleStatus: document.querySelector("#v3PersonalBattleStatus"),
+  personalBattleEnemy: document.querySelector("#v3PersonalBattleEnemy"),
+  personalBattleLevel: document.querySelector("#v3PersonalBattleLevel"),
+  personalBattleHpBar: document.querySelector("#v3PersonalBattleHpBar"),
+  personalBattleHpLabel: document.querySelector("#v3PersonalBattleHpLabel"),
+  personalBattleCommands: document.querySelector("#v3PersonalBattleCommands"),
+  mapButton: document.querySelector('[data-v3-action="map"]'),
+  inventoryButton: document.querySelector('[data-v3-action="menu"]'),
   encounterModal: document.querySelector("#v3EncounterModal"),
   encounterSymbol: document.querySelector("#v3EncounterSymbol"),
   encounterType: document.querySelector("#v3EncounterType"),
   encounterTitle: document.querySelector("#v3EncounterTitle"),
   encounterText: document.querySelector("#v3EncounterText"),
   encounterActions: document.querySelector("#v3EncounterActions"),
-  enemyHp: document.querySelector("#v3EnemyHp"),
   inventoryModal: document.querySelector("#v3InventoryModal"),
   inventoryList: document.querySelector("#v3InventoryList"),
   worldMap: document.querySelector("#v3WorldMap"),
@@ -143,34 +151,51 @@ function showToast(message) {
 
 function renderField() {
   const view = getV3FieldView(context, state);
+  const personalEnemy = state.pendingEncounter?.type === "enemy" ? state.pendingEncounter : null;
   elements.field.style.setProperty("--field-columns", view.columns);
+  elements.field.setAttribute("aria-label", personalEnemy ? `${personalEnemy.name}との個人戦。探索中と同じ周辺フィールド` : "周辺フィールド");
   elements.field.innerHTML = view.tiles.map((tile) => {
     const adjacent = Math.abs(tile.dx) + Math.abs(tile.dy) === 1;
     const direction = tile.dx === 1 ? "east" : tile.dx === -1 ? "west" : tile.dy === 1 ? "south" : "north";
     const hidden = !tile.visible && !tile.player;
-    const symbol = tile.player ? `<b class="v3-player-sprite" aria-label="${escapeHtml(state.player.name)}">旅</b>`
-      : hidden ? "" : tile.entity ? `<b class="v3-entity is-${tile.entity.type}">${escapeHtml(tile.entity.symbol)}</b>` : `<span>${escapeHtml(tile.symbol)}</span>`;
-    const label = tile.player ? `${state.player.name}の現在地、${tile.name}` : hidden ? "未踏" : tile.entity ? `${tile.name}、${tile.entity.name}` : tile.name;
-    return `<button type="button" role="gridcell" class="v3-tile is-${escapeHtml(hidden ? "fog" : tile.type)}${tile.player ? " is-player" : ""}${adjacent ? " is-adjacent" : ""}" data-x="${tile.x}" data-y="${tile.y}" ${adjacent && tile.passable && !state.pendingEncounter ? `data-v3-move="${direction}"` : ""} aria-label="${escapeHtml(label)}" tabindex="${tile.player ? "0" : "-1"}">${symbol}</button>`;
+    const encounterTile = Boolean(personalEnemy && personalEnemy.worldX === tile.x && personalEnemy.worldY === tile.y);
+    const visibleEntity = encounterTile ? personalEnemy : tile.entity;
+    const sprites = [
+      tile.player ? `<b class="v3-player-sprite" aria-label="${escapeHtml(state.player.name)}">旅</b>` : "",
+      !hidden && visibleEntity ? `<b class="v3-entity is-${escapeHtml(visibleEntity.type)}" aria-label="${escapeHtml(visibleEntity.name)}">${escapeHtml(visibleEntity.symbol)}</b>` : "",
+    ].filter(Boolean);
+    const symbol = sprites.length > 1 ? `<span class="v3-combatants">${sprites.join("")}</span>`
+      : sprites[0] ?? (hidden ? "" : `<span>${escapeHtml(tile.symbol)}</span>`);
+    const labelParts = [hidden ? "未踏" : tile.name];
+    if (tile.player) labelParts.push(`${state.player.name}の現在地`);
+    if (!hidden && visibleEntity) labelParts.push(visibleEntity.name);
+    return `<button type="button" role="gridcell" class="v3-tile is-${escapeHtml(hidden ? "fog" : tile.type)}${tile.player ? " is-player" : ""}${personalEnemy && tile.player ? " is-combat-player" : ""}${encounterTile ? " is-combat-enemy" : ""}${adjacent ? " is-adjacent" : ""}" data-x="${tile.x}" data-y="${tile.y}" ${adjacent && tile.passable && !state.pendingEncounter ? `data-v3-move="${direction}"` : ""} aria-label="${escapeHtml(labelParts.join("、"))}" tabindex="${tile.player ? "0" : "-1"}">${symbol}</button>`;
   }).join("");
 }
 
 function renderEncounter() {
   const encounter = state.pendingEncounter;
-  elements.encounterModal.hidden = !encounter;
+  const personalEnemy = encounter?.type === "enemy" ? encounter : null;
+  elements.game.classList.toggle("is-personal-battle", Boolean(personalEnemy));
+  elements.personalBattleStatus.hidden = !personalEnemy;
+  elements.personalBattleCommands.hidden = !personalEnemy;
+  elements.movementPad.hidden = Boolean(personalEnemy);
+  elements.mapButton.disabled = Boolean(personalEnemy);
+  elements.inventoryButton.disabled = Boolean(personalEnemy);
+  elements.encounterModal.hidden = !encounter || Boolean(personalEnemy);
   if (!encounter) return;
-  elements.encounterSymbol.textContent = encounter.symbol;
-  elements.encounterType.textContent = encounter.type === "enemy" ? "MONSTER ENCOUNTER" : encounter.role === "merchant" ? "TRAVELING MERCHANT" : "FIELD ENCOUNTER";
-  elements.encounterTitle.textContent = encounter.name;
-  elements.encounterText.textContent = encounter.type === "enemy" ? `レベル${encounter.level}。こちらの様子をうかがっている。` : encounter.message;
-  elements.enemyHp.hidden = encounter.type !== "enemy";
-  if (encounter.type === "enemy") {
-    elements.enemyHp.querySelector("b").style.width = `${Math.max(0, encounter.hp / encounter.maxHp * 100)}%`;
-    elements.enemyHp.querySelector("strong").textContent = `${encounter.hp} / ${encounter.maxHp}`;
-    elements.encounterActions.innerHTML = '<button class="is-primary" type="button" data-v3-encounter="fight">たたかう</button><button type="button" data-v3-encounter="flee">にげる</button>';
-  } else {
-    elements.encounterActions.innerHTML = `${encounter.role === "merchant" ? `<button class="is-primary" type="button" data-v3-encounter="buy">薬草を買う · 銀貨${encounter.price ?? 5}</button>` : '<button class="is-primary" type="button" data-v3-encounter="talk">話す</button>'}<button type="button" data-v3-encounter="leave">別れる</button>`;
+  if (personalEnemy) {
+    elements.personalBattleEnemy.textContent = personalEnemy.name;
+    elements.personalBattleLevel.textContent = `LV ${personalEnemy.level}`;
+    elements.personalBattleHpBar.style.width = `${Math.max(0, personalEnemy.hp / personalEnemy.maxHp * 100)}%`;
+    elements.personalBattleHpLabel.textContent = `${personalEnemy.hp} / ${personalEnemy.maxHp}`;
+    return;
   }
+  elements.encounterSymbol.textContent = encounter.symbol;
+  elements.encounterType.textContent = encounter.role === "merchant" ? "TRAVELING MERCHANT" : "FIELD ENCOUNTER";
+  elements.encounterTitle.textContent = encounter.name;
+  elements.encounterText.textContent = encounter.message;
+  elements.encounterActions.innerHTML = `${encounter.role === "merchant" ? `<button class="is-primary" type="button" data-v3-encounter="buy">薬草を買う · 銀貨${encounter.price ?? 5}</button>` : '<button class="is-primary" type="button" data-v3-encounter="talk">話す</button>'}<button type="button" data-v3-encounter="leave">別れる</button>`;
 }
 
 function renderInventory() {
@@ -202,11 +227,23 @@ function renderGame() {
 }
 
 function movePlayer(direction) {
+  const encounterBeforeMove = state.pendingEncounter;
   const next = moveV3Player(context, state, direction);
   if (next === state) return;
   state = next;
   saveGame();
   renderGame();
+  if (!encounterBeforeMove && state.pendingEncounter?.type === "enemy") {
+    requestAnimationFrame(() => elements.personalBattleCommands.querySelector("button")?.focus());
+  }
+}
+
+function applyEncounterAction(action) {
+  state = resolveV3Encounter(context, state, action);
+  saveGame();
+  renderGame();
+  if (state.pendingEncounter?.type === "enemy") elements.personalBattleCommands.querySelector("button")?.focus();
+  else elements.field.querySelector(".is-player")?.focus();
 }
 
 function scheduleBackgroundGeneration() {
@@ -288,6 +325,7 @@ function openWorldMap() {
 }
 
 function handleAction(action) {
+  if (state.pendingEncounter?.type === "enemy") return showToast("個人戦を決着させてください。");
   if (action === "map") return openWorldMap();
   if (action === "menu") {
     elements.inventoryModal.hidden = false;
@@ -325,12 +363,7 @@ document.addEventListener("click", (event) => {
   const move = event.target.closest("[data-v3-move]")?.dataset.v3Move;
   if (move) return movePlayer(move);
   const encounterAction = event.target.closest("[data-v3-encounter]")?.dataset.v3Encounter;
-  if (encounterAction) {
-    state = resolveV3Encounter(context, state, encounterAction);
-    saveGame();
-    renderGame();
-    return;
-  }
+  if (encounterAction) return applyEncounterAction(encounterAction);
   const itemIndex = event.target.closest("[data-v3-use-item]")?.dataset.v3UseItem;
   if (itemIndex !== undefined) {
     const next = useV3Item(state, Number(itemIndex));
@@ -352,6 +385,13 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
     if (!elements.worldMap.hidden) elements.worldMap.hidden = true;
     else if (!elements.inventoryModal.hidden) elements.inventoryModal.hidden = true;
+    return;
+  }
+  if (state.pendingEncounter?.type === "enemy") {
+    if (["Enter", " ", "f", "F"].includes(event.key)) {
+      event.preventDefault();
+      applyEncounterAction("fight");
+    }
     return;
   }
   if (state.pendingEncounter) return;
