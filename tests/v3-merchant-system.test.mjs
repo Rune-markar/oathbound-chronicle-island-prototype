@@ -182,7 +182,7 @@ test("旧V3フィールドセーブへ交易・商会領域を加算し、V3画�
   const { context, state } = setup();
   delete state.merchant;
   normalizeV3MerchantState(state);
-  assert.equal(state.merchant.version, 1);
+  assert.equal(state.merchant.version, 2);
   assert.equal(state.merchant.company.status, "solo");
   assert.deepEqual(state.merchant.trade.cargo, []);
 

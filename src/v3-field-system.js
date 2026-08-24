@@ -1,6 +1,13 @@
 import { geographyDefinition, terrainTravelProfile } from "./terrain-geography.js";
+import {
+  advanceStateGameClock,
+  createGameClock,
+  getGameCalendar,
+  normalizeStateGameClock,
+} from "./game-clock.js";
+import { fnv1aCharacters, unitFromHash } from "./determinism.js";
 
-export const V3_FIELD_VERSION = 3;
+export const V3_FIELD_VERSION = 4;
 export const V3_DETAIL_SCALE = 8;
 export const V3_CHUNK_SIZE = 16;
 export const V3_INITIAL_CHUNK_RADIUS = 1;
@@ -76,17 +83,8 @@ function clampInteger(value, fallback, minimum, maximum) {
   return Number.isInteger(number) ? Math.min(maximum, Math.max(minimum, number)) : fallback;
 }
 
-function hashText(value) {
-  let hash = 2166136261;
-  for (const character of String(value)) {
-    hash ^= character.charCodeAt(0);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
-}
-
 export function v3HashUnit(seed, ...values) {
-  return hashText(`${seed}:${values.join(":")}`) / 4294967295;
+  return unitFromHash(fnv1aCharacters(`${seed}:${values.join(":")}`));
 }
 
 export function getV3CombatPresentation(combatScale) {
@@ -430,7 +428,7 @@ function findSpawn(context) {
 export function createV3FieldState(context, options = {}) {
   const spawn = findSpawn(context);
   const playerName = String(options.playerName ?? "アレク").trim().slice(0, 24) || "アレク";
-  return {
+  return normalizeStateGameClock({
     version: V3_FIELD_VERSION,
     seed: context.seed,
     player: { name: playerName, x: spawn.x, y: spawn.y, spawnX: spawn.x, spawnY: spawn.y, hp: 34, maxHp: 34, level: 1, xp: 0, gold: 12, inventory: [] },
@@ -444,11 +442,12 @@ export function createV3FieldState(context, options = {}) {
     interactedTiles: [],
     pendingEncounter: null,
     messageLog: ["女神の光が消えた。ここからは一歩ずつ、自分の足で進む。"],
-  };
+    clock: createGameClock(),
+  });
 }
 
 export function normalizeV3FieldState(context, source = {}) {
-  if (source.version !== V3_FIELD_VERSION || source.seed !== context.seed || !source.player) return createV3FieldState(context, source);
+  if (source.seed !== context.seed || !source.player) return createV3FieldState(context, source);
   const fallback = createV3FieldState(context, source);
   const x = wrapped(clampInteger(source.player.x, fallback.player.x, -context.width * 4, context.width * 4), context.width);
   const y = clampInteger(source.player.y, fallback.player.y, 0, context.height - 1);
@@ -477,11 +476,13 @@ export function normalizeV3FieldState(context, source = {}) {
       } : {}),
     }
     : null;
-  return {
+  return normalizeStateGameClock({
     ...fallback,
     ...source,
     player,
     steps: clampInteger(source.steps, 0, 0, 9999999),
+    version: V3_FIELD_VERSION,
+    clock: source.clock,
     clockMinutes: clampInteger(source.clockMinutes, 8 * 60, 0, 999 * 24 * 60),
     generatedChunks: unique([...(source.generatedChunks ?? []), ...chunkKeysAround(context, player.x, player.y, V3_INITIAL_CHUNK_RADIUS)]).slice(-12000),
     backgroundCursor: clampInteger(source.backgroundCursor, 0, 0, context.chunkColumns * context.chunkRows),
@@ -491,7 +492,7 @@ export function normalizeV3FieldState(context, source = {}) {
     interactedTiles: Array.isArray(source.interactedTiles) ? unique(source.interactedTiles).slice(-4000) : [],
     pendingEncounter,
     messageLog: Array.isArray(source.messageLog) ? source.messageLog.map(String).slice(0, 8) : fallback.messageLog,
-  };
+  });
 }
 
 export function isV3ChunkGenerated(context, state, x, y) {
@@ -526,15 +527,14 @@ export function moveV3Player(context, state, directionName) {
   const destination = getV3DetailedTile(context, position.x, position.y);
   if (!destination.passable) return { ...state, messageLog: addLog(state, `${destination.name}には進めない。`) };
   const generatedChunks = unique([...state.generatedChunks, ...chunkKeysAround(context, destination.x, destination.y, V3_INITIAL_CHUNK_RADIUS)]).slice(-12000);
-  const moved = {
+  const moved = advanceStateGameClock({
     ...state,
     player: { ...state.player, x: destination.x, y: destination.y },
     steps: state.steps + 1,
-    clockMinutes: state.clockMinutes + destination.travelMinutes,
     generatedChunks,
     discoveredTiles: discoverAround(context, destination.x, destination.y, state.discoveredTiles),
     messageLog: addLog(state, `${direction.label}へ${destination.travelMinutes}分進んだ。${destination.name}。`),
-  };
+  }, destination.travelMinutes).state;
   const entity = getV3TileEntity(context, destination.x, destination.y, moved);
   if (!entity) return moved;
   const key = tileKey(destination.x, destination.y);
@@ -677,7 +677,7 @@ export function getV3FieldView(context, state, radiusX = 6, radiusY = 5) {
 export function getV3LocationSummary(context, state) {
   const tile = getV3DetailedTile(context, state.player.x, state.player.y);
   const nearby = nearestV3Settlement(context, tile.x, tile.y, 32);
-  const minutes = state.clockMinutes % (24 * 60);
+  const calendar = getGameCalendar(normalizeStateGameClock(state).clock);
   return {
     tile,
     nation: tile.nation,
@@ -686,8 +686,10 @@ export function getV3LocationSummary(context, state) {
     regionName: tile.region?.name ?? "未踏地方",
     nearestSettlement: nearby,
     nearestSettlementFunction: nearby?.settlement?.primaryFunction ?? null,
-    day: Math.floor(state.clockMinutes / (24 * 60)) + 1,
-    time: `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`,
+    year: calendar.year,
+    month: calendar.month,
+    day: calendar.day,
+    time: `${String(calendar.hour).padStart(2, "0")}:${String(calendar.minute).padStart(2, "0")}`,
   };
 }
 

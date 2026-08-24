@@ -8,6 +8,7 @@ import {
   getGeneratedWorldWarView,
 } from "./generated-world-system.js";
 import { getRegionalDomainView } from "./regional-domain-system.js";
+import { fnv1aCharacters, unitFromHash } from "./determinism.js";
 
 export const V3_WORLD_SIMULATION_VERSION = 1;
 export const V3_PRESENT_DATE = Object.freeze({ year: 317, month: 4 });
@@ -19,17 +20,8 @@ const simulationViewCache = new WeakMap();
 
 const clamp = (value, minimum, maximum) => Math.min(maximum, Math.max(minimum, Number(value) || 0));
 
-function hashText(text) {
-  let hash = 2166136261;
-  for (const character of String(text)) {
-    hash ^= character.charCodeAt(0);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
-}
-
 function hashUnit(...parts) {
-  return hashText(parts.join("|")) / 4294967295;
+  return unitFromHash(fnv1aCharacters(parts.join("|")));
 }
 
 function periodFor(dateState) {

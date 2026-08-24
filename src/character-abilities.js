@@ -1,3 +1,5 @@
+import { createMulberry32, fnv1aUtf16 } from "./determinism.js";
+
 export const ABILITY_KEYS = Object.freeze([
   "strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma",
 ]);
@@ -20,24 +22,8 @@ export const ABILITY_ROLES = Object.freeze({
   healer: Object.freeze({ id: "healer", name: "神官・治療役", priority: ["wisdom", "constitution", "charisma", "intelligence", "dexterity", "strength"] }),
 });
 
-function hashString(value) {
-  let hash = 2166136261;
-  for (let index = 0; index < String(value).length; index += 1) {
-    hash ^= String(value).charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
-}
-
 function seededRandom(seed) {
-  let value = hashString(seed) || 1;
-  return () => {
-    value += 0x6D2B79F5;
-    let result = value;
-    result = Math.imul(result ^ result >>> 15, result | 1);
-    result ^= result + Math.imul(result ^ result >>> 7, result | 61);
-    return ((result ^ result >>> 14) >>> 0) / 0x100000000;
-  };
+  return createMulberry32(seed, fnv1aUtf16);
 }
 
 function rollDie(random) {

@@ -1,16 +1,10 @@
 import { recordCriminalHistoricalEvent } from "./history-model.js";
+import { fnv1aCodePoints } from "./determinism.js";
 
 const clone = (value) => structuredClone(value);
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
-function hashCrimeEvent(value) {
-  let hash = 2166136261;
-  for (const character of String(value)) {
-    hash ^= character.codePointAt(0);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
-}
+const hashCrimeEvent = fnv1aCodePoints;
 
 export const CRIME_SCHEMA_VERSION = 1;
 export const CRIME_RISK_LABELS = Object.freeze(["有利", "互角", "危険", "極めて危険"]);

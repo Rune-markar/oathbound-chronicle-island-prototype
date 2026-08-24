@@ -1,4 +1,5 @@
 import { requireRaceDefinition } from "./race-list.js";
+import { fnv1aCharacters, unitFromHash } from "./determinism.js";
 
 export const BARBARIAN_SCHEMA_VERSION = 1;
 export const BARBARIAN_EVENT_LIMIT = 240;
@@ -43,17 +44,8 @@ function periodFor(dateState) {
   return `${year}-${month}`;
 }
 
-function hashText(text) {
-  let hash = 2166136261;
-  for (const character of String(text)) {
-    hash ^= character.charCodeAt(0);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
-}
-
 function hashUnit(seed, ...values) {
-  return hashText(`${seed}:${values.join(":")}`) / 4294967295;
+  return unitFromHash(fnv1aCharacters(`${seed}:${values.join(":")}`));
 }
 
 function tileDistance(runtime, left, right) {

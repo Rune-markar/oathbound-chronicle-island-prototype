@@ -1,3 +1,5 @@
+import { fnv1aCodePoints } from "./determinism.js";
+
 const GENERATED_NATION_PEOPLE_IDS = Object.freeze([
   "human", "beastfolk", "dwarf", "elf", "lizardman", "goblin", "giant",
 ]);
@@ -166,12 +168,7 @@ const FIELD_VARIANTS = Object.freeze({
 const GENERATED_ORDINALS = Object.freeze(["一", "二", "三", "四", "五", "六", "七", "八"]);
 
 function stableUnitHash(...parts) {
-  let hash = 2166136261;
-  for (const character of parts.join(":")) {
-    hash ^= character.codePointAt(0);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
+  return fnv1aCodePoints(parts.join(":"));
 }
 
 function stableUnitOffset(seed, label, length) {

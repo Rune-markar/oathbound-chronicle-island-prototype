@@ -8,6 +8,7 @@ import {
   resolveGeneratedWarFronts,
 } from "./generated-war-core.js";
 import { createGeneratedResistanceState, registerGeneratedOccupation } from "./generated-resistance-system.js";
+import { fnv1aCharacters, unitFromHash } from "./determinism.js";
 
 export const GENERATED_WORLD_WAR_SCHEMA_VERSION = 2;
 
@@ -46,17 +47,8 @@ const clamp = (value, minimum = 0, maximum = 100) => Math.min(maximum, Math.max(
 const periodFor = (state) => `${Number.isInteger(state?.year) ? state.year : 317}-${Number.isInteger(state?.month) ? state.month : 4}`;
 const pairKey = (leftId, rightId) => [leftId, rightId].sort().join(":");
 
-function hashText(text) {
-  let hash = 2166136261;
-  for (const character of String(text)) {
-    hash ^= character.charCodeAt(0);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
-}
-
 function hashUnit(...parts) {
-  return hashText(parts.join("|")) / 4294967295;
+  return unitFromHash(fnv1aCharacters(parts.join("|")));
 }
 
 const safeForce = normalizeGeneratedWarForce;

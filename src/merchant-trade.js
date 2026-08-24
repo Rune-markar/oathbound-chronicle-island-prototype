@@ -21,12 +21,7 @@ export const MERCHANT_COMMODITIES = Object.freeze({
 export const MERCHANT_COMMODITY_WEIGHTS = Object.freeze({ grain: 1, timber: 2.5, herbs: 0.5, iron: 3, wool: 1.2, salt: 1.5 });
 
 function hashUnit(...parts) {
-  let hash = 2166136261;
-  for (const character of parts.join("|") ) {
-    hash ^= character.codePointAt(0);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0) / 4294967295;
+  return unitFromHash(fnv1aCodePoints(parts.join("|")));
 }
 
 function emptyMerchantTradeState() {
@@ -310,3 +305,4 @@ export function advanceMerchantMarkets(state) {
     .filter(([key]) => key.startsWith(`${currentPeriod}:`)));
   return state;
 }
+import { fnv1aCodePoints, unitFromHash } from "./determinism.js";

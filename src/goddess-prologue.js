@@ -1,3 +1,5 @@
+import { fnv1aUtf16 } from "./determinism.js";
+
 export const GODDESS_NAME = "女神イリシア";
 
 export const GODDESS_MISSION = "迷える子羊、お前に使命を与える。生れ落ちた世界を統べ、強大な敵を打ち滅ぼせ。";
@@ -23,12 +25,7 @@ const MERCY_GIRL_ORIGINS = Object.freeze(["飢饉で売られた農村娘", "戦
 const MERCY_GIRL_NATURES = Object.freeze(["臆病だが素直", "無口で辛抱強い", "人見知りだが気配りが利く", "おとなしいが諦めが悪い"]);
 
 function hashSeed(value) {
-  let hash = 2166136261;
-  for (let index = 0; index < String(value).length; index += 1) {
-    hash ^= String(value).charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
+  return fnv1aUtf16(value);
 }
 
 export function registerGoddessPersistentTap(prologue, now = Date.now()) {

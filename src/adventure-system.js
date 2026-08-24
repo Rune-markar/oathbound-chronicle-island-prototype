@@ -1,4 +1,5 @@
 import { FACING, UNIT_ORDERS } from "./tactical-data.js";
+import { fnv1aCodePoints } from "./determinism.js";
 import {
   createBattleMap,
   createBattleState,
@@ -237,14 +238,7 @@ const PERSONAL_MAP_LANDMARKS = Object.freeze({
   plains: Object.freeze({ name: "古い街道標", symbol: "標", description: "草原を横切る旧街道の道標。複数の小径が交わる。" }),
 });
 
-function hashString(value) {
-  let hash = 2166136261;
-  for (const character of String(value)) {
-    hash ^= character.codePointAt(0);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
-}
+const hashString = fnv1aCodePoints;
 
 function dungeonTypeFor(region, worldSeed = "world") {
   const terrain = region?.dominantTerrain;

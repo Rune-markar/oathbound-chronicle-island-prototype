@@ -5,18 +5,12 @@ import {
   normalizeCrimeState,
   recordCrimeIncident,
 } from "./crime-system.js";
+import { fnv1aCodePoints } from "./determinism.js";
 
 const clone = (value) => structuredClone(value);
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
-function hashString(value) {
-  let hash = 2166136261;
-  for (const character of String(value)) {
-    hash ^= character.codePointAt(0);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
-}
+const hashString = fnv1aCodePoints;
 
 export const CRIMINAL_ORGANIZATION_SCHEMA_VERSION = 1;
 

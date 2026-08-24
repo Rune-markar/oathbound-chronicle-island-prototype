@@ -4,6 +4,7 @@ import {
   squareTileIndex,
   squareWrappedDeltaX,
 } from "./square-grid.js";
+import { fnv1aUtf16, unitFromHash } from "./determinism.js";
 import { getRaceCategory, requireRaceDefinition } from "./race-list.js";
 import {
   WORLD_POLITY_MODEL_REFERENCES,
@@ -112,17 +113,8 @@ export const NATION_PEOPLE_ARCHETYPES = Object.freeze([
 
 const clamp = (value, min = 0, max = 1) => Math.min(max, Math.max(min, value));
 
-function hashText(text) {
-  let hash = 2166136261;
-  for (let index = 0; index < String(text).length; index += 1) {
-    hash ^= String(text).charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
-}
-
 function hashUnit(seed, ...values) {
-  return hashText(`${seed}:${values.join(":")}`) / 4294967295;
+  return unitFromHash(fnv1aUtf16(`${seed}:${values.join(":")}`));
 }
 
 export function nationLevelForTerritory(tileCount, meanNationSize) {

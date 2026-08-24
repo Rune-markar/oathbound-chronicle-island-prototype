@@ -22,6 +22,7 @@ import {
   nextActionTime,
   resolveActionTimingConfig,
 } from "./action-timing.js";
+import { nextLcg } from "./determinism.js";
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const positionKey = ({ x, y }) => `${x},${y}`;
@@ -1024,8 +1025,9 @@ export function planCommanderMove(battle, commanderId, position) {
 }
 
 function nextRandom(battle) {
-  battle.rngState = (1664525 * battle.rngState + 1013904223) >>> 0;
-  return battle.rngState / 4294967296;
+  const result = nextLcg(battle.rngState);
+  battle.rngState = result.state;
+  return result.value;
 }
 
 function addLog(battle, phase, message) {

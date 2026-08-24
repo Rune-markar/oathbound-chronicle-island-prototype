@@ -1,3 +1,5 @@
+import { fnv1aCharacters } from "./determinism.js";
+
 export const SIMULATION_FIDELITY_SCHEMA_VERSION = 1;
 export const MAX_REMOTE_INDIVIDUAL_REGIONS_PER_MONTH = 6;
 
@@ -12,12 +14,7 @@ function periodSerial(state) {
 }
 
 function hashInteger(...parts) {
-  let hash = 2166136261;
-  for (const character of parts.join("|") ) {
-    hash ^= character.charCodeAt(0);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
+  return fnv1aCharacters(parts.join("|"));
 }
 
 function graphDistances(runtime, origins) {

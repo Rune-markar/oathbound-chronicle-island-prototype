@@ -3,6 +3,7 @@ import {
   settlementLevelForPopulation,
 } from "./nation-generation.js";
 import { deriveNationPolity, deriveSettlementFunctions, formatSettlementName } from "./world-polity-system.js";
+import { fnv1aCharacters } from "./determinism.js";
 
 export const REGIONAL_DOMAIN_SCHEMA_VERSION = 1;
 export const REGIONAL_DOMAIN_EVENT_LIMIT = 240;
@@ -17,12 +18,7 @@ function periodFor(dateState) {
 }
 
 function colorFor(text) {
-  let hash = 2166136261;
-  for (const character of String(text)) {
-    hash ^= character.charCodeAt(0);
-    hash = Math.imul(hash, 16777619);
-  }
-  const hue = hash >>> 0;
+  const hue = fnv1aCharacters(text);
   const red = 82 + hue % 112;
   const green = 74 + (hue >>> 8) % 104;
   const blue = 72 + (hue >>> 16) % 112;

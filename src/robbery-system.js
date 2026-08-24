@@ -1,4 +1,5 @@
 import { CRIME_OUTCOMES, CRIME_RISK_LABELS, normalizeCrimeState, recordCrimeIncident } from "./crime-system.js";
+import { fnv1aCodePoints } from "./determinism.js";
 import {
   createBattleMap,
   createBattleState,
@@ -8,14 +9,7 @@ import {
 } from "./tactical-battle.js";
 
 
-function hashString(value) {
-  let hash = 2166136261;
-  for (const character of String(value)) {
-    hash ^= character.codePointAt(0);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
-}
+const hashString = fnv1aCodePoints;
 
 function travelContext(context = {}) {
   const origin = context.origin ?? context.from;

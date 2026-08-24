@@ -408,7 +408,7 @@ test("敵との遭遇は戦闘解決でき、V3セーブは同じ世界へ正規
   assert.ok(won.defeatedTiles.includes("1,1"));
   const restored = normalizeV3FieldState(context, JSON.parse(JSON.stringify(won)));
   assert.equal(restored.player.xp, 5);
-  assert.equal(restored.version, 3);
+  assert.equal(restored.version, 4);
 });
 
 test("個人戦の退避は失敗時の被害を保ちつつ、再試行ごとに再判定される", () => {

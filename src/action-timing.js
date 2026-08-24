@@ -1,4 +1,5 @@
 import { abilityModifier } from "./character-abilities.js";
+import { fnv1aCharacters } from "./determinism.js";
 
 export const ACTION_ACTOR_TYPES = Object.freeze({
   AI: "ai",
@@ -16,14 +17,7 @@ export const ACTION_TIMING_DEFAULTS = Object.freeze({
 
 const clamp = (value, minimum, maximum) => Math.min(maximum, Math.max(minimum, value));
 
-function hashInteger(value) {
-  let hash = 2166136261;
-  for (const character of String(value)) {
-    hash ^= character.charCodeAt(0);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
-}
+const hashInteger = fnv1aCharacters;
 
 export function resolveActionTimingConfig(overrides = {}) {
   const defaults = ACTION_TIMING_DEFAULTS;

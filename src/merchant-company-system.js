@@ -1,5 +1,6 @@
 import { MERCHANT_COMMODITIES, getSettlementMarket } from "./merchant-trade.js";
 import { getGeneratedWorldView } from "./generated-world-system.js";
+import { fnv1aCodePoints, unitFromHash } from "./determinism.js";
 
 const clone = (value) => structuredClone(value);
 const round1 = (value) => Number(Number(value).toFixed(1));
@@ -123,12 +124,7 @@ const ROLE_NAMES = Object.freeze({
 });
 
 function hashUnit(...parts) {
-  let hash = 2166136261;
-  for (const character of parts.join("|")) {
-    hash ^= character.codePointAt(0);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0) / 4294967295;
+  return unitFromHash(fnv1aCodePoints(parts.join("|")));
 }
 
 function baseline() {
@@ -179,6 +175,15 @@ export function getCompanyCharterProcedure(government = {}) {
 }
 
 function generatedJurisdictions(state) {
+  const injected = state.merchantCompanyContext?.jurisdictions;
+  if (Array.isArray(injected)) {
+    return clone(injected).map((entry) => ({
+      ...entry,
+      settlementIds: [...new Set(entry.settlementIds ?? [])],
+      settlementNames: [...new Set(entry.settlementNames ?? [])],
+      procedure: getCompanyCharterProcedure(entry),
+    }));
+  }
   const known = knownSettlements(state);
   let runtime;
   try { runtime = getGeneratedWorldView(state).runtime; } catch { runtime = null; }
@@ -518,6 +523,7 @@ export function secureCompanyTradeRoute(state, options = {}) {
 }
 
 function atSettlement(state, settlement) {
+  if (state.merchantCompanyContext?.currentSettlementId === settlement.id) return true;
   if (state.player?.locationId === settlement.id) return true;
   const tileIds = [settlement.tileId, Number.isFinite(settlement.x) && Number.isFinite(settlement.y) ? `tile-${settlement.x}-${settlement.y}` : null, Number.isFinite(settlement.tileIndex) ? `tile-${settlement.tileIndex}` : null].filter(Boolean);
   return settlement.regionId === state.generatedWorld?.expeditionRegionId && tileIds.includes(state.generatedWorld?.expeditionTileId);

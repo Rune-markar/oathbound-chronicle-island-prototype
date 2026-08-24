@@ -6,6 +6,9 @@ import {
   squareTileIndex as tileIndex,
   squareWrappedDeltaX as wrappedDeltaX,
 } from "./square-grid.js";
+import { createMulberry32, fnv1aUtf16 } from "./determinism.js";
+
+const hashSeed = fnv1aUtf16;
 import { applyTerrainGeography, geographyCounts } from "./terrain-geography.js";
 
 const clamp = (value, min = 0, max = 1) => Math.min(max, Math.max(min, value));
@@ -218,25 +221,8 @@ function sampleTerrainTemplates(layout, x, y, config) {
   };
 }
 
-function hashSeed(seed) {
-  const text = String(seed);
-  let hash = 2166136261;
-  for (let index = 0; index < text.length; index += 1) {
-    hash ^= text.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
-}
-
 function makeRandom(seed) {
-  let state = hashSeed(seed);
-  return () => {
-    state += 0x6D2B79F5;
-    let value = state;
-    value = Math.imul(value ^ (value >>> 15), value | 1);
-    value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
-    return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
-  };
+  return createMulberry32(hashSeed(seed));
 }
 
 function smoothstep(value) {

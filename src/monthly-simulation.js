@@ -1,4 +1,5 @@
 import { createCharacterDefinition } from "./character-template.js";
+import { nextLcg } from "./determinism.js";
 import {
   AURELIA_ZAFIR_ID,
   BERTHA_ARNFELD_ID,
@@ -2356,7 +2357,7 @@ function maybeStartDefensiveWar(state) {
   return { countryId: "valka", objectiveId: "homeland_defense" };
 }
 
-function nextRandom(state) { state.rngSeed = (Math.imul(state.rngSeed, 1664525) + 1013904223) >>> 0; return state.rngSeed / 4294967296; }
+function nextRandom(state) { const result = nextLcg(state.rngSeed); state.rngSeed = result.state; return result.value; }
 
 export const EVENT_DEFINITIONS = {
   crop_failure: {

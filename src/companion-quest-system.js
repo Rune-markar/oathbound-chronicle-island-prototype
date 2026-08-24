@@ -1,6 +1,7 @@
 import { getGeneratedWorldView } from "./generated-world-system.js";
 import { MERCHANT_COMMODITIES } from "./merchant-trade.js";
 import { normalizeLifeToRealmState } from "./life-to-realm-system.js";
+import { fnv1aCharacters } from "./determinism.js";
 
 const clone = (value) => structuredClone(value);
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
@@ -18,7 +19,7 @@ export function normalizeCompanionQuestState(state) {
   return state;
 }
 function prepared(state) { const next = clone(state); normalizeCompanionQuestState(next); return next; }
-function hash(text) { let value = 2166136261; for (const char of String(text)) { value ^= char.charCodeAt(0); value = Math.imul(value, 16777619); } return value >>> 0; }
+const hash = fnv1aCharacters;
 function memberAgency(state, memberId) {
   const member = state.player.villageLife?.party?.find((entry) => entry.id === memberId);
   const agency = state.player.lifeToRealm.companions[memberId];

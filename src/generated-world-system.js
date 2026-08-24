@@ -1,4 +1,5 @@
 import { generateTerrain } from "./terrain-generation.js";
+import { fnv1aCharacters, unitFromHash } from "./determinism.js";
 import {
   GENERATED_OBJECT_MIN_DISTANCE,
   GENERATED_WORLD_OBJECT_TYPES,
@@ -75,6 +76,7 @@ export const GENERATED_WORLD_DEFAULTS = Object.freeze({
   colonies: [],
   geopolitics: null,
   worldWars: null,
+  tacticalOutcomes: [],
   resistance: null,
   regionalDomains: null,
   barbarians: null,
@@ -131,6 +133,7 @@ function cloneGeneratedWorldState(value) {
     colonies: (value.colonies ?? []).map((colony) => ({ ...colony })),
     geopolitics: preserveGeopoliticalState(value.geopolitics),
     worldWars: preserveGeneratedWorldWarState(value.worldWars),
+    tacticalOutcomes: structuredClone(value.tacticalOutcomes ?? []).slice(-96),
     resistance: preserveGeneratedResistanceState(value.resistance),
     regionalDomains: preserveRegionalDomainState(value.regionalDomains),
     barbarians: preserveBarbarianState(value.barbarians),
@@ -201,12 +204,7 @@ function regionalTravelMinutes(cost) {
 }
 
 function stableTravelRoll(value) {
-  let hash = 2166136261;
-  for (const character of String(value)) {
-    hash ^= character.charCodeAt(0);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0) / 4294967296;
+  return unitFromHash(fnv1aCharacters(value), false);
 }
 
 function generatedRoadTileSet(runtime) {
@@ -320,12 +318,7 @@ function effectivePlayerNation(runtime, generatedState) {
 }
 
 function revisionHash(value) {
-  let hash = 2166136261;
-  for (const character of String(value)) {
-    hash ^= character.charCodeAt(0);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0).toString(36);
+  return fnv1aCharacters(value).toString(36);
 }
 
 function generatedTileDistance(runtime, left, right) {
@@ -658,6 +651,9 @@ export function createGeneratedWorldState(options = {}, dateState = null) {
     colonies: normalizedColonies(options.colonies),
     geopolitics: preserveGeopoliticalState(options.geopolitics),
     worldWars: preserveGeneratedWorldWarState(options.worldWars),
+    tacticalOutcomes: Array.isArray(options.tacticalOutcomes)
+      ? structuredClone(options.tacticalOutcomes).filter((entry) => entry?.battleId).slice(-96)
+      : [],
     resistance: preserveGeneratedResistanceState(options.resistance),
     regionalDomains: preserveRegionalDomainState(options.regionalDomains),
     barbarians: preserveBarbarianState(options.barbarians),

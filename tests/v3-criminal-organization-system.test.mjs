@@ -252,9 +252,10 @@ test("V3犯罪UIは既定入口へ接続し、V2は比較アーカイブとし�
   assert.match(index, /V2 比較アーカイブ/);
   assert.match(app, /renderUnderworld/);
   assert.match(app, /resolveV3PersonalCrime/);
-  assert.match(app, /normalizeV3CriminalState\(context, state\);[\s\S]*state = normalizeV3MilitaryState\(state\);[\s\S]*normalizeV3MerchantState\(state\);/);
-  assert.match(app, /function advancePlayerMonth[\s\S]*advanceV3WorldSimulation/);
-  assert.match(app, /data-v3-criminal-cycle[\s\S]*advancePlayerMonth/);
+  assert.match(app, /state = normalizeV3IntegratedState\(context, state\);/);
+  assert.match(app, /commitV3Action/);
+  assert.match(app, /commitStateAction\(createActionResult\(state, \{ elapsedMinutes: amount \* GAME_MINUTES_PER_MONTH \}\)/);
+  assert.match(app, /data-v3-criminal-cycle[\s\S]*skipSystemIds: \["criminal-organization"\]/);
   assert.match(app, /const cycleLabel = worldSimulation/);
   assert.match(styles, /\.v3-underworld/);
   assert.match(agents, /Generation V3/);

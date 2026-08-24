@@ -22,7 +22,6 @@ import {
   fundV3CriminalOrganization,
   getV3CriminalView,
   issueV3CriminalOperation,
-  normalizeV3CriminalState,
   recruitV3CriminalMember,
   resolveV3CriminalDecision,
   resolveV3CriminalReport,
@@ -36,7 +35,6 @@ import {
   createV3GroupBattleHandoff,
   deferV3GroupBattle,
   getV3MilitaryView,
-  normalizeV3MilitaryState,
   readV3GroupBattleBridge,
   readyV3GroupBattleAtCurrentPosition,
   startV3MilitaryMission,
@@ -48,7 +46,6 @@ import {
   contributeV3CompanyCapital,
   foundV3MerchantCompany,
   getV3MerchantView,
-  normalizeV3MerchantState,
   observeV3Market,
   openV3CompanyBranch,
   recruitV3CompanyStaff,
@@ -68,6 +65,11 @@ import {
   normalizeV3WorldSimulation,
   V3_PREHISTORY_MONTHS,
 } from "./v3-world-simulation.js";
+import { createActionResult } from "./action-result.js";
+import { GAME_MINUTES_PER_MONTH, getGameCalendar } from "./game-clock.js";
+import { commitV3Action, getV3Operations, normalizeV3IntegratedState, V3_SYSTEM_REGISTRY } from "./v3-system-kernel.js";
+import { readV3Save, V3_SAVE_VERSION, writeV3Save } from "./v3-save-system.js";
+import { applyV3BattleResultToWorldSimulation } from "./v3-battle-strategy.js";
 
 const STORAGE_KEY = "leviathan-covenant-v3-save";
 const WORLD_CONFIG = Object.freeze({ width: 192, height: 120, plateCount: 28, nationCount: 7 });
@@ -169,23 +171,29 @@ function createSeed() {
 }
 
 function readSave() {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY));
-    return parsed?.version === 3 && parsed.world?.seed && parsed.field ? parsed : null;
-  } catch {
-    return null;
-  }
+  return readV3Save(localStorage, STORAGE_KEY);
 }
 
 function saveGame() {
   if (!state || !worldOptions || !worldSimulation) return;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify({
-    version: 3,
+  writeV3Save(localStorage, STORAGE_KEY, {
+    version: V3_SAVE_VERSION,
     world: worldOptions,
     field: state,
     worldSimulation,
     savedAt: new Date().toISOString(),
-  }));
+  });
+}
+
+function commitStateAction(action, options = {}) {
+  const committed = commitV3Action(runtime, context, state, worldSimulation, action, options);
+  state = committed.state;
+  worldSimulation = committed.worldSimulation;
+  return committed;
+}
+
+function actionEvent(type, source, summary, payload = {}) {
+  return { type, source, summary, payload, visibility: "private" };
 }
 
 function updateContinueButton() {
@@ -225,11 +233,40 @@ async function prepareWorld(options, savedField = null, savedWorldSimulation = n
   setGenerationProgress(98, "現在地の周囲を1マス単位へ展開しています。");
   context = createV3WorldContext(runtime, options.seed);
   state = savedField ? normalizeV3FieldState(context, savedField) : createV3FieldState(context, { playerName: options.playerName });
-  normalizeV3CriminalState(context, state);
-  state = normalizeV3MilitaryState(state);
-  normalizeV3MerchantState(state);
+  state = normalizeV3IntegratedState(context, state);
+  if (savedField) {
+    const calendar = getGameCalendar(state.clock);
+    const lag = calendar.year * 12 + calendar.month - (worldSimulation.year * 12 + worldSimulation.month);
+    if (lag > 0) worldSimulation = advanceV3WorldSimulation(runtime, worldSimulation, lag);
+  }
   if (groupBattleReturn) {
-    state = applyV3GroupBattleReturn(state, groupBattleReturn);
+    const mission = state.military.activeMission;
+    const returnedState = applyV3GroupBattleReturn(state, groupBattleReturn);
+    const committed = commitV3Action(runtime, context, state, worldSimulation, returnedState, {
+      source: "military",
+      event: actionEvent(
+        groupBattleReturn.status === "completed" ? "battle.result.applied" : "battle.returned",
+        "military",
+        groupBattleReturn.status === "completed" ? "集団戦の戦果を人物状態へ反映" : "集団戦から作戦地点へ帰還",
+        { battleId: groupBattleReturn.battleId },
+      ),
+    });
+    state = committed.state;
+    worldSimulation = committed.worldSimulation;
+    if (groupBattleReturn.status === "completed") {
+      const strategic = applyV3BattleResultToWorldSimulation(runtime, worldSimulation, mission, groupBattleReturn.result);
+      worldSimulation = strategic.worldSimulation;
+      if (strategic.event) {
+        const eventResult = commitV3Action(runtime, context, state, worldSimulation, state, {
+          source: "strategic-war",
+          event: actionEvent("battle.result.projected", "strategic-war", strategic.event.summary ?? "集団戦の戦果を戦略世界へ反映", {
+            battleId: groupBattleReturn.battleId,
+            warId: strategic.event.worldWarId ?? null,
+          }),
+        });
+        state = eventResult.state;
+      }
+    }
     clearV3GroupBattleBridge(localStorage);
   }
   worldOptions = { ...WORLD_CONFIG, ...options, playerName: state.player.name };
@@ -253,6 +290,9 @@ async function prepareWorld(options, savedField = null, savedWorldSimulation = n
     get context() { return context; },
     get runtime() { return runtime; },
     get worldSimulation() { return worldSimulation; },
+    get operations() { return getV3Operations(context, state); },
+    get domainEvents() { return state.domainEvents?.entries ?? []; },
+    get systemVersions() { return V3_SYSTEM_REGISTRY.versions; },
     move: movePlayer,
     advanceWorld,
     openWorldMap,
@@ -507,7 +547,10 @@ function movePlayer(direction) {
   const moved = moveV3Player(context, state, direction);
   const next = advanceV3MilitaryArrival(context, state, moved);
   if (next === state) return;
-  state = next;
+  commitStateAction(next, {
+    source: "field",
+    event: actionEvent("player.moved", "field", `${direction}へ移動`, { direction }),
+  });
   saveGame();
   renderGame();
   if (!encounterBeforeMove && state.pendingEncounter?.type === "enemy") {
@@ -518,7 +561,10 @@ function movePlayer(direction) {
 }
 
 function applyEncounterAction(action) {
-  state = resolveV3Encounter(context, state, action);
+  commitStateAction(resolveV3Encounter(context, state, action), {
+    source: "personal-combat",
+    event: actionEvent("personal-combat.resolved", "personal-combat", `個人戦コマンド: ${action}`, { action }),
+  });
   saveGame();
   renderGame();
   if (state.pendingEncounter?.type === "enemy") elements.personalBattleCommands.querySelector("button")?.focus();
@@ -527,12 +573,15 @@ function applyEncounterAction(action) {
 
 function beginV3GroupBattle() {
   try {
-    if (state.pendingEncounter?.type !== "group-battle") state = readyV3GroupBattleAtCurrentPosition(context, state);
+    if (state.pendingEncounter?.type !== "group-battle") commitStateAction(readyV3GroupBattleAtCurrentPosition(context, state), {
+      source: "military",
+      event: actionEvent("battle.requested", "military", "集団戦の戦闘準備を開始"),
+    });
     const handoff = createV3GroupBattleHandoff(context, state);
     const returnUrl = new URL("./index.html", window.location.href).href;
     handoff.request.origin.returnUrl = returnUrl;
     writeV3GroupBattleBridge(localStorage, handoff.request);
-    state = handoff.state;
+    commitStateAction(handoff.state, { source: "military" });
     saveGame();
     const battleUrl = new URL("./legacy-v2.html", window.location.href);
     battleUrl.searchParams.set("v3-group-battle", handoff.request.requestId);
@@ -546,7 +595,10 @@ function handleMilitaryAction() {
   try {
     let military = getV3MilitaryView(context, state);
     if (!military.active) {
-      state = startV3MilitaryMission(context, state, worldSimulation);
+      commitStateAction(startV3MilitaryMission(context, state, worldSimulation), {
+        source: "military",
+        event: actionEvent("military.mission.accepted", "military", "軍務を受諾"),
+      });
       saveGame();
       renderGame();
       military = getV3MilitaryView(context, state);
@@ -555,7 +607,10 @@ function handleMilitaryAction() {
     }
     if (military.atTarget) {
       if (state.pendingEncounter?.type !== "group-battle") {
-        state = readyV3GroupBattleAtCurrentPosition(context, state);
+        commitStateAction(readyV3GroupBattleAtCurrentPosition(context, state), {
+          source: "military",
+          event: actionEvent("battle.requested", "military", "作戦地点で集団戦を開始"),
+        });
         saveGame();
         renderGame();
       }
@@ -841,7 +896,10 @@ async function advanceWorld(months = 1) {
   elements.worldMap.querySelectorAll("[data-v3-world-advance]").forEach((button) => { button.disabled = true; });
   await new Promise((resolve) => requestAnimationFrame(resolve));
   try {
-    worldSimulation = advanceV3WorldSimulation(runtime, worldSimulation, amount);
+    commitStateAction(createActionResult(state, { elapsedMinutes: amount * GAME_MINUTES_PER_MONTH }), {
+      source: "world-map",
+      event: actionEvent("world.time.advanced", "world-map", `世界を${amount}か月進行`, { months: amount }),
+    });
     mapHistoryIndex = null;
     saveGame();
     renderGame();
@@ -876,9 +934,13 @@ function handleAction(action) {
   }
 }
 
-function applyUnderworldAction(action) {
+function applyUnderworldAction(action, options = {}) {
   try {
-    state = action();
+    commitStateAction(action(), {
+      source: "criminal",
+      event: options.event ?? actionEvent("criminal.action.completed", "criminal", "地下活動を実行"),
+      skipSystemIds: options.skipSystemIds,
+    });
     saveGame();
     renderGame();
     showToast(state.messageLog[0]);
@@ -886,13 +948,6 @@ function applyUnderworldAction(action) {
   } catch (error) {
     showToast(error instanceof Error ? error.message : String(error));
   }
-}
-
-function advancePlayerMonth(action) {
-  const nextState = action();
-  const nextWorldSimulation = advanceV3WorldSimulation(runtime, worldSimulation, 1);
-  worldSimulation = nextWorldSimulation;
-  return nextState;
 }
 
 elements.openNew.addEventListener("click", () => {
@@ -940,7 +995,10 @@ document.addEventListener("click", (event) => {
   const groupBattleAction = event.target.closest("[data-v3-group-battle]")?.dataset.v3GroupBattle;
   if (groupBattleAction === "start") return beginV3GroupBattle();
   if (groupBattleAction === "defer") {
-    state = deferV3GroupBattle(state);
+    commitStateAction(deferV3GroupBattle(state), {
+      source: "military",
+      event: actionEvent("battle.deferred", "military", "集団戦を延期"),
+    });
     saveGame();
     renderGame();
     elements.field.querySelector(".is-player")?.focus();
@@ -951,52 +1009,57 @@ document.addEventListener("click", (event) => {
   const tradeAction = event.target.closest("[data-v3-trade-action]");
   if (tradeAction) {
     try {
-      if (tradeAction.dataset.v3TradeAction === "observe") state = observeV3Market(context, state);
-      if (tradeAction.dataset.v3TradeAction === "buy") state = buyV3Commodity(context, state, tradeAction.dataset.v3Commodity, 1);
-      if (tradeAction.dataset.v3TradeAction === "sell") state = sellV3Commodity(context, state, tradeAction.dataset.v3Commodity, 1);
+      let next = state;
+      if (tradeAction.dataset.v3TradeAction === "observe") next = observeV3Market(context, state);
+      if (tradeAction.dataset.v3TradeAction === "buy") next = buyV3Commodity(context, state, tradeAction.dataset.v3Commodity, 1);
+      if (tradeAction.dataset.v3TradeAction === "sell") next = sellV3Commodity(context, state, tradeAction.dataset.v3Commodity, 1);
+      commitStateAction(next, {
+        source: "merchant-trade",
+        event: actionEvent(`merchant.${tradeAction.dataset.v3TradeAction}`, "merchant-trade", "市場取引を台帳へ記録", { commodityId: tradeAction.dataset.v3Commodity ?? null }),
+      });
       saveGame(); renderGame(); showToast("交易台帳を更新しました。");
     } catch (error) { showToast(error.message); }
     return;
   }
   const foundStrategy = event.target.closest("[data-v3-company-found]")?.dataset.v3CompanyFound;
   if (foundStrategy) {
-    try { state = foundV3MerchantCompany(context, state, { strategyId: foundStrategy, name: document.querySelector("#v3CompanyName")?.value }); saveGame(); renderGame(); showToast("商会を設立しました。"); }
+    try { commitStateAction(foundV3MerchantCompany(context, state, { strategyId: foundStrategy, name: document.querySelector("#v3CompanyName")?.value }), { source: "merchant-company", event: actionEvent("merchant.company.founded", "merchant-company", "商会を設立") }); saveGame(); renderGame(); showToast("商会を設立しました。"); }
     catch (error) { showToast(error.message); }
     return;
   }
   if (event.target.closest("[data-v3-company-invest]")) {
-    try { state = contributeV3CompanyCapital(state, 10); saveGame(); renderGame(); }
+    try { commitStateAction(contributeV3CompanyCapital(state, 10), { source: "merchant-company", event: actionEvent("merchant.company.funded", "merchant-company", "商会へ追加出資", { amount: 10 }) }); saveGame(); renderGame(); }
     catch (error) { showToast(error.message); }
     return;
   }
   const charterStart = event.target.closest("[data-v3-charter-start]");
   if (charterStart) {
-    try { state = startV3CharterApplication(context, state, charterStart.dataset.v3CharterStart, charterStart.dataset.v3Filing); saveGame(); renderGame(); }
+    try { commitStateAction(startV3CharterApplication(context, state, charterStart.dataset.v3CharterStart, charterStart.dataset.v3Filing), { source: "merchant-company", event: actionEvent("merchant.charter.started", "merchant-company", "営業資格を申請", { nationId: charterStart.dataset.v3CharterStart }) }); saveGame(); renderGame(); }
     catch (error) { showToast(error.message); }
     return;
   }
   const charterDecision = event.target.closest("[data-v3-charter-decision]");
   if (charterDecision) {
-    try { state = resolveV3CharterApplication(context, state, charterDecision.dataset.v3Application, charterDecision.dataset.v3CharterDecision); saveGame(); renderGame(); }
+    try { commitStateAction(resolveV3CharterApplication(context, state, charterDecision.dataset.v3Application, charterDecision.dataset.v3CharterDecision), { source: "merchant-company", event: actionEvent("merchant.charter.resolved", "merchant-company", "営業資格申請を決着", { applicationId: charterDecision.dataset.v3Application }) }); saveGame(); renderGame(); }
     catch (error) { showToast(error.message); }
     return;
   }
   const hire = event.target.closest("[data-v3-company-hire]")?.dataset.v3CompanyHire;
   if (hire) {
-    try { state = recruitV3CompanyStaff(context, state, hire); saveGame(); renderGame(); }
+    try { commitStateAction(recruitV3CompanyStaff(context, state, hire), { source: "merchant-company", event: actionEvent("merchant.staff.recruited", "merchant-company", "商会人員を採用", { candidateId: hire }) }); saveGame(); renderGame(); }
     catch (error) { showToast(error.message); }
     return;
   }
   if (event.target.closest("[data-v3-route-secure]")) {
     const form = elements.commerceContent.querySelector("[data-v3-route-form]");
     try {
-      state = secureV3CompanyRoute(context, state, {
+      commitStateAction(secureV3CompanyRoute(context, state, {
         sourceId: form.querySelector("[data-v3-route-source]").value,
         destinationId: form.querySelector("[data-v3-route-destination]").value,
         commodityId: form.querySelector("[data-v3-route-commodity]").value,
         approachId: form.querySelector("[data-v3-route-approach]").value,
         leaderId: form.querySelector("[data-v3-route-leader]").value,
-      });
+      }), { source: "merchant-company", event: actionEvent("merchant.route.secured", "merchant-company", "交易販路を確保") });
       saveGame(); renderGame();
     } catch (error) { showToast(error.message); }
     return;
@@ -1004,23 +1067,23 @@ document.addEventListener("click", (event) => {
   if (event.target.closest("[data-v3-branch-open]")) {
     const form = elements.commerceContent.querySelector("[data-v3-branch-form]");
     try {
-      state = openV3CompanyBranch(context, state, {
+      commitStateAction(openV3CompanyBranch(context, state, {
         formatId: form.querySelector("[data-v3-branch-format]").value,
         launchId: form.querySelector("[data-v3-branch-launch]").value,
         managerId: form.querySelector("[data-v3-branch-manager]").value,
-      });
+      }), { source: "merchant-company", event: actionEvent("merchant.branch.opening", "merchant-company", "支店開設を開始") });
       saveGame(); renderGame();
     } catch (error) { showToast(error.message); }
     return;
   }
   if (event.target.closest("[data-v3-company-month]")) {
-    try { state = advancePlayerMonth(() => advanceV3CompanyMonth(context, state)); saveGame(); renderGame(); }
+    try { commitStateAction(advanceV3CompanyMonth(context, state), { source: "merchant-company", skipSystemIds: ["merchant-company"], event: actionEvent("merchant.month.closed", "merchant-company", "商会月次決算を実行") }); saveGame(); renderGame(); }
     catch (error) { showToast(error.message); }
     return;
   }
   const incident = event.target.closest("[data-v3-incident]");
   if (incident) {
-    try { state = resolveV3CompanyIncident(state, incident.dataset.v3Incident, incident.dataset.v3Decision); saveGame(); renderGame(); }
+    try { commitStateAction(resolveV3CompanyIncident(state, incident.dataset.v3Incident, incident.dataset.v3Decision), { source: "merchant-company", event: actionEvent("merchant.incident.resolved", "merchant-company", "街道事故を解決", { incidentId: incident.dataset.v3Incident }) }); saveGame(); renderGame(); }
     catch (error) { showToast(error.message); }
     return;
   }
@@ -1028,7 +1091,7 @@ document.addEventListener("click", (event) => {
   if (itemIndex !== undefined) {
     const next = useV3Item(state, Number(itemIndex));
     if (next === state) return showToast("今は使う必要がない。");
-    state = next;
+    commitStateAction(next, { source: "inventory", event: actionEvent("inventory.item.used", "inventory", "所持品を使用", { itemIndex: Number(itemIndex) }) });
     saveGame();
     renderGame();
     return;
@@ -1045,7 +1108,13 @@ document.addEventListener("click", (event) => {
   if (event.target.closest("[data-v3-criminal-fund]")) return applyUnderworldAction(() => fundV3CriminalOrganization(context, state, 1));
   if (event.target.closest("[data-v3-criminal-withdraw]")) return applyUnderworldAction(() => withdrawV3CriminalOrganization(context, state, 1));
   if (event.target.closest("[data-v3-criminal-distribute]")) return applyUnderworldAction(() => distributeV3CriminalProfits(context, state));
-  if (event.target.closest("[data-v3-criminal-cycle]")) return applyUnderworldAction(() => advancePlayerMonth(() => advanceV3CriminalCycle(context, state)));
+  if (event.target.closest("[data-v3-criminal-cycle]")) return applyUnderworldAction(
+    () => advanceV3CriminalCycle(context, state),
+    {
+      skipSystemIds: ["criminal-organization"],
+      event: actionEvent("criminal.month.advanced", "criminal-organization", "一か月潜伏し作戦を進行"),
+    },
+  );
   const report = event.target.closest("[data-v3-criminal-report]")?.dataset.v3CriminalReport;
   if (report) return applyUnderworldAction(() => resolveV3CriminalReport(context, state, report));
   const decision = event.target.closest("[data-v3-criminal-decision]");

@@ -20,11 +20,13 @@ import {
   getV3NationAtTile,
   getV3WorldSimulationView,
 } from "./v3-world-simulation.js";
+import { bindV3BattleToStrategicWar } from "./v3-battle-strategy.js";
 
 export const V3_GROUP_BATTLE_BRIDGE_KEY = "leviathan-covenant-v3-group-battle-bridge";
 export const V3_GROUP_BATTLE_BRIDGE_VERSION = 1;
 
 const MISSION_SCHEMA_VERSION = 1;
+export const V3_MILITARY_VERSION = MISSION_SCHEMA_VERSION;
 const TARGET_MINIMUM_DISTANCE = 7;
 const TARGET_MAXIMUM_DISTANCE = 12;
 const DIRECTIONS = Object.freeze([
@@ -224,10 +226,18 @@ export function startV3MilitaryMission(context, requestedState, worldSimulation 
     "現地守備軍",
   );
   const sequence = state.military.history.length + 1;
+  const strategic = worldSimulation
+    ? bindV3BattleToStrategicWar(worldSimulation, playerNation.id, originRegion?.id)
+    : null;
   const targetCandidate = findMissionTarget(context, state, playerNation.id, worldSimulation);
   const targetTile = targetCandidate.tile;
   const missionId = `v3-military:${context.seed}:${sequence}:${targetTile.x},${targetTile.y}`;
-  const enemyNation = enemyNationFor(context, playerNation, originRegion, missionId, worldSimulation);
+  const strategicEnemy = strategic && worldSimulation
+    ? getV3WorldSimulationView(context.runtime, worldSimulation).nationById.get(strategic.enemyNationId)
+    : null;
+  const enemyNation = strategicEnemy
+    ? normalizeWorldNation(context, strategicEnemy, strategic.enemyNationId, "交戦国軍")
+    : enemyNationFor(context, playerNation, originRegion, missionId, worldSimulation);
   const mission = {
     schemaVersion: MISSION_SCHEMA_VERSION,
     id: missionId,
@@ -256,6 +266,7 @@ export function startV3MilitaryMission(context, requestedState, worldSimulation 
     },
     playerNation,
     enemyNation,
+    strategic,
     attempts: 0,
     requestId: null,
   };

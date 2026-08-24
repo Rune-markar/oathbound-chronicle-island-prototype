@@ -1,3 +1,5 @@
+import { fnv1aCharacters } from "./determinism.js";
+
 const clamp = (value, minimum = 0, maximum = 100) => Math.min(maximum, Math.max(minimum, value));
 const round = (value, digits = 0) => Number(value.toFixed(digits));
 const clone = (value) => structuredClone(value);
@@ -296,7 +298,7 @@ export function setDelegationAuthority(state, assignmentId, authorityId) {
 }
 
 function deterministicVariance(key, spread = 8) {
-  const seed = [...key].reduce((sum, character) => Math.imul(sum ^ character.charCodeAt(0), 16777619), 2166136261) >>> 0;
+  const seed = fnv1aCharacters(key);
   return seed % (spread * 2 + 1) - spread;
 }
 

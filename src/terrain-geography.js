@@ -3,6 +3,7 @@ import {
   squareNeighborIndices,
   squareTileIndex,
 } from "./square-grid.js";
+import { fnv1aCharacters, unitFromHash } from "./determinism.js";
 
 const LAND_TERRAINS = new Set(["grassland", "plains", "desert", "tundra", "snow"]);
 const SEA_TERRAINS = new Set(["ocean", "coast"]);
@@ -70,17 +71,8 @@ const PRIMARY_PRIORITY = Object.freeze([
   "open_sea", "sea", "coast",
 ]);
 
-function hashText(value) {
-  let hash = 2166136261;
-  for (const character of String(value)) {
-    hash ^= character.charCodeAt(0);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
-}
-
 function hashUnit(seed, ...values) {
-  return hashText(`${seed}:${values.join(":")}`) / 4294967295;
+  return unitFromHash(fnv1aCharacters(`${seed}:${values.join(":")}`));
 }
 
 function isLand(tile) {

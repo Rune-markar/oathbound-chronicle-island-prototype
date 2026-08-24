@@ -1,3 +1,5 @@
+import { nextLcgState } from "./determinism.js";
+
 const AUDIO_STORAGE_KEY = "oathbound-audio-settings-v1";
 
 export const AUDIO_CUES = Object.freeze([
@@ -235,7 +237,7 @@ export class GameAudio {
     const channel = buffer.getChannelData(0);
     let seed = 0x5e1e;
     for (let index = 0; index < channel.length; index += 1) {
-      seed = (seed * 1664525 + 1013904223) >>> 0;
+      seed = nextLcgState(seed);
       channel[index] = ((seed / 0xffffffff) * 2 - 1) * (1 - index / channel.length);
     }
     const source = this.context.createBufferSource();

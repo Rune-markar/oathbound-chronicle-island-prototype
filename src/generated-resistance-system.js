@@ -1,4 +1,5 @@
 import { damageRegionalDomainAsset, transferRegionControl } from "./regional-domain-system.js";
+import { fnv1aCharacters, unitFromHash } from "./determinism.js";
 
 export const GENERATED_RESISTANCE_SCHEMA_VERSION = 1;
 export const GENERATED_OCCUPATION_POLICIES = Object.freeze({
@@ -21,9 +22,7 @@ const clamp = (value, minimum = 0, maximum = 100) => Math.min(maximum, Math.max(
 const periodFor = (dateState) => `${Number.isInteger(dateState?.year) ? dateState.year : 317}-${Number.isInteger(dateState?.month) ? dateState.month : 4}`;
 
 function hashUnit(...parts) {
-  let hash = 2166136261;
-  for (const character of parts.join("|")) { hash ^= character.charCodeAt(0); hash = Math.imul(hash, 16777619); }
-  return (hash >>> 0) / 4294967295;
+  return unitFromHash(fnv1aCharacters(parts.join("|")));
 }
 
 function safeOccupation(source = {}) {

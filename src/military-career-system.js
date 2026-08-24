@@ -1,4 +1,5 @@
 import { buildGeneratedWorld, getGeneratedExpeditionReachableRegions } from "./generated-world-system.js";
+import { fnv1aCodePoints } from "./determinism.js";
 import {
   createBattleMap,
   createBattleState,
@@ -15,14 +16,7 @@ import {
 const clone = (value) => structuredClone(value);
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
-function hashString(value) {
-  let hash = 2166136261;
-  for (const character of String(value)) {
-    hash ^= character.codePointAt(0);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
-}
+const hashString = fnv1aCodePoints;
 
 export const MILITARY_MISSION_APPROACHES = Object.freeze({
   scout: Object.freeze({ id: "scout", name: "偵察を重ねる", description: "敵戦力を減らし、期限までの余裕を一部使う。", enemyMultiplier: 0.78, playerBonus: 0 }),

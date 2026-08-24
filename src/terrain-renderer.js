@@ -29,13 +29,7 @@ function escapeAttribute(value) {
 }
 
 function hashUnit(seed, index, salt = 0) {
-  const text = `${seed}:${index}:${salt}`;
-  let hash = 2166136261;
-  for (let cursor = 0; cursor < text.length; cursor += 1) {
-    hash ^= text.charCodeAt(cursor);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0) / 4294967295;
+  return unitFromHash(fnv1aUtf16(`${seed}:${index}:${salt}`));
 }
 
 function mixColor(left, right, ratio) {
@@ -658,3 +652,4 @@ export function renderTerrainSvg(world, options = {}) {
 export function terrainSvgDataUrl(world, options = {}) {
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(renderTerrainSvg(world, options))}`;
 }
+import { fnv1aUtf16, unitFromHash } from "./determinism.js";

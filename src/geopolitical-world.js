@@ -1,3 +1,5 @@
+import { fnv1aUtf16, unitFromHash } from "./determinism.js";
+
 export const GEOPOLITICAL_SCHEMA_VERSION = 1;
 
 export const GEOPOLITICAL_MODEL_REFERENCES = Object.freeze([
@@ -54,17 +56,8 @@ function rounded(value) {
   return Math.round(clamp(value));
 }
 
-function hashText(text) {
-  let hash = 2166136261;
-  for (let index = 0; index < text.length; index += 1) {
-    hash ^= text.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
-}
-
 function hashUnit(...parts) {
-  return hashText(parts.join(":")) / 4294967295;
+  return unitFromHash(fnv1aUtf16(parts.join(":")));
 }
 
 function periodFor(dateState) {

@@ -19,6 +19,8 @@ import {
   withdrawCriminalOrganizationFunds,
 } from "./criminal-organization-system.js";
 import { getV3DetailedTile } from "./v3-field-system.js";
+import { advanceStateGameClock, getGameCalendar, normalizeStateGameClock } from "./game-clock.js";
+import { fnv1aCodePoints, unitFromHash } from "./determinism.js";
 
 export const V3_CRIMINAL_VERSION = 1;
 export const V3_CRIMINAL_CYCLE_MINUTES = 30 * 24 * 60;
@@ -82,22 +84,16 @@ const MEMBER_STATUS_LABELS = Object.freeze({
 });
 
 function hashUnit(...parts) {
-  let hash = 2166136261;
-  for (const character of parts.join("|")) {
-    hash ^= character.codePointAt(0);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0) / 4294967295;
+  return unitFromHash(fnv1aCodePoints(parts.join("|")));
 }
 
 function periodIndex(state) {
-  return Math.floor((Number(state.clockMinutes) || 0) / V3_CRIMINAL_CYCLE_MINUTES);
+  return getGameCalendar(normalizeStateGameClock(state).clock).monthIndex;
 }
 
 function periodParts(state) {
-  const index = periodIndex(state);
-  const monthIndex = 3 + index;
-  return { turn: index, year: 317 + Math.floor(monthIndex / 12), month: monthIndex % 12 + 1 };
+  const calendar = getGameCalendar(normalizeStateGameClock(state).clock);
+  return { turn: calendar.monthIndex, year: calendar.year, month: calendar.month };
 }
 
 function emptyCriminalState() {
@@ -201,7 +197,8 @@ function actionTarget(location, definition) {
 }
 
 function personalActionView(state, location, definition) {
-  const day = Math.floor((Number(state.clockMinutes) || 0) / (24 * 60)) + 1;
+  const calendar = getGameCalendar(normalizeStateGameClock(state).clock);
+  const day = calendar.monthIndex * 30 + calendar.day;
   const target = actionTarget(location, definition);
   const alreadyTried = state.criminal.personalActions.some((entry) => entry.day === day && entry.targetId === target.id);
   const locationReady = definition.scope === "settlement" ? Boolean(location.settlement) : location.tile.onRoad;
@@ -303,7 +300,7 @@ export function resolveV3PersonalCrime(context, state, actionId) {
   });
   if (successful) adapter.player.crime.illegalGain += definition.reward;
   applyAdapter(next, adapter);
-  next.clockMinutes += 120;
+  Object.assign(next, advanceStateGameClock(next, 120).state);
   const record = {
     id: `v3-personal-action:${next.criminal.personalActions.length + 1}`,
     day: option.day,
@@ -338,7 +335,7 @@ export function discoverV3CriminalBroker(context, state) {
   broker.settlementName = location.settlement.name;
   broker.trust = Math.max(10, Number(broker.trust) || 0);
   applyAdapter(next, adapter);
-  next.clockMinutes += 60;
+  Object.assign(next, advanceStateGameClock(next, 60).state);
   addMessage(next, `${location.settlement.name}の路地で仲介人${broker.name}と接触した。人員を手配できる。`);
   return next;
 }
@@ -402,13 +399,17 @@ export function issueV3CriminalOperation(context, state, input = {}) {
 }
 
 export function advanceV3CriminalCycle(context, state) {
+  const next = advanceStateGameClock(prepared(context, state), V3_CRIMINAL_CYCLE_MINUTES).state;
+  return advanceV3CriminalMonthOnTick(context, next, true);
+}
+
+export function advanceV3CriminalMonthOnTick(context, state, withMessage = false) {
   const next = prepared(context, state);
-  next.clockMinutes += V3_CRIMINAL_CYCLE_MINUTES;
   let adapter = advanceCrimeMonth(adapterFor(context, next));
   adapter = advanceCriminalOrganizationMonth(adapter);
   applyAdapter(next, adapter);
   const reports = next.criminal.crime.organization.activeOrders.filter((entry) => entry.status === "report_ready").length;
-  addMessage(next, reports ? `一か月潜伏した。届いた作戦報告${reports}件を確認できる。` : "一か月潜伏した。進行中の作戦は続いている。");
+  if (withMessage) addMessage(next, reports ? `一か月潜伏した。届いた作戦報告${reports}件を確認できる。` : "一か月潜伏した。進行中の作戦は続いている。");
   return next;
 }
 
