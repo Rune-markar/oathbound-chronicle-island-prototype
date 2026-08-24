@@ -314,15 +314,6 @@ export const SETTING_NATIONS = Object.freeze({
   },
 });
 
-export function getPeopleForNation(nationId) {
-  const nation = SETTING_NATIONS[nationId];
-  if (!nation) return { confirmed: [], related: [] };
-  return {
-    confirmed: nation.confirmedPeopleIds.map((id) => PEOPLES[id]).filter(Boolean),
-    related: nation.relatedPeopleIds.map((id) => PEOPLES[id]).filter(Boolean),
-  };
-}
-
 export function getNationsForPeople(peopleId) {
   return Object.values(SETTING_NATIONS)
     .filter((nation) => nation.confirmedPeopleIds.includes(peopleId) || nation.relatedPeopleIds.includes(peopleId))

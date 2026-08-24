@@ -372,7 +372,7 @@ test("world affairs is a player-known timeline learned through rumors or nearby 
 });
 
 test("map landmarks stay clear while local actions live in the left panel without allowing a dungeon bypass", () => {
-  const generatedPanel = appSource.match(/function renderGeneratedWorldPanel\(\)[\s\S]*?function nationPeopleChips/)?.[0] ?? "";
+  const generatedPanel = appSource.match(/function renderGeneratedWorldPanel\(\)[\s\S]*?function renderWorldNations/)?.[0] ?? "";
   assert.doesNotMatch(markup, /id="personalMapOverlay"/);
   assert.match(appSource, /function renderPersonalMapCommand\(/);
   assert.doesNotMatch(appSource, /elements\.personalMapOverlay/);
@@ -439,7 +439,7 @@ test("castle, dungeon, and fort open dedicated background-led command scenes onl
 });
 
 test("world, geopolitics, nation, and statistics panels share one generated-world representation", () => {
-  const generatedPanel = appSource.match(/function renderGeneratedWorldPanel\(\)[\s\S]*?function nationPeopleChips/)?.[0] ?? "";
+  const generatedPanel = appSource.match(/function renderGeneratedWorldPanel\(\)[\s\S]*?function renderWorldNations/)?.[0] ?? "";
   const statisticsPanel = appSource.match(/function renderWorldStatistics\(\)[\s\S]*?function renderWorldPanel/)?.[0] ?? "";
   assert.doesNotMatch(generatedPanel, /generated-world-overview|この人物の世界シード/);
   assert.match(statisticsPanel, /generated-world-overview/);
@@ -548,5 +548,4 @@ test("world scale marks Leviathan as a selectable extreme-creature hazard", () =
   assert.match(styleSource, /\.strategy-map:not\(\.scale-world\) \.world-only/);
   assert.match(styleSource, /\.leviathan-marker\.is-selected \.leviathan-danger-zone/);
   assert.match(appSource, /view\.selectedType === "creature"/);
-  assert.match(worldDossierNavigationSource, /data-show-creature-on-map/);
 });

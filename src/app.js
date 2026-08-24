@@ -262,28 +262,16 @@ import {
   EXTREME_CREATURES,
   PEOPLES,
   PEOPLE_REPRESENTATIVES,
-  SETTING_NATIONS,
   getDiplomaticDelegate,
   getEnemyCodexEntries,
   getExtremeCreature,
-  getNationRelations,
   getNationsForPeople,
-  getPeopleForNation,
   getWorldCatalogSummary,
 } from "./world-catalog.js";
 import { createGameAudio } from "./audio.js";
 import { subdivideTerritoryTiles } from "./map-tiles.js";
 import { squareWrappedDeltaX } from "./square-grid.js";
 import { WAR_MAP_TERRAINS, getWarRegion } from "./war-map.js";
-import {
-  RESOURCE_CATEGORIES,
-  STATISTICS_BASIS,
-  getNationStatistics,
-  getResourceGrade,
-  getResourcePower,
-  getResourceRanking,
-  getWorldStatisticsSummary,
-} from "./world-statistics.js";
 import {
   buildGeneratedWorld,
   buildGeneratedWorldAsync,
@@ -446,7 +434,6 @@ import {
 } from "./v3-group-combat.js";
 
 const STORAGE_KEY = "oathbound-career-chronicle-v10";
-const LEGACY_STORAGE_KEYS = ["oathbound-continental-grand-strategy-v9", "oathbound-continental-grand-strategy-v8", "oathbound-continental-grand-strategy-v7", "oathbound-continental-grand-strategy-v6"];
 
 const CITY_ART = Object.freeze({
   selene: "./assets/generated/city-selene.webp",
@@ -637,10 +624,8 @@ const view = {
   generatedSiteInfoOpen: false,
   generatedTravel: null,
   selectedGeneratedNationId: state.generatedWorld?.playerNationId ?? null,
-  selectedNationId: "forest_alliance",
   selectedPeopleId: "acrane",
   selectedCreatureId: "leviathan",
-  worldNationFilter: "all",
   worldGuideOpen: true,
   focusedTownCommandId: null,
   guideOpen: false,
@@ -1805,7 +1790,7 @@ async function resetChronicle(options = {}, flow = {}) {
       selectedCityId: "selene", cityTab: "overview", selectedTownId: "mugiwano", townTab: "overview", selectedVillageId: null, selectedVillageFacilityId: "inn", villageFacilityOpen: false, tavernSection: "requests", villageConversation: null, locationScene: null, selectedLocationZoneId: null, locationSceneResult: null, adventureOpen: false, selectedAuthorityDomain: "justice", selectedNationalReformSystem: "population_land_knowledge",
       selectedFacilityId: "farmland", selectedCountryId: "valka", objectiveId: "transit", warMapView: "atlas", warRegionId: null, selectedWarHexId: null, warCouncilOpen: false, assignmentOpen: false,
       pendingTownId: null, guideOpen: false, endingOpen: false, resetOpen: false, offlineReport: null, offlineReportOpen: false, expertMode: false, mobileMoreOpen: false, atlasMode: "generated", generatedMapScale: "region", generatedMapLegendOpen: true, generatedMapLegendInitialized: false, generatedPanX: 0, generatedPanY: 0, generatedConfirmOffsetX: 0, generatedConfirmOffsetY: 0, pendingGeneratedDestinationId: null, pendingGeneratedTravelMode: "route",
-      selectedGeneratedNationId: nextState.generatedWorld.playerNationId, worldNationFilter: "all", focusedTownCommandId: null,
+      selectedGeneratedNationId: nextState.generatedWorld.playerNationId, focusedTownCommandId: null,
       characterCreationOpen: Boolean(flow.deferLaunch), characterDraft: flow.deferLaunch ? view.characterDraft : null,
     });
     view.generation = { active: true, progress: 100, stage: "complete", label: "新しい世界の生成が完了しました", error: null };
@@ -2879,10 +2864,6 @@ function renderCityWorkspace() {
   elements.cityWorkspace.innerHTML = `${cityWorkspaceHeader(city, governor)}<div class="city-workspace-body">${body}</div>`;
 }
 
-function knowledgeLabel(value) {
-  return ({ defined: "設定あり", partial: "一部未詳", unknown: "未詳" })[value] ?? value;
-}
-
 function worldModeSwitch() {
   return `
     <div class="world-mode-switch" role="group" aria-label="世界台帳の表示">
@@ -3169,13 +3150,6 @@ function renderGeneratedWorldPanel() {
   `;
 }
 
-function nationPeopleChips(nationId) {
-  const people = getPeopleForNation(nationId);
-  const confirmed = people.confirmed.map((item) => `<button type="button" class="world-link-chip is-confirmed" data-world-people="${item.id}">${item.name}</button>`);
-  const related = people.related.map((item) => `<button type="button" class="world-link-chip is-related" data-world-people="${item.id}" title="Notion上で直接の構成種族とは確定していません">関連：${item.name}</button>`);
-  return [...confirmed, ...related].join("") || '<span class="world-unset">構成種族の対応なし</span>';
-}
-
 function renderWorldNations() {
   const { runtime, playerNation } = getGeneratedWorldView(state);
   const activeNations = runtime.nations.nations.filter((nation) => !nation.dissolved);
@@ -3353,9 +3327,6 @@ function renderWorldCreatures() {
 }
 
 function statisticDistribution(title, items) {
-  if (!items) {
-    return `<article class="statistics-distribution is-unavailable"><header><h3>${title}</h3><small>未調査</small></header><p>信頼できる構成比がありません。</p></article>`;
-  }
   const rows = items.map((item) => `
     <div class="statistics-share-row">
       <span><b>${item.label}</b><em>${item.share}%</em></span>
@@ -8917,11 +8888,8 @@ function playNavigationCue(event) {
     "[data-generated-map-scale]",
     "[data-generated-map-legend-toggle]",
     "[data-world-guide-toggle]",
-    "[data-world-filter]",
     "[data-generated-nation]",
     "[data-generated-statistics-nation]",
-    "[data-statistics-nation]",
-    "[data-world-nation]",
     "[data-world-people]",
     "[data-select-city]",
     "[data-select-town]",
@@ -10407,13 +10375,6 @@ document.addEventListener("click", async (event) => {
     renderPanelFromTop();
     return;
   }
-  const worldFilter = event.target.closest("[data-world-filter]");
-  if (worldFilter) {
-    view.worldNationFilter = worldFilter.dataset.worldFilter;
-    view.worldGuideOpen = false;
-    renderPanelFromTop();
-    return;
-  }
   if (event.target.closest("[data-world-guide-toggle]")) {
     view.worldGuideOpen = !view.worldGuideOpen;
     renderPanelFromTop();
@@ -10748,9 +10709,7 @@ document.addEventListener("click", async (event) => {
     renderPanelFromTop();
     return;
   }
-  const worldDossierPatch = resolveWorldDossierNavigation(event.target, {
-    hasStaticNation: (nationId) => Boolean(WORLD.countries[nationId]),
-  });
+  const worldDossierPatch = resolveWorldDossierNavigation(event.target);
   if (worldDossierPatch) {
     Object.assign(view, worldDossierPatch);
     renderPanelFromTop();

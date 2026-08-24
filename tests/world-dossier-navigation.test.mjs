@@ -4,12 +4,9 @@ import { resolveWorldDossierNavigation } from "../src/world-dossier-navigation.j
 
 const SELECTOR_ORDER = [
   "[data-world-mode]",
-  "[data-show-creature-on-map]",
-  "[data-statistics-nation]",
   "[data-generated-statistics-nation]",
   "[data-generated-nation]",
   "[data-geopolitical-nation]",
-  "[data-world-nation]",
   "[data-world-people]",
 ];
 
@@ -36,23 +33,6 @@ const routeCases = [
     selector: "[data-world-mode]",
     dataset: { worldMode: "statistics" },
     expected: { atlasMode: "statistics", generatedMapScale: "world" },
-  },
-  {
-    name: "creature map link selects the creature",
-    selector: "[data-show-creature-on-map]",
-    dataset: { showCreatureOnMap: "leviathan" },
-    expected: {
-      selectedCreatureId: "leviathan",
-      selectedType: "creature",
-      selectedId: "leviathan",
-      scale: "world",
-    },
-  },
-  {
-    name: "static statistics nation selects statistics",
-    selector: "[data-statistics-nation]",
-    dataset: { statisticsNation: "vale" },
-    expected: { selectedNationId: "vale", atlasMode: "statistics", panel: "world" },
   },
   {
     name: "generated statistics nation selects world scale",
@@ -88,20 +68,6 @@ const routeCases = [
     },
   },
   {
-    name: "known world nation also selects its country map entry",
-    selector: "[data-world-nation]",
-    dataset: { worldNation: "vale" },
-    options: { hasStaticNation: (nationId) => nationId === "vale" },
-    expected: {
-      selectedNationId: "vale",
-      atlasMode: "nations",
-      panel: "world",
-      selectedType: "country",
-      selectedId: "vale",
-      scale: "world",
-    },
-  },
-  {
     name: "world people selects the peoples dossier",
     selector: "[data-world-people]",
     dataset: { worldPeople: "tideborn" },
@@ -112,7 +78,7 @@ const routeCases = [
 for (const routeCase of routeCases) {
   test(routeCase.name, () => {
     const target = makeTarget({ [routeCase.selector]: { dataset: routeCase.dataset } });
-    const result = resolveWorldDossierNavigation(target, routeCase.options);
+    const result = resolveWorldDossierNavigation(target);
 
     assert.deepEqual(result, routeCase.expected);
     const matchedIndex = SELECTOR_ORDER.indexOf(routeCase.selector);
@@ -150,32 +116,6 @@ test("the first matching selector wins when one target matches multiple routes",
     generatedMapScale: "world",
   });
   assert.deepEqual(target.calls, ["[data-world-mode]"]);
-});
-
-test("an unknown world nation preserves the existing detail selection and scale", () => {
-  const target = makeTarget({
-    "[data-world-nation]": { dataset: { worldNation: "unmapped-nation" } },
-  });
-  const previousView = {
-    selectedType: "creature",
-    selectedId: "leviathan",
-    scale: "city",
-  };
-
-  const result = resolveWorldDossierNavigation(target, { hasStaticNation: () => false });
-  const nextView = { ...previousView, ...result };
-
-  assert.deepEqual(result, {
-    selectedNationId: "unmapped-nation",
-    atlasMode: "nations",
-    panel: "world",
-  });
-  assert.deepEqual(nextView, {
-    ...previousView,
-    selectedNationId: "unmapped-nation",
-    atlasMode: "nations",
-    panel: "world",
-  });
 });
 
 test("a non-element target does not resolve navigation", () => {

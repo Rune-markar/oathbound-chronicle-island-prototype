@@ -7401,8 +7401,7 @@ button.alert-chip:focus-visible {
 
 .statistics-dossier-heading small,
 .statistics-dossier-heading b,
-.statistics-profile-note,
-.resource-power-card {
+.statistics-profile-note {
   font-family: system-ui, sans-serif;
 }
 
@@ -7465,11 +7464,6 @@ button.alert-chip:focus-visible {
   color: #706b60;
   font-size: 8px;
   line-height: 1.55;
-}
-
-.statistics-composition-grid {
-  display: grid;
-  gap: 7px;
 }
 
 .statistics-distribution {
@@ -7537,117 +7531,6 @@ button.alert-chip:focus-visible {
   height: 100%;
   background: linear-gradient(90deg, #496c64, #9f8247);
   text-decoration: none;
-}
-
-.statistics-distribution.is-unavailable {
-  border-style: dashed;
-}
-
-.statistics-distribution.is-unavailable p,
-.statistics-unavailable {
-  margin: 0;
-  color: #8a8376;
-  font-family: system-ui, sans-serif;
-  font-size: 7px;
-}
-
-.resource-power-card {
-  margin-top: 9px;
-  padding: 10px;
-  border: 1px solid rgba(90, 72, 38, 0.24);
-  background: rgba(239, 226, 194, 0.27);
-}
-
-.resource-power-card > header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 9px;
-}
-
-.resource-power-card > header small {
-  color: #897a60;
-  font-size: 6px;
-  letter-spacing: 0.09em;
-}
-
-.resource-power-card h3 {
-  margin: 2px 0 0;
-  color: #41524b;
-  font-size: 10px;
-}
-
-.resource-power-card > header > strong {
-  color: #775d2c;
-  font-family: serif;
-  font-size: 22px;
-}
-
-.resource-power-card > header > strong small {
-  margin-left: 2px;
-  font-family: system-ui, sans-serif;
-  letter-spacing: 0;
-}
-
-.resource-power-list {
-  display: grid;
-  gap: 5px;
-}
-
-.resource-power-row {
-  display: grid;
-  grid-template-columns: 22px 56px minmax(0, 1fr) 20px;
-  align-items: center;
-  gap: 5px;
-}
-
-.resource-power-row > span {
-  width: 22px;
-  height: 22px;
-  display: grid;
-  place-items: center;
-  border: 1px solid rgba(106, 83, 40, 0.26);
-  color: #755c2e;
-  background: rgba(193, 157, 80, 0.12);
-  font-size: 7px;
-  font-weight: 800;
-}
-
-.resource-power-row > b {
-  color: #68675f;
-  font-size: 7px;
-}
-
-.resource-power-row > i {
-  height: 4px;
-  overflow: hidden;
-  background: rgba(65, 80, 72, 0.12);
-}
-
-.resource-power-row > i > u {
-  display: block;
-  width: var(--score);
-  height: 100%;
-  background: #52746b;
-  text-decoration: none;
-}
-
-.resource-power-row > em {
-  color: #6f582c;
-  font-size: 8px;
-  font-style: normal;
-  font-weight: 800;
-  text-align: right;
-}
-
-.resource-power-card > p {
-  margin: 9px 0 0;
-  padding-top: 7px;
-  border-top: 1px solid rgba(89, 72, 43, 0.13);
-  color: #81796b;
-  font-size: 6.5px;
-  line-height: 1.5;
 }
 
 .statistics-ranking {
