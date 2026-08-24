@@ -36,6 +36,21 @@ test("現状台帳のローカル出典と開始画面の導線が存在する",
   assert.match(statusPage, /src="\.\/src\/project-status\.js"/);
 });
 
+test("天地創造の複合地理と未実装の資源開発を分けて追跡する", () => {
+  const geography = STATUS_ENTRIES.find((item) => item.id === "generated-world-geography");
+  assert.equal(geography?.category, "implemented");
+  ["自然", "文明", "幻想", "天体", "田畑", "運河", "移動時間", "危険度"].forEach((term) => {
+    assert.match(`${geography.title} ${geography.summary} ${geography.evidence}`, new RegExp(term));
+  });
+  assert.ok(geography.sources.some((item) => item.href === "./src/terrain-geography.js" && /applyTerrainGeography/.test(item.ref)));
+  assert.ok(geography.sources.some((item) => item.href === "./src/v3-field-system.js" && /getV3DetailedTile/.test(item.ref)));
+  assert.ok(geography.sources.some((item) => item.href === "./tests/terrain-geography.test.mjs"));
+
+  const resources = STATUS_ENTRIES.find((item) => item.id === "geological-resources");
+  assert.equal(resources?.category, "planned");
+  assert.match(`${resources.title} ${resources.summary}`, /地熱.*石油.*石炭.*埋蔵量.*採掘権/s);
+});
+
 test("犯罪プレーの通常導線、六行動、帰結を実装済みとして追跡する", async () => {
   assert.equal(STATUS_LEDGER_META.lastAuditedAt, "2026-08-24");
   const crime = STATUS_ENTRIES.find((item) => item.id === "criminal-play-flow");
