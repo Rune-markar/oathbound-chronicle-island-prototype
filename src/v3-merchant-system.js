@@ -174,10 +174,16 @@ function companyAdapter(context, state) {
     month: calendar.month,
     turn: calendar.monthIndex,
     rngSeed: context?.seed ?? next.seed,
-    generatedWorld: { seed: context?.seed ?? next.seed },
+    generatedWorld: {
+      seed: context?.seed ?? next.seed,
+      raceDynamics: clone(context?.raceDynamics ?? null),
+    },
     merchantCompanyContext: {
       currentSettlementId: currentMarket?.id ?? null,
       jurisdictions: context ? v3Jurisdictions(context, next) : [],
+      nationPeopleById: context ? Object.fromEntries(
+        (context.runtime?.nations?.nations ?? []).map((nation) => [nation.id, nation.peopleId ?? "human"]),
+      ) : {},
     },
     player: {
       name: next.player.name,

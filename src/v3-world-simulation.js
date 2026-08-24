@@ -9,6 +9,12 @@ import {
 } from "./generated-world-system.js";
 import { getRegionalDomainView } from "./regional-domain-system.js";
 import { fnv1aCharacters, unitFromHash } from "./determinism.js";
+import {
+  createRaceDecisionWorldState,
+  deriveNationDecisionProfile,
+  preserveRaceDecisionWorldState,
+} from "./race-decision-system.js";
+import { deriveNationPolity } from "./world-polity-system.js";
 
 export const V3_WORLD_SIMULATION_VERSION = 2;
 export const V3_PRESENT_DATE = Object.freeze({ year: 317, month: 4 });
@@ -69,6 +75,7 @@ function compactNation(nation) {
     rulerTitle: nation.rulerTitle ?? nation.polity?.rulerTitle ?? null,
     capitalTitle: nation.capitalTitle ?? nation.polity?.capitalTitle ?? null,
     capitalName: nation.capitalName ?? null,
+    peopleId: nation.peopleId ?? null,
     peopleName: nation.peopleName ?? "住民",
     regionCount: nation.regionIds?.length ?? nation.regionCount ?? 0,
     population: Math.round(Number(nation.settlementPopulation ?? nation.populationPotential) || 0),
@@ -79,6 +86,12 @@ function compactNation(nation) {
     },
     dissolved: Boolean(nation.dissolved),
   };
+}
+
+function compactRaceDynamics(source) {
+  const preserved = preserveRaceDecisionWorldState(source);
+  if (!preserved) return null;
+  return { ...preserved, events: [] };
 }
 
 function ownershipSignature(regionOwners) {
@@ -150,6 +163,7 @@ function snapshotFor(runtime, simulation, reason = "年次記録", headline = nu
     regionOwners,
     nations: snapshotNations(runtime, simulation, regionOwners),
     activeWars: wars,
+    raceDynamics: compactRaceDynamics(simulation.generatedWorld.raceDynamics),
     signature: ownershipSignature(regionOwners),
   };
 }
@@ -190,6 +204,7 @@ function normalizeSnapshot(runtime, source) {
         rulerTitle: String(nation.rulerTitle ?? polity?.rulerTitle ?? fallback?.rulerTitle ?? ""),
         capitalTitle: String(nation.capitalTitle ?? polity?.capitalTitle ?? fallback?.capitalTitle ?? ""),
         capitalName: String(nation.capitalName ?? fallback?.capitalName ?? ""),
+        peopleId: String(nation.peopleId ?? fallback?.peopleId ?? "human"),
         peopleName: String(nation.peopleName ?? "住民"),
         regionCount: Math.max(0, Math.round(Number(nation.regionCount) || 0)),
         population: Math.max(0, Math.round(Number(nation.population) || 0)),
@@ -217,6 +232,7 @@ function normalizeSnapshot(runtime, source) {
       targetRegionId: war.targetRegionId,
       phase: war.phase,
     })),
+    raceDynamics: compactRaceDynamics(source.raceDynamics),
     signature: ownershipSignature(regionOwners),
   };
 }
@@ -227,6 +243,7 @@ export function createV3WorldSimulation(runtime, options = {}, dateState = V3_PR
     month: clamp(Math.round(dateState?.month ?? V3_PRESENT_DATE.month), 1, 12),
   };
   const generatedWorld = createGeneratedWorldState(options, date);
+  generatedWorld.raceDynamics = createRaceDecisionWorldState(runtime, generatedWorld.raceDynamics, date);
   const simulation = {
     version: V3_WORLD_SIMULATION_VERSION,
     year: date.year,
@@ -250,6 +267,8 @@ export function normalizeV3WorldSimulation(runtime, options = {}, source = null)
     year: Number.isInteger(source.year) ? source.year : V3_PRESENT_DATE.year,
     month: clamp(Math.round(source.month ?? V3_PRESENT_DATE.month), 1, 12),
   };
+  const generatedWorld = createGeneratedWorldState({ ...options, ...(source.generatedWorld ?? {}) }, date);
+  generatedWorld.raceDynamics = createRaceDecisionWorldState(runtime, generatedWorld.raceDynamics, date);
   const simulation = {
     version: V3_WORLD_SIMULATION_VERSION,
     year: date.year,
@@ -257,7 +276,7 @@ export function normalizeV3WorldSimulation(runtime, options = {}, source = null)
     elapsedMonths: Math.max(0, Math.round(Number(source.elapsedMonths) || 0)),
     prehistoryMonths: Math.max(0, Math.round(Number(source.prehistoryMonths) || 0)),
     foundedPeriod: typeof source.foundedPeriod === "string" ? source.foundedPeriod : periodFor(date),
-    generatedWorld: createGeneratedWorldState({ ...options, ...(source.generatedWorld ?? {}) }, date),
+    generatedWorld,
     autonomyStrain: Object.fromEntries(Object.entries(source.autonomyStrain ?? {}).filter(([regionId, value]) => (
       runtime.regionById.has(regionId) && Number.isFinite(Number(value))
     )).map(([regionId, value]) => [regionId, clamp(value, 0, 160)])),
@@ -330,12 +349,24 @@ function maybeDeclareSecession(runtime, state, elapsedMonths, autonomyStrain) {
   const candidate = candidates.find((entry) => entry.projectedStrain >= 100);
   if (!candidate) return { state, autonomyStrain: nextStrain, event: null };
   const shortRegionName = candidate.region.name.replace(/地方$/, "");
+  const decisionProfile = deriveNationDecisionProfile(
+    runtime,
+    state.generatedWorld.raceDynamics,
+    candidate.nation.id,
+  );
+  const polity = deriveNationPolity({
+    peopleId: candidate.nation.peopleId ?? "human",
+    stats: candidate.nation,
+    nationLevel: Math.max(1, Math.round(Number(candidate.nation.nationLevel) || 2)),
+    decisionTraits: decisionProfile?.traits ?? candidate.nation.foundingDecisionTraits ?? null,
+  });
   const next = declareGeneratedRegionIndependence(state, candidate.region.id, {
     polityId: `v3-polity-${state.year}-${candidate.region.id}`,
     name: `${shortRegionName}自由領`,
     shortName: shortRegionName,
-    government: "地方評議会",
-    officeTitle: "自由領代表",
+    government: polity.governmentName,
+    officeTitle: polity.rulerTitle,
+    polity,
     cause: "peripheral_secession",
   });
   return {
@@ -457,6 +488,7 @@ function historicalMapView(runtime, snapshot) {
     roads: runtime.nations.roads ?? [],
     borderSegments,
     activeWars: snapshot.activeWars,
+    raceDynamics: snapshot.raceDynamics,
   };
 }
 
@@ -479,6 +511,7 @@ function currentMapView(runtime, simulation) {
     roads: domains.nationMap.roads,
     borderSegments: domains.nationMap.borderSegments,
     activeWars: wars.activeWars,
+    raceDynamics: simulation.generatedWorld.raceDynamics,
   };
 }
 
@@ -518,6 +551,7 @@ export function getV3NationDossier(runtime, simulation, nationId, historyIndex =
   let condition = null;
   let relations = [];
   let latestAction = null;
+  const decisionProfile = deriveNationDecisionProfile(runtime, map.raceDynamics, nationId, nation);
   if (map.isCurrent) {
     const geopolitics = getGeneratedGeopoliticalView(generatedStateFor(simulation));
     condition = geopolitics.geopolitics.nationStates[nationId] ?? null;
@@ -538,6 +572,7 @@ export function getV3NationDossier(runtime, simulation, nationId, historyIndex =
     condition,
     relations,
     latestAction,
+    decisionProfile,
     population: map.isCurrent
       ? regions.reduce((sum, region) => sum + (Number(region.population) || 0), 0) || Number(nation.population) || 0
       : Number(nation.population) || 0,

@@ -16,7 +16,7 @@ const REQUIRED_RACE_FIELDS = [
   "fertility", "foodType", "bodySize", "militaryTraits", "favoredUnitRoles",
   "terrainModifiers", "unitTags", "combatModifiers", "politicalUnit", "censusDifficulty",
   "assimilationDifficulty", "autonomyDemand", "legalNeeds", "centralizationObstacle",
-  "integrationPolicies",
+  "integrationPolicies", "decisionTraits",
 ];
 
 test("15大分類と添付案・既存実装を統合した60実種族を正本へ保存する", () => {
@@ -49,6 +49,8 @@ test("全実種族が生態・軍事・統治・中央集権化の完全な特�
     assert.ok(race.legalNeeds.length > 0, `${race.id}.legalNeeds`);
     assert.ok(race.centralizationObstacle.length > 0, `${race.id}.centralizationObstacle`);
     assert.ok(race.integrationPolicies.length > 0, `${race.id}.integrationPolicies`);
+    assert.deepEqual(Object.keys(race.decisionTraits), ["militarism", "authority", "centralization", "openness", "ambition", "pragmatism"]);
+    assert.ok(Object.values(race.decisionTraits).every((value) => Number.isInteger(value) && value >= -100 && value <= 100), `${race.id}.decisionTraits`);
     [race.censusDifficulty, race.assimilationDifficulty, race.autonomyDemand].forEach((value) => {
       assert.ok(Number.isFinite(value) && value >= 0 && value <= 100, `${race.id}の統治難度`);
     });

@@ -54,6 +54,12 @@ import {
   respondToGeneratedResistance,
   setGeneratedOccupationPolicy,
 } from "./generated-resistance-system.js";
+import {
+  advanceRaceDecisionWorld,
+  createRaceDecisionWorldState,
+  getRaceDecisionWorldView,
+  preserveRaceDecisionWorldState,
+} from "./race-decision-system.js";
 
 export { approveGeneratedStrategicDecision } from "./generated-campaign-system.js";
 
@@ -75,6 +81,7 @@ export const GENERATED_WORLD_DEFAULTS = Object.freeze({
   discoveredRegionIds: [],
   colonies: [],
   geopolitics: null,
+  raceDynamics: null,
   worldWars: null,
   tacticalOutcomes: [],
   tacticalOutcomeReceipts: {},
@@ -133,6 +140,7 @@ function cloneGeneratedWorldState(value) {
     discoveredRegionIds: [...(value.discoveredRegionIds ?? [])],
     colonies: (value.colonies ?? []).map((colony) => ({ ...colony })),
     geopolitics: preserveGeopoliticalState(value.geopolitics),
+    raceDynamics: preserveRaceDecisionWorldState(value.raceDynamics),
     worldWars: preserveGeneratedWorldWarState(value.worldWars),
     tacticalOutcomes: structuredClone(value.tacticalOutcomes ?? []).slice(-96),
     tacticalOutcomeReceipts: normalizeTacticalOutcomeReceipts(value.tacticalOutcomeReceipts, value.tacticalOutcomes),
@@ -663,6 +671,7 @@ export function createGeneratedWorldState(options = {}, dateState = null) {
     discoveredRegionIds: [...new Set((options.discoveredRegionIds ?? []).filter((id) => typeof id === "string"))].slice(0, 512),
     colonies: normalizedColonies(options.colonies),
     geopolitics: preserveGeopoliticalState(options.geopolitics),
+    raceDynamics: preserveRaceDecisionWorldState(options.raceDynamics),
     worldWars: preserveGeneratedWorldWarState(options.worldWars),
     tacticalOutcomes: Array.isArray(options.tacticalOutcomes)
       ? structuredClone(options.tacticalOutcomes).filter((entry) => entry?.battleId).slice(-96)
@@ -991,6 +1000,11 @@ export function getGeneratedRegionalDomainView(state) {
   return world.runtime.regionalView;
 }
 
+export function getGeneratedRaceDecisionView(state) {
+  const world = getGeneratedWorldView(state);
+  return getRaceDecisionWorldView(world.runtime, world.generatedState.raceDynamics, state);
+}
+
 export function getGeneratedBarbarianView(state) {
   const world = getGeneratedWorldView(state);
   return getBarbarianWorldView(world.runtime, world.generatedState.barbarians, state);
@@ -1002,13 +1016,15 @@ export function initializeGeneratedWorldGeopolitics(state) {
   const regionalDomains = createRegionalDomainState(runtimeWithColonies(baseRuntime, generatedState), generatedState.regionalDomains, state);
   const runtime = effectiveRuntimeFor(baseRuntime, { ...generatedState, regionalDomains }, state);
   const barbarians = createBarbarianWorldState(runtime, generatedState.barbarians, state);
-  if (generatedState.geopolitics) return { ...state, generatedWorld: { ...generatedState, regionalDomains, barbarians, worldWars: createGeneratedWorldWarState(runtime, generatedState.worldWars, state), resistance: createGeneratedResistanceState(generatedState.resistance) } };
+  const raceDynamics = createRaceDecisionWorldState(runtime, generatedState.raceDynamics, state);
+  if (generatedState.geopolitics) return { ...state, generatedWorld: { ...generatedState, regionalDomains, barbarians, raceDynamics, worldWars: createGeneratedWorldWarState(runtime, generatedState.worldWars, state), resistance: createGeneratedResistanceState(generatedState.resistance) } };
   return {
     ...state,
     generatedWorld: {
       ...generatedState,
       regionalDomains,
       barbarians,
+      raceDynamics,
       geopolitics: createGeopoliticalWorldState(runtime, null, state),
       worldWars: createGeneratedWorldWarState(runtime, generatedState.worldWars, state),
       resistance: createGeneratedResistanceState(generatedState.resistance),
@@ -1095,8 +1111,14 @@ export function advanceGeneratedWorldGeopolitics(state) {
   const runtime = effectiveRuntimeFor(baseRuntime, { ...generatedState, regionalDomains }, state);
   const baseline = generatedState.geopolitics
     ?? createGeopoliticalWorldState(runtime, null, previousPeriodDate(state));
+  const raceDynamicsBaseline = createRaceDecisionWorldState(
+    runtime,
+    generatedState.raceDynamics,
+    previousPeriodDate(state),
+  );
   const advancedGeopolitics = advanceGeopoliticalWorld(runtime, baseline, state, {
     protectedNationIds: generatedState.simulationFidelity?.playerControlledNationIds ?? [],
+    raceDynamics: raceDynamicsBaseline,
   });
   const playerCampaign = state.player?.generatedCampaign?.active;
   const playerCampaignRelationKey = playerCampaign?.targetNationId && generatedState.playerNationId
@@ -1134,6 +1156,13 @@ export function advanceGeneratedWorldGeopolitics(state) {
     resistance: (generatedState.resistance?.lastAdvancedPeriod ?? null) !== resistanceResult.resistance.lastAdvancedPeriod,
   };
   const geopolitics = locateGeopoliticalEvents(runtime, resistanceResult.geopolitics);
+  const raceDynamics = advanceRaceDecisionWorld(runtime, raceDynamicsBaseline, state, {
+    geopolitics,
+    beforeWorldWars: generatedState.worldWars,
+    worldWars: worldWarResult.worldWars,
+    resistance: resistanceResult.resistance,
+    regionalDomains: resistanceResult.regionalDomains,
+  });
   const currentWarEvents = worldWarResult.worldWars.events.filter((event) => event.period === periodFor(state));
   const currentGeopoliticalEvents = geopolitics.events.filter((event) => event.period === periodFor(state));
   const intelligence = recordNearbyWorldEvents(state, runtime, generatedState, [...currentGeopoliticalEvents, ...currentWarEvents]);
@@ -1143,6 +1172,7 @@ export function advanceGeneratedWorldGeopolitics(state) {
       ...generatedState,
       regionalDomains: resistanceResult.regionalDomains,
       geopolitics,
+      raceDynamics,
       worldWars: worldWarResult.worldWars,
       resistance: resistanceResult.resistance,
       intelligence,

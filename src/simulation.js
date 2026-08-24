@@ -4,4 +4,5 @@ export * from "./character-abilities.js";
 export * from "./skill-mastery-system.js";
 export * from "./merchant-trade.js";
 export * from "./national-unit-system.js";
+export * from "./race-decision-system.js";
 export { acceptEquipmentUpgrade, dismissEquipmentUpgrade, getEquipmentUpgradeOffer } from "./village-life.js";

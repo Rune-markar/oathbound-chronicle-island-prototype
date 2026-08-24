@@ -71,6 +71,8 @@ import { GAME_MINUTES_PER_MONTH, getGameCalendar } from "./game-clock.js";
 import { commitV3Action, getV3Operations, normalizeV3IntegratedState, V3_SYSTEM_REGISTRY } from "./v3-system-kernel.js";
 import { readV3Save, V3_SAVE_VERSION, writeV3Save } from "./v3-save-system.js";
 import { applyV3BattleResultToWorldSimulation } from "./v3-battle-strategy.js";
+import { DECISION_TRAITS, TEMPERAMENTS } from "./race-decision-system.js";
+import { GEOPOLITICAL_PULL_SET } from "./geopolitical-world.js";
 
 const STORAGE_KEY = "leviathan-covenant-v3-save";
 const WORLD_CONFIG = Object.freeze({ width: 192, height: 120, plateCount: 28, nationCount: 7 });
@@ -198,6 +200,7 @@ function commitStateAction(action, options = {}) {
   const committed = commitV3Action(runtime, context, state, worldSimulation, result, { source: options.source });
   state = committed.state;
   worldSimulation = committed.worldSimulation;
+  if (context) context.raceDynamics = worldSimulation?.generatedWorld?.raceDynamics ?? null;
   return committed;
 }
 
@@ -241,6 +244,7 @@ async function prepareWorld(options, savedField = null, savedWorldSimulation = n
   }
   setGenerationProgress(98, "現在地の周囲を1マス単位へ展開しています。");
   context = createV3WorldContext(runtime, options.seed);
+  context.raceDynamics = worldSimulation.generatedWorld.raceDynamics;
   state = savedField ? normalizeV3FieldState(context, savedField) : createV3FieldState(context, { playerName: options.playerName });
   state = normalizeV3IntegratedState(context, state);
   if (savedField) {
@@ -278,6 +282,7 @@ async function prepareWorld(options, savedField = null, savedWorldSimulation = n
     }
     clearV3GroupBattleBridge(localStorage);
   }
+  context.raceDynamics = worldSimulation.generatedWorld.raceDynamics;
   worldOptions = { ...WORLD_CONFIG, ...options, playerName: state.player.name };
   mapHistoryIndex = null;
   selectedNationId = null;
@@ -506,8 +511,8 @@ function renderCommerce() {
       if (jurisdiction.application) return `<article class="v3-charter-card is-pending"><header><span><small>${escapeHtml(jurisdiction.government)}</small><strong>${escapeHtml(jurisdiction.name)}</strong></span><b>条件提示</b></header><p>${escapeHtml(jurisdiction.application.authority)}への返答を選ぶ。</p><div>${jurisdiction.decisions.map((decision) => `<button type="button" data-v3-charter-decision="${decision.id}" data-v3-application="${escapeHtml(jurisdiction.application.id)}" ${model.company.treasury < decision.effectiveCost ? "disabled" : ""}><strong>${escapeHtml(decision.name)}</strong><small>${escapeHtml(decision.description)}${decision.effectiveCost ? ` · 資金${decision.effectiveCost}` : ""}${decision.monthlyDue ? ` · 月${decision.monthlyDue}` : ""}${decision.minimumReputation ? ` · 信用${decision.minimumReputation}${decision.eligible ? "達成" : "未達・却下見込み"}` : ""}</small></button>`).join("")}</div></article>`;
       return `<article class="v3-charter-card"><header><span><small>${escapeHtml(jurisdiction.government)}</small><strong>${escapeHtml(jurisdiction.name)}</strong></span><b>資格なし</b></header><p><strong>${escapeHtml(jurisdiction.procedure.name)}</strong> · ${escapeHtml(jurisdiction.procedure.authority)}</p><p>${escapeHtml(jurisdiction.procedure.summary)}</p><div>${jurisdiction.procedure.filings.map((filing) => `<button type="button" data-v3-charter-start="${escapeHtml(jurisdiction.id)}" data-v3-filing="${filing.id}" ${model.company.treasury < filing.cost ? "disabled" : ""}><strong>${escapeHtml(filing.name)}</strong><small>${escapeHtml(filing.description)}${filing.cost ? ` · 資金${filing.cost}` : ""}</small></button>`).join("")}</div></article>`;
     }).join("") || "<p>市場の相場を記録すると、その国の営業手続きが現れます。</p>";
-    const staff = model.company.staff.map((entry) => `<li><strong>${escapeHtml(entry.name)} · ${escapeHtml(entry.roleName)}</strong><span>${entry.assignmentId ? "配置済み" : "配置待ち"} · 月給${entry.wage}</span></li>`).join("") || "<li>人員なし</li>";
-    const candidates = model.candidates.map((entry) => `<button type="button" data-v3-company-hire="${escapeHtml(entry.id)}" ${model.company.treasury < entry.signingBonus ? "disabled" : ""}><strong>${escapeHtml(entry.name)} · ${escapeHtml(entry.roleName)}</strong><small>${escapeHtml(entry.originSettlementName)}出身 · 契約${entry.signingBonus} · 月給${entry.wage}</small></button>`).join("") || "<p>候補者は全員雇用済みです。</p>";
+    const staff = model.company.staff.map((entry) => `<li><strong>${escapeHtml(entry.name)} · ${escapeHtml(entry.roleName)}</strong><span>${entry.temperamentName ? `${escapeHtml(entry.temperamentName)} · ` : ""}${entry.assignmentId ? "配置済み" : "配置待ち"} · 月給${entry.wage}</span></li>`).join("") || "<li>人員なし</li>";
+    const candidates = model.candidates.map((entry) => `<button type="button" data-v3-company-hire="${escapeHtml(entry.id)}" ${model.company.treasury < entry.signingBonus ? "disabled" : ""}><strong>${escapeHtml(entry.name)} · ${escapeHtml(entry.roleName)}</strong><small>${escapeHtml(entry.originSettlementName)}出身${entry.temperamentName ? ` · ${escapeHtml(entry.temperamentName)}` : ""} · 契約${entry.signingBonus} · 月給${entry.wage}</small></button>`).join("") || "<p>候補者は全員雇用済みです。</p>";
     const sourceOptions = model.marketOptions.map((entry) => `<option value="${escapeHtml(entry.id)}">${escapeHtml(entry.name)} · ${escapeHtml(entry.nationName)}${entry.licensed ? "" : "（資格なし）"}</option>`).join("");
     const destinationOptions = model.marketOptions.map((entry, index) => `<option value="${escapeHtml(entry.id)}" ${index === 1 ? "selected" : ""}>${escapeHtml(entry.name)} · ${escapeHtml(entry.nationName)}${entry.licensed ? "" : "（資格なし）"}</option>`).join("");
     const routeForm = model.routeLeaders.length && model.marketOptions.length >= 2 ? `<div class="v3-company-form" data-v3-route-form><label>仕入地<select data-v3-route-source>${sourceOptions}</select></label><label>販売地<select data-v3-route-destination>${destinationOptions}</select></label><label>商品<select data-v3-route-commodity>${model.commodities.map((entry) => `<option value="${entry.id}">${escapeHtml(entry.name)}</option>`).join("")}</select></label><label>運行<select data-v3-route-approach>${model.routeApproaches.map((entry) => `<option value="${entry.id}">${escapeHtml(entry.name)} · 契約${entry.cost}</option>`).join("")}</select></label><label>責任者<select data-v3-route-leader>${model.routeLeaders.map((entry) => `<option value="${escapeHtml(entry.id)}">${escapeHtml(entry.name)} · ${escapeHtml(entry.roleName)}</option>`).join("")}</select></label><button type="button" data-v3-route-secure>販路を契約</button></div>` : "<p>二市場の記録と、配置待ちの隊商頭または護衛頭が必要です。</p>";
@@ -752,6 +757,35 @@ function regionCountFor(map, nationId) {
   return [...map.regionById.values()].filter((region) => region.nationId === nationId).length;
 }
 
+function signedDecisionValue(value) {
+  const number = Math.round(Number(value) || 0);
+  return number > 0 ? `+${number}` : String(number);
+}
+
+function renderDecisionProfile(profile, latestAction, peopleName) {
+  if (!profile) return "";
+  const temperamentEntries = Object.entries(profile.temperamentShares ?? {}).map(([id, share]) => ({
+    id,
+    name: TEMPERAMENTS[id]?.name ?? id,
+    percent: Math.round((Number(share) || 0) * 100),
+  }));
+  const axes = Object.entries(DECISION_TRAITS).map(([id, definition]) => `
+    <div><dt>${escapeHtml(definition.name)}</dt><dd data-sign="${profile.traits[id] < 0 ? "negative" : profile.traits[id] > 0 ? "positive" : "neutral"}">${signedDecisionValue(profile.traits[id])}</dd></div>
+  `).join("");
+  const probabilities = (latestAction?.alternatives ?? []).slice(0, 4).map((entry) => `
+    <span><b>${escapeHtml(GEOPOLITICAL_PULL_SET[entry.id]?.name ?? entry.id)}</b><i>${Math.round((Number(entry.probability) || 0) * 100)}%</i></span>
+  `).join("");
+  const agendas = (profile.historicalAgendas ?? []).slice(-2).map((agenda) => `<li>${escapeHtml(agenda.title)}</li>`).join("");
+  return `
+    <section class="v3-decision-profile" aria-label="${escapeHtml(peopleName)}の気質構成と国家意思決定">
+      <header><small>RACE DYNAMICS</small><strong>${escapeHtml(peopleName)} · ${escapeHtml(profile.representativeTemperament?.name ?? "混合気質")}</strong><span>統治者 ${escapeHtml(TEMPERAMENTS[profile.leader?.temperamentId]?.name ?? "個性不明")}</span></header>
+      <div class="v3-temperament-grid">${temperamentEntries.map((entry) => `<span><b>${escapeHtml(entry.name)}</b><i>${entry.percent}%</i><meter min="0" max="100" value="${entry.percent}" aria-label="${escapeHtml(entry.name)} ${entry.percent}%"></meter></span>`).join("")}</div>
+      <dl class="v3-decision-axes">${axes}</dl>
+      ${probabilities ? `<div class="v3-decision-probabilities"><small>直近判断の確率分布</small>${probabilities}</div>` : ""}
+      ${agendas ? `<div class="v3-decision-agendas"><small>歴史アジェンダ</small><ul>${agendas}</ul></div>` : ""}
+    </section>`;
+}
+
 function renderCurrentPolity(map) {
   const location = getV3LocationSummary(context, state);
   const nationId = map.tileNationIds[location.tile.macroIndex] ?? null;
@@ -820,7 +854,18 @@ function renderWorldPanels(map) {
       ? dossier.wars.map((war) => `${escapeHtml(map.nationById.get(war.attackerNationId)?.name ?? war.attackerName ?? "不明勢力")} 対 ${escapeHtml(map.nationById.get(war.defenderNationId)?.name ?? war.defenderName ?? "不明勢力")}`).join(" / ")
       : "交戦なし";
     const polity = dossier.nation.polity;
-    elements.worldDossier.innerHTML = `<header><i style="--nation-color:${escapeHtml(dossier.nation.color)}"></i><div><small>${dossier.isHistorical ? "HISTORICAL POLITY" : "NATION DOSSIER"}</small><strong>${escapeHtml(dossier.nation.name)}</strong><span>${escapeHtml(polity?.formName ?? dossier.nation.government ?? "統治形態不明")} / ${escapeHtml(polity?.politicalSystemName ?? dossier.nation.government ?? "制度不明")}</span></div></header><dl><div><dt>元首</dt><dd>${escapeHtml(polity?.rulerTitle ?? dossier.nation.rulerTitle ?? "不明")}</dd></div><div><dt>首都</dt><dd>${escapeHtml(dossier.nation.capitalName ?? `${polity?.capitalTitle ?? dossier.nation.capitalTitle ?? "首都"}${dossier.nation.shortName ?? ""}`)}</dd></div><div><dt>領域</dt><dd>${dossier.regions.length}地方</dd></div><div><dt>人口</dt><dd>${Math.round(dossier.population).toLocaleString("ja-JP")}人</dd></div><div><dt>集落</dt><dd>都${dossier.settlementCounts.city}・町${dossier.settlementCounts.town}・村${dossier.settlementCounts.village}</dd></div><div><dt>隣国</dt><dd>${dossier.neighbors.length}勢力</dd></div>${condition ? `<div><dt>結束</dt><dd>${condition.cohesion}</dd></div><div><dt>備蓄</dt><dd>${condition.reserves}</dd></div><div><dt>態勢</dt><dd>${escapeHtml(condition.posture)}</dd></div><div><dt>緊張関係</dt><dd>${relationWarning}</dd></div>` : ""}</dl><p class="v3-dossier-war">${warText}</p>${dossier.latestAction ? `<p><strong>直近の判断</strong><span>${escapeHtml(dossier.latestAction.title)}</span><small>${escapeHtml(dossier.latestAction.summary)}</small></p>` : ""}`;
+    elements.worldDossier.innerHTML = `
+      <header><i style="--nation-color:${escapeHtml(dossier.nation.color)}"></i><div><small>${dossier.isHistorical ? "HISTORICAL POLITY" : "NATION DOSSIER"}</small><strong>${escapeHtml(dossier.nation.name)}</strong><span>${escapeHtml(polity?.formName ?? dossier.nation.government ?? "統治形態不明")} / ${escapeHtml(polity?.politicalSystemName ?? dossier.nation.government ?? "制度不明")}</span></div></header>
+      <dl>
+        <div><dt>元首</dt><dd>${escapeHtml(polity?.rulerTitle ?? dossier.nation.rulerTitle ?? "不明")}</dd></div>
+        <div><dt>首都</dt><dd>${escapeHtml(dossier.nation.capitalName ?? `${polity?.capitalTitle ?? dossier.nation.capitalTitle ?? "首都"}${dossier.nation.shortName ?? ""}`)}</dd></div>
+        <div><dt>領域</dt><dd>${dossier.regions.length}地方</dd></div><div><dt>人口</dt><dd>${Math.round(dossier.population).toLocaleString("ja-JP")}人</dd></div>
+        <div><dt>集落</dt><dd>都${dossier.settlementCounts.city}・町${dossier.settlementCounts.town}・村${dossier.settlementCounts.village}</dd></div><div><dt>隣国</dt><dd>${dossier.neighbors.length}勢力</dd></div>
+        ${condition ? `<div><dt>結束</dt><dd>${condition.cohesion}</dd></div><div><dt>備蓄</dt><dd>${condition.reserves}</dd></div><div><dt>態勢</dt><dd>${escapeHtml(condition.posture)}</dd></div><div><dt>緊張関係</dt><dd>${relationWarning}</dd></div>` : ""}
+      </dl>
+      <p class="v3-dossier-war">${warText}</p>
+      ${dossier.latestAction ? `<p><strong>直近の判断</strong><span>${escapeHtml(dossier.latestAction.title)}</span><small>${escapeHtml(dossier.latestAction.summary)}</small></p>` : ""}
+      ${renderDecisionProfile(dossier.decisionProfile, dossier.latestAction, dossier.nation.peopleName ?? "住民")}`;
   }
 
   const maximumPeriod = periodNumber(map.period);

@@ -197,6 +197,7 @@ function polityProfile(rule = {}) {
     officeTitles: { ...form.officeTitles, ...(rule.officeTitles ?? {}) },
     sovereignty: { ...sovereignty },
     modifiers: { ...form.modifiers, ...(rule.modifiers ?? {}) },
+    decisionBasis: rule.decisionBasis ? { ...rule.decisionBasis } : null,
     sourceReferenceIds: WORLD_POLITY_MODEL_REFERENCES.map((reference) => reference.id),
   };
 }
@@ -206,7 +207,44 @@ export function derivePolityForForm(formId, overrides = {}) {
   return polityProfile({ formId: form.id, governmentName: overrides.governmentName ?? form.name, ...overrides });
 }
 
-export function deriveNationPolity({ peopleId = "human", stats = {}, nationLevel = 1 } = {}) {
+function decisionPolityRule(peopleId, decisionTraits, stats, nationLevel) {
+  const authority = clamp(Number(decisionTraits.authority) || 0, -100, 100);
+  const centralization = clamp(Number(decisionTraits.centralization) || 0, -100, 100);
+  const militarism = clamp(Number(decisionTraits.militarism) || 0, -100, 100);
+  const openness = clamp(Number(decisionTraits.openness) || 0, -100, 100);
+  const ambition = clamp(Number(decisionTraits.ambition) || 0, -100, 100);
+  let rule;
+  if (militarism >= 42 && authority >= 12 && centralization >= 8) {
+    rule = { formId: "military_regime", governmentName: "中央軍政" };
+  } else if (authority >= 0 && centralization >= 0) {
+    rule = nationLevel >= 6 && ambition >= 12
+      ? { formId: "empire", governmentName: "中央集権帝政" }
+      : { formId: "kingdom", politicalSystemId: "absolute_monarchy", governmentName: "中央集権王政" };
+  } else if (authority >= 0) {
+    rule = { formId: "kingdom", politicalSystemId: "feudal_monarchy", governmentName: "封建王政" };
+  } else if (centralization >= 0) {
+    rule = { formId: "republic", politicalSystemId: "representative_republic", governmentName: "中央集権共和国" };
+  } else {
+    rule = openness >= 20 && stats.coastalShare >= 0.25
+      ? { formId: "city_league", governmentName: "開放都市同盟" }
+      : { formId: "federation", politicalSystemId: "federal_council", governmentName: "自治連邦" };
+  }
+  const cultural = CULTURAL_POLITY_RULES[peopleId];
+  if (cultural?.formId === rule.formId) rule = { ...rule, ...cultural };
+  return {
+    ...rule,
+    decisionBasis: {
+      militarism: Math.round(militarism),
+      authority: Math.round(authority),
+      centralization: Math.round(centralization),
+      openness: Math.round(openness),
+      ambition: Math.round(ambition),
+      pragmatism: Math.round(clamp(Number(decisionTraits.pragmatism) || 0, -100, 100)),
+    },
+  };
+}
+
+export function deriveNationPolity({ peopleId = "human", stats = {}, nationLevel = 1, decisionTraits = null } = {}) {
   const numericStats = {
     mountainShare: Number(stats.mountainShare) || 0,
     coastalShare: Number(stats.coastalShare) || 0,
@@ -216,7 +254,10 @@ export function deriveNationPolity({ peopleId = "human", stats = {}, nationLevel
     productionPerTile: Number(stats.productionPerTile) || 0,
     meanFreshwater: Number(stats.meanFreshwater) || 0,
   };
-  return polityProfile(CULTURAL_POLITY_RULES[peopleId] ?? humanPolityRule(numericStats, nationLevel));
+  const rule = decisionTraits
+    ? decisionPolityRule(peopleId, decisionTraits, numericStats, nationLevel)
+    : CULTURAL_POLITY_RULES[peopleId] ?? humanPolityRule(numericStats, nationLevel);
+  return polityProfile(rule);
 }
 
 export function regionalOfficeTitle(polity, { capital = false, frontier = false } = {}) {

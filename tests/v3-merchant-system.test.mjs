@@ -18,13 +18,14 @@ import {
   sellV3Commodity,
   startV3CharterApplication,
 } from "../src/v3-merchant-system.js";
+import { createRaceDecisionWorldState } from "../src/race-decision-system.js";
 
 function fixtureRuntime() {
   const width = 10;
   const height = 6;
   const nations = [
-    { id: "nation-republic", name: "自由共和国", government: "共和国", color: "#668855" },
-    { id: "nation-noble", name: "白冠王国", government: "封建貴族制", color: "#886655" },
+    { id: "nation-republic", name: "自由共和国", government: "共和国", color: "#668855", peopleId: "human" },
+    { id: "nation-noble", name: "白冠王国", government: "封建貴族制", color: "#886655", peopleId: "elf" },
   ];
   const regions = [
     { id: "region-republic", nationId: nations[0].id, name: "自由平原" },
@@ -66,6 +67,7 @@ function fixtureRuntime() {
 
 function setup() {
   const context = createV3WorldContext(fixtureRuntime());
+  context.raceDynamics = createRaceDecisionWorldState(context.runtime, null, { year: 317, month: 4 });
   const state = createV3FieldState(context, { playerName: "試験商人" });
   state.player.gold = 100;
   normalizeV3MerchantState(state);
@@ -132,8 +134,12 @@ test("個人実績から商会を設立し、共和国の届出、人員、販�
   let view = getV3MerchantView(context, state);
   const factor = view.candidates.find((entry) => entry.roleId === "factor");
   const caravanMaster = view.candidates.find((entry) => entry.roleId === "caravan_master");
+  assert.equal(factor.raceId, "human");
+  assert.match(factor.temperamentName, /型$/);
+  assert.equal(Object.keys(factor.decisionTraits).length, 6);
   state = recruitV3CompanyStaff(context, state, factor.id);
   state = recruitV3CompanyStaff(context, state, caravanMaster.id);
+  assert.equal(state.merchant.company.staff[0].temperamentId, factor.temperamentId);
   view = getV3MerchantView(context, state);
   assert.throws(() => secureV3CompanyRoute(context, state, {
     sourceId: context.settlements[0].id, destinationId: context.settlements[1].id,

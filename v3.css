@@ -357,6 +357,30 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .v3-dossier-settlement > span { color: #aebbb3; font-size: 9px; }
 .v3-dossier-settlement > div { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
 .v3-dossier-settlement > div > i { padding: 3px 6px; border: 1px solid #6e7962; border-radius: 999px; color: #e1d68f; background: #203635; font-size: 9px; font-style: normal; font-weight: 800; }
+.v3-decision-profile { display: grid; gap: 8px; margin-top: 10px; padding-top: 9px; border-top: 1px solid #52645d; }
+.v3-decision-profile > header { display: grid; justify-content: stretch; gap: 1px; }
+.v3-decision-profile > header small, .v3-decision-profile > div > small { color: #d8c576; font-size: 8px; font-weight: 900; letter-spacing: .12em; }
+.v3-decision-profile > header strong { color: #f1e8c7; font: 800 14px Georgia, "Yu Mincho", serif; }
+.v3-decision-profile > header span { color: #9dafaa; font-size: 9px; }
+.v3-temperament-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+.v3-temperament-grid > span { display: grid; grid-template-columns: 1fr auto; gap: 2px 6px; padding: 5px 6px; background: #142d2e; }
+.v3-temperament-grid b { color: #c9d2cc; font-size: 9px; }
+.v3-temperament-grid i { color: #f0dc8c; font-size: 9px; font-style: normal; font-weight: 900; }
+.v3-temperament-grid meter { grid-column: 1 / -1; width: 100%; height: 5px; border: 0; background: #0a1b1d; }
+.v3-temperament-grid meter::-webkit-meter-bar { height: 5px; border: 0; border-radius: 0; background: #0a1b1d; }
+.v3-temperament-grid meter::-webkit-meter-optimum-value { background: #b6a14f; }
+.v3-temperament-grid meter::-moz-meter-bar { background: #b6a14f; }
+.v3-world-dossier .v3-decision-axes { grid-template-columns: repeat(3, 1fr); gap: 4px; margin: 0; }
+.v3-world-dossier .v3-decision-axes div { padding: 3px 4px; background: #102426; border: 0; }
+.v3-decision-axes dd[data-sign="positive"] { color: #e2ce78; }
+.v3-decision-axes dd[data-sign="negative"] { color: #89b8b5; }
+.v3-decision-axes dd[data-sign="neutral"] { color: #aebbb3; }
+.v3-decision-probabilities { display: grid; grid-template-columns: 1fr auto; gap: 3px 8px; }
+.v3-decision-probabilities > small { grid-column: 1 / -1; }
+.v3-decision-probabilities > span { display: contents; font-size: 9px; }
+.v3-decision-probabilities b { color: #bec9c2; font-weight: 700; }
+.v3-decision-probabilities i { color: #f0dc8c; font-style: normal; font-weight: 900; text-align: right; }
+.v3-decision-agendas ul { margin: 3px 0 0; padding-left: 15px; color: #b6c0ba; font-size: 9px; line-height: 1.4; }
 .v3-world-chronicle ol, .v3-world-chronicle { min-height: 0; }
 .v3-world-chronicle ol { display: grid; gap: 0; margin: 8px 0 0; padding: 0; list-style: none; }
 .v3-world-chronicle li { display: grid; padding: 7px 0; border-top: 1px solid #2e433d; }

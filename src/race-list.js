@@ -10,6 +10,22 @@ function freezeRecord(value = {}) {
   return Object.freeze({ ...value });
 }
 
+export const RACE_DECISION_TRAIT_IDS = Object.freeze([
+  "militarism",
+  "authority",
+  "centralization",
+  "openness",
+  "ambition",
+  "pragmatism",
+]);
+
+function decisionTraits(value = {}) {
+  return Object.freeze(Object.fromEntries(RACE_DECISION_TRAIT_IDS.map((id) => [
+    id,
+    Math.max(-100, Math.min(100, Math.round(Number(value[id]) || 0))),
+  ])));
+}
+
 function defineCategory(definition) {
   return Object.freeze({
     ...definition,
@@ -22,6 +38,7 @@ function defineCategory(definition) {
     terrainModifiers: freezeRecord(definition.terrainModifiers),
     unitTags: freezeArray(definition.unitTags),
     combatModifiers: freezeRecord(definition.combatModifiers),
+    decisionTraits: decisionTraits(definition.decisionTraits),
     legalNeeds: freezeArray(definition.legalNeeds),
     centralizationObstacle: freezeArray(definition.centralizationObstacle),
     integrationPolicies: freezeArray(definition.integrationPolicies),
@@ -31,6 +48,7 @@ function defineCategory(definition) {
 export const RACE_CATEGORIES = Object.freeze({
   humanfolk: defineCategory({
     id: "humanfolk", name: "人族", ecology: "制度文明型",
+    decisionTraits: { militarism: 0, authority: 5, centralization: 5, openness: 10, ambition: 15, pragmatism: 20 },
     commonTraits: ["都市・国家・成文法を形成しやすい", "制度・技術・組織によって勢力を拡大する"],
     governanceIssues: ["寿命・文化・宗教の差", "階級・民族・地域による政治対立"],
     habitat: ["plain", "forest", "hill", "urban"], foodType: ["omnivore"], bodySize: "medium",
@@ -42,6 +60,7 @@ export const RACE_CATEGORIES = Object.freeze({
   }),
   yokai: defineCategory({
     id: "yokai", name: "妖魔", ecology: "魔力・生命力依存型",
+    decisionTraits: { militarism: -5, authority: -10, centralization: -10, openness: -5, ambition: 5, pragmatism: 5 },
     commonTraits: ["魔力・生命力・感情を外部から得る", "人族社会へ潜伏または共生できる"],
     governanceIssues: ["人口把握", "食性と供物", "契約", "夜間社会"],
     habitat: ["forest", "swamp", "urban"], foodType: ["mana"], bodySize: "medium",
@@ -53,6 +72,7 @@ export const RACE_CATEGORIES = Object.freeze({
   }),
   demihuman: defineCategory({
     id: "demihuman", name: "亜人", ecology: "高適応人型",
+    decisionTraits: { militarism: 5, authority: -15, centralization: -20, openness: -5, ambition: 10, pragmatism: 10 },
     commonTraits: ["身体能力または特定環境への適応力が高い", "氏族法に基づく社会を形成しやすい"],
     governanceIssues: ["氏族忠誠", "慣習法", "定住化と領域認識"],
     habitat: ["forest", "hill", "mountain", "underground"], foodType: ["omnivore"], bodySize: "medium",
@@ -64,6 +84,7 @@ export const RACE_CATEGORIES = Object.freeze({
   }),
   slime: defineCategory({
     id: "slime", name: "粘液族", ecology: "可変流動体型",
+    decisionTraits: { militarism: -10, authority: 0, centralization: 10, openness: 5, ambition: -10, pragmatism: 30 },
     commonTraits: ["肉体形状が固定されない", "分裂・融合・擬態を行う"],
     governanceIssues: ["個体・財産・人口の定義", "本人確認"],
     habitat: ["swamp", "underground", "urban"], foodType: ["organic", "mineral"], bodySize: "variable",
@@ -75,6 +96,7 @@ export const RACE_CATEGORIES = Object.freeze({
   }),
   insectoid: defineCategory({
     id: "insectoid", name: "妖虫族", ecology: "節足・変態型",
+    decisionTraits: { militarism: 10, authority: 25, centralization: 25, openness: -10, ambition: 5, pragmatism: 10 },
     commonTraits: ["昆虫的身体を持つ", "種族ごとに単独社会から巣国家まで社会性が異なる"],
     governanceIssues: ["女王・巣への依存", "群体意識と個体責任"],
     habitat: ["forest", "underground", "desert"], foodType: ["omnivore", "nectar"], bodySize: "medium",
@@ -86,6 +108,7 @@ export const RACE_CATEGORIES = Object.freeze({
   }),
   beastfolk: defineCategory({
     id: "beastfolk", name: "獣人族", ecology: "獣系人型",
+    decisionTraits: { militarism: 10, authority: -15, centralization: -20, openness: -5, ambition: 10, pragmatism: 5 },
     commonTraits: ["鋭敏な感覚を持つ", "獣種ごとに身体能力と生活圏が大きく異なる"],
     governanceIssues: ["系統差", "群れ・氏族・狩猟圏の権利"],
     habitat: ["forest", "hill", "mountain", "tundra"], foodType: ["omnivore"], bodySize: "medium",
@@ -97,6 +120,7 @@ export const RACE_CATEGORIES = Object.freeze({
   }),
   draconic: defineCategory({
     id: "draconic", name: "竜族", ecology: "竜魔力・長命型",
+    decisionTraits: { militarism: 20, authority: 25, centralization: -10, openness: -15, ambition: 15, pragmatism: -5 },
     commonTraits: ["高い魔力・耐久力・長寿を持つ", "少数でも極めて高い個体戦力を持つ"],
     governanceIssues: ["個体戦力が国家権力を上回る", "低出生率"],
     habitat: ["mountain", "volcanic", "sky"], foodType: ["carnivore", "mana"], bodySize: "large",
@@ -108,6 +132,7 @@ export const RACE_CATEGORIES = Object.freeze({
   }),
   celestial: defineCategory({
     id: "celestial", name: "天族", ecology: "神命顕現型",
+    decisionTraits: { militarism: -5, authority: 30, centralization: 25, openness: 5, ambition: -5, pragmatism: -15 },
     commonTraits: ["神聖性と飛行能力を持つ", "個体利益より使命を重視する"],
     governanceIssues: ["地上法より神命を優先する", "神命の解釈権"],
     habitat: ["sky", "mountain", "urban"], foodType: ["mana"], bodySize: "medium",
@@ -119,6 +144,7 @@ export const RACE_CATEGORIES = Object.freeze({
   }),
   seafolk: defineCategory({
     id: "seafolk", name: "海魔", ecology: "海洋知性型",
+    decisionTraits: { militarism: 5, authority: -10, centralization: -15, openness: 15, ambition: 10, pragmatism: 20 },
     commonTraits: ["水中活動と海洋支配に優れる", "海流・海溝・漁場を戦略資産とする"],
     governanceIssues: ["陸上の国境・道路・土地制度が通用しない", "深海人口の把握"],
     habitat: ["coast", "ocean", "deep_sea"], foodType: ["carnivore", "marine"], bodySize: "medium",
@@ -130,6 +156,7 @@ export const RACE_CATEGORIES = Object.freeze({
   }),
   oni: defineCategory({
     id: "oni", name: "鬼族", ecology: "大型再生人型",
+    decisionTraits: { militarism: 25, authority: 5, centralization: -20, openness: -10, ambition: 20, pragmatism: -5 },
     commonTraits: ["大型で膂力と再生力に優れる", "個人武力と報復文化を重んじる"],
     governanceIssues: ["食料消費", "個人武力", "報復の連鎖"],
     habitat: ["hill", "mountain", "forest"], foodType: ["omnivore"], bodySize: "large",
@@ -141,6 +168,7 @@ export const RACE_CATEGORIES = Object.freeze({
   }),
   giant: defineCategory({
     id: "giant", name: "巨人族", ecology: "超大型人型",
+    decisionTraits: { militarism: 15, authority: 10, centralization: -20, openness: -10, ambition: -5, pragmatism: 0 },
     commonTraits: ["巨大な身体を持つ", "建築・運搬・破城に優れる"],
     governanceIssues: ["居住設備と食料需要が通常規格に合わない", "人口が少なく徴税単位が大きい"],
     habitat: ["mountain", "hill", "tundra"], foodType: ["omnivore"], bodySize: "huge",
@@ -152,6 +180,7 @@ export const RACE_CATEGORIES = Object.freeze({
   }),
   undead: defineCategory({
     id: "undead", name: "不死族", ecology: "死後継続型",
+    decisionTraits: { militarism: 5, authority: 25, centralization: 30, openness: -20, ambition: -10, pragmatism: 30 },
     commonTraits: ["疲労・寿命・恐怖の制約を受けにくい", "死後の肉体または魂が活動を継続する"],
     governanceIssues: ["生者との法", "相続", "労働", "死体利用"],
     habitat: ["underground", "urban", "wasteland"], foodType: ["none"], bodySize: "medium",
@@ -163,6 +192,7 @@ export const RACE_CATEGORIES = Object.freeze({
   }),
   construct: defineCategory({
     id: "construct", name: "魔法人形", ecology: "製造・魔力駆動型",
+    decisionTraits: { militarism: -10, authority: 35, centralization: 35, openness: -5, ambition: -20, pragmatism: 35 },
     commonTraits: ["製造・命令・魔力供給によって活動する", "疲労や食料より整備と動力を必要とする"],
     governanceIssues: ["人格", "所有権", "製造者への服従"],
     habitat: ["urban", "underground"], foodType: ["mana", "none"], bodySize: "medium",
@@ -174,6 +204,7 @@ export const RACE_CATEGORIES = Object.freeze({
   }),
   spirit: defineCategory({
     id: "spirit", name: "精霊族", ecology: "自然環境結合型",
+    decisionTraits: { militarism: -20, authority: -20, centralization: -30, openness: 0, ambition: -20, pragmatism: -15 },
     commonTraits: ["特定の自然環境と結びつく", "非肉体的または半物質的な身体を持つ"],
     governanceIssues: ["土地開発による消滅・暴走", "領土と人格の重なり"],
     habitat: ["forest", "river", "mountain", "volcanic"], foodType: ["mana"], bodySize: "variable",
@@ -185,6 +216,7 @@ export const RACE_CATEGORIES = Object.freeze({
   }),
   fungal: defineCategory({
     id: "fungal", name: "菌族", ecology: "菌床共有型",
+    decisionTraits: { militarism: -10, authority: 10, centralization: 20, openness: 5, ambition: -15, pragmatism: 25 },
     commonTraits: ["菌床を中心に繁殖する", "記憶や感覚を菌糸網で共有する"],
     governanceIssues: ["個体ではなく菌床単位で政治判断する", "胞子による越境繁殖"],
     habitat: ["forest", "swamp", "underground"], foodType: ["decomposer"], bodySize: "medium",
@@ -194,6 +226,17 @@ export const RACE_CATEGORIES = Object.freeze({
     legalNeeds: ["菌床を一人格とする代表権", "胞子拡散の境界責任"], centralizationObstacle: ["個体投票と菌床意思の不一致"],
     integrationPolicies: ["菌床台帳", "胞子回廊", "菌糸使節"],
   }),
+});
+
+// These values are only world-generation centers. Historical selection and
+// temperament transitions are applied by race-decision-system.js.
+const RACE_DECISION_OVERRIDES = Object.freeze({
+  elf: Object.freeze({ militarism: -10, authority: 10, centralization: 0, openness: -5, ambition: -5, pragmatism: -10 }),
+  dwarf: Object.freeze({ militarism: -5, authority: 15, centralization: -10, openness: 5, ambition: 0, pragmatism: 25 }),
+  goblin: Object.freeze({ militarism: 5, authority: -10, centralization: -15, openness: 15, ambition: 20, pragmatism: 25 }),
+  lizardman: Object.freeze({ militarism: 5, authority: 0, centralization: -15, openness: -5, ambition: 0, pragmatism: 15 }),
+  orc: Object.freeze({ militarism: 30, authority: 10, centralization: -15, openness: -15, ambition: 25, pragmatism: -5 }),
+  giant: Object.freeze({ militarism: 15, authority: 10, centralization: -25, openness: -10, ambition: -5, pragmatism: 0 }),
 });
 
 function defineRace(id, name, categoryId, options) {
@@ -215,6 +258,11 @@ function defineRace(id, name, categoryId, options) {
     terrainModifiers: freezeRecord({ ...category.terrainModifiers, ...(options.terrainModifiers ?? {}) }),
     unitTags: freezeArray([...category.unitTags, ...(options.unitTags ?? [])]),
     combatModifiers: freezeRecord({ ...category.combatModifiers, ...(options.combatModifiers ?? {}) }),
+    decisionTraits: decisionTraits({
+      ...category.decisionTraits,
+      ...(RACE_DECISION_OVERRIDES[id] ?? {}),
+      ...(options.decisionTraits ?? {}),
+    }),
     politicalUnit: options.politicalUnit ?? category.politicalUnit,
     censusDifficulty: options.censusDifficulty ?? category.censusDifficulty,
     assimilationDifficulty: options.assimilationDifficulty ?? category.assimilationDifficulty,

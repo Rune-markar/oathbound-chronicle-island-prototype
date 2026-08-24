@@ -6,6 +6,7 @@ import {
   establishBarbarianAgreement,
 } from "../src/barbarian-system.js";
 import {
+  GENERATED_WORLD_DEFAULTS,
   advanceGeneratedWorldBarbarians,
   getGeneratedBarbarianView,
   getGeneratedWorldView,
@@ -31,7 +32,7 @@ test("generated worlds store deterministic compact monster nests and intelligent
   const second = createTestState();
   const view = getGeneratedBarbarianView(first);
   assert.deepEqual(first.generatedWorld.barbarians, second.generatedWorld.barbarians);
-  assert.equal(first.generatedWorld.version, 15);
+  assert.equal(first.generatedWorld.version, GENERATED_WORLD_DEFAULTS.version);
   assert.equal(first.generatedWorld.barbarians.schemaVersion, 1);
   assert.ok(view.sites.length >= 2);
   assert.ok(view.sites.some((site) => site.kind === "monster_nest"));

@@ -8,8 +8,9 @@ import { createSaveRegistry, readRegisteredSave, writeRegisteredSave } from "./s
 import { V3_FIELD_VERSION } from "./v3-field-system.js";
 import { V3_SYSTEM_KERNEL_VERSION, V3_SYSTEM_REGISTRY } from "./v3-system-kernel.js";
 import { V3_WORLD_SIMULATION_VERSION, V3_PRESENT_DATE } from "./v3-world-simulation.js";
+import { RACE_DECISION_SCHEMA_VERSION } from "./race-decision-system.js";
 
-export const V3_SAVE_VERSION = 4;
+export const V3_SAVE_VERSION = 5;
 
 function currentModule(id, version) {
   return { id, version, legacyVersion: version };
@@ -70,12 +71,13 @@ export const V3_SAVE_REGISTRY = createSaveRegistry({
       legacyVersion: (raw) => Number(raw.worldSimulation?.version) || 1,
       migrations: { 1: migrateWorldSimulationV1ToV2 },
     },
+    currentModule("race-decisions", RACE_DECISION_SCHEMA_VERSION),
     currentModule("system-kernel", V3_SYSTEM_KERNEL_VERSION),
     ...V3_SYSTEM_REGISTRY.modules.map(({ id, version }) => currentModule(id, version)),
     currentModule("domain-events", 1),
   ],
   migrate(raw) {
-    if (![3, V3_SAVE_VERSION].includes(raw?.version) || !raw.world?.seed || !raw.field) return null;
+    if (![3, 4, V3_SAVE_VERSION].includes(raw?.version) || !raw.world?.seed || !raw.field) return null;
     const field = migrateLegacyClock(raw.field, raw.worldSimulation);
     const calendar = getGameCalendar(field.clock);
     return {

@@ -6,6 +6,7 @@ import {
 } from "./square-grid.js";
 import { fnv1aUtf16, unitFromHash } from "./determinism.js";
 import { getRaceCategory, requireRaceDefinition } from "./race-list.js";
+import { createRaceState, deriveRaceRepresentativeTraits } from "./race-decision-system.js";
 import {
   WORLD_POLITY_MODEL_REFERENCES,
   WORLD_POLITY_MODEL_VERSION,
@@ -1258,7 +1259,9 @@ function buildNationRecords(world, seeds, ownerIndex, seed) {
       productionPerTile: production / Math.max(1, tiles.length),
     };
     const nationLevel = nationLevelForTerritory(tiles.length, meanNationSize);
-    const polity = deriveNationPolity({ peopleId: entry.archetype.id, stats, nationLevel });
+    const foundingRaceState = createRaceState({ raceId: entry.archetype.id, seed: world.seed, population: 100_000 });
+    const foundingDecisionTraits = deriveRaceRepresentativeTraits(foundingRaceState);
+    const polity = deriveNationPolity({ peopleId: entry.archetype.id, stats, nationLevel, decisionTraits: foundingDecisionTraits });
     const villageLimitBase = NATION_LEVEL_VILLAGE_BASELINES[nationLevel];
     const initialVillageLimit = initialVillageLimitForNationLevel(nationLevel, seed, index);
     let rootIndex = Math.floor(hashUnit(seed, index, entry.tile.index, "name") * NAME_ROOTS.length);
@@ -1275,6 +1278,7 @@ function buildNationRecords(world, seeds, ownerIndex, seed) {
       color: NATION_COLORS[index % NATION_COLORS.length],
       government: polity.governmentName,
       polity,
+      foundingDecisionTraits,
       rulerTitle: polity.rulerTitle,
       capitalTitle: polity.capitalTitle,
       economy: primaryEconomy(stats),

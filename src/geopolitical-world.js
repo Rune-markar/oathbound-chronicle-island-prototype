@@ -1,4 +1,8 @@
 import { fnv1aUtf16, unitFromHash } from "./determinism.js";
+import {
+  chooseProbabilisticDecision,
+  deriveNationDecisionProfiles,
+} from "./race-decision-system.js";
 
 export const GEOPOLITICAL_SCHEMA_VERSION = 1;
 
@@ -44,6 +48,23 @@ export const GEOPOLITICAL_PULL_SET = Object.freeze({
   sustain_war: { name: "戦線維持", posture: "交戦", tone: "danger" },
   seek_ceasefire: { name: "停戦模索", posture: "停戦交渉", tone: "watch" },
   accept_ceasefire: { name: "停戦受諾", posture: "停戦合意", tone: "positive" },
+});
+
+export const GEOPOLITICAL_DECISION_TAGS = Object.freeze({
+  consolidate: Object.freeze({ militarism: -0.1, authority: 0.35, centralization: 0.75, openness: -0.1, ambition: -0.15, pragmatism: 0.55 }),
+  secure_food: Object.freeze({ militarism: -0.2, authority: 0.05, centralization: 0.25, openness: 0.05, ambition: -0.25, pragmatism: 1 }),
+  open_trade: Object.freeze({ militarism: -0.45, authority: -0.1, centralization: -0.1, openness: 1, ambition: 0.35, pragmatism: 0.8 }),
+  diplomatic_overture: Object.freeze({ militarism: -0.75, authority: -0.1, centralization: 0, openness: 0.75, ambition: -0.1, pragmatism: 0.65 }),
+  seek_alignment: Object.freeze({ militarism: -0.05, authority: 0.1, centralization: 0.15, openness: 0.55, ambition: 0.15, pragmatism: 0.85 }),
+  accept_alignment: Object.freeze({ militarism: -0.2, authority: 0.05, centralization: 0.1, openness: 0.7, ambition: 0.05, pragmatism: 0.85 }),
+  fortify_frontier: Object.freeze({ militarism: 0.55, authority: 0.2, centralization: 0.45, openness: -0.2, ambition: -0.1, pragmatism: 0.7 }),
+  mobilize: Object.freeze({ militarism: 0.85, authority: 0.35, centralization: 0.45, openness: -0.45, ambition: 0.45, pragmatism: 0.15 }),
+  deescalate: Object.freeze({ militarism: -0.85, authority: -0.1, centralization: -0.05, openness: 0.45, ambition: -0.35, pragmatism: 0.8 }),
+  coerce_neighbor: Object.freeze({ militarism: 0.72, authority: 0.4, centralization: 0.25, openness: -0.62, ambition: 0.82, pragmatism: 0.15 }),
+  limited_war: Object.freeze({ militarism: 1, authority: 0.2, centralization: 0.3, openness: -0.55, ambition: 0.85, pragmatism: -0.1 }),
+  sustain_war: Object.freeze({ militarism: 0.82, authority: 0.25, centralization: 0.35, openness: -0.5, ambition: 0.48, pragmatism: 0.2 }),
+  seek_ceasefire: Object.freeze({ militarism: -0.9, authority: -0.05, centralization: -0.1, openness: 0.35, ambition: -0.5, pragmatism: 0.95 }),
+  accept_ceasefire: Object.freeze({ militarism: -1, authority: -0.1, centralization: -0.1, openness: 0.45, ambition: -0.55, pragmatism: 1 }),
 });
 
 const MAX_EVENTS = 96;
@@ -345,11 +366,62 @@ function driver(label, value) {
   return { label, value: rounded(value) };
 }
 
-function candidate(pullId, score, targetNationId, drivers, eligible = true) {
-  return eligible ? { pullId, score, targetNationId: targetNationId ?? null, drivers } : null;
+function candidate(pullId, score, targetNationId, drivers, eligible = true, situation = {}) {
+  return eligible ? {
+    id: pullId,
+    pullId,
+    baseUtility: score,
+    targetNationId: targetNationId ?? null,
+    drivers,
+    tags: GEOPOLITICAL_DECISION_TAGS[pullId],
+    situation,
+  } : null;
 }
 
-function chooseNationalPull(seed, period, nationId, profiles, pairs, snapshot) {
+function historicalRelationEffect(runtime, decisionProfile, targetNationId, pullId) {
+  if (!targetNationId || !decisionProfile) return 0;
+  const targetRaceId = runtime.nationById.get(targetNationId)?.peopleId;
+  const rememberedRelation = Number(decisionProfile.relationModifiers?.[targetRaceId]) || 0;
+  if (["open_trade", "diplomatic_overture", "seek_alignment", "accept_alignment", "seek_ceasefire", "accept_ceasefire", "deescalate"].includes(pullId)) {
+    return rememberedRelation * 0.08;
+  }
+  if (["mobilize", "coerce_neighbor", "limited_war", "sustain_war", "fortify_frontier"].includes(pullId)) {
+    return rememberedRelation * -0.08;
+  }
+  return 0;
+}
+
+function selectNationalPull(runtime, period, nationId, decisionProfile, candidates) {
+  const enriched = candidates.filter(Boolean).map((option) => ({
+    ...option,
+    situation: {
+      ...option.situation,
+      relation: (Number(option.situation?.relation) || 0)
+        + historicalRelationEffect(runtime, decisionProfile, option.targetNationId, option.pullId),
+    },
+  }));
+  const selected = chooseProbabilisticDecision(decisionProfile, enriched, {
+    seed: runtime.terrain.seed,
+    period,
+    actorId: nationId,
+    temperature: 17,
+  });
+  return {
+    ...selected,
+    pullId: selected.id,
+    score: selected.evaluation,
+    probability: selected.probability,
+    decisionTraits: { ...(decisionProfile?.traits ?? {}) },
+    temperamentId: decisionProfile?.leader?.temperamentId ?? null,
+    drivers: [
+      ...selected.drivers,
+      driver("人格・文化適合", 50 + selected.personalityFit / 2),
+      driver("選択確率", selected.probability * 100),
+    ],
+  };
+}
+
+function chooseNationalPull(runtime, period, nationId, profiles, pairs, snapshot, decisionProfile) {
   const profile = profiles[nationId];
   const condition = snapshot.nationStates[nationId];
   const context = strategicContext(nationId, profiles, pairs, snapshot);
@@ -361,14 +433,18 @@ function chooseNationalPull(seed, period, nationId, profiles, pairs, snapshot) {
     const incomingCeasefire = incomingOffers(snapshot, nationId, "ceasefireOffer")
       .filter((entry) => entry.relation.atWar)
       .sort((left, right) => right.relation.warMonths - left.relation.warMonths || left.key.localeCompare(right.key))[0] ?? null;
-    if (incomingCeasefire && (exhaustion >= 28 || incomingCeasefire.relation.warMonths >= 10)) {
-      return candidate("accept_ceasefire", 170 + exhaustion, incomingCeasefire.offer.from,
-        [driver("戦争疲弊", exhaustion), driver("戦争期間", incomingCeasefire.relation.warMonths * 8)]);
-    }
-    const seekPeace = context.warOpponent.relation.warMonths >= 6 && exhaustion >= 38;
-    return seekPeace
-      ? candidate("seek_ceasefire", 140 + exhaustion, context.warOpponent.nationId, [driver("戦争疲弊", exhaustion)])
-      : candidate("sustain_war", 130 + condition.readiness * 0.2, context.warOpponent.nationId, [driver("軍事脅威", 100)]);
+    const warMonths = context.warOpponent.relation.warMonths;
+    return selectNationalPull(runtime, period, nationId, decisionProfile, [
+      candidate("accept_ceasefire", 104 + exhaustion * 0.9 + warMonths * 2.5, incomingCeasefire?.offer.from,
+        [driver("戦争疲弊", exhaustion), driver("戦争期間", warMonths * 8)], Boolean(incomingCeasefire),
+        { benefit: exhaustion * 0.12, danger: Math.max(0, 45 - exhaustion) * 0.05, threat: 0, relation: 4 }),
+      candidate("seek_ceasefire", 92 + exhaustion * 0.8 + warMonths * 2, context.warOpponent.nationId,
+        [driver("戦争疲弊", exhaustion), driver("戦争期間", warMonths * 8)], warMonths >= 3 && exhaustion >= 22,
+        { benefit: exhaustion * 0.1, danger: Math.max(0, 42 - exhaustion) * 0.06, threat: 0, relation: 2 }),
+      candidate("sustain_war", 126 + condition.readiness * 0.2 - exhaustion * 0.22, context.warOpponent.nationId,
+        [driver("軍事脅威", 100), driver("動員水準", condition.readiness)], true,
+        { benefit: condition.readiness * 0.04, danger: exhaustion * 0.1, threat: 8, relation: 0 }),
+    ]);
   }
 
   const allianceCount = allianceCountFor(snapshot, nationId);
@@ -397,45 +473,56 @@ function chooseNationalPull(seed, period, nationId, profiles, pairs, snapshot) {
   const coercionRatio = coercionTarget ? profile.capability / Math.max(1, profiles[coercionTarget.nationId].capability) : 0;
   const pressure = Math.max(0, 55 - condition.foodSecurity) + Math.max(0, 48 - condition.reserves);
   const crisis = context.topBorderThreat?.relation;
-  const jitter = (pullId) => (hashUnit(seed, period, nationId, pullId) - 0.5) * 8;
+  const jitter = (pullId) => (hashUnit(runtime.terrain.seed, period, nationId, pullId) - 0.5) * 2;
   const candidates = [
     candidate("consolidate", 39 + (58 - condition.cohesion) * 0.9 + (70 - profile.stateCapacity) * 0.22 + jitter("consolidate"), null,
-      [driver("国内結束の不足", 100 - condition.cohesion), driver("統治能力", profile.stateCapacity)]),
+      [driver("国内結束の不足", 100 - condition.cohesion), driver("統治能力", profile.stateCapacity)], true,
+      { benefit: Math.max(0, 58 - condition.cohesion) * 0.12, danger: 0, threat: -threat * 0.025, relation: 0 }),
     candidate("secure_food", 32 + (58 - condition.foodSecurity) * 1.15 + jitter("secure_food"), null,
-      [driver("食料不安", 100 - condition.foodSecurity), driver("基礎食料力", profile.foodBase)]),
+      [driver("食料不安", 100 - condition.foodSecurity), driver("基礎食料力", profile.foodBase)], true,
+      { benefit: Math.max(0, 62 - condition.foodSecurity) * 0.15, danger: 0, threat: 0, relation: 0 }),
     candidate("open_trade", 38 + (context.bestTradePartner?.pair.tradePotential ?? 0) * 0.32
       + Math.max(0, 55 - condition.reserves) * 0.35 - (context.bestTradePartner?.relation.trade ?? 0) * 0.35
       - threat * 0.08 + jitter("open_trade"), context.bestTradePartner?.nationId,
-      [driver("交易誘因", context.bestTradePartner?.pair.tradePotential ?? 0), driver("交易余地", 100 - (context.bestTradePartner?.relation.trade ?? 0))], Boolean(context.bestTradePartner)),
+      [driver("交易誘因", context.bestTradePartner?.pair.tradePotential ?? 0), driver("交易余地", 100 - (context.bestTradePartner?.relation.trade ?? 0))], Boolean(context.bestTradePartner),
+      { benefit: (context.bestTradePartner?.pair.tradePotential ?? 0) * 0.06, danger: threat * 0.035, threat: 0, relation: (context.bestTradePartner?.relation.relation ?? 0) * 0.04 }),
     candidate("diplomatic_overture", 31 + threat * 0.35 + (targetRelation?.tension ?? 0) * 0.3
       + Math.max(0, -(targetRelation?.relation ?? 0)) * 0.18 + jitter("diplomatic_overture"), context.topThreat?.nationId,
-      [driver("軍事脅威", threat), driver("二国間緊張", targetRelation?.tension ?? 0)], Boolean(context.topThreat && targetRelation?.tension >= 24)),
+      [driver("軍事脅威", threat), driver("二国間緊張", targetRelation?.tension ?? 0)], Boolean(context.topThreat && targetRelation?.tension >= 24),
+      { benefit: threat * 0.05, danger: (targetRelation?.tension ?? 0) * 0.02, threat: threat * 0.04, relation: Math.max(0, -(targetRelation?.relation ?? 0)) * 0.05 }),
     candidate("seek_alignment", 31 + threat * 0.46 + (100 - profile.capability) * 0.12 + jitter("seek_alignment"), alignmentPartner?.id,
-      [driver("軍事脅威", threat), driver("相対的脆弱性", 100 - profile.capability)], Boolean(threat >= 45 && allianceCount < 2 && alignmentPartner)),
+      [driver("軍事脅威", threat), driver("相対的脆弱性", 100 - profile.capability)], Boolean(threat >= 45 && allianceCount < 2 && alignmentPartner),
+      { benefit: (100 - profile.capability) * 0.04, danger: 2, threat: threat * 0.06, relation: (alignmentPartner?.relation.relation ?? 0) * 0.04 }),
     candidate("accept_alignment", 118 + (incomingAlignment?.relation.relation ?? 0) * 0.25
       + (incomingAlignment?.sharedThreat ?? 0) * 0.2 + jitter("accept_alignment"), incomingAlignment?.proposerId,
       [driver("共通脅威", incomingAlignment?.sharedThreat ?? 0), driver("二国間関係", 50 + (incomingAlignment?.relation.relation ?? -50) / 2)],
-      Boolean(allianceCount < 2 && incomingAlignment)),
+      Boolean(allianceCount < 2 && incomingAlignment),
+      { benefit: 7, danger: 2, threat: (incomingAlignment?.sharedThreat ?? 0) * 0.05, relation: (incomingAlignment?.relation.relation ?? 0) * 0.05 }),
     candidate("fortify_frontier", 29 + borderThreat * 0.58 + (100 - profile.terrainDefense) * 0.16
       - condition.readiness * 0.35 + jitter("fortify_frontier"), context.topBorderThreat?.nationId,
-      [driver("国境脅威", borderThreat), driver("国境防御の弱さ", 100 - profile.terrainDefense)], Boolean(context.topBorderThreat)),
+      [driver("国境脅威", borderThreat), driver("国境防御の弱さ", 100 - profile.terrainDefense)], Boolean(context.topBorderThreat),
+      { benefit: (100 - profile.terrainDefense) * 0.04, danger: 2, threat: borderThreat * 0.06, relation: 0 }),
     candidate("mobilize", 26 + borderThreat * 0.55 + (crisis?.tension ?? 0) * 0.4
       - condition.readiness * 0.18 + jitter("mobilize"), context.topBorderThreat?.nationId,
-      [driver("国境脅威", borderThreat), driver("二国間緊張", crisis?.tension ?? 0)], Boolean(borderThreat >= 48 && crisis?.tension >= 38)),
+      [driver("国境脅威", borderThreat), driver("二国間緊張", crisis?.tension ?? 0)], Boolean(borderThreat >= 48 && crisis?.tension >= 38),
+      { benefit: condition.readiness < 55 ? 6 : 2, danger: Math.max(0, 55 - condition.reserves) * 0.08, threat: borderThreat * 0.07, relation: Math.max(0, -(crisis?.relation ?? 0)) * 0.03 }),
     candidate("deescalate", 36 + (crisis?.tension ?? 0) * 0.52 + (100 - condition.cohesion) * 0.12
       + jitter("deescalate"), context.topBorderThreat?.nationId,
-      [driver("危機水準", crisis?.tension ?? 0), driver("国内負担", 100 - condition.cohesion)], Boolean(crisis?.tension >= 48 && condition.offensiveIntent < 58)),
+      [driver("危機水準", crisis?.tension ?? 0), driver("国内負担", 100 - condition.cohesion)], Boolean(crisis?.tension >= 48 && condition.offensiveIntent < 58),
+      { benefit: (100 - condition.cohesion) * 0.04, danger: borderThreat * 0.025, threat: borderThreat * 0.02, relation: Math.max(0, -(crisis?.relation ?? 0)) * 0.04 }),
     candidate("coerce_neighbor", 19 + Math.max(0, coercionRatio - 1) * 32 + pressure * 0.5
       + condition.offensiveIntent * 0.25 + (coercionTarget?.pair.permeability ?? 0) * 0.1
       + (coercionTarget?.relation.tension ?? 0) * 0.12 + jitter("coerce_neighbor"), coercionTarget?.nationId,
       [driver("国力優位", Math.min(100, coercionRatio * 50)), driver("資源圧力", pressure * 2), driver("国境透過性", coercionTarget?.pair.permeability ?? 0)],
-      Boolean(coercionTarget && coercionRatio >= 1.08 && pressure >= 10 && !coercionTarget.relation.allied && coercionTarget.relation.truceMonths === 0)),
+      Boolean(coercionTarget && coercionRatio >= 1.08 && pressure >= 10 && !coercionTarget.relation.allied && coercionTarget.relation.truceMonths === 0),
+      { benefit: pressure * 0.08 + Math.max(0, coercionRatio - 1) * 8, danger: (100 - condition.readiness) * 0.03, threat: borderThreat * 0.02, relation: Math.max(0, -(coercionTarget?.relation.relation ?? 0)) * 0.04 }),
     candidate("limited_war", 125 + (crisis?.tension ?? 0), context.topBorderThreat?.nationId,
       [driver("危機水準", crisis?.tension ?? 0), driver("攻勢意図", condition.offensiveIntent), driver("動員水準", condition.readiness)],
       Boolean(context.topBorderThreat && !crisis?.allied && crisis?.tension >= 84 && crisis?.relation <= -45 && crisis?.crisisMonths >= 3
-        && crisis?.truceMonths === 0 && condition.readiness >= 62 && condition.offensiveIntent >= 45)),
+        && crisis?.truceMonths === 0 && condition.readiness >= 62 && condition.offensiveIntent >= 45),
+      { benefit: pressure * 0.08 + Math.max(0, coercionRatio - 1) * 6, danger: (100 - condition.readiness) * 0.05, threat: borderThreat * 0.06, relation: Math.max(0, -(crisis?.relation ?? 0)) * 0.05 }),
   ].filter(Boolean);
-  return candidates.sort((left, right) => right.score - left.score || left.pullId.localeCompare(right.pullId))[0];
+  return selectNationalPull(runtime, period, nationId, decisionProfile, candidates);
 }
 
 function eventCopy(period, nation, target, decision) {
@@ -477,6 +564,12 @@ function eventCopy(period, nation, target, decision) {
     summary: summaries[decision.pullId] ?? `${nation.name}は${targetText}${pull.name}を進めた。`,
     drivers: decision.drivers.sort((left, right) => right.value - left.value).slice(0, 3),
     score: Math.round(decision.score),
+    probability: Number(decision.probability) || 0,
+    alternatives: (decision.alternatives ?? []).map((alternative) => ({ ...alternative })),
+    personalityFit: Number(decision.personalityFit) || 0,
+    situation: { ...(decision.situation ?? {}) },
+    decisionTraits: { ...(decision.decisionTraits ?? {}) },
+    temperamentId: decision.temperamentId ?? null,
     tone: pull.tone,
   };
 }
@@ -583,8 +676,9 @@ export function advanceGeopoliticalWorld(runtime, source, dateState, options = {
   const profiles = deriveGeopoliticalProfiles(runtime);
   const pairs = derivePairStructures(runtime, profiles);
   const protectedNationIds = new Set(options.protectedNationIds ?? []);
+  const decisionProfiles = deriveNationDecisionProfiles(runtime, options.raceDynamics);
   const decisions = runtime.nations.nations.map((nation) => {
-    const selected = chooseNationalPull(runtime.terrain.seed, period, nation.id, profiles, pairs, snapshot);
+    const selected = chooseNationalPull(runtime, period, nation.id, profiles, pairs, snapshot, decisionProfiles[nation.id]);
     return { nation, ...deferProtectedDecision(nation, selected, protectedNationIds, period) };
   });
   const nationDeltas = {};

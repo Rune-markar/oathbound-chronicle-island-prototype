@@ -72,7 +72,7 @@ test("V3 save registry upgrades version three and aligns its canonical clock to 
   };
   adapter.setItem("v3", JSON.stringify(legacy));
   const migrated = readV3Save(adapter, "v3");
-  assert.equal(migrated.version, 4);
+  assert.equal(migrated.version, 5);
   assert.deepEqual([getGameCalendar(migrated.field.clock).year, getGameCalendar(migrated.field.clock).month], [318, 2]);
   assert.equal(migrated.field.clock.elapsedMinutes % GAME_MINUTES_PER_MONTH, 610);
   assert.equal(migrated.worldSimulation.version, 2);
@@ -82,6 +82,7 @@ test("V3 save registry upgrades version three and aligns its canonical clock to 
   assert.equal(saved.systemVersions["world-effects"], 1);
   assert.equal(saved.systemVersions["merchant-company"], 2);
   assert.equal(saved.systemVersions["world-simulation"], 2);
+  assert.equal(saved.systemVersions["race-decisions"], 1);
 });
 
 test("a tactical BattleResult updates its bound strategic force and front exactly once", () => {

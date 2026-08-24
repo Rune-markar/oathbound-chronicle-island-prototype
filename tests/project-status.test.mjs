@@ -170,3 +170,25 @@ test("V3ワールドエフェクトは気候・月次・詳細投影・保存を
   assert.ok(effects.sources.some((item) => item.href === "./tests/v3-world-effects.test.mjs"));
   assert.ok(effects.sources.some((item) => item.href === "./docs/gameplay-reviews/2026-08-24-v3-world-effects.md"));
 });
+
+test("種族変容と確率的国家判断をV3通常導線の実装として追跡する", async () => {
+  const item = STATUS_ENTRIES.find((entry) => entry.id === "race-transformative-probabilistic-decisions");
+  assert.equal(item?.category, "implemented");
+  for (const term of ["6軸", "強硬", "服従", "協調", "自立", "戦争損失", "迫害", "統治者", "softmax", "14", "V5"]) {
+    assert.match(`${item.summary} ${item.evidence}`, new RegExp(term));
+  }
+  assert.ok(item.sources.some((source) => source.href === "./src/race-decision-system.js" && /advanceRaceDecisionWorld/.test(source.ref)));
+  assert.ok(item.sources.some((source) => source.href === "./src/v3-app.js" && /renderDecisionProfile/.test(source.ref)));
+  assert.ok(item.sources.some((source) => source.href === "./tests/v3-world-simulation.test.mjs"));
+  const projectRoot = new URL("../", import.meta.url);
+  const [readme, manual, backlog, changelog] = await Promise.all([
+    readFile(new URL("README.md", projectRoot), "utf8"),
+    readFile(new URL("MANUAL.md", projectRoot), "utf8"),
+    readFile(new URL("UNIMPLEMENTED_FEATURES.md", projectRoot), "utf8"),
+    readFile(new URL("CHANGELOG.md", projectRoot), "utf8"),
+  ]);
+  assert.match(readme, /戦争損失.*迫害.*支配.*平和.*繁栄.*交流/s);
+  assert.match(manual, /代表気質.*強硬.*服従.*協調.*自立.*直近判断の確率/s);
+  assert.match(backlog, /種族変容・確率意思決定.*V3実装済み/s);
+  assert.match(changelog, /softmax確率選択/);
+});

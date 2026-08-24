@@ -50,6 +50,9 @@ test("every nation selects one geography-grounded pull on each new month", () =>
   assert.equal(new Set(currentEvents.map((event) => event.nationId)).size, view.nations.length);
   assert.ok(currentEvents.every((event) => GEOPOLITICAL_PULL_SET[event.pullId]));
   assert.ok(currentEvents.every((event) => event.drivers.length >= 1));
+  assert.ok(currentEvents.every((event) => Object.keys(event.decisionTraits).length === 6));
+  assert.ok(currentEvents.every((event) => event.alternatives.length >= 2));
+  assert.ok(currentEvents.every((event) => Math.abs(event.alternatives.reduce((sum, option) => sum + option.probability, 0) - 1) < 0.00001));
   assert.ok(view.nations.every((entry) => entry.condition.lastPullId));
   assert.equal(view.relations.some((relation) => relation.atWar), false, "a generated world must not jump directly into war on its first pulse");
 });

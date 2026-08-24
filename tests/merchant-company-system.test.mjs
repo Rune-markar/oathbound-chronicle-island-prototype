@@ -193,8 +193,12 @@ test("a qualified solo trader chooses a company strategy and hires role-specific
   const view = getMerchantCompanyView(state);
   assert.ok(view.candidates.some((entry) => entry.roleId === "caravan_master"));
   const leader = view.candidates.find((entry) => entry.roleId === "caravan_master");
+  assert.ok(leader.raceId);
+  assert.match(leader.temperamentName, /型$/);
+  assert.equal(Object.keys(leader.decisionTraits).length, 6);
   state = recruitCompanyStaff(state, leader.id);
   assert.equal(state.player.merchantCompany.staff[0].roleId, "caravan_master");
+  assert.equal(state.player.merchantCompany.staff[0].temperamentId, leader.temperamentId);
   assert.ok(state.player.merchantCompany.treasury < view.treasury);
   assert.throws(() => recruitCompanyStaff(state, leader.id), /すでに雇用/);
 });

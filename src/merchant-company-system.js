@@ -1,6 +1,7 @@
 import { MERCHANT_COMMODITIES, getSettlementMarket } from "./merchant-trade.js";
 import { getGeneratedWorldView } from "./generated-world-system.js";
 import { fnv1aCodePoints, unitFromHash } from "./determinism.js";
+import { createIndividualDecisionProfile, TEMPERAMENTS } from "./race-decision-system.js";
 
 const clone = (value) => structuredClone(value);
 const round1 = (value) => Number(Number(value).toFixed(1));
@@ -393,6 +394,35 @@ function knownSettlements(state) {
   return clone(state.player.merchantTrade?.knownSettlements ?? []);
 }
 
+const STAFF_DECISION_ROLES = Object.freeze({
+  factor: "diplomat",
+  buyer: "diplomat",
+  caravan_master: "local_leader",
+  guard_captain: "commander",
+});
+
+function candidateDecisionProfile(state, settlement, role, candidateId, seed) {
+  let runtime = null;
+  let nationId = settlement.nationId ?? null;
+  let raceId = nationId ? state.merchantCompanyContext?.nationPeopleById?.[nationId] ?? null : null;
+  if (!nationId || !raceId) {
+    try { runtime = getGeneratedWorldView(state).runtime; } catch { runtime = null; }
+    nationId ??= runtime?.regionById.get(settlement.regionId)?.nationId
+      ?? state.generatedWorld?.playerNationId
+      ?? null;
+    raceId ??= state.merchantCompanyContext?.nationPeopleById?.[nationId]
+      ?? runtime?.nationById.get(nationId)?.peopleId
+      ?? runtime?.nations?.nations?.find((nation) => nation.id === nationId)?.peopleId
+      ?? null;
+  }
+  const raceState = raceId ? state.generatedWorld?.raceDynamics?.races?.[raceId] : null;
+  if (!raceState) return null;
+  return createIndividualDecisionProfile(raceState, seed, {
+    subjectId: candidateId,
+    roleId: STAFF_DECISION_ROLES[role.id] ?? "citizen",
+  });
+}
+
 function candidatePool(state) {
   const company = state.player.merchantCompany;
   if (company.status !== "company") return [];
@@ -400,10 +430,12 @@ function candidatePool(state) {
   const seed = state.generatedWorld?.seed ?? state.rngSeed ?? "world";
   return Object.values(COMPANY_STAFF_ROLES).map((role, index) => {
     const settlement = places[index % Math.max(1, places.length)] ?? { id: "road", name: "街道" };
+    const candidateId = `candidate:${role.id}:${settlement.id}`;
     const nameIndex = Math.floor(hashUnit(seed, company.foundedPeriod, role.id, settlement.id) * ROLE_NAMES[role.id].length);
     const skill = 1 + Math.floor(hashUnit(seed, role.id, settlement.id, "skill") * 3);
+    const decisionProfile = candidateDecisionProfile(state, settlement, role, candidateId, seed);
     return {
-      id: `candidate:${role.id}:${settlement.id}`,
+      id: candidateId,
       name: ROLE_NAMES[role.id][nameIndex],
       roleId: role.id,
       roleName: role.name,
@@ -413,6 +445,11 @@ function candidatePool(state) {
       signingBonus: Math.max(1, 2 + skill - (COMPANY_STRATEGIES[company.strategyId]?.hiringDiscount ?? 0)),
       originSettlementId: settlement.id,
       originSettlementName: settlement.name,
+      raceId: decisionProfile?.raceId ?? null,
+      temperamentId: decisionProfile?.temperamentId ?? null,
+      temperamentName: TEMPERAMENTS[decisionProfile?.temperamentId]?.name ?? null,
+      decisionTraits: decisionProfile?.traits ?? null,
+      individualDecisionOffsets: decisionProfile?.individualOffsets ?? null,
     };
   });
 }
