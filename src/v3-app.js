@@ -66,6 +66,12 @@ import {
   V3_PREHISTORY_MONTHS,
 } from "./v3-world-simulation.js";
 import { getV3WartimeMarketEffect, getV3WorldEffectsView } from "./v3-world-effects.js";
+import {
+  getV3EntityArt,
+  getV3LandmarkArt,
+  getV3PlayerArt,
+  getV3TerrainArt,
+} from "./v3-art.js";
 import { createActionResult, isActionResult } from "./action-result.js";
 import { GAME_MINUTES_PER_MONTH, getGameCalendar } from "./game-clock.js";
 import { commitV3Action, getV3Operations, normalizeV3IntegratedState, V3_SYSTEM_REGISTRY } from "./v3-system-kernel.js";
@@ -118,6 +124,7 @@ const elements = {
   messages: document.querySelector("#v3Messages"),
   movementPad: document.querySelector("#v3MovementPad"),
   personalBattleStatus: document.querySelector("#v3PersonalBattleStatus"),
+  personalBattleArt: document.querySelector("#v3PersonalBattleArt"),
   personalBattleEnemy: document.querySelector("#v3PersonalBattleEnemy"),
   personalBattleLevel: document.querySelector("#v3PersonalBattleLevel"),
   personalBattleHpBar: document.querySelector("#v3PersonalBattleHpBar"),
@@ -223,6 +230,41 @@ function closeModal(name) {
   const returnTarget = modalReturnFocus[name]?.isConnected ? modalReturnFocus[name] : fallback;
   modalReturnFocus[name] = null;
   requestAnimationFrame(() => returnTarget?.focus());
+}
+
+function atlasArtClass(art) {
+  return art?.atlas ? `is-${art.atlas}-atlas` : "";
+}
+
+function atlasArtMarkup(art, { className = "", label = "", hidden = false, tag = "b" } = {}) {
+  if (!art) return "";
+  const aria = hidden ? 'aria-hidden="true"' : `aria-label="${escapeHtml(label)}"`;
+  return `<${tag} class="v3-atlas-art ${atlasArtClass(art)} ${className}" style="--v3-art-position:${art.position}" ${aria}></${tag}>`;
+}
+
+function setAtlasArt(element, art, baseClass, label = "") {
+  element.className = `${baseClass} v3-atlas-art ${atlasArtClass(art)}`;
+  if (art) element.style.setProperty("--v3-art-position", art.position);
+  else element.style.removeProperty("--v3-art-position");
+  if (label) element.setAttribute("aria-label", label);
+  else element.removeAttribute("aria-label");
+}
+
+function uiIconMarkup(icon, className = "v3-ui-icon") {
+  return `<svg class="${className}" aria-hidden="true"><use href="./assets/ui/v3-ui-icons.svg#icon-${icon}"></use></svg>`;
+}
+
+function weatherIcon(motion) {
+  return ({
+    rain: "rain",
+    storm: "storm",
+    snow: "snow",
+    blizzard: "snow",
+    sandstorm: "sandstorm",
+    heatwave: "heatwave",
+    fog: "fog",
+    ashfall: "ashfall",
+  })[motion] ?? "clear";
 }
 
 function createSeed() {
@@ -388,12 +430,12 @@ function renderLocalWorldEffect() {
   elements.worldEffectVisual.className = `v3-world-effect-visual${local ? ` is-${escapeHtml(effectType)}` : ""}`;
   elements.worldEffectVisual.style.setProperty("--effect-strength", String(local?.strength ?? 0));
   elements.weatherLabel.className = `v3-weather-label is-${local ? escapeHtml(effectType) : "clear"}`;
-  elements.weatherLabel.textContent = local
-    ? `${local.symbol} ${local.name} · 移動 +${Math.round((local.travelMultiplier - 1) * 100)}% · 遭遇 +${(local.dangerDelta * 100).toFixed(1)}pt`
-    : "空 平穏 · 移動補正なし";
+  elements.weatherLabel.innerHTML = local
+    ? `${uiIconMarkup(weatherIcon(effectType), "v3-inline-icon")}<span>${escapeHtml(local.name)} · 移動 +${Math.round((local.travelMultiplier - 1) * 100)}% · 遭遇 +${(local.dangerDelta * 100).toFixed(1)}pt</span>`
+    : `${uiIconMarkup("clear", "v3-inline-icon")}<span>空 平穏 · 移動補正なし</span>`;
   const moon = view.celestial;
   elements.raceEffectLabel.className = `v3-race-effect-label${view.raceResponse?.responses.length ? " is-active" : ""}`;
-  elements.raceEffectLabel.textContent = `${view.raceResponse?.peopleName ?? "人間"} · ${view.raceResponse?.summary ?? "種族固有反応なし"} · ${moon.primaryMoon}${moon.phaseName}${moon.active.length ? "（作用中）" : ""}`;
+  elements.raceEffectLabel.innerHTML = `${uiIconMarkup("moon", "v3-inline-icon")}<span>${escapeHtml(view.raceResponse?.peopleName ?? "人間")} · ${escapeHtml(view.raceResponse?.summary ?? "種族固有反応なし")} · ${escapeHtml(moon.primaryMoon)}${escapeHtml(moon.phaseName)}${moon.active.length ? "（作用中）" : ""}</span>`;
 }
 
 function renderField() {
@@ -413,18 +455,23 @@ function renderField() {
       : militaryTarget
         ? { type: "group-battle", name: `${militaryMission.enemyNation.name}作戦地点`, symbol: "軍" }
         : tile.entity;
+    const terrainArt = hidden && !militaryTarget ? null : getV3TerrainArt(tile.type);
+    const landmarkArt = hidden && !militaryTarget ? null : getV3LandmarkArt(tile.type);
     const sprites = [
-      tile.player ? `<b class="v3-player-sprite" aria-label="${escapeHtml(state.player.name)}">旅</b>` : "",
-      (!hidden || militaryTarget) && visibleEntity ? `<b class="v3-entity is-${escapeHtml(visibleEntity.type)}" aria-label="${escapeHtml(visibleEntity.name)}">${escapeHtml(visibleEntity.symbol)}</b>` : "",
+      tile.player ? atlasArtMarkup(getV3PlayerArt(state.player.raceId), { className: "v3-player-sprite", label: state.player.name }) : "",
+      (!hidden || militaryTarget) && visibleEntity
+        ? atlasArtMarkup(getV3EntityArt(visibleEntity), { className: `v3-entity is-${escapeHtml(visibleEntity.type)}`, label: visibleEntity.name })
+        : "",
     ].filter(Boolean);
-    const symbol = sprites.length > 1 ? `<span class="v3-combatants">${sprites.join("")}</span>`
-      : sprites[0] ?? (hidden ? "" : `<span>${escapeHtml(tile.symbol)}</span>`);
+    const occupants = sprites.length > 1 ? `<span class="v3-combatants">${sprites.join("")}</span>` : sprites[0] ?? "";
+    const landmark = landmarkArt ? atlasArtMarkup(landmarkArt, { className: "v3-landmark-art", hidden: true, tag: "span" }) : "";
     const labelParts = [hidden ? "未踏" : tile.name];
     if (tile.player) labelParts.push(`${state.player.name}の現在地`);
     if ((!hidden || militaryTarget) && visibleEntity) labelParts.push(visibleEntity.name);
     if (!hidden && tile.worldEffect) labelParts.push(`${tile.worldEffect.name}の影響下`);
     const effectClass = !hidden && tile.worldEffect ? ` has-world-effect is-effect-${escapeHtml(tile.worldEffect.motion)}` : "";
-    return `<button type="button" role="gridcell" class="v3-tile is-${escapeHtml(hidden && !militaryTarget ? "fog" : tile.type)}${tile.player ? " is-player" : ""}${personalEnemy && tile.player ? " is-combat-player" : ""}${encounterTile ? " is-combat-enemy" : ""}${militaryTarget ? " is-military-target" : ""}${adjacent ? " is-adjacent" : ""}${effectClass}" data-x="${tile.x}" data-y="${tile.y}" ${adjacent && tile.passable && !state.pendingEncounter ? `data-v3-move="${direction}"` : ""} aria-label="${escapeHtml(labelParts.join("、"))}" tabindex="${tile.player ? "0" : "-1"}">${symbol}</button>`;
+    const terrainStyle = terrainArt ? ` style="--v3-terrain-position:${terrainArt.position}"` : "";
+    return `<button type="button" role="gridcell" class="v3-tile is-${escapeHtml(hidden && !militaryTarget ? "fog" : tile.type)}${tile.player ? " is-player" : ""}${personalEnemy && tile.player ? " is-combat-player" : ""}${encounterTile ? " is-combat-enemy" : ""}${militaryTarget ? " is-military-target" : ""}${adjacent ? " is-adjacent" : ""}${effectClass}" data-x="${tile.x}" data-y="${tile.y}" ${adjacent && tile.passable && !state.pendingEncounter ? `data-v3-move="${direction}"` : ""} aria-label="${escapeHtml(labelParts.join("、"))}" tabindex="${tile.player ? "0" : "-1"}"${terrainStyle}>${landmark}${occupants}</button>`;
   }).join("");
 }
 
@@ -443,6 +490,7 @@ function renderEncounter() {
   elements.encounterModal.hidden = !encounter || Boolean(personalEnemy);
   if (!encounter) return;
   if (personalEnemy) {
+    setAtlasArt(elements.personalBattleArt, getV3EntityArt(personalEnemy), "v3-personal-battle-art", personalEnemy.name);
     elements.personalBattleEnemy.textContent = personalEnemy.name;
     elements.personalBattleLevel.textContent = `LV ${personalEnemy.level}`;
     elements.personalBattleHpBar.style.width = `${Math.max(0, personalEnemy.hp / personalEnemy.maxHp * 100)}%`;
@@ -450,14 +498,14 @@ function renderEncounter() {
     return;
   }
   if (groupBattle) {
-    elements.encounterSymbol.textContent = groupBattle.symbol;
+    setAtlasArt(elements.encounterSymbol, getV3EntityArt(groupBattle), "v3-encounter-art", groupBattle.name);
     elements.encounterType.textContent = "GROUP BATTLE / 専用戦術画面";
     elements.encounterTitle.textContent = groupBattle.name;
     elements.encounterText.textContent = groupBattle.message;
     elements.encounterActions.innerHTML = '<button class="is-primary" type="button" data-v3-group-battle="start">戦闘準備・兵站へ</button><button type="button" data-v3-group-battle="defer">いったん離れる</button>';
     return;
   }
-  elements.encounterSymbol.textContent = encounter.symbol;
+  setAtlasArt(elements.encounterSymbol, getV3EntityArt(encounter), "v3-encounter-art", encounter.name);
   elements.encounterType.textContent = `${encounter.role === "merchant" ? "TRAVELING MERCHANT" : "FIELD ENCOUNTER"}${encounter.temperamentName ? ` · ${encounter.temperamentName}` : ""}`;
   elements.encounterTitle.textContent = encounter.name;
   elements.encounterText.textContent = encounter.message;
@@ -469,7 +517,9 @@ function renderMilitary() {
   const personalBattle = state.pendingEncounter?.type === "enemy";
   const blockingEncounter = Boolean(state.pendingEncounter && state.pendingEncounter.type !== "group-battle");
   elements.militaryButton.disabled = personalBattle || blockingEncounter;
-  elements.militaryButton.textContent = military.active && military.atTarget ? "集団戦" : military.active ? "作戦" : "軍務";
+  const buttonLabel = military.active && military.atTarget ? "集団戦" : military.active ? "作戦" : "軍務";
+  elements.militaryButton.querySelector("span").textContent = buttonLabel;
+  elements.militaryButton.setAttribute("aria-label", buttonLabel);
   elements.militaryButton.title = military.detail;
   elements.militaryLabel.textContent = military.active
     ? `${military.label}｜${military.detail}`
@@ -479,7 +529,10 @@ function renderMilitary() {
 
 function renderInventory() {
   const items = state.player.inventory;
-  elements.inventoryList.innerHTML = items.length ? items.map((item, index) => `<button type="button" data-v3-use-item="${index}" ${item.heal && state.player.hp < state.player.maxHp ? "" : "disabled"}><i>${escapeHtml(item.id === "medicinal-herb" ? "草" : item.id === "wild-berries" ? "実" : "物")}</i><span><strong>${escapeHtml(item.name)}</strong><small>${item.heal ? `HPを${item.heal}回復` : "素材"}</small></span><b>${item.heal ? "使う" : "所持"}</b></button>`).join("") : "<p>道具はまだ持っていない。</p>";
+  elements.inventoryList.innerHTML = items.length ? items.map((item, index) => {
+    const art = atlasArtMarkup(getV3EntityArt({ type: "item", ...item }), { className: "v3-inventory-art", hidden: true, tag: "i" });
+    return `<button type="button" data-v3-use-item="${index}" ${item.heal && state.player.hp < state.player.maxHp ? "" : "disabled"}>${art}<span><strong>${escapeHtml(item.name)}</strong><small>${item.heal ? `HPを${item.heal}回復` : "素材"}</small></span><b>${item.heal ? "使う" : "所持"}</b></button>`;
+  }).join("") : "<p>道具はまだ持っていない。</p>";
 }
 
 function focusInventoryPrimaryAction() {
@@ -562,7 +615,7 @@ function renderCommerce() {
   const model = getV3MerchantView(context, state, worldSimulation);
   const cargoById = Object.fromEntries(model.cargo.map((entry) => [entry.commodityId, entry]));
   const market = model.market;
-  const marketEffectNotice = market?.worldEffect ? `<p class="v3-market-effect"><b>${escapeHtml(market.worldEffect.symbol)} ${escapeHtml(market.worldEffect.name)}</b><span>${escapeHtml(market.worldEffect.summary)}</span></p>` : "";
+  const marketEffectNotice = market?.worldEffect ? `<p class="v3-market-effect"><b>${uiIconMarkup("military", "v3-inline-icon")}<span>${escapeHtml(market.worldEffect.name)}</span></b><span>${escapeHtml(market.worldEffect.summary)}</span></p>` : "";
   const marketBlock = market ? `<section class="v3-commerce-section"><header><div><small>CURRENT MARKET</small><h2>${escapeHtml(model.marketSettlement.name)}の市場</h2></div><button type="button" data-v3-trade-action="observe">相場を記録</button></header>${marketEffectNotice}<div class="v3-market-grid">${model.commodities.map((commodity) => {
     const good = market.goods[commodity.id];
     const cargo = cargoById[commodity.id];
@@ -767,6 +820,68 @@ function colorAlpha(color, alpha) {
   return `rgba(${values.join(", ")}, ${alpha})`;
 }
 
+function drawWorldEffectMark(drawing, motion, x, y) {
+  drawing.save();
+  drawing.translate(x, y);
+  drawing.strokeStyle = "#fff8dc";
+  drawing.fillStyle = "#fff8dc";
+  drawing.lineWidth = 1.15;
+  drawing.lineCap = "round";
+  drawing.lineJoin = "round";
+  if (["rain", "storm"].includes(motion)) {
+    drawing.beginPath();
+    drawing.arc(-2, -1, 2.1, Math.PI, Math.PI * 2);
+    drawing.arc(1, -1.7, 2.6, Math.PI, Math.PI * 2);
+    drawing.lineTo(4, 0.4);
+    drawing.lineTo(-4, 0.4);
+    drawing.closePath();
+    drawing.stroke();
+    for (const offset of [-2, 1, 4]) {
+      drawing.beginPath();
+      drawing.moveTo(offset, 2);
+      drawing.lineTo(offset - 1, 4.2);
+      drawing.stroke();
+    }
+    if (motion === "storm") {
+      drawing.beginPath();
+      drawing.moveTo(0, 0.8);
+      drawing.lineTo(-1.4, 3);
+      drawing.lineTo(0.4, 3);
+      drawing.lineTo(-0.8, 5);
+      drawing.stroke();
+    }
+  } else if (["snow", "blizzard"].includes(motion)) {
+    for (let index = 0; index < 3; index += 1) {
+      drawing.rotate(Math.PI / 3);
+      drawing.beginPath();
+      drawing.moveTo(-4, 0);
+      drawing.lineTo(4, 0);
+      drawing.stroke();
+    }
+  } else if (["sandstorm", "fog"].includes(motion)) {
+    for (const offset of [-2.5, 0, 2.5]) {
+      drawing.beginPath();
+      drawing.moveTo(-4, offset);
+      drawing.bezierCurveTo(-1, offset - 1, 1, offset + 1, 4, offset);
+      drawing.stroke();
+    }
+  } else if (motion === "heatwave") {
+    for (const offset of [-2.5, 0, 2.5]) {
+      drawing.beginPath();
+      drawing.moveTo(offset, 4);
+      drawing.bezierCurveTo(offset - 1.5, 1.5, offset + 1.5, -1.5, offset, -4);
+      drawing.stroke();
+    }
+  } else {
+    for (const [offsetX, offsetY, radius] of [[-2.5, -2, 1], [2.5, -1, .8], [0, 2.5, 1.1]]) {
+      drawing.beginPath();
+      drawing.arc(offsetX, offsetY, radius, 0, Math.PI * 2);
+      drawing.fill();
+    }
+  }
+  drawing.restore();
+}
+
 function drawWorldEffectFronts(drawing, effects, scale) {
   const mapWidth = runtime.terrain.width * scale;
   drawing.save();
@@ -791,14 +906,7 @@ function drawWorldEffectFronts(drawing, effects, scale) {
       drawing.stroke();
     }
     drawing.setLineDash([]);
-    drawing.fillStyle = "#fff8dc";
-    drawing.strokeStyle = "rgba(4, 16, 18, .9)";
-    drawing.lineWidth = 2;
-    drawing.font = "bold 8px sans-serif";
-    drawing.textAlign = "center";
-    drawing.textBaseline = "middle";
-    drawing.strokeText(front.symbol, front.x * scale + scale / 2, front.y * scale + scale / 2);
-    drawing.fillText(front.symbol, front.x * scale + scale / 2, front.y * scale + scale / 2);
+    drawWorldEffectMark(drawing, front.motion, front.x * scale + scale / 2, front.y * scale + scale / 2);
   }
   drawing.restore();
 }
@@ -936,11 +1044,11 @@ function renderWorldPanels(map) {
   });
   elements.worldEffects.innerHTML = `
     <header><span><small>WORLD EFFECTS</small><strong>世界現象</strong></span><b>${effects.fronts.length}域${effects.activeGlobal.length ? `＋${effects.activeGlobal.length}天体` : ""}</b></header>
-    <p class="v3-world-effect-local"><strong>${effects.local ? `${escapeHtml(effects.local.symbol)} ${escapeHtml(effects.local.name)}` : "現在座標は平穏"}</strong><span>${effects.local ? `移動 +${Math.round((effects.local.travelMultiplier - 1) * 100)}% · 遭遇 +${(effects.local.dangerDelta * 100).toFixed(1)}pt` : "移動・遭遇補正なし"}</span></p>
-    <p class="v3-world-effect-celestial"><strong>${escapeHtml(moon.symbol)} ${escapeHtml(moon.primaryMoon)} · ${escapeHtml(moon.phaseName)}</strong><span>${moon.active.length ? `${escapeHtml(moon.active[0].description)}（夜間作用中）` : `周期${moon.cycleDay}/${moon.cycleDays}日 · ${moon.isNight ? "夜間" : "日中"}`}</span></p>
+    <p class="v3-world-effect-local"><strong>${uiIconMarkup(weatherIcon(effects.local?.motion), "v3-inline-icon")}<span>${effects.local ? escapeHtml(effects.local.name) : "現在座標は平穏"}</span></strong><span>${effects.local ? `移動 +${Math.round((effects.local.travelMultiplier - 1) * 100)}% · 遭遇 +${(effects.local.dangerDelta * 100).toFixed(1)}pt` : "移動・遭遇補正なし"}</span></p>
+    <p class="v3-world-effect-celestial"><strong>${uiIconMarkup("moon", "v3-inline-icon")}<span>${escapeHtml(moon.primaryMoon)} · ${escapeHtml(moon.phaseName)}</span></strong><span>${moon.active.length ? `${escapeHtml(moon.active[0].description)}（夜間作用中）` : `周期${moon.cycleDay}/${moon.cycleDays}日 · ${moon.isNight ? "夜間" : "日中"}`}</span></p>
     <p class="v3-world-effect-race${raceResponses.length ? " is-active" : ""}"><strong>${escapeHtml(effects.raceResponse?.peopleName ?? "人間")}への作用</strong><span>${escapeHtml(effects.raceResponse?.summary ?? "種族固有反応なし")}${raceResponses.length ? ` · ${escapeHtml(raceResponses.map((response) => response.summary).join(" "))}` : ""}</span></p>
-    ${wartimeMarket ? `<p class="v3-world-effect-market"><strong>${escapeHtml(wartimeMarket.symbol)} ${escapeHtml(wartimeMarket.name)}</strong><span>${escapeHtml(wartimeMarket.summary)}</span></p>` : ""}
-    <ul>${effects.fronts.map((front) => `<li class="is-${escapeHtml(front.motion)}"><i style="--effect-color:${escapeHtml(front.color)}">${escapeHtml(front.symbol)}</i><span><strong>${escapeHtml(front.name)}</strong><small>${escapeHtml(front.regionName ?? "洋上・無主地")} · 強度${front.intensity} · 半径${Math.round(front.radius)}区画</small></span><em>最大+${front.travelPenaltyPercent}%</em></li>`).join("") || "<li><span><strong>大きな現象なし</strong><small>この月に記録対象となる前線はありません。</small></span></li>"}</ul>`;
+    ${wartimeMarket ? `<p class="v3-world-effect-market"><strong>${uiIconMarkup("commerce", "v3-inline-icon")}<span>${escapeHtml(wartimeMarket.name)}</span></strong><span>${escapeHtml(wartimeMarket.summary)}</span></p>` : ""}
+    <ul>${effects.fronts.map((front) => `<li class="is-${escapeHtml(front.motion)}"><i style="--effect-color:${escapeHtml(front.color)}">${uiIconMarkup(weatherIcon(front.motion), "v3-effect-icon")}</i><span><strong>${escapeHtml(front.name)}</strong><small>${escapeHtml(front.regionName ?? "洋上・無主地")} · 強度${front.intensity} · 半径${Math.round(front.radius)}区画</small></span><em>最大+${front.travelPenaltyPercent}%</em></li>`).join("") || "<li><span><strong>大きな現象なし</strong><small>この月に記録対象となる前線はありません。</small></span></li>"}</ul>`;
 
   const activeNations = map.nations.filter((nation) => regionCountFor(map, nation.id) > 0);
   const settlementCount = map.objects.filter((object) => object.settlementLevel).length;
@@ -992,12 +1100,17 @@ function drawWorldMap() {
   renderWorldPanels(map);
   const canvas = elements.worldCanvas;
   const scale = 4;
-  canvas.width = runtime.terrain.width * scale;
-  canvas.height = runtime.terrain.height * scale;
+  const logicalWidth = runtime.terrain.width * scale;
+  const logicalHeight = runtime.terrain.height * scale;
+  const pixelRatio = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
+  canvas.width = Math.round(logicalWidth * pixelRatio);
+  canvas.height = Math.round(logicalHeight * pixelRatio);
+  canvas.dataset.pixelRatio = String(pixelRatio);
   const drawing = canvas.getContext("2d");
-  drawing.imageSmoothingEnabled = false;
+  drawing.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+  drawing.imageSmoothingEnabled = true;
   drawing.fillStyle = "#214650";
-  drawing.fillRect(0, 0, canvas.width, canvas.height);
+  drawing.fillRect(0, 0, logicalWidth, logicalHeight);
   const warRegionIds = new Set(map.activeWars.map((war) => war.targetRegionId).filter(Boolean));
   elements.worldEffectLegend.hidden = mapLayer !== "effects";
   for (const tile of runtime.tiles) {
@@ -1061,12 +1174,28 @@ function drawWorldMap() {
   for (const object of map.objects) {
     if (!object.settlementLevel) continue;
     drawing.fillStyle = warRegionIds.has(object.regionId) && mapLayer === "wars" ? "#fff1a6" : "#f4e5b5";
-    const size = object.settlementLevel === "city" ? 4 : object.settlementLevel === "town" ? 3 : 2;
-    drawing.fillRect(object.x * scale + 2 - size / 2, object.y * scale + 2 - size / 2, size, size);
+    drawing.strokeStyle = "rgba(25, 22, 17, .82)";
+    drawing.lineWidth = .8;
+    const size = object.settlementLevel === "city" ? 3.3 : object.settlementLevel === "town" ? 2.7 : 2.1;
+    drawing.beginPath();
+    drawing.arc(object.x * scale + 2, object.y * scale + 2, size, 0, Math.PI * 2);
+    drawing.fill();
+    drawing.stroke();
+    if (object.settlementLevel !== "village") {
+      drawing.beginPath();
+      drawing.moveTo(object.x * scale, object.y * scale + 2);
+      drawing.lineTo(object.x * scale + 2, object.y * scale - 1.5);
+      drawing.lineTo(object.x * scale + 4, object.y * scale + 2);
+      drawing.stroke();
+    }
   }
   for (const tile of runtime.tiles.filter((candidate) => candidate.terrainSite)) {
     drawing.fillStyle = tile.terrainSite.category === "fantasy" ? "#d9c0ec" : tile.terrainSite.category === "astronomy" ? "#b6dbe7" : "#dc875c";
-    drawing.fillRect(tile.x * scale + 1, tile.y * scale + 1, 2, 2);
+    drawing.save();
+    drawing.translate(tile.x * scale + 2, tile.y * scale + 2);
+    drawing.rotate(Math.PI / 4);
+    drawing.fillRect(-1.5, -1.5, 3, 3);
+    drawing.restore();
   }
   const militaryMission = state.military?.activeMission ?? null;
   elements.worldMissionLegend.hidden = !map.isCurrent || !militaryMission;
@@ -1088,11 +1217,14 @@ function drawWorldMap() {
       drawing.strokeStyle = "#ffd878";
       drawing.lineWidth = 2;
       drawing.stroke();
-      drawing.fillStyle = "#fff3bd";
-      drawing.font = "bold 7px sans-serif";
-      drawing.textAlign = "center";
-      drawing.textBaseline = "middle";
-      drawing.fillText("軍", targetX, targetY + .5);
+      drawing.strokeStyle = "#fff3bd";
+      drawing.lineWidth = 1.35;
+      drawing.beginPath();
+      drawing.moveTo(targetX - 3, targetY - 3);
+      drawing.lineTo(targetX + 3, targetY + 3);
+      drawing.moveTo(targetX + 3, targetY - 3);
+      drawing.lineTo(targetX - 3, targetY + 3);
+      drawing.stroke();
     }
   }
   const location = getV3LocationSummary(context, state);

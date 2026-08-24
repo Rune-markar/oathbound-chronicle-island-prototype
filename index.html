@@ -10,7 +10,7 @@
   </head>
   <body>
     <section class="v3-launch" id="v3Launch" aria-labelledby="v3LaunchTitle">
-      <div class="v3-launch-sky" aria-hidden="true"><i></i><i></i><i></i></div>
+      <div class="v3-launch-sky" aria-hidden="true"></div>
       <header>
         <small>LEVIATHAN COVENANT / GENERATION V3</small>
         <h1 id="v3LaunchTitle">世界を、一歩ずつ歩く。</h1>
@@ -43,7 +43,13 @@
     <main class="v3-game" id="v3Game" hidden>
       <header class="v3-game-header">
         <div><small id="v3NationName">生成世界</small><strong id="v3RegionName">現在地</strong></div>
-        <div class="v3-header-actions"><button type="button" data-v3-action="underworld">裏社会</button><button type="button" data-v3-action="commerce">交易・商会</button><button type="button" data-v3-action="military" id="v3MilitaryButton">軍務</button><button type="button" data-v3-action="map">世界地図</button><button type="button" data-v3-action="menu">道具</button></div>
+        <div class="v3-header-actions">
+          <button type="button" data-v3-action="underworld" aria-label="裏社会"><svg class="v3-ui-icon" aria-hidden="true"><use href="./assets/ui/v3-ui-icons.svg#icon-underworld"></use></svg><span>裏社会</span></button>
+          <button type="button" data-v3-action="commerce" aria-label="交易・商会"><svg class="v3-ui-icon" aria-hidden="true"><use href="./assets/ui/v3-ui-icons.svg#icon-commerce"></use></svg><span>交易・商会</span></button>
+          <button type="button" data-v3-action="military" id="v3MilitaryButton" aria-label="軍務"><svg class="v3-ui-icon" aria-hidden="true"><use href="./assets/ui/v3-ui-icons.svg#icon-military"></use></svg><span>軍務</span></button>
+          <button type="button" data-v3-action="map" aria-label="世界地図"><svg class="v3-ui-icon" aria-hidden="true"><use href="./assets/ui/v3-ui-icons.svg#icon-map"></use></svg><span>世界地図</span></button>
+          <button type="button" data-v3-action="menu" aria-label="道具"><svg class="v3-ui-icon" aria-hidden="true"><use href="./assets/ui/v3-ui-icons.svg#icon-inventory"></use></svg><span>道具</span></button>
+        </div>
       </header>
 
       <section class="v3-play-layout">
@@ -58,6 +64,7 @@
           <div class="v3-world-effect-visual" id="v3WorldEffectVisual" aria-hidden="true" hidden></div>
           <div class="v3-field-vignette" aria-hidden="true"></div>
           <aside class="v3-personal-battle-status" id="v3PersonalBattleStatus" aria-live="polite" hidden>
+            <i class="v3-personal-battle-art" id="v3PersonalBattleArt" aria-hidden="true"></i>
             <header><small>PERSONAL BATTLE / 現在のフィールド</small><b id="v3PersonalBattleLevel">LV 1</b></header>
             <strong id="v3PersonalBattleEnemy">敵</strong>
             <div><span>敵HP</span><i><b id="v3PersonalBattleHpBar"></b></i><em id="v3PersonalBattleHpLabel">0 / 0</em></div>
@@ -79,22 +86,22 @@
       <footer class="v3-command-area">
         <section class="v3-message-window" aria-live="polite"><div id="v3Messages"></div></section>
         <nav class="v3-dpad" id="v3MovementPad" aria-label="移動方向">
-          <button type="button" data-v3-move="north" aria-label="北へ進む">▲</button>
-          <button type="button" data-v3-move="west" aria-label="西へ進む">◀</button>
+          <button type="button" data-v3-move="north" aria-label="北へ進む"><svg class="v3-ui-icon" aria-hidden="true"><use href="./assets/ui/v3-ui-icons.svg#icon-chevron-up"></use></svg></button>
+          <button type="button" data-v3-move="west" aria-label="西へ進む"><svg class="v3-ui-icon" aria-hidden="true"><use href="./assets/ui/v3-ui-icons.svg#icon-chevron-left"></use></svg></button>
           <i aria-hidden="true">歩</i>
-          <button type="button" data-v3-move="east" aria-label="東へ進む">▶</button>
-          <button type="button" data-v3-move="south" aria-label="南へ進む">▼</button>
+          <button type="button" data-v3-move="east" aria-label="東へ進む"><svg class="v3-ui-icon" aria-hidden="true"><use href="./assets/ui/v3-ui-icons.svg#icon-chevron-right"></use></svg></button>
+          <button type="button" data-v3-move="south" aria-label="南へ進む"><svg class="v3-ui-icon" aria-hidden="true"><use href="./assets/ui/v3-ui-icons.svg#icon-chevron-down"></use></svg></button>
         </nav>
         <section class="v3-personal-battle-commands" id="v3PersonalBattleCommands" aria-label="個人戦の行動" hidden>
-          <button class="is-primary" type="button" data-v3-encounter="fight"><strong>攻撃</strong><small>たたかう</small></button>
-          <button type="button" data-v3-encounter="flee"><strong>退避</strong><small>にげる</small></button>
+          <button class="is-primary" type="button" data-v3-encounter="fight"><svg class="v3-ui-icon" aria-hidden="true"><use href="./assets/ui/v3-ui-icons.svg#icon-sword"></use></svg><span><strong>攻撃</strong><small>たたかう</small></span></button>
+          <button type="button" data-v3-encounter="flee"><svg class="v3-ui-icon" aria-hidden="true"><use href="./assets/ui/v3-ui-icons.svg#icon-retreat"></use></svg><span><strong>退避</strong><small>にげる</small></span></button>
         </section>
       </footer>
     </main>
 
     <section class="v3-modal" id="v3EncounterModal" role="dialog" aria-modal="true" aria-labelledby="v3EncounterTitle" hidden>
       <article class="v3-encounter-card">
-        <i id="v3EncounterSymbol" aria-hidden="true">敵</i>
+        <i class="v3-encounter-art" id="v3EncounterSymbol" aria-hidden="true"></i>
         <div><small id="v3EncounterType">FIELD ENCOUNTER</small><h2 id="v3EncounterTitle">旅人に出会った</h2><p id="v3EncounterText"></p></div>
         <footer id="v3EncounterActions"></footer>
       </article>
@@ -102,9 +109,9 @@
 
     <section class="v3-modal" id="v3InventoryModal" role="dialog" aria-modal="true" aria-labelledby="v3InventoryTitle" hidden>
       <article class="v3-inventory-card">
-        <header><div><small>ITEMS</small><h2 id="v3InventoryTitle">道具</h2></div><button type="button" data-v3-close="inventory" aria-label="道具を閉じる">×</button></header>
+        <header><div><small>ITEMS</small><h2 id="v3InventoryTitle">道具</h2></div><button type="button" data-v3-close="inventory" aria-label="道具を閉じる"><svg class="v3-ui-icon" aria-hidden="true"><use href="./assets/ui/v3-ui-icons.svg#icon-close"></use></svg></button></header>
         <div id="v3InventoryList"></div>
-        <footer><button class="is-danger" type="button" data-v3-action="reset">このV3冒険を初期化</button></footer>
+        <footer><button class="is-danger" type="button" data-v3-action="reset"><svg class="v3-ui-icon" aria-hidden="true"><use href="./assets/ui/v3-ui-icons.svg#icon-reset"></use></svg><span>このV3冒険を初期化</span></button></footer>
       </article>
     </section>
 

@@ -439,11 +439,18 @@ function createV3GroupBattle(context, state, mission) {
 
 function createV3CommandRoster(state, mission) {
   const base = 58 + Math.min(24, state.player.level * 3);
+  const playerPortrait = ({
+    human: "assets/generated/race-basics/race-human-male.webp",
+    elf: "assets/generated/race-basics/race-elf-male.webp",
+    dwarf: "assets/generated/race-basics/race-dwarf-male.webp",
+    orc: "assets/generated/race-basics/race-orc-male.webp",
+  })[state.player.raceId] ?? "assets/generated/race-basics/race-human-male.webp";
   return [
     {
       id: `v3-commander:${state.player.name}`,
       name: state.player.name,
       portrait: "旅",
+      portraitImage: playerPortrait,
       role: "軍務指揮者",
       rank: "臨時指揮官",
       policy: "作戦全体を指揮する",
@@ -456,6 +463,7 @@ function createV3CommandRoster(state, mission) {
       id: `v3-officer:${mission.playerNation.id}:vanguard`,
       name: `${mission.playerNation.shortName}先陣将`,
       portrait: "将",
+      portraitImage: "assets/generated/officer-gaius.webp",
       role: "先陣指揮",
       rank: "軍団将校",
       policy: "敵の前進を正面で止める",
@@ -468,6 +476,7 @@ function createV3CommandRoster(state, mission) {
       id: `v3-officer:${mission.playerNation.id}:quartermaster`,
       name: `${mission.playerNation.shortName}兵站官`,
       portrait: "補",
+      portraitImage: "assets/generated/officer-edras.webp",
       role: "兵站・軍議",
       rank: "軍団将校",
       policy: "補給を保ち、損耗を抑える",
