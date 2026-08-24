@@ -70,12 +70,28 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .v3-tile.is-tundra { background: #80978a; }
 .v3-tile.is-snow { background: #cedbd5; color: #60736d; }
 .v3-tile.is-water { background: repeating-linear-gradient(165deg, #326875 0 5px, #3c7780 6px 9px); color: #a5d3d3; }
+.v3-tile.is-beach { background: linear-gradient(155deg, #d0bd7d, #aa9561); color: #705f38; }
+.v3-tile.is-shoal { background: repeating-linear-gradient(165deg, #78aeb0 0 5px, #9bc1b8 6px 9px); color: #e0f1df; }
+.v3-tile.is-tidal-flat { background: radial-gradient(circle at 25% 35%, #7d8f73 0 8%, transparent 9%), #819a81; color: #d8e8d0; }
 .v3-tile.is-river { background: linear-gradient(90deg, #7ca15d 0 28%, #3c7c87 30% 70%, #7ca15d 72%); color: #d1eded; }
+.v3-tile.is-canyon-river { background: linear-gradient(90deg, #5a624e 0 26%, #2f6b76 30% 70%, #5a624e 74%); color: #d3ebdf; }
+.v3-tile.is-canal { background: linear-gradient(90deg, #9ca65c 0 34%, #4b8790 36% 64%, #9ca65c 66%); color: #d7eeee; }
+.v3-tile.is-spring { background: radial-gradient(circle, #75b6b5 0 28%, #568d6a 31% 54%, #7ea861 57%); color: #e3f3de; }
+.v3-tile.is-oasis { background: radial-gradient(circle at 52% 56%, #417f7b 0 22%, #4f7e49 24% 47%, #c2a766 49%); color: #e5edbd; }
 .v3-tile.is-road { background: linear-gradient(90deg, #789858 0 29%, #b39763 31% 69%, #789858 71%); color: #6f5835; }
 .v3-tile.is-road:nth-child(even) { background: linear-gradient(#789858 0 29%, #b39763 31% 69%, #789858 71%); }
 .v3-tile.is-forest { background: #356746; color: #142f23; text-shadow: 1px 1px #65915d; }
+.v3-tile.is-marsh { background: repeating-radial-gradient(ellipse at 30% 70%, #496f5b 0 14%, #657b57 16% 31%); color: #bad0a8; }
+.v3-tile.is-farmland { background: repeating-linear-gradient(90deg, #80934d 0 4px, #aa9a55 5px 8px); color: #f0d98d; }
 .v3-tile.is-hill { background: #718557; color: #4a553a; }
 .v3-tile.is-mountain { background: #59675c; color: #29342d; }
+.v3-tile.is-volcano { background: radial-gradient(circle at 50% 65%, #e1733d 0 12%, #6e4238 15% 42%, #4d5148 45%); color: #ffd18d; }
+.v3-tile.is-crater { background: radial-gradient(circle, #4d5148 0 27%, #7c755f 30% 48%, #657652 51%); color: #ddd0a3; }
+.v3-tile.is-cave { background: radial-gradient(ellipse at 50% 70%, #151d1b 0 32%, #66725f 35% 56%, #75895b 59%); color: #d5cfac; }
+.v3-tile.is-mine { background: repeating-linear-gradient(135deg, #4f584f 0 6px, #76705a 7px 11px); color: #f0d791; }
+.v3-tile.is-ruins { background: linear-gradient(135deg, #8c835f 0 35%, #5f704f 36% 63%, #9b9069 64%); color: #efe2b2; }
+.v3-tile.is-floating-island { background: radial-gradient(ellipse at 50% 25%, #b6d6d2 0 20%, #738c75 23% 42%, #536957 45%); color: #f5eac4; }
+.v3-tile.is-sky-peak { background: linear-gradient(135deg, #d4e0dc 0 24%, #65736d 26% 67%, #384640 69%); color: #fff4cf; }
 .v3-tile.is-settlement-ground { background: #ae9669; }
 .v3-tile[class*="is-settlement-"]:not(.is-settlement-ground) { background: #9b825c; color: #fff1bd; text-shadow: 1px 2px #2b2117; }
 .v3-tile.is-fog, .v3-tile.is-ungenerated, .v3-tile.is-void { background: #101f20; color: transparent; }
@@ -116,13 +132,13 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .v3-place-window small { color: #dbc879; font-weight: 800; }
 .v3-place-window strong { font-family: Georgia, "Yu Mincho", serif; font-size: 17px; }
 .v3-place-window span { color: #b7c3ba; font-size: 10px; }
-.v3-command-area { display: grid; grid-template-columns: minmax(0, 1fr) 124px; gap: 12px; min-height: 152px; padding: 12px max(16px, calc((100vw - 1180px) / 2)) max(12px, env(safe-area-inset-bottom)); border-top: 1px solid #52685f; background: #071416; }
+.v3-command-area { display: grid; grid-template-columns: minmax(0, 1fr) 144px; gap: 12px; min-height: 152px; padding: 12px max(16px, calc((100vw - 1180px) / 2)) max(12px, env(safe-area-inset-bottom)); border-top: 1px solid #52685f; background: #071416; }
 .v3-message-window { min-height: 112px; padding: 12px 16px; overflow: hidden; }
 .v3-message-window div { display: grid; gap: 4px; }
 .v3-message-window p { margin: 0; color: #899a92; font-size: 11px; line-height: 1.5; }
 .v3-message-window p.is-latest { color: #fff8dd; font-size: 14px; }
 .v3-message-window p.is-latest::before { content: "▸ "; color: #e3ce79; }
-.v3-dpad { display: grid; grid-template-columns: repeat(3, 38px); grid-template-rows: repeat(3, 34px); align-content: center; justify-content: center; }
+.v3-dpad { display: grid; grid-template-columns: repeat(3, 44px); grid-template-rows: repeat(3, 44px); align-content: center; justify-content: center; }
 .v3-dpad button { border: 1px solid #81928a; background: #153034; cursor: pointer; font-size: 13px; }
 .v3-dpad button:hover, .v3-dpad button:focus-visible { background: #38564e; }
 .v3-dpad button:nth-child(1) { grid-column: 2; }
@@ -170,6 +186,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .v3-world-map > footer i { display: block; width: 14px; height: 8px; background: #f4e5b5; }
 .v3-world-map > footer i.is-player { width: 12px; height: 12px; border: 2px solid #fff; border-radius: 50%; background: none; }
 .v3-world-map > footer i.is-road { height: 2px; background: #e4d5a0; }
+.v3-world-map > footer i.is-site { width: 9px; height: 9px; rotate: 45deg; background: #d98758; }
 .v3-world-map > footer strong { margin-left: auto; color: #d9c979; }
 .v3-toast { position: fixed; z-index: 40; left: 50%; bottom: 24px; translate: -50% 20px; padding: 10px 16px; border: 1px solid #e1d488; border-radius: 3px; background: #102628; opacity: 0; pointer-events: none; transition: .2s; }
 .v3-toast.is-visible { translate: -50% 0; opacity: 1; }
@@ -186,7 +203,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   .v3-new-world { grid-template-columns: 1fr; }
   .v3-game-header { min-height: 58px; }
   .v3-game-header strong { font-size: 14px; }
-  .v3-header-actions button { min-height: 40px; padding: 6px 10px; font-size: 11px; }
+  .v3-header-actions button { min-height: 44px; padding: 6px 10px; font-size: 11px; }
   .v3-play-layout { align-content: start; min-height: 0; padding: 0; }
   .v3-field-shell { width: 100%; aspect-ratio: 13 / 11; border-width: 0 0 3px; border-radius: 0; }
   .v3-status-window { top: 8px; left: 8px; width: 136px; padding: 8px 10px; border-width: 2px; }
@@ -198,11 +215,11 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   .v3-personal-battle-status { top: 8px; right: 8px; width: 210px; padding: 7px 9px; border-width: 2px; }
   .v3-personal-battle-status small { font-size: 6px; }
   .v3-personal-battle-status > strong { font-size: 14px; }
-  .v3-command-area { grid-template-columns: minmax(0, 1fr) 108px; min-height: 0; padding: 8px 8px max(8px, env(safe-area-inset-bottom)); }
+  .v3-command-area { grid-template-columns: minmax(0, 1fr) 140px; min-height: 0; padding: 8px 8px max(8px, env(safe-area-inset-bottom)); }
   .v3-message-window { min-height: 128px; max-height: none; height: 100%; padding: 10px; overflow: auto; border-width: 2px; }
   .v3-message-window p { font-size: 9px; }
   .v3-message-window p.is-latest { font-size: 12px; }
-  .v3-dpad { grid-template-columns: repeat(3, 34px); grid-template-rows: repeat(3, 36px); }
+  .v3-dpad { grid-template-columns: repeat(3, 44px); grid-template-rows: repeat(3, 44px); }
   .v3-personal-battle-commands button { min-height: 48px; }
   .v3-encounter-card { grid-template-columns: 70px 1fr; gap: 12px; padding: 14px; }
   .v3-encounter-card > i { width: 70px; font-size: 25px; }
@@ -217,7 +234,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   .v3-game-header { min-height: 48px; }
   .v3-play-layout { min-height: calc(100dvh - 162px); padding: 0; }
   .v3-field-shell { width: min(720px, calc((100dvh - 162px) * 1.18)); }
-  .v3-command-area { position: absolute; z-index: 6; right: 6px; bottom: 6px; grid-template-columns: 220px 106px; min-height: 94px; padding: 6px; border: 0; background: transparent; }
+  .v3-command-area { position: absolute; z-index: 6; right: 6px; bottom: 6px; grid-template-columns: 220px 140px; min-height: 94px; padding: 6px; border: 0; background: transparent; }
   .v3-message-window { min-height: 88px; max-height: 92px; padding: 8px; }
   .v3-message-window p:not(.is-latest) { display: none; }
 }

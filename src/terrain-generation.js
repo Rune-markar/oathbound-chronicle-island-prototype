@@ -6,6 +6,7 @@ import {
   squareTileIndex as tileIndex,
   squareWrappedDeltaX as wrappedDeltaX,
 } from "./square-grid.js";
+import { applyTerrainGeography, geographyCounts } from "./terrain-geography.js";
 
 const clamp = (value, min = 0, max = 1) => Math.min(max, Math.max(min, value));
 
@@ -893,7 +894,7 @@ function countBy(items, property) {
   }, new Map())].sort(([left], [right]) => String(left).localeCompare(String(right))));
 }
 
-function buildSummary(config, tiles, rivers) {
+function buildSummary(config, tiles, rivers, sites) {
   const land = tiles.filter((tile) => !["ocean", "coast", "lake"].includes(tile.terrain));
   const habitable = land.filter((tile) => tile.relief !== "mountains" && tile.feature !== "marsh");
   return {
@@ -909,6 +910,8 @@ function buildSummary(config, tiles, rivers) {
     terrainCounts: countBy(tiles, "terrain"),
     reliefCounts: countBy(land, "relief"),
     featureCounts: countBy(land, "feature"),
+    geographyCounts: geographyCounts(tiles),
+    siteCounts: countBy(sites, "type"),
     templateCounts: countBy(land, "terrainTemplateId"),
   };
 }
@@ -1036,9 +1039,16 @@ export function generateTerrain(options = {}) {
   const climate = calculateClimate(config, elevation, seed, templateLayout);
   const hydrology = calculateHydrology(config, elevation, climate);
   const riverData = extractRivers(config, elevation, hydrology);
-  const tiles = buildTiles(config, plates, plateIds, stress, elevation, climate, hydrology, riverData, seed, templateLayout);
+  const baseTiles = buildTiles(config, plates, plateIds, stress, elevation, climate, hydrology, riverData, seed, templateLayout);
+  const geography = applyTerrainGeography({
+    config,
+    tiles: baseTiles,
+    rivers: riverData.rivers,
+    stress,
+    seed: config.seed,
+  });
   const world = {
-    version: 1,
+    version: 2,
     gridType: "square",
     seed: config.seed,
     width: config.width,
@@ -1046,10 +1056,12 @@ export function generateTerrain(options = {}) {
     config: Object.freeze({ ...config }),
     plates: plates.map((plate) => ({ ...plate })),
     terrainTemplates: templateLayout.placements,
-    tiles,
+    tiles: geography.tiles,
     rivers: riverData.rivers,
     riverSegments: riverData.segments,
+    geographicSites: geography.sites,
+    astronomy: geography.astronomy,
   };
-  world.summary = buildSummary(config, tiles, world.rivers);
+  world.summary = buildSummary(config, world.tiles, world.rivers, world.geographicSites);
   return world;
 }

@@ -65,6 +65,7 @@
         <aside class="v3-place-window" aria-live="polite">
           <small id="v3ClockLabel">第1日 08:00</small>
           <strong id="v3TerrainLabel">草原</strong>
+          <span id="v3TerrainEffect">移動10分 · 通常の地勢</span>
           <span id="v3NearbyLabel">周辺を確認中</span>
           <span id="v3ChunkLabel">周辺生成 9区画</span>
         </aside>
@@ -105,7 +106,7 @@
     <section class="v3-world-map" id="v3WorldMap" role="dialog" aria-modal="true" aria-labelledby="v3WorldMapTitle" hidden>
       <header><div><small>GENERATED WORLD / OVERVIEW</small><h1 id="v3WorldMapTitle">世界地図</h1><p>国家・地方・街道・集落を持つ概算世界。現在地は白い輪で表示されます。</p></div><button type="button" data-v3-close="map">地図を閉じる</button></header>
       <div class="v3-world-map-canvas"><canvas id="v3WorldCanvas" aria-label="生成された世界の全体地図"></canvas></div>
-      <footer><span><i class="is-player"></i>現在地</span><span><i class="is-city"></i>都市・町・村</span><span><i class="is-road"></i>街道</span><strong id="v3WorldMapPosition">現在地</strong></footer>
+      <footer><span><i class="is-player"></i>現在地</span><span><i class="is-city"></i>都市・町・村</span><span><i class="is-road"></i>街道</span><span><i class="is-site"></i>地形地点</span><strong id="v3WorldMapPosition">現在地</strong></footer>
     </section>
 
     <div class="v3-toast" id="v3Toast" role="status" aria-live="polite"></div>

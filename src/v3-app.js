@@ -47,6 +47,7 @@ const elements = {
   field: document.querySelector("#v3Field"),
   clockLabel: document.querySelector("#v3ClockLabel"),
   terrainLabel: document.querySelector("#v3TerrainLabel"),
+  terrainEffect: document.querySelector("#v3TerrainEffect"),
   nearbyLabel: document.querySelector("#v3NearbyLabel"),
   chunkLabel: document.querySelector("#v3ChunkLabel"),
   messages: document.querySelector("#v3Messages"),
@@ -216,6 +217,7 @@ function renderGame() {
   elements.goldLabel.textContent = String(state.player.gold);
   elements.clockLabel.textContent = `第${location.day}日 ${location.time}`;
   elements.terrainLabel.textContent = location.tile.name;
+  elements.terrainEffect.textContent = `${location.tile.passable ? `移動${location.tile.travelMinutes}分` : "通行不能"} · ${location.tile.terrainNote}`;
   elements.nearbyLabel.textContent = location.nearestSettlement
     ? `${location.nearestSettlement.settlement.name}まで約${Math.round(location.nearestSettlement.distance)}歩`
     : "近くに集落はない";
@@ -279,9 +281,18 @@ function drawWorldMap() {
     drawing.globalAlpha = tile.passable ? 0.78 : 1;
     drawing.fillStyle = color;
     drawing.fillRect(tile.x * scale, tile.y * scale, scale, scale);
-    if (tile.feature === "forest") {
-      drawing.globalAlpha = 0.28;
-      drawing.fillStyle = "#163c31";
+    const tags = new Set(tile.geographyTags ?? []);
+    const geographyTint = tags.has("volcano") ? "#a64b32"
+      : tags.has("marsh") ? "#315e4c"
+        : tags.has("forest") ? "#163c31"
+          : tags.has("farmland") ? "#b3a04f"
+            : tags.has("snowfield") ? "#d8e3de"
+              : tags.has("desert") ? "#c2a15d"
+                : tags.has("tidal_flat") ? "#718b75"
+                  : null;
+    if (geographyTint) {
+      drawing.globalAlpha = tags.has("volcano") ? 0.58 : 0.3;
+      drawing.fillStyle = geographyTint;
       drawing.fillRect(tile.x * scale, tile.y * scale, scale, scale);
     }
   }
@@ -307,6 +318,10 @@ function drawWorldMap() {
     const size = object.settlementLevel === "city" ? 4 : object.settlementLevel === "town" ? 3 : 2;
     drawing.fillRect(object.x * scale + 2 - size / 2, object.y * scale + 2 - size / 2, size, size);
   }
+  for (const tile of runtime.tiles.filter((candidate) => candidate.terrainSite)) {
+    drawing.fillStyle = tile.terrainSite.category === "fantasy" ? "#d9c0ec" : tile.terrainSite.category === "astronomy" ? "#b6dbe7" : "#dc875c";
+    drawing.fillRect(tile.x * scale + 1, tile.y * scale + 1, 2, 2);
+  }
   const playerX = state.player.x / V3_DETAIL_SCALE * scale;
   const playerY = state.player.y / V3_DETAIL_SCALE * scale;
   drawing.beginPath();
@@ -315,7 +330,7 @@ function drawWorldMap() {
   drawing.lineWidth = 2;
   drawing.stroke();
   const location = getV3LocationSummary(context, state);
-  elements.worldMapPosition.textContent = `${location.regionName} · 詳細座標 ${state.player.x}, ${state.player.y}`;
+  elements.worldMapPosition.textContent = `${location.regionName} · ${location.tile.name} · 詳細座標 ${state.player.x}, ${state.player.y}`;
 }
 
 function openWorldMap() {

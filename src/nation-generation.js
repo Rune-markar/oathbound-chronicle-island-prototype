@@ -1765,7 +1765,7 @@ export function generateNations(world, options = {}) {
   }, new Map())].sort());
   const regionBorders = buildRegionBorders(world, regional.tileRegionIds, regional.regions);
   const nationWorld = {
-    version: 8,
+    version: 9,
     seed,
     config: Object.freeze({
       count,
@@ -1823,6 +1823,16 @@ export function generateNations(world, options = {}) {
     },
   };
   nationWorld.tiles = buildSquareOperationalWorld(world, nationWorld).tiles;
+  nationWorld.summary.landUseCounts = Object.fromEntries([...nationWorld.tiles.reduce((counts, tile) => {
+    const key = tile.landUse ?? "uncultivated";
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+    return counts;
+  }, new Map())].sort());
+  nationWorld.summary.infrastructureCounts = Object.fromEntries([...nationWorld.tiles.reduce((counts, tile) => {
+    if (!tile.infrastructure) return counts;
+    counts.set(tile.infrastructure, (counts.get(tile.infrastructure) ?? 0) + 1);
+    return counts;
+  }, new Map())].sort());
   const validation = validateNationWorld(world, nationWorld);
   if (!validation.valid) throw new Error(`Generated nation world is invalid:\n${validation.issues.join("\n")}`);
   return nationWorld;
