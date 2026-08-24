@@ -10,7 +10,7 @@ import {
 import { getRegionalDomainView } from "./regional-domain-system.js";
 import { fnv1aCharacters, unitFromHash } from "./determinism.js";
 
-export const V3_WORLD_SIMULATION_VERSION = 1;
+export const V3_WORLD_SIMULATION_VERSION = 2;
 export const V3_PRESENT_DATE = Object.freeze({ year: 317, month: 4 });
 export const V3_PREHISTORY_MONTHS = 50 * 12;
 export const V3_PREHISTORY_REGIONAL_CADENCE_MONTHS = 4;
@@ -243,7 +243,7 @@ export function createV3WorldSimulation(runtime, options = {}, dateState = V3_PR
 }
 
 export function normalizeV3WorldSimulation(runtime, options = {}, source = null) {
-  if (!source || Number(source.version) !== V3_WORLD_SIMULATION_VERSION) {
+  if (!source || ![1, V3_WORLD_SIMULATION_VERSION].includes(Number(source.version))) {
     return createV3WorldSimulation(runtime, options);
   }
   const date = {

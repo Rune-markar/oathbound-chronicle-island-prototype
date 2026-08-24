@@ -7,6 +7,7 @@ import {
   advanceGameClock,
   createGameClock,
   formatGamePeriod,
+  gameClockAtPeriod,
   getGameCalendar,
   normalizeStateGameClock,
 } from "../src/game-clock.js";
@@ -21,6 +22,10 @@ test("the shared V3 clock starts in 317-04 and reports every crossed month", () 
   assert.equal(formatGamePeriod(advanced.clock), "317年6月");
   assert.deepEqual(advanced.crossedMonths.map(({ year, month }) => [year, month]), [[317, 5], [317, 6]]);
   assert.equal(getGameCalendar(advanced.clock).hour, 8);
+  assert.deepEqual(
+    (({ year, month, day, hour, minute }) => ({ year, month, day, hour, minute }))(getGameCalendar(gameClockAtPeriod(clock, "318-2"))),
+    { year: 318, month: 2, day: 1, hour: 0, minute: 0 },
+  );
 });
 
 test("legacy clockMinutes migrates into one canonical clock without losing its projection", () => {
@@ -47,14 +52,58 @@ test("registered systems share normalization monthly advancement and operation p
   assert.equal(operationIsDue(operation, 600), true);
 });
 
+test("system dependencies are ordered and invalid dependency graphs are rejected", () => {
+  const registry = createSystemRegistry([
+    { id: "feature", version: 1, dependsOn: ["clock"] },
+    { id: "clock", version: 1 },
+  ]);
+  assert.deepEqual(registry.modules.map((module) => module.id), ["clock", "feature"]);
+  assert.throws(() => createSystemRegistry([{ id: "feature", version: 1, dependsOn: ["missing"] }]), /依存先/);
+  assert.throws(() => createSystemRegistry([
+    { id: "one", version: 1, dependsOn: ["two"] },
+    { id: "two", version: 1, dependsOn: ["one"] },
+  ]), /循環/);
+});
+
 test("save registry migrates legacy envelopes and records every system version", () => {
   const storage = new Map();
   const adapter = { getItem: (key) => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value) };
-  const registry = createSaveRegistry({ version: 4, modules: [{ id: "clock", version: 1 }, { id: "events", version: 1 }], migrate: (raw) => [3, 4].includes(raw.version) ? raw : null });
+  const registry = createSaveRegistry({ version: 4, modules: [{ id: "clock", version: 1, legacyVersion: 1 }, { id: "events", version: 1, legacyVersion: 1 }], migrate: (raw) => [3, 4].includes(raw.version) ? raw : null });
   adapter.setItem("save", JSON.stringify({ version: 3, field: { player: {} } }));
   const restored = readRegisteredSave(adapter, "save", registry);
   assert.equal(restored.version, 4);
   assert.deepEqual(restored.systemVersions, { clock: 1, events: 1 });
   const saved = writeRegisteredSave(adapter, "save", registry, restored);
   assert.equal(saved.version, 4);
+});
+
+test("save registry runs every declared module migration before stamping the new version", () => {
+  const registry = createSaveRegistry({
+    version: 4,
+    modules: [{
+      id: "merchant",
+      version: 3,
+      legacyVersion: 1,
+      migrations: {
+        1: (raw) => ({ ...raw, merchant: { ...raw.merchant, firstMigration: true } }),
+        2: (raw) => ({ ...raw, merchant: { ...raw.merchant, secondMigration: true } }),
+      },
+    }],
+  });
+  const migrated = registry.migrate({ version: 4, systemVersions: { merchant: 1 }, merchant: { legacyShape: true } });
+  assert.deepEqual(migrated.merchant, { legacyShape: true, firstMigration: true, secondMigration: true });
+  assert.equal(migrated.systemVersions.merchant, 3);
+});
+
+test("save registry refuses to relabel old or future module data without a valid path", () => {
+  const missingMigration = createSaveRegistry({
+    version: 4,
+    modules: [{ id: "merchant", version: 2, legacyVersion: 1 }],
+  });
+  assert.throws(
+    () => missingMigration.migrate({ version: 4, systemVersions: { merchant: 1 }, merchant: { legacyShape: true } }),
+    /移行がありません/,
+  );
+  const current = createSaveRegistry({ version: 4, modules: [{ id: "merchant", version: 2, legacyVersion: 2 }] });
+  assert.throws(() => current.migrate({ version: 4, systemVersions: { merchant: 3 } }), /未来版/);
 });

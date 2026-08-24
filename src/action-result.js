@@ -1,5 +1,10 @@
 export const ACTION_RESULT_VERSION = 1;
 
+function normalizedSystemIds(values) {
+  return [...new Set((Array.isArray(values) ? values : [])
+    .filter((value) => typeof value === "string" && value))];
+}
+
 export function createActionResult(state, options = {}) {
   if (!state || typeof state !== "object") throw new TypeError("行動結果には状態が必要です。");
   const elapsedMinutes = Math.max(0, Math.round(Number(options.elapsedMinutes) || 0));
@@ -11,6 +16,7 @@ export function createActionResult(state, options = {}) {
     events,
     operation: options.operation ?? null,
     message: options.message ?? null,
+    advancedSystemIds: normalizedSystemIds(options.advancedSystemIds),
   };
 }
 

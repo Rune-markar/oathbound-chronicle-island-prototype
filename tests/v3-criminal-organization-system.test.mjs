@@ -150,7 +150,9 @@ test("一味の作戦指示は実在地方を対象に一か月進み、報告�
   assert.equal(ordered.criminal.crime.organization.activeOrders[0].jurisdictionId, "region-1");
   assert.match(ordered.messageLog[0], new RegExp(extortion.target.name));
 
-  const advanced = advanceV3CriminalCycle(context, ordered);
+  const result = advanceV3CriminalCycle(context, ordered);
+  const advanced = result.state;
+  assert.deepEqual(result.advancedSystemIds, ["criminal-organization"]);
   assert.equal(advanced.clockMinutes, ordered.clockMinutes + V3_CRIMINAL_CYCLE_MINUTES);
   assert.equal(getV3CriminalView(context, advanced).cycleLabel, "317年5月");
   assert.equal(advanced.criminal.crime.organization.activeOrders[0].status, "report_ready");
@@ -209,7 +211,7 @@ test("誘拐後の三択と暗殺担当拘束後の二択をV3保存上で分岐
     supportId: view.organization.availableMembers[1].id,
     approach: "cautious",
   });
-  while (state.criminal.crime.organization.activeOrders[0].status !== "report_ready") state = advanceV3CriminalCycle(context, state);
+  while (state.criminal.crime.organization.activeOrders[0].status !== "report_ready") state = advanceV3CriminalCycle(context, state).state;
   state = resolveV3CriminalReport(context, state, state.criminal.crime.organization.activeOrders[0].id, { outcome: "success_hidden", detected: false });
   const captiveDecision = state.criminal.crime.organization.pendingDecisions[0];
   assert.deepEqual(captiveDecision.options.map((entry) => entry.id), ["ransom", "leverage", "release"]);
@@ -230,7 +232,7 @@ test("誘拐後の三択と暗殺担当拘束後の二択をV3保存上で分岐
     leaderId: view.organization.availableMembers[0].id,
     supportId: view.organization.availableMembers[1].id,
   });
-  while (captureState.criminal.crime.organization.activeOrders[0].status !== "report_ready") captureState = advanceV3CriminalCycle(captureBase.context, captureState);
+  while (captureState.criminal.crime.organization.activeOrders[0].status !== "report_ready") captureState = advanceV3CriminalCycle(captureBase.context, captureState).state;
   captureState = resolveV3CriminalReport(captureBase.context, captureState, captureState.criminal.crime.organization.activeOrders[0].id, { outcome: "captured", detected: true });
   const captureDecision = captureState.criminal.crime.organization.pendingDecisions.find((entry) => entry.kind === "member_capture");
   assert.deepEqual(captureDecision.options.map((entry) => entry.id), ["recover", "abandon"]);
@@ -255,7 +257,8 @@ test("V3犯罪UIは既定入口へ接続し、V2は比較アーカイブとし�
   assert.match(app, /state = normalizeV3IntegratedState\(context, state\);/);
   assert.match(app, /commitV3Action/);
   assert.match(app, /commitStateAction\(createActionResult\(state, \{ elapsedMinutes: amount \* GAME_MINUTES_PER_MONTH \}\)/);
-  assert.match(app, /data-v3-criminal-cycle[\s\S]*skipSystemIds: \["criminal-organization"\]/);
+  assert.doesNotMatch(app, /skipSystemIds/);
+  assert.match(app, /data-v3-criminal-cycle[\s\S]*advanceV3CriminalCycle/);
   assert.match(app, /const cycleLabel = worldSimulation/);
   assert.match(styles, /\.v3-underworld/);
   assert.match(agents, /Generation V3/);

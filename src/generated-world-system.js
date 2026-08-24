@@ -58,7 +58,7 @@ import {
 export { approveGeneratedStrategicDecision } from "./generated-campaign-system.js";
 
 export const GENERATED_WORLD_DEFAULTS = Object.freeze({
-  version: 14,
+  version: 15,
   seed: "eldoria-317",
   width: 192,
   height: 120,
@@ -77,6 +77,7 @@ export const GENERATED_WORLD_DEFAULTS = Object.freeze({
   geopolitics: null,
   worldWars: null,
   tacticalOutcomes: [],
+  tacticalOutcomeReceipts: {},
   resistance: null,
   regionalDomains: null,
   barbarians: null,
@@ -134,6 +135,7 @@ function cloneGeneratedWorldState(value) {
     geopolitics: preserveGeopoliticalState(value.geopolitics),
     worldWars: preserveGeneratedWorldWarState(value.worldWars),
     tacticalOutcomes: structuredClone(value.tacticalOutcomes ?? []).slice(-96),
+    tacticalOutcomeReceipts: normalizeTacticalOutcomeReceipts(value.tacticalOutcomeReceipts, value.tacticalOutcomes),
     resistance: preserveGeneratedResistanceState(value.resistance),
     regionalDomains: preserveRegionalDomainState(value.regionalDomains),
     barbarians: preserveBarbarianState(value.barbarians),
@@ -144,6 +146,17 @@ function cloneGeneratedWorldState(value) {
     characters: structuredClone(value.characters ?? []),
     characterStates: structuredClone(value.characterStates ?? {}),
   };
+}
+
+function normalizeTacticalOutcomeReceipts(source, outcomes = []) {
+  const entries = source && typeof source === "object" && !Array.isArray(source)
+    ? Object.entries(source).filter(([battleId, period]) => battleId && typeof period === "string")
+    : [];
+  const receipts = Object.fromEntries(entries);
+  for (const outcome of Array.isArray(outcomes) ? outcomes : []) {
+    if (outcome?.battleId && !Object.hasOwn(receipts, outcome.battleId)) receipts[outcome.battleId] = String(outcome.period ?? "unknown");
+  }
+  return receipts;
 }
 
 function clampInteger(value, fallback, minimum, maximum) {
@@ -654,6 +667,7 @@ export function createGeneratedWorldState(options = {}, dateState = null) {
     tacticalOutcomes: Array.isArray(options.tacticalOutcomes)
       ? structuredClone(options.tacticalOutcomes).filter((entry) => entry?.battleId).slice(-96)
       : [],
+    tacticalOutcomeReceipts: normalizeTacticalOutcomeReceipts(options.tacticalOutcomeReceipts, options.tacticalOutcomes),
     resistance: preserveGeneratedResistanceState(options.resistance),
     regionalDomains: preserveRegionalDomainState(options.regionalDomains),
     barbarians: preserveBarbarianState(options.barbarians),

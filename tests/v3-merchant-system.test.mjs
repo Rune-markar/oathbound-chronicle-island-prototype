@@ -141,7 +141,7 @@ test("個人実績から商会を設立し、共和国の届出、人員、販�
   }), /白冠王国の営業資格/);
 
   state = openV3CompanyBranch(context, state, { formatId: "stall", launchId: "lean", managerId: view.branchManagers[0].id });
-  state = advanceV3CompanyMonth(context, state);
+  state = advanceV3CompanyMonth(context, state).state;
   assert.equal(state.merchant.company.branches[0].status, "open");
   assert.equal(state.merchant.company.monthlyLedger.length, 1);
   assert.ok(Number.isFinite(state.merchant.company.monthlyLedger[0].profit));
@@ -202,7 +202,9 @@ test("旧V3フィールドセーブへ交易・商会領域を加算し、V3画�
   state.merchant.company.status = "company";
   state.merchant.company.routes = [{ id: "stale-route", status: "active", approachId: "removed", leaderId: "missing", sourceId: "missing", destinationId: "missing", delayMonths: 0 }];
   state.merchant.company.branches = [{ id: "stale-branch", status: "preparing", formatId: "removed", launchId: "removed", managerId: "missing", preparationProgress: 0, preparationMonths: 1 }];
-  const advanced = advanceV3CompanyMonth(context, state);
+  const result = advanceV3CompanyMonth(context, state);
+  const advanced = result.state;
+  assert.deepEqual(result.advancedSystemIds, ["merchant-company"]);
   assert.equal(advanced.merchant.company.routes[0].status, "paused");
   assert.equal(advanced.merchant.company.branches[0].status, "suspended");
 });

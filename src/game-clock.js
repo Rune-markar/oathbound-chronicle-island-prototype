@@ -55,6 +55,19 @@ export function formatGameClock(source) {
   return `${calendar.year}年${calendar.month}月${calendar.day}日 ${String(calendar.hour).padStart(2, "0")}:${String(calendar.minute).padStart(2, "0")}`;
 }
 
+export function gameClockAtPeriod(source, period) {
+  const clock = normalizeGameClock(source);
+  const match = /^(\d+)-(\d{1,2})$/.exec(String(period ?? ""));
+  if (!match) return clock;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > GAME_MONTHS_PER_YEAR) return clock;
+  const epochIndex = clock.epochYear * GAME_MONTHS_PER_YEAR + clock.epochMonth - 1;
+  const targetIndex = year * GAME_MONTHS_PER_YEAR + month - 1;
+  if (targetIndex < epochIndex) return clock;
+  return { ...clock, elapsedMinutes: (targetIndex - epochIndex) * GAME_MINUTES_PER_MONTH };
+}
+
 export function advanceGameClock(source, elapsedMinutes) {
   const clock = normalizeGameClock(source);
   const amount = wholeNumber(elapsedMinutes, 0);

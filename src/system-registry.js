@@ -6,9 +6,29 @@ export function createSystemRegistry(modules = []) {
   for (const module of modules) {
     if (!module?.id || !Number.isInteger(module.version) || module.version < 1) throw new TypeError("システム登録にはidと正のversionが必要です。");
     if (byId.has(module.id)) throw new Error(`システムIDが重複しています: ${module.id}`);
-    byId.set(module.id, Object.freeze({ ...module }));
+    const dependsOn = [...new Set((module.dependsOn ?? []).filter((value) => typeof value === "string" && value))];
+    if (dependsOn.includes(module.id)) throw new Error(`システムは自分自身へ依存できません: ${module.id}`);
+    byId.set(module.id, Object.freeze({ ...module, dependsOn: Object.freeze(dependsOn) }));
   }
-  const ordered = Object.freeze([...byId.values()]);
+  for (const module of byId.values()) {
+    for (const dependencyId of module.dependsOn) {
+      if (!byId.has(dependencyId)) throw new Error(`システム ${module.id} の依存先が登録されていません: ${dependencyId}`);
+    }
+  }
+  const ordered = [];
+  const visiting = new Set();
+  const visited = new Set();
+  function visit(module) {
+    if (visited.has(module.id)) return;
+    if (visiting.has(module.id)) throw new Error(`システム依存に循環があります: ${module.id}`);
+    visiting.add(module.id);
+    module.dependsOn.forEach((dependencyId) => visit(byId.get(dependencyId)));
+    visiting.delete(module.id);
+    visited.add(module.id);
+    ordered.push(module);
+  }
+  byId.forEach(visit);
+  Object.freeze(ordered);
   return Object.freeze({
     modules: ordered,
     get: (id) => byId.get(id) ?? null,

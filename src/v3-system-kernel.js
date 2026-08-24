@@ -2,6 +2,7 @@ import { createActionResult, normalizeActionResult } from "./action-result.js";
 import { appendDomainEvents, normalizeDomainEventLog } from "./domain-events.js";
 import {
   advanceGameClock,
+  gameClockAtPeriod,
   getGameCalendar,
   normalizeStateGameClock,
   setStateGameClock,
@@ -97,6 +98,7 @@ export const V3_SYSTEM_REGISTRY = createSystemRegistry([
   {
     id: "military",
     version: V3_MILITARY_VERSION,
+    dependsOn: ["clock"],
     normalize: (_context, state) => normalizeV3MilitaryState(state),
     getOperations: (_context, state) => state.military?.activeMission ? [{
       id: state.military.activeMission.id,
@@ -116,6 +118,7 @@ export const V3_SYSTEM_REGISTRY = createSystemRegistry([
   {
     id: "merchant-company",
     version: V3_MERCHANT_VERSION,
+    dependsOn: ["clock"],
     normalize: (_context, state) => normalizeV3MerchantState(state),
     onMonth: (context, state, transition) => {
       const hadCompany = state.merchant?.company?.status === "company";
@@ -133,6 +136,7 @@ export const V3_SYSTEM_REGISTRY = createSystemRegistry([
   {
     id: "criminal-organization",
     version: V3_CRIMINAL_VERSION,
+    dependsOn: ["clock"],
     normalize: (context, state) => normalizeV3CriminalState(context, state),
     onMonth: (context, state, transition) => createActionResult(
       advanceV3CriminalMonthOnTick(context, state),
@@ -172,11 +176,13 @@ function generatedWorldEvents(simulation) {
 }
 
 function asDomainWorldEvent(entry, clock) {
+  const eventClock = gameClockAtPeriod(clock, entry.period);
   return {
     id: `world:${entry.id}`,
     type: entry.type ? `world.${entry.type}` : "world.event",
     source: "world-simulation",
-    clock,
+    clock: eventClock,
+    period: typeof entry.period === "string" ? entry.period : undefined,
     visibility: "public",
     summary: entry.summary ?? entry.title,
     actorIds: [entry.nationId, entry.actorId].filter(Boolean),
@@ -187,6 +193,7 @@ function asDomainWorldEvent(entry, clock) {
       title: entry.title ?? null,
       tone: entry.tone ?? null,
       targetNationId: entry.targetNationId ?? null,
+      worldPeriod: entry.period ?? null,
     },
   };
 }
@@ -203,7 +210,7 @@ export function commitV3Action(runtime, context, previousState, worldSimulation,
   }
   if (currentMinutes < previousMinutes) throw new RangeError("V3統合時計を巻き戻す行動は確定できません。");
   const clockTransition = advanceGameClock(previous.clock, currentMinutes - previousMinutes);
-  const skipped = new Set(options.skipSystemIds ?? []);
+  const skipped = new Set(result.advancedSystemIds ?? []);
   const events = [...result.events];
   for (const calendar of clockTransition.crossedMonths) {
     state = setStateGameClock(state, { ...state.clock, elapsedMinutes: calendar.monthIndex * 30 * 24 * 60 });
@@ -212,7 +219,12 @@ export function commitV3Action(runtime, context, previousState, worldSimulation,
       skipSystemIds: skipped,
     });
     state = monthly.state;
-    events.push(...monthly.events);
+    const boundaryClock = state.clock;
+    events.push(...monthly.events.map((event) => ({
+      ...event,
+      clock: event.clock ?? boundaryClock,
+      period: event.period ?? `${calendar.year}-${calendar.month}`,
+    })));
   }
   state = setStateGameClock(state, clockTransition.clock);
   const knownWorldEventIds = new Set(generatedWorldEvents(worldSimulation).map((entry) => entry.id));
@@ -243,6 +255,7 @@ export function commitV3Action(runtime, context, previousState, worldSimulation,
       events,
       operation: result.operation,
       message: result.message,
+      advancedSystemIds: result.advancedSystemIds,
     }),
     worldSimulation: nextWorldSimulation,
     crossedMonths: clockTransition.crossedMonths,

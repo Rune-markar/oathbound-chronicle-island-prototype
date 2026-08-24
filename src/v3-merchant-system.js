@@ -28,6 +28,7 @@ import {
   secureCompanyTradeRoute,
   startCompanyCharterApplication,
 } from "./merchant-company-system.js";
+import { createActionResult } from "./action-result.js";
 import { advanceStateGameClock, getGameCalendar, normalizeStateGameClock } from "./game-clock.js";
 import { getV3DetailedTile } from "./v3-field-system.js";
 
@@ -262,7 +263,22 @@ export function advanceV3CompanyMonth(context, state) {
   const normalized = prepared(state);
   if (normalized.merchant.company.status !== "company") throw new Error("商会がありません");
   const timed = advanceStateGameClock(normalized, 30 * 24 * 60).state;
-  return advanceV3CompanyMonthOnTick(context, timed);
+  const next = advanceV3CompanyMonthOnTick(context, timed);
+  const calendar = getGameCalendar(next.clock);
+  return createActionResult(next, {
+    elapsedMinutes: 30 * 24 * 60,
+    advancedSystemIds: ["merchant-company"],
+    events: [{
+      id: `merchant-company:month:${calendar.absoluteMonthIndex}`,
+      type: "merchant.month.closed",
+      source: "merchant-company",
+      visibility: "private",
+      summary: `${calendar.year}年${calendar.month}月の商会決算を確定`,
+      clock: next.clock,
+      period: `${calendar.year}-${calendar.month}`,
+    }],
+    message: next.messageLog?.[0] ?? null,
+  });
 }
 
 export function getV3MerchantView(context, state) {

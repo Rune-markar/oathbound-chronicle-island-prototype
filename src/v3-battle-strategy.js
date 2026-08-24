@@ -50,9 +50,14 @@ function updateForce(forceSource, casualties, moraleDelta) {
 
 export function applyV3BattleResultToWorldSimulation(runtime, source, mission, result) {
   if (!source || !mission || !result?.battleId) return { worldSimulation: source, applied: false, event: null };
+  if (!["player", "enemy", "draw"].includes(result.winner)) throw new TypeError(`戦術結果の勝者が不正です: ${result.winner}`);
+  const receipts = source.generatedWorld?.tacticalOutcomeReceipts ?? {};
+  const recordedOutcomes = source.generatedWorld?.tacticalOutcomes ?? [];
+  if (Object.hasOwn(receipts, result.battleId) || recordedOutcomes.some((entry) => entry.battleId === result.battleId)) {
+    return { worldSimulation: source, applied: false, event: null };
+  }
   const next = clone(source);
   const outcomes = next.generatedWorld.tacticalOutcomes ?? [];
-  if (outcomes.some((entry) => entry.battleId === result.battleId)) return { worldSimulation: source, applied: false, event: null };
   const strategic = mission.strategic
     ?? bindV3BattleToStrategicWar(next, mission.playerNation?.id, mission.target?.regionId);
   const victory = result.winner === "player";
@@ -73,6 +78,10 @@ export function applyV3BattleResultToWorldSimulation(runtime, source, mission, r
     enemyCasualties: Math.max(0, Math.round(Number(result.enemy?.casualties) || 0)),
   };
   next.generatedWorld.tacticalOutcomes = [...outcomes, outcome].slice(-96);
+  next.generatedWorld.tacticalOutcomeReceipts = {
+    ...(next.generatedWorld.tacticalOutcomeReceipts ?? {}),
+    [result.battleId]: outcome.period,
+  };
   if (!strategic) return { worldSimulation: next, applied: true, event: outcome };
   const worldWars = next.generatedWorld.worldWars;
   const war = worldWars?.activeWars?.find((entry) => entry.id === strategic.warId);
@@ -83,8 +92,9 @@ export function applyV3BattleResultToWorldSimulation(runtime, source, mission, r
   const enemyForce = updateForce(war[strategic.enemySide], outcome.enemyCasualties, enemyMorale);
   war[strategic.playerSide] = playerForce.force;
   war[strategic.enemySide] = enemyForce.force;
-  const frontIndex = Math.max(0, (war.fronts ?? []).findIndex((entry) => entry.id === strategic.frontId));
-  if (war.fronts?.length) {
+  const frontIndex = (war.fronts ?? []).findIndex((entry) => entry.id === strategic.frontId);
+  const frontApplied = frontIndex >= 0;
+  if (frontApplied) {
     const front = normalizeGeneratedWarFront(war.fronts[frontIndex], frontIndex);
     const attackerWon = strategic.playerSide === "attacker" ? victory : !victory && !draw;
     const defenderWon = strategic.playerSide === "defender" ? victory : !victory && !draw;
@@ -100,7 +110,7 @@ export function applyV3BattleResultToWorldSimulation(runtime, source, mission, r
   war.playerCommanded = true;
   const playerName = runtime?.nationById?.get(outcome.playerNationId)?.name ?? mission.playerNation?.name ?? "友軍";
   const enemyName = runtime?.nationById?.get(outcome.enemyNationId)?.name ?? mission.enemyNation?.name ?? "敵軍";
-  const summary = `${playerName}の現地軍が${enemyName}と交戦し${victory ? "勝利" : draw ? "引き分け" : "敗北"}。味方損失${playerForce.appliedCasualties}、敵損失${enemyForce.appliedCasualties}を戦争戦力と前線へ反映した。`;
+  const summary = `${playerName}の現地軍が${enemyName}と交戦し${victory ? "勝利" : draw ? "引き分け" : "敗北"}。味方損失${playerForce.appliedCasualties}、敵損失${enemyForce.appliedCasualties}を戦争戦力${frontApplied ? "と前線" : ""}へ反映した${frontApplied ? "" : "。旧正面は失効していたため前線進捗は変更していない"}。`;
   const warEvent = {
     id: `${war.id}:${outcome.period}:tactical:${result.battleId}`,
     worldWarId: war.id,
@@ -118,6 +128,7 @@ export function applyV3BattleResultToWorldSimulation(runtime, source, mission, r
     ],
     battleId: result.battleId,
     frontId: strategic.frontId,
+    frontApplied,
   };
   worldWars.events = [...(worldWars.events ?? []).filter((entry) => entry.id !== warEvent.id), warEvent].slice(-192);
   war.log = [...(war.log ?? []), { id: warEvent.id, period: outcome.period, phase: "tactical", summary }].slice(-24);

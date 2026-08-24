@@ -18,6 +18,7 @@ import {
   resolveCriminalOrganizationDecision,
   withdrawCriminalOrganizationFunds,
 } from "./criminal-organization-system.js";
+import { createActionResult } from "./action-result.js";
 import { getV3DetailedTile } from "./v3-field-system.js";
 import { advanceStateGameClock, getGameCalendar, normalizeStateGameClock } from "./game-clock.js";
 import { fnv1aCodePoints, unitFromHash } from "./determinism.js";
@@ -400,7 +401,22 @@ export function issueV3CriminalOperation(context, state, input = {}) {
 
 export function advanceV3CriminalCycle(context, state) {
   const next = advanceStateGameClock(prepared(context, state), V3_CRIMINAL_CYCLE_MINUTES).state;
-  return advanceV3CriminalMonthOnTick(context, next, true);
+  const advanced = advanceV3CriminalMonthOnTick(context, next, true);
+  const calendar = getGameCalendar(advanced.clock);
+  return createActionResult(advanced, {
+    elapsedMinutes: V3_CRIMINAL_CYCLE_MINUTES,
+    advancedSystemIds: ["criminal-organization"],
+    events: [{
+      id: `criminal-organization:month:${calendar.absoluteMonthIndex}`,
+      type: "criminal.month.advanced",
+      source: "criminal-organization",
+      visibility: "private",
+      summary: `${calendar.year}年${calendar.month}月の地下活動を進行`,
+      clock: advanced.clock,
+      period: `${calendar.year}-${calendar.month}`,
+    }],
+    message: advanced.messageLog?.[0] ?? null,
+  });
 }
 
 export function advanceV3CriminalMonthOnTick(context, state, withMessage = false) {

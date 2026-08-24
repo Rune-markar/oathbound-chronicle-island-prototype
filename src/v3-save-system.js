@@ -11,6 +11,35 @@ import { V3_WORLD_SIMULATION_VERSION, V3_PRESENT_DATE } from "./v3-world-simulat
 
 export const V3_SAVE_VERSION = 4;
 
+function currentModule(id, version) {
+  return { id, version, legacyVersion: version };
+}
+
+function tacticalOutcomeReceipts(generatedWorld = {}) {
+  const receipts = generatedWorld.tacticalOutcomeReceipts && typeof generatedWorld.tacticalOutcomeReceipts === "object"
+    ? { ...generatedWorld.tacticalOutcomeReceipts }
+    : {};
+  for (const outcome of generatedWorld.tacticalOutcomes ?? []) {
+    if (outcome?.battleId && !Object.hasOwn(receipts, outcome.battleId)) receipts[outcome.battleId] = String(outcome.period ?? "unknown");
+  }
+  return receipts;
+}
+
+function migrateWorldSimulationV1ToV2(raw) {
+  if (!raw.worldSimulation || typeof raw.worldSimulation !== "object") return raw;
+  return {
+    ...raw,
+    worldSimulation: {
+      ...raw.worldSimulation,
+      version: 2,
+      generatedWorld: {
+        ...(raw.worldSimulation.generatedWorld ?? {}),
+        tacticalOutcomeReceipts: tacticalOutcomeReceipts(raw.worldSimulation.generatedWorld),
+      },
+    },
+  };
+}
+
 function worldMonthIndex(simulation) {
   const year = Number(simulation?.year);
   const month = Number(simulation?.month);
@@ -34,11 +63,16 @@ function migrateLegacyClock(field, worldSimulation) {
 export const V3_SAVE_REGISTRY = createSaveRegistry({
   version: V3_SAVE_VERSION,
   modules: [
-    { id: "field", version: V3_FIELD_VERSION },
-    { id: "world-simulation", version: V3_WORLD_SIMULATION_VERSION },
-    { id: "system-kernel", version: V3_SYSTEM_KERNEL_VERSION },
-    ...V3_SYSTEM_REGISTRY.modules.map(({ id, version }) => ({ id, version })),
-    { id: "domain-events", version: 1 },
+    currentModule("field", V3_FIELD_VERSION),
+    {
+      id: "world-simulation",
+      version: V3_WORLD_SIMULATION_VERSION,
+      legacyVersion: (raw) => Number(raw.worldSimulation?.version) || 1,
+      migrations: { 1: migrateWorldSimulationV1ToV2 },
+    },
+    currentModule("system-kernel", V3_SYSTEM_KERNEL_VERSION),
+    ...V3_SYSTEM_REGISTRY.modules.map(({ id, version }) => currentModule(id, version)),
+    currentModule("domain-events", 1),
   ],
   migrate(raw) {
     if (![3, V3_SAVE_VERSION].includes(raw?.version) || !raw.world?.seed || !raw.field) return null;

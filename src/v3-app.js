@@ -65,7 +65,7 @@ import {
   normalizeV3WorldSimulation,
   V3_PREHISTORY_MONTHS,
 } from "./v3-world-simulation.js";
-import { createActionResult } from "./action-result.js";
+import { createActionResult, isActionResult } from "./action-result.js";
 import { GAME_MINUTES_PER_MONTH, getGameCalendar } from "./game-clock.js";
 import { commitV3Action, getV3Operations, normalizeV3IntegratedState, V3_SYSTEM_REGISTRY } from "./v3-system-kernel.js";
 import { readV3Save, V3_SAVE_VERSION, writeV3Save } from "./v3-save-system.js";
@@ -186,7 +186,10 @@ function saveGame() {
 }
 
 function commitStateAction(action, options = {}) {
-  const committed = commitV3Action(runtime, context, state, worldSimulation, action, options);
+  const result = isActionResult(action)
+    ? { ...action, events: [...action.events, ...(options.event ? [options.event] : [])] }
+    : createActionResult(action, { events: options.event ? [options.event] : [] });
+  const committed = commitV3Action(runtime, context, state, worldSimulation, result, { source: options.source });
   state = committed.state;
   worldSimulation = committed.worldSimulation;
   return committed;
@@ -936,10 +939,10 @@ function handleAction(action) {
 
 function applyUnderworldAction(action, options = {}) {
   try {
-    commitStateAction(action(), {
+    const result = action();
+    commitStateAction(result, {
       source: "criminal",
-      event: options.event ?? actionEvent("criminal.action.completed", "criminal", "地下活動を実行"),
-      skipSystemIds: options.skipSystemIds,
+      event: options.event ?? (isActionResult(result) ? null : actionEvent("criminal.action.completed", "criminal", "地下活動を実行")),
     });
     saveGame();
     renderGame();
@@ -1077,7 +1080,7 @@ document.addEventListener("click", (event) => {
     return;
   }
   if (event.target.closest("[data-v3-company-month]")) {
-    try { commitStateAction(advanceV3CompanyMonth(context, state), { source: "merchant-company", skipSystemIds: ["merchant-company"], event: actionEvent("merchant.month.closed", "merchant-company", "商会月次決算を実行") }); saveGame(); renderGame(); }
+    try { commitStateAction(advanceV3CompanyMonth(context, state), { source: "merchant-company" }); saveGame(); renderGame(); }
     catch (error) { showToast(error.message); }
     return;
   }
@@ -1110,10 +1113,6 @@ document.addEventListener("click", (event) => {
   if (event.target.closest("[data-v3-criminal-distribute]")) return applyUnderworldAction(() => distributeV3CriminalProfits(context, state));
   if (event.target.closest("[data-v3-criminal-cycle]")) return applyUnderworldAction(
     () => advanceV3CriminalCycle(context, state),
-    {
-      skipSystemIds: ["criminal-organization"],
-      event: actionEvent("criminal.month.advanced", "criminal-organization", "一か月潜伏し作戦を進行"),
-    },
   );
   const report = event.target.closest("[data-v3-criminal-report]")?.dataset.v3CriminalReport;
   if (report) return applyUnderworldAction(() => resolveV3CriminalReport(context, state, report));
