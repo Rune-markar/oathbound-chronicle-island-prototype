@@ -15,6 +15,25 @@ import {
   normalizeV3FieldState,
   resolveV3Encounter,
 } from "../src/v3-field-system.js";
+import {
+  V3_GROUP_BATTLE_BRIDGE_KEY,
+  advanceV3MilitaryArrival,
+  applyV3GroupBattleReturn,
+  cancelV3GroupBattleBridge,
+  completeV3GroupBattleBridge,
+  createV3GroupBattleHandoff,
+  getV3MilitaryView,
+  readV3GroupBattleBridge,
+  startV3MilitaryMission,
+  writeV3GroupBattleBridge,
+} from "../src/v3-group-combat.js";
+import {
+  createBattlePreparation,
+  finalizeBattlePreparation,
+  setBattleLogisticsPlan,
+} from "../src/battle-preparation.js";
+import { createBattleResult } from "../src/battle-results.js";
+import { executeBattleTurn } from "../src/tactical-battle.js";
 
 function fixtureRuntime() {
   const width = 8;
@@ -46,6 +65,15 @@ function fixtureRuntime() {
     nations: { nations: [nation], regions: [region], objects: [settlement], roads: [{ id: "road-1", tileIndices: [19, 27, 35] }] },
     nationById: new Map([[nation.id, nation]]),
     regionById: new Map([[region.id, region]]),
+  };
+}
+
+function memoryStorage() {
+  const values = new Map();
+  return {
+    getItem(key) { return values.has(key) ? values.get(key) : null; },
+    setItem(key, value) { values.set(key, String(value)); },
+    removeItem(key) { values.delete(key); },
   };
 }
 
@@ -98,6 +126,99 @@ test("個人戦は現在のフィールド、集団戦は従来の専用戦闘�
   assert.equal(group.usesPreparation, true);
   assert.equal(group.usesLogistics, true);
   assert.equal(group.usesDedicatedResult, true);
+});
+
+test("集落で受けたV3軍務は1マス移動で作戦地点へ到達して集団戦になる", () => {
+  const context = createV3WorldContext(fixtureRuntime(), "v3-group-mission");
+  const initial = createV3FieldState(context, { playerName: "指揮者" });
+  const available = getV3MilitaryView(context, initial);
+  assert.equal(available.canAccept, true);
+  const accepted = startV3MilitaryMission(context, initial);
+  assert.equal(advanceV3MilitaryArrival(context, accepted, accepted), accepted);
+  const mission = accepted.military.activeMission;
+  assert.equal(mission.combatScale, "group-units");
+  assert.ok(mission.target.x !== initial.player.x || mission.target.y !== initial.player.y);
+
+  const approaches = [
+    { name: "north", dx: 0, dy: -1 },
+    { name: "east", dx: 1, dy: 0 },
+    { name: "south", dx: 0, dy: 1 },
+    { name: "west", dx: -1, dy: 0 },
+  ];
+  let arrival = null;
+  for (const approach of approaches) {
+    const sourceX = ((mission.target.x - approach.dx) % context.width + context.width) % context.width;
+    const sourceY = mission.target.y - approach.dy;
+    if (sourceY < 0 || sourceY >= context.height || !getV3DetailedTile(context, sourceX, sourceY).passable) continue;
+    const before = { ...accepted, player: { ...accepted.player, x: sourceX, y: sourceY }, pendingEncounter: null };
+    const moved = moveV3Player(context, before, approach.name);
+    if (moved.player.x !== mission.target.x || moved.player.y !== mission.target.y) continue;
+    arrival = advanceV3MilitaryArrival(context, before, moved);
+    break;
+  }
+  assert.ok(arrival);
+  assert.equal(arrival.pendingEncounter.type, "group-battle");
+  assert.equal(arrival.pendingEncounter.combatScale, "group-units");
+  assert.equal(arrival.military.activeMission.status, "battle-ready");
+});
+
+test("V3集団戦は既存の編成・兵站・20×14戦術盤・リザルトを往復する", () => {
+  const context = createV3WorldContext(fixtureRuntime(), "v3-group-handoff");
+  let state = startV3MilitaryMission(context, createV3FieldState(context, { playerName: "指揮者" }));
+  const target = state.military.activeMission.target;
+  state = {
+    ...state,
+    player: { ...state.player, x: target.x, y: target.y },
+    military: { ...state.military, activeMission: { ...state.military.activeMission, status: "battle-ready" } },
+    pendingEncounter: { type: "group-battle", combatScale: "group-units", missionId: state.military.activeMission.id },
+  };
+  const handoff = createV3GroupBattleHandoff(context, state);
+  assert.equal(handoff.request.battle.combatScale, "group-units");
+  assert.equal(handoff.request.battle.map.width, 20);
+  assert.equal(handoff.request.battle.map.height, 14);
+  assert.equal(handoff.request.roster.length, 3);
+
+  let preparation = createBattlePreparation({
+    battle: handoff.request.battle,
+    roster: handoff.request.roster,
+    defaultParticipantIds: handoff.request.defaultParticipantIds,
+  });
+  preparation = setBattleLogisticsPlan(preparation, "extended");
+  let battle = finalizeBattlePreparation(preparation);
+  assert.equal(battle.preparation.logisticsPlanId, "extended");
+  assert.equal(battle.preparation.participantIds.length, 3);
+  for (let turn = 0; turn < 100 && !battle.winner; turn += 1) battle = executeBattleTurn(battle);
+  assert.ok(battle.winner, "既存戦術エンジンで決着する");
+  const result = createBattleResult(battle);
+
+  const storage = memoryStorage();
+  writeV3GroupBattleBridge(storage, handoff.request);
+  assert.equal(readV3GroupBattleBridge(storage).requestId, handoff.request.requestId);
+  const completed = completeV3GroupBattleBridge(storage, handoff.request.requestId, result);
+  const returned = applyV3GroupBattleReturn(handoff.state, completed);
+  assert.equal(returned.military.activeMission, null);
+  assert.equal(returned.military.history[0].battleId, result.battleId);
+  assert.ok(returned.military.merit > 0);
+  assert.equal(returned.pendingEncounter, null);
+});
+
+test("V3集団戦の戦闘前編成を中止すると作戦地点から再開できる", () => {
+  const context = createV3WorldContext(fixtureRuntime(), "v3-group-cancel");
+  let state = startV3MilitaryMission(context, createV3FieldState(context));
+  const target = state.military.activeMission.target;
+  state = {
+    ...state,
+    player: { ...state.player, x: target.x, y: target.y },
+    military: { ...state.military, activeMission: { ...state.military.activeMission, status: "battle-ready" } },
+  };
+  const handoff = createV3GroupBattleHandoff(context, state);
+  const storage = memoryStorage();
+  writeV3GroupBattleBridge(storage, handoff.request);
+  const cancelled = cancelV3GroupBattleBridge(storage, handoff.request.requestId);
+  const returned = applyV3GroupBattleReturn(handoff.state, cancelled);
+  assert.equal(returned.military.activeMission.status, "battle-ready");
+  assert.equal(returned.pendingEncounter.type, "group-battle");
+  assert.equal(storage.getItem(V3_GROUP_BATTLE_BRIDGE_KEY) !== null, true);
 });
 
 test("村の周辺には村人・冒険者・商人、野外には敵とアイテムが決定論的に現れる", () => {
@@ -208,24 +329,36 @@ test("個人戦の退避は失敗時の被害を保ちつつ、再試行ごと�
   assert.ok(attempts > 1 && attempts < 12);
 });
 
-test("既定入口はV3フィールドで、個人戦はフィールド内、旧版の集団戦画面は保持する", async () => {
-  const [index, legacy, app, styles] = await Promise.all([
+test("既定入口はV3フィールドで、個人戦はフィールド内、集団戦は旧版専用画面へ接続する", async () => {
+  const [index, legacy, app, legacyApp, styles, legacyStyles] = await Promise.all([
     readFile(new URL("../index.html", import.meta.url), "utf8"),
     readFile(new URL("../legacy-v2.html", import.meta.url), "utf8"),
     readFile(new URL("../src/v3-app.js", import.meta.url), "utf8"),
+    readFile(new URL("../src/app.js", import.meta.url), "utf8"),
     readFile(new URL("../v3.css", import.meta.url), "utf8"),
+    readFile(new URL("../styles.css", import.meta.url), "utf8"),
   ]);
   assert.match(index, /GENERATION V3/);
   assert.match(index, /id="v3Field"/);
   assert.match(index, /id="v3WorldCanvas"/);
   assert.match(index, /id="v3PersonalBattleStatus"/);
   assert.match(index, /id="v3PersonalBattleCommands"/);
+  assert.match(index, /id="v3MilitaryButton"/);
   assert.match(app, /encounter\?\.type === "enemy"/);
   assert.match(app, /encounterModal\.hidden = !encounter \|\| Boolean\(personalEnemy\)/);
+  assert.match(app, /createV3GroupBattleHandoff/);
+  assert.match(app, /legacy-v2\.html/);
   assert.match(styles, /\.v3-game\.is-personal-battle \.v3-field-shell/);
   assert.match(index, /legacy-v2\.html/);
   assert.match(legacy, /src\/app\.js/);
   assert.match(legacy, /id="battlePreparationScreen"/);
   assert.match(legacy, /id="tacticalBattleScreen"/);
   assert.match(legacy, /id="tacticalResultScreen"/);
+  assert.match(legacyApp, /requestedV3GroupBattleBridge/);
+  assert.match(legacyApp, /completeV3GroupBattleBridge/);
+  assert.match(legacyApp, /V3フィールドへ戦果を戻す/);
+  assert.match(legacyApp, /V3作戦勝利/);
+  assert.match(legacyStyles, /\.battle-preparation-footer > button \{[^}]*min-height: 44px/);
+  assert.match(legacyStyles, /\.battle-preparation-header > div:last-child button \{[^}]*min-height: 44px/);
+  assert.match(legacyStyles, /\.tactical-result-actions button \{[^}]*min-height: 44px/);
 });

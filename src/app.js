@@ -429,6 +429,11 @@ import {
   GODDESS_NAME,
   registerGoddessPersistentTap,
 } from "./goddess-prologue.js";
+import {
+  cancelV3GroupBattleBridge,
+  completeV3GroupBattleBridge,
+  readV3GroupBattleBridge,
+} from "./v3-group-combat.js";
 
 const STORAGE_KEY = "oathbound-career-chronicle-v10";
 const LEGACY_STORAGE_KEYS = ["oathbound-continental-grand-strategy-v9", "oathbound-continental-grand-strategy-v8", "oathbound-continental-grand-strategy-v7", "oathbound-continental-grand-strategy-v6"];
@@ -532,6 +537,7 @@ let generatedMapRenderCache = { state: null, signature: null };
 let generatedMapVisualCache = { key: null, url: null, entries: new Map() };
 let tacticalEffectTimer = null;
 let tacticalEffectsPlaying = false;
+let activeV3GroupBattleBridge = null;
 let adventureAdvanceTimer = null;
 let goddessSequenceToken = 0;
 let equipmentOfferTimer = null;
@@ -7205,6 +7211,16 @@ function battlePreparationDefaults(roster) {
 }
 
 function tacticalOriginLabels() {
+  if (view.tacticalOrigin?.type === "v3-group-combat") {
+    const sideLabels = view.tacticalBattle?.sideLabels ?? view.battlePreparation?.battle?.sideLabels ?? {};
+    return {
+      player: view.tacticalOrigin.playerLabel ?? sideLabels.player ?? "V3現地軍",
+      enemy: view.tacticalOrigin.enemyLabel ?? sideLabels.enemy ?? "侵入軍",
+      playerVictory: `${view.tacticalOrigin.playerLabel ?? sideLabels.player ?? "現地軍"}勝利`,
+      enemyVictory: `${view.tacticalOrigin.enemyLabel ?? sideLabels.enemy ?? "侵入軍"}勝利`,
+      exit: "V3フィールドへ戦果を戻す",
+    };
+  }
   if (view.tacticalOrigin?.type === "military-career") {
     const sideLabels = view.tacticalBattle?.sideLabels ?? view.battlePreparation?.battle?.sideLabels ?? {};
     const player = sideLabels.player ?? "主君軍";
@@ -7307,16 +7323,21 @@ function renderBattlePreparation() {
   elements.battlePreparationScreen.classList.toggle("is-hidden", !preparation);
   if (!preparation) return;
   const dungeonBattle = view.tacticalOrigin?.type === "dungeon";
+  const v3GroupBattle = view.tacticalOrigin?.type === "v3-group-combat";
   const summary = getBattlePreparationSummary(preparation);
   const selectedIds = new Set(preparation.selectedCharacterIds);
   elements.battlePreparationTitle.textContent = `${preparation.battle.name}・戦闘前編成`;
-  elements.battlePreparationIntro.textContent = dungeonBattle
-    ? "探索隊から参陣者を選び、既存の陣形・初期配置・兵站計画で遭遇戦へ入ります。"
-    : "参陣人物、陣形、初期配置、兵站計画を確定してください。";
-  elements.battleParticipantIntro.textContent = dungeonBattle
-    ? "主人公と酒場で編成した仲間から最大3名を選択。正式な戦術戦闘の指揮官として各班を受け持ちます。"
-    : "軍団長・副将・軍師として最大3名を選択。参加者は戦場上の指揮官となり、配下部隊を分担します。";
-  elements.battlePreparationExit.textContent = dungeonBattle ? "遭遇地点へ戻る" : "開発メニューへ戻る";
+  elements.battlePreparationIntro.textContent = v3GroupBattle
+    ? "V3の作戦地点から到着しました。参陣人物、陣形、初期配置、兵站計画を確定してください。"
+    : dungeonBattle
+      ? "探索隊から参陣者を選び、既存の陣形・初期配置・兵站計画で遭遇戦へ入ります。"
+      : "参陣人物、陣形、初期配置、兵站計画を確定してください。";
+  elements.battleParticipantIntro.textContent = v3GroupBattle
+    ? "V3の主人公と現地軍将校から最大3名を選択。各人物が配下部隊の指揮官になります。"
+    : dungeonBattle
+      ? "主人公と酒場で編成した仲間から最大3名を選択。正式な戦術戦闘の指揮官として各班を受け持ちます。"
+      : "軍団長・副将・軍師として最大3名を選択。参加者は戦場上の指揮官となり、配下部隊を分担します。";
+  elements.battlePreparationExit.textContent = v3GroupBattle ? "V3作戦地点へ戻る" : dungeonBattle ? "遭遇地点へ戻る" : "開発メニューへ戻る";
   elements.battlePreparationSkip.hidden = !dungeonBattle;
   elements.battleParticipantCount.textContent = `${selectedIds.size} / 3`;
   elements.battleParticipantList.innerHTML = preparation.roster.map((participant) => {
@@ -7385,6 +7406,41 @@ function openTacticalBattle({ battle = createSampleBattle(), roster = null, defa
   render();
 }
 
+function requestedV3GroupBattleBridge() {
+  const requestId = new URLSearchParams(window.location.search).get("v3-group-battle");
+  const bridge = readV3GroupBattleBridge(localStorage);
+  return requestId && bridge?.status === "pending" && bridge.requestId === requestId ? bridge : null;
+}
+
+function openV3GroupBattleBridge(bridge = activeV3GroupBattleBridge) {
+  if (!bridge || bridge.status !== "pending") throw new Error("V3から引き渡された集団戦がありません。");
+  activeV3GroupBattleBridge = bridge;
+  openTacticalBattle({
+    battle: structuredClone(bridge.battle),
+    roster: structuredClone(bridge.roster),
+    defaultParticipantIds: [...(bridge.defaultParticipantIds ?? bridge.roster.map((entry) => entry.id))],
+    origin: { ...structuredClone(bridge.origin), type: "v3-group-combat", requestId: bridge.requestId, missionId: bridge.missionId },
+  });
+}
+
+function safeV3ReturnUrl(origin) {
+  const fallback = new URL("./index.html", window.location.href);
+  try {
+    const requested = new URL(origin?.returnUrl ?? fallback.href, window.location.href);
+    return requested.origin === window.location.origin ? requested.href : fallback.href;
+  } catch {
+    return fallback.href;
+  }
+}
+
+function returnV3GroupBattleToField({ result = null } = {}) {
+  const bridge = activeV3GroupBattleBridge;
+  if (!bridge || view.tacticalOrigin?.type !== "v3-group-combat") throw new Error("V3集団戦の帰還情報がありません。");
+  if (result) completeV3GroupBattleBridge(localStorage, bridge.requestId, result);
+  else cancelV3GroupBattleBridge(localStorage, bridge.requestId);
+  window.location.assign(safeV3ReturnUrl(view.tacticalOrigin));
+}
+
 function openDungeonTacticalBattle() {
   const run = state.adventure?.activeRun;
   if (!run || run.phase !== "battle" || !run.combat) throw new Error("戦術戦闘を開始できる遭遇がありません。");
@@ -7436,7 +7492,9 @@ function prepareTacticalResult({ open = true } = {}) {
   if (!battle?.winner) return;
   view.tacticalResult = createBattleResult(battle);
   view.tacticalResult.autoResolved = Boolean(view.tacticalOrigin?.autoResolved);
-  if (view.tacticalOrigin?.type === "personal-map") {
+  if (view.tacticalOrigin?.type === "v3-group-combat") {
+    view.tacticalResult.title = view.tacticalResult.winner === "player" ? "V3作戦勝利" : view.tacticalResult.winner === "enemy" ? "V3作戦敗北" : "V3作戦中断";
+  } else if (view.tacticalOrigin?.type === "personal-map") {
     view.tacticalResult.title = view.tacticalResult.winner === "player"
       ? "探索パーティー勝利"
       : view.tacticalResult.winner === "enemy" ? `${view.tacticalOrigin.enemyName}側勝利` : "双方戦闘不能";
@@ -7452,7 +7510,7 @@ function prepareTacticalResult({ open = true } = {}) {
   }
   view.tacticalResultOpen = open;
   view.commanderDispositionOpen = false;
-  if (["dungeon", "personal-map", "robbery", "military-career"].includes(view.tacticalOrigin?.type)) {
+  if (["dungeon", "personal-map", "robbery", "military-career", "v3-group-combat"].includes(view.tacticalOrigin?.type)) {
     view.commanderDisposition = null;
     return;
   }
@@ -7480,6 +7538,18 @@ function clearTacticalBattleView() {
 function exitTacticalBattle() {
   const origin = view.tacticalOrigin;
   const battleResult = view.tacticalResult;
+  if (origin?.type === "v3-group-combat") {
+    if (!battleResult && view.tacticalBattle) {
+      showToast("V3の集団戦は決着後に作戦地点へ戻れます。", "danger");
+      return;
+    }
+    try {
+      returnV3GroupBattleToField({ result: battleResult });
+    } catch (error) {
+      showToast(error.message, "danger");
+    }
+    return;
+  }
   if (["robbery", "military-career"].includes(origin?.type) && !battleResult) {
     showToast(origin.type === "military-career" ? "軍務戦闘の決着後に作戦地域へ戻れます。" : "強盗戦闘の決着後に街道へ戻れます。", "danger");
     return;
@@ -8170,11 +8240,12 @@ function renderTacticalResult() {
   }
   const dungeonBattle = view.tacticalOrigin?.type === "dungeon";
   const travelBattle = dungeonBattle && view.tacticalOrigin?.runMode === "travel";
+  const v3GroupBattle = view.tacticalOrigin?.type === "v3-group-combat";
   const personalBattle = ["personal-map", "robbery"].includes(view.tacticalOrigin?.type) || view.tacticalOrigin?.personalUnitBattle === true;
   const labels = tacticalOriginLabels();
   const sideCard = (side, label, tone) => {
-    const symbol = personalBattle ? tone === "player" ? "隊" : "敵" : dungeonBattle ? tone === "player" ? "探" : "敵" : tone === "player" ? "王" : "公";
-    const code = personalBattle ? tone === "player" ? "PLAYER UNIT" : "ENEMY UNIT" : dungeonBattle ? tone === "player" ? "EXPEDITION PARTY" : "DUNGEON ENCOUNTER" : tone === "player" ? "SELENE KINGDOM" : "VALKA DUCHY";
+    const symbol = personalBattle ? tone === "player" ? "隊" : "敵" : dungeonBattle ? tone === "player" ? "探" : "敵" : v3GroupBattle ? tone === "player" ? "軍" : "敵" : tone === "player" ? "王" : "公";
+    const code = personalBattle ? tone === "player" ? "PLAYER UNIT" : "ENEMY UNIT" : dungeonBattle ? tone === "player" ? "EXPEDITION PARTY" : "DUNGEON ENCOUNTER" : v3GroupBattle ? tone === "player" ? "V3 FIELD ARMY" : "INVADING ARMY" : tone === "player" ? "SELENE KINGDOM" : "VALKA DUCHY";
     return `
     <article class="tactical-result-army is-${tone}">
       <header><span>${symbol}</span><div><small>${code}</small><h3>${escapeHtml(label)}</h3></div><b>${side.standing} / ${side.units}${personalBattle ? "ユニット" : "部隊"}</b></header>
@@ -8194,7 +8265,7 @@ function renderTacticalResult() {
         <div class="tactical-result-versus"><small>RESULT</small><strong>${result.winner === "player" ? "勝" : result.winner === "enemy" ? "敗" : "分"}</strong><span>${personalBattle ? `${result.turn}ターン` : `渡河 ${result.crossings}回`}</span></div>
         ${sideCard(result.enemy, labels.enemy, "enemy")}
       </section>
-      ${travelBattle ? `<section class="tactical-encirclement-report"><header><div><small>JOURNEY ENCOUNTER</small><h2>${result.winner === "player" ? "脅威を退け、移動先へ到着" : "旅の一行は移動を中断"}</h2></div><b>${escapeHtml(view.tacticalOrigin.dungeonName)}</b></header><div><span>戦闘の損耗を旅の一行へ反映</span><span>勝利時は移動先へ到着</span><span>敗北・引き分け時は地方移動を中断</span></div></section>` : personalBattle ? `<section class="tactical-encirclement-report"><header><div><small>PERSONAL UNIT BATTLE</small><h2>${result.winner === "player" ? "敵ユニット群を退けました" : result.winner === "enemy" ? "探索パーティーが撤退します" : "双方が戦闘を中断しました"}</h2></div><b>${result.player.units} UNIT : ${result.enemy.units} UNIT</b></header><div><span>主人公と同行者は各1ユニット</span><span>敵ユニット数は遭遇内容によって変化</span><span>${view.tacticalOrigin?.continuedFromManual ? `第${view.tacticalOrigin.manualTurns}ターンまでの手動成果から自動継続` : view.tacticalOrigin?.autoResolved ? "同じ戦闘処理による自動解決" : "手動で進行した戦闘"}</span></div><div class="personal-result-members">${result.player.members.map((member) => `<article><strong>${escapeHtml(member.name)}</strong><span>HP ${member.remainingHp}/${member.maxHp}</span><b>${escapeHtml(tacticalStateLabel(member.state))}</b></article>`).join("")}</div></section>` : dungeonBattle ? `<section class="tactical-encirclement-report"><header><div><small>DUNGEON EXPEDITION</small><h2>${result.winner === "player" ? "探索を再開できます" : "探索隊は撤退します"}</h2></div><b>${escapeHtml(view.tacticalOrigin.dungeonName)}</b></header><div><span>戦術戦闘の損耗をHPへ反映</span><span>勝利時は戦利品を自動回収</span><span>敗北・引き分け時は獲得済み戦利品を保持</span></div></section>` : `<section class="tactical-encirclement-report ${result.encirclement.complete ? "is-complete" : ""}"><header><div><small>ENCIRCLEMENT ASSESSMENT</small><h2>${result.encirclement.complete ? "完全包囲を確認" : "通常戦果"}</h2></div><b>${result.encirclement.complete ? "全退路遮断" : "捕縛条件未達"}</b></header><div>${result.encirclement.reasons.map((reason) => `<span>${escapeHtml(reason)}</span>`).join("")}</div></section><section class="tactical-capture-result ${result.capture.eligible ? "is-captured" : ""}">${result.capture.commanderIconUrl ? `<img src="${escapeHtml(result.capture.commanderIconUrl)}" alt="${escapeHtml(result.capture.commanderName)}">` : `<i>${result.capture.eligible ? "縛" : "退"}</i>`}<div><small>ENEMY COMMANDER</small><h2>${result.capture.eligible ? `${escapeHtml(result.capture.commanderName)}を捕縛` : "敵将捕縛なし"}</h2><p>${escapeHtml(result.capture.reason)}</p>${captureStatus ? `<b>現在の処遇：${escapeHtml(captureStatus)}</b>` : ""}</div>${result.capture.eligible ? '<button type="button" data-result-action="disposition">戦後処遇局へ</button>' : ""}</section>`}
+      ${travelBattle ? `<section class="tactical-encirclement-report"><header><div><small>JOURNEY ENCOUNTER</small><h2>${result.winner === "player" ? "脅威を退け、移動先へ到着" : "旅の一行は移動を中断"}</h2></div><b>${escapeHtml(view.tacticalOrigin.dungeonName)}</b></header><div><span>戦闘の損耗を旅の一行へ反映</span><span>勝利時は移動先へ到着</span><span>敗北・引き分け時は地方移動を中断</span></div></section>` : personalBattle ? `<section class="tactical-encirclement-report"><header><div><small>PERSONAL UNIT BATTLE</small><h2>${result.winner === "player" ? "敵ユニット群を退けました" : result.winner === "enemy" ? "探索パーティーが撤退します" : "双方が戦闘を中断しました"}</h2></div><b>${result.player.units} UNIT : ${result.enemy.units} UNIT</b></header><div><span>主人公と同行者は各1ユニット</span><span>敵ユニット数は遭遇内容によって変化</span><span>${view.tacticalOrigin?.continuedFromManual ? `第${view.tacticalOrigin.manualTurns}ターンまでの手動成果から自動継続` : view.tacticalOrigin?.autoResolved ? "同じ戦闘処理による自動解決" : "手動で進行した戦闘"}</span></div><div class="personal-result-members">${result.player.members.map((member) => `<article><strong>${escapeHtml(member.name)}</strong><span>HP ${member.remainingHp}/${member.maxHp}</span><b>${escapeHtml(tacticalStateLabel(member.state))}</b></article>`).join("")}</div></section>` : dungeonBattle ? `<section class="tactical-encirclement-report"><header><div><small>DUNGEON EXPEDITION</small><h2>${result.winner === "player" ? "探索を再開できます" : "探索隊は撤退します"}</h2></div><b>${escapeHtml(view.tacticalOrigin.dungeonName)}</b></header><div><span>戦術戦闘の損耗をHPへ反映</span><span>勝利時は戦利品を自動回収</span><span>敗北・引き分け時は獲得済み戦利品を保持</span></div></section>` : `<section class="tactical-encirclement-report ${result.encirclement.complete ? "is-complete" : ""}"><header><div><small>ENCIRCLEMENT ASSESSMENT</small><h2>${result.encirclement.complete ? "完全包囲を確認" : "通常戦果"}</h2></div><b>${result.encirclement.complete ? "全退路遮断" : "捕縛条件未達"}</b></header><div>${result.encirclement.reasons.map((reason) => `<span>${escapeHtml(reason)}</span>`).join("")}</div></section><section class="tactical-capture-result ${result.capture.eligible ? "is-captured" : ""}">${result.capture.commanderIconUrl ? `<img src="${escapeHtml(result.capture.commanderIconUrl)}" alt="${escapeHtml(result.capture.commanderName)}">` : `<i>${result.capture.eligible ? "縛" : "退"}</i>`}<div><small>ENEMY COMMANDER</small><h2>${result.capture.eligible ? `${escapeHtml(result.capture.commanderName)}を捕縛` : "敵将捕縛なし"}</h2><p>${escapeHtml(result.capture.reason)}</p>${captureStatus ? `<b>現在の処遇：${escapeHtml(captureStatus)}</b>` : ""}</div>${view.commanderDisposition ? '<button type="button" data-result-action="disposition">戦後処遇局へ</button>' : ""}</section>`}
       <footer class="tactical-result-actions">
         <button type="button" data-result-action="battlefield">戦場を確認</button>
         ${!travelBattle && ["dungeon", "personal-map"].includes(view.tacticalOrigin?.type) && result.winner !== "player" ? '<button type="button" class="is-primary" data-result-action="recover">村の治療所へ帰還</button>' : ""}
@@ -8296,14 +8367,15 @@ function renderTacticalBattle() {
   const adventureBattle = ["dungeon", "personal-map"].includes(view.tacticalOrigin?.type);
   const robberyBattle = view.tacticalOrigin?.type === "robbery";
   const militaryCareerBattle = view.tacticalOrigin?.type === "military-career";
+  const v3GroupBattle = view.tacticalOrigin?.type === "v3-group-combat";
   const labels = tacticalOriginLabels();
   elements.tacticalBattleTitle.textContent = battle.name;
-  elements.tacticalBattleReset.textContent = dungeonBattle ? "探索隊を再編成" : view.tacticalOrigin?.type === "personal-map" ? "個人戦をやり直す" : robberyBattle ? "強盗戦闘は再編成不可" : militaryCareerBattle ? "受命済み編成は変更不可" : "再編成";
+  elements.tacticalBattleReset.textContent = v3GroupBattle ? "戦闘前編成へ戻る" : dungeonBattle ? "探索隊を再編成" : view.tacticalOrigin?.type === "personal-map" ? "個人戦をやり直す" : robberyBattle ? "強盗戦闘は再編成不可" : militaryCareerBattle ? "受命済み編成は変更不可" : "再編成";
   elements.tacticalBattleReset.disabled = robberyBattle || militaryCareerBattle;
-  elements.tacticalBattleSkip.hidden = !adventureBattle || robberyBattle || militaryCareerBattle;
-  elements.tacticalMoreActions.hidden = adventureBattle || robberyBattle || militaryCareerBattle;
-  elements.tacticalBattleExit.textContent = robberyBattle ? (battle.winner ? "戦果を確定" : "決着後に戻る") : militaryCareerBattle ? (battle.winner ? "軍務結果を確定" : "決着後に戻る") : adventureBattle ? "遭遇地点へ戻る" : "開発メニュー";
-  elements.tacticalBattleExit.disabled = (robberyBattle || militaryCareerBattle) && !battle.winner;
+  elements.tacticalBattleSkip.hidden = !adventureBattle || robberyBattle || militaryCareerBattle || v3GroupBattle;
+  elements.tacticalMoreActions.hidden = adventureBattle || robberyBattle || militaryCareerBattle || v3GroupBattle;
+  elements.tacticalBattleExit.textContent = v3GroupBattle ? (battle.winner ? "V3へ戦果を戻す" : "決着後に戻る") : robberyBattle ? (battle.winner ? "戦果を確定" : "決着後に戻る") : militaryCareerBattle ? (battle.winner ? "軍務結果を確定" : "決着後に戻る") : adventureBattle ? "遭遇地点へ戻る" : "開発メニュー";
+  elements.tacticalBattleExit.disabled = (robberyBattle || militaryCareerBattle || v3GroupBattle) && !battle.winner;
   elements.tacticalPlayerLegend.textContent = labels.player;
   elements.tacticalEnemyLegend.textContent = labels.enemy;
   renderTacticalSummary(battle);
@@ -9982,7 +10054,8 @@ document.addEventListener("click", async (event) => {
     if (action === "exit") {
       exitTacticalBattle();
     } else if (action === "reset") {
-      if (["dungeon", "personal-map"].includes(view.tacticalOrigin?.type)) openDungeonTacticalBattle();
+      if (view.tacticalOrigin?.type === "v3-group-combat") openV3GroupBattleBridge();
+      else if (["dungeon", "personal-map"].includes(view.tacticalOrigin?.type)) openDungeonTacticalBattle();
       else openTacticalBattle();
     } else if (action === "skip-dungeon") {
       try { confirmAndSkipActiveDungeonBattle(); }
@@ -11087,3 +11160,5 @@ elements.equipmentUpgradePrompt?.addEventListener("click", (event) => {
 
 subdivideTerritoryTiles(elements.strategyMap);
 render();
+activeV3GroupBattleBridge = requestedV3GroupBattleBridge();
+if (activeV3GroupBattleBridge) openV3GroupBattleBridge(activeV3GroupBattleBridge);
