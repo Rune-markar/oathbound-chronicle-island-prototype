@@ -175,19 +175,68 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .v3-inventory-card > footer { display: flex; justify-content: flex-end; margin-top: 18px; padding-top: 12px; border-top: 1px solid #53665f; }
 .v3-inventory-card button.is-danger { border-color: #905b55; color: #e6b5ae; background: #321d1f; }
 
-.v3-world-map { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; place-items: stretch; padding: max(18px, env(safe-area-inset-top)) max(18px, calc((100vw - 1220px) / 2)) max(18px, env(safe-area-inset-bottom)); background: #071416; }
-.v3-world-map > header { display: flex; justify-content: space-between; gap: 16px; padding-bottom: 12px; }
-.v3-world-map h1 { margin: 3px 0; font: 800 30px Georgia, "Yu Mincho", serif; }
-.v3-world-map p { margin: 0; color: #aebbb3; font-size: 12px; }
+.v3-world-map { display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; place-items: stretch; gap: 8px; padding: max(12px, env(safe-area-inset-top)) max(14px, calc((100vw - 1380px) / 2)) max(12px, env(safe-area-inset-bottom)); background: #071416; }
+.v3-world-map > header { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 18px; }
+.v3-world-map h1 { margin: 3px 0; font: 800 28px Georgia, "Yu Mincho", serif; }
+.v3-world-map p { margin: 0; color: #aebbb3; font-size: 11px; }
+.v3-world-date { display: grid; min-width: 116px; padding: 7px 11px; border-left: 1px solid #65776f; text-align: right; }
+.v3-world-date span { color: #8fa097; font-size: 9px; font-weight: 900; letter-spacing: .12em; }
+.v3-world-date strong { color: #ead98d; font: 800 15px Georgia, "Yu Mincho", serif; }
+.v3-world-layers { display: flex; gap: 6px; }
+.v3-world-layers button { min-height: 36px; padding: 5px 16px; border-width: 1px; color: #aebbb3; box-shadow: none; }
+.v3-world-layers button.is-active { border-color: #e5cf7c; color: #fff7d7; background: #3e594b; }
+.v3-world-map-workspace { display: grid; grid-template-columns: minmax(0, 1fr) 350px; gap: 10px; min-height: 0; overflow: hidden; }
+.v3-world-map-stage { display: grid; grid-template-rows: minmax(0, 1fr) auto; min-width: 0; min-height: 0; }
 .v3-world-map-canvas { min-height: 0; display: grid; place-items: center; overflow: auto; border: 3px solid #e9e7d8; border-radius: 4px; background: #173b43; box-shadow: inset 0 0 0 2px #516861; }
-.v3-world-map canvas { display: block; width: min(100%, calc((100dvh - 190px) * 1.6)); height: auto; image-rendering: pixelated; }
-.v3-world-map > footer { display: flex; align-items: center; gap: 18px; min-height: 48px; font-size: 11px; }
+.v3-world-map canvas { display: block; width: min(100%, calc((100dvh - 250px) * 1.6)); height: auto; image-rendering: pixelated; cursor: crosshair; }
+.v3-world-history-control { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 8px 0 0; }
+.v3-world-history-control label { display: grid; grid-template-columns: auto minmax(100px, 1fr) auto; align-items: center; gap: 9px; color: #aebbb3; font-size: 10px; }
+.v3-world-history-control input { width: 100%; accent-color: #d8c576; }
+.v3-world-history-control output { min-width: 148px; color: #ead98d; text-align: right; }
+.v3-world-history-control button { min-height: 34px; padding: 4px 10px; border-width: 1px; box-shadow: none; }
+.v3-world-intelligence { display: grid; gap: 8px; min-height: 0; padding-right: 2px; overflow-y: auto; scrollbar-color: #63786e #0b1c1e; }
+.v3-world-intelligence > section { padding: 10px; border: 1px solid #50655d; background: #0b2022; }
+.v3-world-intelligence header { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.v3-world-intelligence header > strong { font: 800 17px Georgia, "Yu Mincho", serif; }
+.v3-world-summary > div:first-of-type { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin: 9px 0; }
+.v3-world-summary > div:first-of-type span { display: grid; justify-items: center; padding: 6px 2px; background: #142c2e; color: #9fafa6; font-size: 9px; }
+.v3-world-summary > div:first-of-type b { color: #fff5ce; font-size: 15px; }
+.v3-world-nation-list { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.v3-world-nation-list button { display: grid; grid-template-columns: 10px minmax(0, 1fr); align-items: center; gap: 6px; min-height: 38px; padding: 5px 7px; border: 1px solid #435750; box-shadow: none; text-align: left; }
+.v3-world-nation-list button.is-selected { border-color: #ead98d; background: #344e43; }
+.v3-world-nation-list i, .v3-world-dossier > header > i { display: block; width: 9px; height: 22px; background: var(--nation-color, #74865d); }
+.v3-world-nation-list span { display: grid; min-width: 0; }
+.v3-world-nation-list strong { overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.v3-world-nation-list small { color: #91a098; font-size: 8px; letter-spacing: 0; }
+.v3-world-dossier > header { display: grid; grid-template-columns: 13px minmax(0, 1fr); justify-content: start; }
+.v3-world-dossier > header > i { width: 13px; height: 42px; }
+.v3-world-dossier > header div { display: grid; }
+.v3-world-dossier > header strong { font: 800 18px Georgia, "Yu Mincho", serif; }
+.v3-world-dossier > header span { color: #a9b6ae; font-size: 10px; }
+.v3-world-dossier dl { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; margin: 10px 0 7px; font-size: 10px; }
+.v3-world-dossier dl div { display: flex; justify-content: space-between; gap: 6px; border-bottom: 1px solid #2b403a; }
+.v3-world-dossier dt { color: #91a29a; }
+.v3-world-dossier dd { margin: 0; color: #f4e9bd; font-weight: 800; }
+.v3-world-dossier p { display: grid; gap: 3px; margin: 7px 0 0; color: #aebbb3; font-size: 10px; line-height: 1.45; }
+.v3-world-dossier p > strong { color: #e5d181; }
+.v3-world-dossier p > small { color: #8fa098; letter-spacing: 0; }
+.v3-world-dossier .v3-dossier-war { display: block; padding: 6px; border-left: 2px solid #ad685e; background: #241a1a; }
+.v3-world-chronicle ol, .v3-world-chronicle { min-height: 0; }
+.v3-world-chronicle ol { display: grid; gap: 0; margin: 8px 0 0; padding: 0; list-style: none; }
+.v3-world-chronicle li { display: grid; padding: 7px 0; border-top: 1px solid #2e433d; }
+.v3-world-chronicle li.is-priority-4, .v3-world-chronicle li.is-priority-5 { border-left: 2px solid #b86c5d; padding-left: 7px; }
+.v3-world-chronicle time { color: #d8c576; font-size: 9px; }
+.v3-world-chronicle li strong { font-size: 11px; }
+.v3-world-chronicle li span { color: #91a199; font-size: 9px; line-height: 1.45; }
+.v3-world-map > footer { display: flex; align-items: center; gap: 15px; min-height: 44px; font-size: 10px; }
 .v3-world-map > footer span { display: flex; align-items: center; gap: 6px; }
 .v3-world-map > footer i { display: block; width: 14px; height: 8px; background: #f4e5b5; }
 .v3-world-map > footer i.is-player { width: 12px; height: 12px; border: 2px solid #fff; border-radius: 50%; background: none; }
 .v3-world-map > footer i.is-road { height: 2px; background: #e4d5a0; }
 .v3-world-map > footer i.is-site { width: 9px; height: 9px; rotate: 45deg; background: #d98758; }
-.v3-world-map > footer strong { margin-left: auto; color: #d9c979; }
+.v3-world-map > footer > strong { margin-left: auto; color: #d9c979; }
+.v3-world-map > footer > div { display: flex; gap: 6px; }
+.v3-world-map > footer button { min-height: 36px; padding: 5px 10px; border-width: 1px; box-shadow: none; }
 .v3-toast { position: fixed; z-index: 40; left: 50%; bottom: 24px; translate: -50% 20px; padding: 10px 16px; border: 1px solid #e1d488; border-radius: 3px; background: #102628; opacity: 0; pointer-events: none; transition: .2s; }
 .v3-toast.is-visible { translate: -50% 0; opacity: 1; }
 
@@ -282,10 +331,31 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   .v3-encounter-card { grid-template-columns: 70px 1fr; gap: 12px; padding: 14px; }
   .v3-encounter-card > i { width: 70px; font-size: 25px; }
   .v3-encounter-card h2 { font-size: 23px; }
-  .v3-world-map { padding: 12px; }
+  .v3-world-map { gap: 6px; padding: max(8px, env(safe-area-inset-top)) 10px max(8px, env(safe-area-inset-bottom)); }
+  .v3-world-map > header { grid-template-columns: minmax(0, 1fr) auto auto; gap: 7px; }
+  .v3-world-map h1 { font-size: 21px; }
   .v3-world-map > header p { display: none; }
+  .v3-world-map > header button { min-height: 44px; padding: 5px 8px; border-width: 1px; box-shadow: none; font-size: 9px; }
+  .v3-world-date { min-width: 82px; padding: 5px 7px; }
+  .v3-world-date strong { font-size: 11px; }
+  .v3-world-layers { gap: 4px; }
+  .v3-world-layers button { flex: 1; min-height: 44px; padding: 5px; }
+  .v3-world-map-workspace { display: block; overflow-y: auto; }
+  .v3-world-map-stage { min-height: 0; }
+  .v3-world-map-canvas { min-height: 210px; max-height: 38dvh; }
+  .v3-world-map canvas { width: 100%; }
+  .v3-world-history-control { grid-template-columns: 1fr auto; gap: 6px; padding: 6px 0; }
+  .v3-world-history-control label { grid-template-columns: auto minmax(80px, 1fr); gap: 6px; }
+  .v3-world-history-control output { grid-column: 2; min-width: 0; text-align: left; }
+  .v3-world-history-control button { min-height: 44px; }
+  .v3-world-intelligence { overflow: visible; padding: 0 0 8px; }
+  .v3-world-intelligence > section { padding: 9px; }
+  .v3-world-nation-list button { min-height: 44px; }
   .v3-world-map > footer { flex-wrap: wrap; gap: 8px 14px; }
-  .v3-world-map > footer strong { width: 100%; margin: 0; }
+  .v3-world-map > footer > span:not(:first-child) { display: none; }
+  .v3-world-map > footer > strong { width: calc(100% - 90px); margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .v3-world-map > footer > div { width: 100%; }
+  .v3-world-map > footer > div button { flex: 1; min-height: 44px; }
   .v3-commerce { place-items: stretch; padding: 0; }
   .v3-commerce-card { max-height: 100dvh; border-width: 0; border-radius: 0; }
   .v3-commerce-card > header { position: sticky; top: 0; z-index: 2; padding: max(10px, env(safe-area-inset-top)) 10px 9px; }

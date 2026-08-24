@@ -148,3 +148,13 @@ test("生成国家間の攻撃・防衛戦争と残る全面統合境界を追�
   assert.match(backlog, /生成戦争の全面統合と併合統治.*実装済み/s);
   assert.match(spec, /未知の戦争は通常UIへ出ず/);
 });
+
+test("V3動的世界は事前史・年代再生・月次進行を通常導線の実装として追跡する", () => {
+  const dynamicWorld = STATUS_ENTRIES.find((item) => item.id === "v3-dynamic-world-history");
+  assert.equal(dynamicWorld?.category, "implemented");
+  assert.match(`${dynamicWorld.summary} ${dynamicWorld.evidence}`, /50年.*戦争.*独立.*年代.*1か月.*12か月/s);
+  assert.ok(dynamicWorld.sources.some((item) => item.href === "./src/v3-world-simulation.js" && /buildV3WorldPrehistory/.test(item.ref)));
+  assert.ok(dynamicWorld.sources.some((item) => item.href === "./src/v3-app.js" && /advanceWorld/.test(item.ref)));
+  assert.ok(dynamicWorld.sources.some((item) => item.href === "./tests/v3-world-simulation.test.mjs"));
+  assert.ok(dynamicWorld.sources.some((item) => item.href === "./docs/gameplay-reviews/2026-08-24-v3-dynamic-world.md"));
+});
