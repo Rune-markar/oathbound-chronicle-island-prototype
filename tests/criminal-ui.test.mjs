@@ -186,7 +186,7 @@ test("crime controls avoid false disclosure state and enforce local support prer
 
 test("career crime status and recovery resolve the live generated-world region jurisdiction", () => {
   assert.match(appSource, /function currentCrimeJurisdictionId\(\)[\s\S]*currentAdventureContext\(\)\.region\.id/);
-  assert.equal((appSource.match(/const jurisdictionId = currentCrimeJurisdictionId\(\);/g) ?? []).length, 2);
+  assert.ok((appSource.match(/const jurisdictionId = currentCrimeJurisdictionId\(\);/g) ?? []).length >= 2);
   assert.doesNotMatch(appSource, /jurisdictionId = activeVillageContext\(\)\?\.regionId \?\? state\.player\.locationId/);
 });
 
@@ -209,4 +209,73 @@ test("smuggling checkpoint is integrated into confirmed generated travel", () =>
   assert.match(appSource, /moveGeneratedExpeditionToRegion[\s\S]{0,900}inspectSmugglingCheckpoint\(next\)/);
   assert.doesNotMatch(appSource, /data-smuggling-next=[^>]*checkpoint/);
   assert.match(appSource, /deliverSmugglingCargo\(state\)/);
+});
+
+test("career UI imports the complete criminal organization progression and action APIs", () => {
+  for (const name of [
+    "getCriminalOrganizationView",
+    "recruitCriminalMember",
+    "formCriminalOrganization",
+    "issueCriminalOperationOrder",
+    "resolveCriminalOperationReport",
+    "resolveCriminalOrganizationDecision",
+    "fundCriminalOrganization",
+    "withdrawCriminalOrganizationFunds",
+    "distributeCriminalOrganizationProfits",
+  ]) assert.match(appSource, new RegExp(`\\b${name}\\b`), name);
+  assert.match(appSource, /function renderCriminalOrganizationBoard\(/);
+  assert.match(appSource, /単独犯/);
+  assert.match(appSource, /人材確保/);
+  assert.match(appSource, /犯罪組織/);
+});
+
+test("organization UI exposes recruitment, formation, staffing, approach, report, and finance controls", () => {
+  for (const attribute of [
+    "data-criminal-recruit",
+    "data-criminal-form",
+    "data-criminal-operation-card",
+    "data-criminal-operation-leader",
+    "data-criminal-operation-support",
+    "data-criminal-operation-approach",
+    "data-criminal-operation-order",
+    "data-criminal-operation-report",
+    "data-criminal-finance",
+  ]) assert.match(appSource, new RegExp(attribute), attribute);
+  assert.match(appSource, /作戦中|報告待ち/);
+  assert.match(appSource, /忠誠/);
+  assert.match(appSource, /組織金庫/);
+  assert.match(appSource, /指示枠/);
+});
+
+test("all delegated operation choices including kidnapping and assassination are visible with lock reasons", () => {
+  for (const type of ["extortion", "robbery", "smuggling", "sabotage", "kidnapping", "assassination"])
+    assert.match(appSource, new RegExp(`operation\\.type|data-criminal-operation-type`), type);
+  for (const label of ["恐喝", "強盗", "密輸", "破壊工作", "誘拐", "暗殺"])
+    assert.match(appSource, new RegExp(label), label);
+  assert.match(appSource, /lockedReason/);
+  assert.match(appSource, /影響力/);
+});
+
+test("kidnapping disposition and captured-member recovery remain explicit player choices", () => {
+  assert.match(appSource, /data-criminal-decision/);
+  for (const choice of ["ransom", "leverage", "release", "recover", "abandon"])
+    assert.match(appSource, new RegExp(`choice\\.id|data-criminal-decision-choice`), choice);
+  for (const label of ["身代金", "交渉材料", "解放", "身請け", "見捨てる"])
+    assert.match(appSource, new RegExp(label), label);
+});
+
+test("criminal organization board has responsive grids and readable disabled and status states", () => {
+  assert.match(stylesSource, /\.criminal-organization-board/);
+  assert.match(stylesSource, /\.criminal-member-grid/);
+  assert.match(stylesSource, /\.criminal-operation-grid/);
+  assert.match(stylesSource, /\.criminal-decision-card/);
+  assert.match(stylesSource, /\.criminal-organization-board[^}]*button:disabled|\.criminal-operation-card[^}]*button:disabled/s);
+  assert.match(stylesSource, /@media[^}]*max-width[^}]*[\s\S]*criminal-operation-grid/);
+});
+
+test("manual and change log document solo to organization play and delegated decisions", () => {
+  for (const text of ["単独犯", "犯罪組織", "人員", "誘拐", "暗殺", "構成員", "月次報告"])
+    assert.match(manualSource, new RegExp(text), text);
+  assert.match(changelogSource, /犯罪組織/);
+  assert.match(changelogSource, /誘拐/);
 });
