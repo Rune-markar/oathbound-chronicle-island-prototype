@@ -26,6 +26,7 @@ export const CRIME_HEAT_GAINS = Object.freeze({
   extortion: 25,
   robbery: 35,
   sabotage: 45,
+  kidnapping: 55,
   assassination: 70,
 });
 
@@ -304,7 +305,10 @@ export function recordCrimeIncident(state, incident) {
   const entry = clone({
     id: incident.id ?? `crime-${next.turn ?? 0}-${crime.incidents.length + 1}`,
     type,
-    severity: incident.severity ?? (type === "assassination" ? "capital" : "minor"),
+    severity: incident.severity ?? (type === "assassination" ? "capital" : type === "kidnapping" ? "serious" : "minor"),
+    organizationId: incident.organizationId ?? null,
+    operationId: incident.operationId ?? null,
+    delegated: Boolean(incident.delegated),
     perpetrator: incident.perpetrator ?? null,
     accomplices: incident.accomplices ?? [],
     victim: incident.victim ?? null,

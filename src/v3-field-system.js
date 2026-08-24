@@ -1,3 +1,5 @@
+import { geographyDefinition, terrainTravelProfile } from "./terrain-geography.js";
+
 export const V3_FIELD_VERSION = 3;
 export const V3_DETAIL_SCALE = 8;
 export const V3_CHUNK_SIZE = 16;
@@ -37,18 +39,36 @@ const TERRAIN_PRESENTATION = Object.freeze({
   coast: Object.freeze({ type: "sand", name: "海岸", symbol: "·", passable: true }),
 });
 
+const SITE_PRESENTATION = Object.freeze({
+  volcano: Object.freeze({ type: "volcano", symbol: "火", passable: false, note: "火口周辺は高熱で進めない" }),
+  crater: Object.freeze({ type: "crater", symbol: "◯", passable: true, note: "環状の窪地に古い落下物が残る" }),
+  cave: Object.freeze({ type: "cave", symbol: "洞", passable: true, note: "地下へ続く入口がある" }),
+  mine: Object.freeze({ type: "mine", symbol: "鉱", passable: true, note: "鉱脈と古い坑道が見える" }),
+  ruins: Object.freeze({ type: "ruins", symbol: "跡", passable: true, note: "失われた時代の遺構が残る" }),
+  floating_island: Object.freeze({ type: "floating-island", symbol: "浮", passable: true, note: "頭上に浮遊島の影が落ちている" }),
+  sky_peak: Object.freeze({ type: "sky-peak", symbol: "天", passable: false, note: "雲を抜ける絶壁が行く手を塞ぐ" }),
+});
+
+const FOREST_VARIANTS = Object.freeze(["ancient_forest", "dark_forest", "rainforest", "conifer_forest", "broadleaf_forest"]);
+
 const ITEM_TABLE = Object.freeze([
-  Object.freeze({ id: "medicinal-herb", name: "薬草", symbol: "草", heal: 18 }),
-  Object.freeze({ id: "wild-berries", name: "木の実", symbol: "実", heal: 8 }),
-  Object.freeze({ id: "iron-shard", name: "鉄の欠片", symbol: "鉱", heal: 0 }),
-  Object.freeze({ id: "old-coin", name: "古い銀貨", symbol: "貨", heal: 0, gold: 4 }),
+  Object.freeze({ id: "medicinal-herb", name: "薬草", symbol: "草", heal: 18, habitats: ["grassland", "plains", "forest", "marsh", "oasis"] }),
+  Object.freeze({ id: "wild-berries", name: "木の実", symbol: "実", heal: 8, habitats: ["forest", "broadleaf_forest", "ancient_forest", "dark_forest"] }),
+  Object.freeze({ id: "iron-shard", name: "鉄の欠片", symbol: "鉱", heal: 0, habitats: ["hills", "mountain_range", "mine", "cave", "volcano"] }),
+  Object.freeze({ id: "old-coin", name: "古い銀貨", symbol: "貨", heal: 0, gold: 4, habitats: ["ruins", "road", "farmland"] }),
+  Object.freeze({ id: "desert-salt", name: "砂漠塩", symbol: "塩", heal: 0, habitats: ["desert", "sand_desert", "rocky_desert"] }),
+  Object.freeze({ id: "shore-shell", name: "虹貝", symbol: "貝", heal: 0, habitats: ["coast", "shoal", "tidal_flat", "bay"] }),
 ]);
 
 const ENEMY_TABLE = Object.freeze([
-  Object.freeze({ id: "green-slime", name: "苔スライム", symbol: "粘", baseHp: 10, power: 3, xp: 5, gold: 2 }),
-  Object.freeze({ id: "goblin-scout", name: "ゴブリン斥候", symbol: "鬼", baseHp: 16, power: 5, xp: 8, gold: 4 }),
-  Object.freeze({ id: "wild-wolf", name: "灰野狼", symbol: "狼", baseHp: 13, power: 4, xp: 7, gold: 3 }),
-  Object.freeze({ id: "road-bandit", name: "街道の追剥", symbol: "賊", baseHp: 20, power: 6, xp: 11, gold: 7 }),
+  Object.freeze({ id: "green-slime", name: "苔スライム", symbol: "粘", baseHp: 10, power: 3, xp: 5, gold: 2, habitats: ["forest", "marsh", "river", "spring"] }),
+  Object.freeze({ id: "goblin-scout", name: "ゴブリン斥候", symbol: "鬼", baseHp: 16, power: 5, xp: 8, gold: 4, habitats: ["hills", "mountain_range", "cave", "mine", "ruins"] }),
+  Object.freeze({ id: "wild-wolf", name: "灰野狼", symbol: "狼", baseHp: 13, power: 4, xp: 7, gold: 3, habitats: ["grassland", "plains", "forest", "coldland", "snowfield"] }),
+  Object.freeze({ id: "road-bandit", name: "街道の追剥", symbol: "賊", baseHp: 20, power: 6, xp: 11, gold: 7, habitats: ["road", "farmland", "ruins", "grassland", "plains"] }),
+  Object.freeze({ id: "sand-scorpion", name: "砂甲蠍", symbol: "蠍", baseHp: 15, power: 5, xp: 9, gold: 3, habitats: ["desert", "sand_desert", "rocky_desert", "oasis"] }),
+  Object.freeze({ id: "marsh-leech", name: "沼大蛭", symbol: "蛭", baseHp: 12, power: 4, xp: 7, gold: 2, habitats: ["marsh", "delta", "tidal_flat"] }),
+  Object.freeze({ id: "reef-crab", name: "岩礁蟹", symbol: "蟹", baseHp: 18, power: 5, xp: 9, gold: 4, habitats: ["coast", "shoal", "tidal_flat", "bay"] }),
+  Object.freeze({ id: "ember-lizard", name: "火鱗蜥蜴", symbol: "蜥", baseHp: 22, power: 7, xp: 13, gold: 6, habitats: ["volcano", "caldera", "crater"] }),
 ]);
 
 function clampInteger(value, fallback, minimum, maximum) {
@@ -174,36 +194,124 @@ export function nearestV3Settlement(context, x, y, maximumDistance = Number.POSI
   return best;
 }
 
+function macroNeighbor(context, macro, dx, dy) {
+  const x = wrapped(macro.macroX + dx, context.runtime.terrain.width);
+  const y = macro.macroY + dy;
+  if (y < 0 || y >= context.runtime.terrain.height) return null;
+  return context.runtime.tiles[y * context.runtime.terrain.width + x] ?? null;
+}
+
+function coastPresentation(context, macro) {
+  const distances = [];
+  if (macroNeighbor(context, macro, 0, -1)?.passable) distances.push(macro.localY);
+  if (macroNeighbor(context, macro, 1, 0)?.passable) distances.push(V3_DETAIL_SCALE - 1 - macro.localX);
+  if (macroNeighbor(context, macro, 0, 1)?.passable) distances.push(V3_DETAIL_SCALE - 1 - macro.localY);
+  if (macroNeighbor(context, macro, -1, 0)?.passable) distances.push(macro.localX);
+  const shoreDistance = Math.min(...distances, V3_DETAIL_SCALE);
+  const tags = new Set(macro.tile.geographyTags ?? []);
+  if (shoreDistance === 0) {
+    if (tags.has("tidal_flat")) return { type: "tidal-flat", name: "干潟", symbol: "∵", passable: true, geographyId: "tidal_flat" };
+    return { type: "beach", name: "海岸", symbol: "·", passable: true, geographyId: "coast" };
+  }
+  if (shoreDistance <= 1) return { type: "shoal", name: "浅瀬", symbol: "≈", passable: true, geographyId: "shoal" };
+  return { type: "water", name: tags.has("bay") ? "湾" : "海", symbol: "≈", passable: false, geographyId: tags.has("bay") ? "bay" : "sea" };
+}
+
+function riverBand(context, macro) {
+  if (!macro.tile.riverId) return false;
+  const downstream = Number.isInteger(macro.tile.flowTo) && macro.tile.flowTo >= 0 ? context.runtime.tiles[macro.tile.flowTo] : null;
+  if (!downstream) return [3, 4].includes(macro.localX);
+  let dx = downstream.x - macro.tile.x;
+  if (Math.abs(dx) > context.runtime.terrain.width / 2) dx -= Math.sign(dx) * context.runtime.terrain.width;
+  const dy = downstream.y - macro.tile.y;
+  return Math.abs(dx) > Math.abs(dy) ? [3, 4].includes(macro.localY) : [3, 4].includes(macro.localX);
+}
+
+function siteDetailPosition(context, macro, site) {
+  return {
+    x: 1 + Math.floor(v3HashUnit(context.seed, site.id, "site-x") * (V3_DETAIL_SCALE - 2)),
+    y: 1 + Math.floor(v3HashUnit(context.seed, site.id, "site-y") * (V3_DETAIL_SCALE - 2)),
+  };
+}
+
+function sitePresentation(context, macro) {
+  const site = macro.tile.terrainSite;
+  if (!site) return null;
+  const center = siteDetailPosition(context, macro, site);
+  const distance = Math.max(Math.abs(macro.localX - center.x), Math.abs(macro.localY - center.y));
+  const definition = SITE_PRESENTATION[site.type];
+  if (!definition) return null;
+  if (site.type === "volcano" && distance <= 1) return { ...definition, name: distance === 0 ? `${site.name}の火口` : `${site.name}の火山麓`, geographyId: distance === 0 ? "crater" : "volcano" };
+  if (distance !== 0) return null;
+  return { ...definition, name: site.name, geographyId: site.type };
+}
+
+function geographyNameFor(tile, fallback) {
+  const tags = new Set(tile.geographyTags ?? []);
+  const preferred = [
+    "oasis", "delta", "alluvial_fan", "canyon", "farmland", "canal", "marsh", "basin",
+    "cape", "peninsula", "island", "bay", ...FOREST_VARIANTS, "mountain_range", "hills",
+    "snowfield", "coldland", "sand_desert", "rocky_desert",
+  ].find((id) => tags.has(id));
+  return geographyDefinition(preferred)?.name ?? fallback;
+}
+
 export function getV3DetailedTile(context, requestedX, requestedY) {
   const macro = macroAt(context, requestedX, requestedY);
   if (!macro?.tile) {
-    return { x: wrapped(requestedX, context.width), y: requestedY, type: "void", name: "世界の果て", symbol: "", passable: false, macroTile: null };
+    return { x: wrapped(requestedX, context.width), y: requestedY, type: "void", name: "世界の果て", symbol: "", passable: false, travelMinutes: 0, dangerBias: 0, terrainNote: "世界の外側", macroTile: null };
   }
   const { tile } = macro;
   const settlement = context.settlementByMacroIndex.get(macro.index) ?? null;
   const distanceFromCenter = Math.max(Math.abs(macro.localX - 4), Math.abs(macro.localY - 4));
   const roadBand = [3, 4].includes(macro.localX) || [3, 4].includes(macro.localY);
-  const base = TERRAIN_PRESENTATION[tile.terrain] ?? (tile.passable
-    ? TERRAIN_PRESENTATION.grassland
-    : { type: "water", name: "海", symbol: "≈", passable: false });
+  const tags = new Set(tile.geographyTags ?? []);
+  const terrainSitePresentation = sitePresentation(context, macro);
+  const base = tile.terrain === "coast"
+    ? coastPresentation(context, macro)
+    : tile.terrain === "lake"
+      ? { type: "water", name: "湖", symbol: "≈", passable: false, geographyId: "lake" }
+      : TERRAIN_PRESENTATION[tile.terrain] ?? (tile.passable
+        ? TERRAIN_PRESENTATION.grassland
+        : { type: "water", name: tags.has("inland_sea") ? "内海" : "外海", symbol: "≈", passable: false, geographyId: tags.has("inland_sea") ? "inland_sea" : "open_sea" });
   let presentation = base;
   if (tile.passable && settlement && macro.localX === 4 && macro.localY === 4) {
-    presentation = { type: `settlement-${settlement.settlementLevel}`, name: settlement.name, symbol: settlementSymbol(settlement), passable: true };
+    presentation = { type: `settlement-${settlement.settlementLevel}`, name: settlement.name, symbol: settlementSymbol(settlement), passable: true, geographyId: "road" };
   } else if (tile.passable && settlement && distanceFromCenter <= settlementRadius(settlement.settlementLevel)) {
-    presentation = { type: "settlement-ground", name: `${settlement.name}の通り`, symbol: "·", passable: true };
+    presentation = { type: "settlement-ground", name: `${settlement.name}の通り`, symbol: "·", passable: true, geographyId: "road" };
   } else if (tile.passable && context.roadTileIndices.has(macro.index) && roadBand) {
-    presentation = { type: "road", name: "街道", symbol: "·", passable: true };
+    presentation = { type: "road", name: "街道", symbol: "·", passable: true, geographyId: "road" };
+  } else if (tile.passable && terrainSitePresentation) {
+    presentation = terrainSitePresentation;
+  } else if (tile.passable && tags.has("oasis") && Math.max(Math.abs(macro.localX - 4), Math.abs(macro.localY - 4)) <= 1) {
+    presentation = macro.localX === 4 && macro.localY === 4
+      ? { type: "spring", name: "オアシスの泉", symbol: "泉", passable: true, geographyId: "spring", note: "水と休息を得られる" }
+      : { type: "oasis", name: "オアシス", symbol: "木", passable: true, geographyId: "oasis", note: "乾燥地の水場" };
+  } else if (tile.passable && tile.riverId && riverBand(context, macro)) {
+    const geographyId = tags.has("delta") ? "delta" : tags.has("alluvial_fan") ? "alluvial_fan" : tags.has("canyon") ? "canyon" : "river";
+    presentation = { type: geographyId === "canyon" ? "canyon-river" : "river", name: geographyDefinition(geographyId)?.name ?? "川辺", symbol: "≈", passable: true, geographyId };
+  } else if (tile.passable && tags.has("canal") && (v3HashUnit(context.seed, macro.index, "canal-axis") > 0.5 ? [2, 5].includes(macro.localX) : [2, 5].includes(macro.localY))) {
+    presentation = { type: "canal", name: "運河", symbol: "≈", passable: true, geographyId: "canal", note: "人工水路沿いの耕地" };
+  } else if (tile.passable && tags.has("marsh") && v3HashUnit(context.seed, "marsh", macro.x, macro.y) > 0.38) {
+    presentation = { type: "marsh", name: "沼地", symbol: "∴", passable: true, geographyId: "marsh" };
+  } else if (tile.passable && tags.has("farmland") && (macro.localX + macro.localY) % 3 !== 0) {
+    presentation = { type: "farmland", name: "田畑", symbol: "田", passable: true, geographyId: "farmland" };
   } else if (tile.passable && tile.relief === "mountains" && v3HashUnit(context.seed, "mountain", macro.x, macro.y) > 0.54) {
-    presentation = { type: "mountain", name: "険しい山", symbol: "▲", passable: false };
-  } else if (tile.passable && (tile.feature === "forest" || (["grassland", "plains"].includes(tile.terrain) && v3HashUnit(context.seed, "tree", macro.x, macro.y) > 0.84))) {
-    presentation = { type: "forest", name: "森", symbol: "♠", passable: true };
+    presentation = { type: "mountain", name: tags.has("sky_peak") ? "天空峰" : "険しい山", symbol: "▲", passable: false, geographyId: tags.has("sky_peak") ? "sky_peak" : "mountain_range" };
+  } else if (tile.passable && (tags.has("forest") || (["grassland", "plains"].includes(tile.terrain) && v3HashUnit(context.seed, "tree", macro.x, macro.y) > 0.84))) {
+    const forestId = FOREST_VARIANTS.find((id) => tags.has(id)) ?? "forest";
+    presentation = { type: "forest", name: geographyDefinition(forestId)?.name ?? "森", symbol: "♠", passable: true, geographyId: forestId };
   } else if (tile.passable && tile.relief === "hills" && v3HashUnit(context.seed, "hill", macro.x, macro.y) > 0.73) {
-    presentation = { type: "hill", name: "岩丘", symbol: "⌃", passable: true };
-  } else if (tile.passable && tile.riverId && [3, 4].includes(macro.localX)) {
-    presentation = { type: "river", name: "川辺", symbol: "≈", passable: true };
+    presentation = { type: "hill", name: tags.has("basin") ? "盆地の丘縁" : "岩丘", symbol: "⌃", passable: true, geographyId: "hills" };
   }
+  if (presentation === base && tile.passable) presentation = { ...base, name: geographyNameFor(tile, base.name) };
   const nation = context.runtime.nationById.get(tile.nationId) ?? null;
   const region = context.runtime.regionById.get(tile.regionId) ?? null;
+  const geographyTags = [...new Set([
+    ...(tile.geographyTags ?? []),
+    ...(presentation.geographyId ? [presentation.geographyId] : []),
+  ])];
+  const travel = terrainTravelProfile({ ...tile, geographyTags });
   return {
     x: macro.x,
     y: macro.y,
@@ -217,6 +325,11 @@ export function getV3DetailedTile(context, requestedX, requestedY) {
     nation,
     region,
     settlement,
+    geographyTags,
+    terrainSite: tile.terrainSite ?? null,
+    travelMinutes: presentation.passable ? travel.minutes : 0,
+    dangerBias: travel.dangerBias,
+    terrainNote: presentation.note ?? travel.note,
     onRoad: presentation.type === "road" || presentation.type === "settlement-ground",
   };
 }
@@ -239,9 +352,12 @@ export function getV3TileEntity(context, x, y, state = {}) {
     return { type: "npc", role, ...definitions[role], settlementId: nearby.settlement.id };
   }
   if (tile.onRoad && roll < 0.025) return { type: "npc", role: "merchant", name: "街道商人", symbol: "商", message: "遠国へ向かう行商人だ。", price: 5 };
-  const dangerBias = tile.type === "forest" || tile.type === "mountain" ? 0.035 : 0;
+  const habitats = new Set([tile.type, ...(tile.geographyTags ?? [])]);
+  const matchingEnemies = ENEMY_TABLE.filter((entry) => entry.habitats.some((id) => habitats.has(id)));
+  const dangerBias = tile.dangerBias ?? (tile.type === "forest" || tile.type === "mountain" ? 0.035 : 0);
   if (roll < 0.095 + dangerBias) {
-    const definition = ENEMY_TABLE[Math.floor(v3HashUnit(context.seed, "enemy", tile.x, tile.y) * ENEMY_TABLE.length)];
+    const enemyPool = matchingEnemies.length ? matchingEnemies : ENEMY_TABLE;
+    const definition = enemyPool[Math.floor(v3HashUnit(context.seed, "enemy", tile.x, tile.y) * enemyPool.length)];
     const spawn = state.player && Number.isInteger(state.player.spawnX) && Number.isInteger(state.player.spawnY)
       ? { x: state.player.spawnX, y: state.player.spawnY }
       : { x: tile.x, y: tile.y };
@@ -250,7 +366,9 @@ export function getV3TileEntity(context, x, y, state = {}) {
     return { type: "enemy", ...definition, level, hp: definition.baseHp + level * 2, maxHp: definition.baseHp + level * 2 };
   }
   if (roll < 0.16) {
-    const item = ITEM_TABLE[Math.floor(v3HashUnit(context.seed, "item", tile.x, tile.y) * ITEM_TABLE.length)];
+    const matchingItems = ITEM_TABLE.filter((entry) => entry.habitats.some((id) => habitats.has(id)));
+    const itemPool = matchingItems.length ? matchingItems : ITEM_TABLE;
+    const item = itemPool[Math.floor(v3HashUnit(context.seed, "item", tile.x, tile.y) * itemPool.length)];
     return { type: "item", ...item };
   }
   return null;
@@ -405,10 +523,10 @@ export function moveV3Player(context, state, directionName) {
     ...state,
     player: { ...state.player, x: destination.x, y: destination.y },
     steps: state.steps + 1,
-    clockMinutes: state.clockMinutes + 10,
+    clockMinutes: state.clockMinutes + destination.travelMinutes,
     generatedChunks,
     discoveredTiles: discoverAround(context, destination.x, destination.y, state.discoveredTiles),
-    messageLog: addLog(state, `${direction.label}へ進んだ。${destination.name}。`),
+    messageLog: addLog(state, `${direction.label}へ${destination.travelMinutes}分進んだ。${destination.name}。`),
   };
   const entity = getV3TileEntity(context, destination.x, destination.y, moved);
   if (!entity) return moved;

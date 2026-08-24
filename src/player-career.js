@@ -8,6 +8,10 @@ import {
   recordRegionalAchievement,
 } from "./regional-reputation.js";
 import { advanceCrimeMonthOnDraft, normalizeCrimeState } from "./crime-system.js";
+import {
+  advanceCriminalOrganizationMonthOnDraft,
+  normalizeCriminalOrganizationStateOnDraft,
+} from "./criminal-organization-system.js";
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const clone = (value) => structuredClone(value);
@@ -221,7 +225,7 @@ export function initializeCareerState(baseState, options = {}) {
     title: "名もなき個人として街道へ立つ",
     text: "依頼を果たし、武勲、名声、財産、人脈を得て、自らの立場を選ぶ。", tone: "info",
   }];
-  return normalizeMasteryState(normalizeCrimeState(next));
+  return normalizeMasteryState(normalizeCriminalOrganizationStateOnDraft(normalizeCrimeState(next)));
 }
 
 export function normalizeCareerState(state) {
@@ -259,6 +263,7 @@ export function normalizeCareerState(state) {
   }
   normalizeVillageLifeState(state);
   state.player.crime = normalizeCrimeState(state).player.crime;
+  normalizeCriminalOrganizationStateOnDraft(state);
   normalizeMerchantTradeState(state);
   return normalizeMasteryState(state);
 }
@@ -585,7 +590,8 @@ export function advanceCareerMonthOnDraft(state) {
   state.player.authorityGrants = state.player.authorityGrants.filter((grant) => grant.expiresTurn == null || grant.expiresTurn >= state.turn);
   state.player.prohibitions = state.player.prohibitions.filter((item) => item.expiresTurn == null || item.expiresTurn >= state.turn);
   careerLog(state.player, state, "月が進む", "主君、諸侯、地域社会もそれぞれの利害に従って動いている。");
-  return advanceCrimeMonthOnDraft(state);
+  advanceCrimeMonthOnDraft(state);
+  return advanceCriminalOrganizationMonthOnDraft(state);
 }
 
 export function advanceCareerMonth(state) {

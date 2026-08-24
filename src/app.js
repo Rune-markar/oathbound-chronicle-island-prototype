@@ -212,6 +212,7 @@ import {
   setOccupationPolicy,
   setWarPlan,
   CRIME_RISK_LABELS,
+  CRIMINAL_OPERATION_APPROACHES,
   getSettlementTheftOpportunities,
   previewTheft,
   executeTheft,
@@ -241,6 +242,15 @@ import {
   collectExtortionPayment,
   resolveCrimeEvent,
   resolveCrimeRecovery,
+  distributeCriminalOrganizationProfits,
+  formCriminalOrganization,
+  fundCriminalOrganization,
+  getCriminalOrganizationView,
+  issueCriminalOperationOrder,
+  recruitCriminalMember,
+  resolveCriminalOperationReport,
+  resolveCriminalOrganizationDecision,
+  withdrawCriminalOrganizationFunds,
 } from "./simulation.js";
 import {
   AUTOSAVE_INTERVAL_MS,
@@ -4975,6 +4985,7 @@ function renderSettlementCrimeSection(village) {
     <nav class="crime-support-actions" aria-label="裏社会の行動">
       <button type="button" data-crime-support="discover" data-jurisdiction-id="${escapeHtml(village.regionId)}" aria-pressed="${contacts.length > 0}" ${discoveryDisabled ? "disabled" : ""} title="${escapeHtml(discoveryReason)}"><strong>連絡先を探す</strong><small>${escapeHtml(discoveryReason)}</small></button>
       <button type="button" data-crime-support="fence" ${stolen.length ? `data-stolen-item-id="${escapeHtml(stolen[0].id)}"` : ""} ${fenceDisabled ? "disabled" : ""} title="${escapeHtml(fenceReason)}"><strong>盗品を故買屋へ流す</strong><small>${escapeHtml(fenceReason)}</small></button>
+      <button type="button" data-panel="career"><strong>犯罪組織を管理</strong><small>人物画面で人材・指示・月次報告を確認</small></button>
     </nav>
     ${renderSettlementSabotage(village)}
     <p class="crime-feedback" aria-live="polite">成功・失敗と露見の結果は年代記へ記録されます。</p>
@@ -5089,6 +5100,114 @@ function renderCrimeStatusBoard() {
       <button type="button" data-crime-recovery="asylum" ${serious ? "" : "disabled"}>亡命・追放</button>
     </nav><p class="crime-feedback" aria-live="polite">回復行動も人物状態と年代記へ反映されます。</p>
   </div></details>`;
+}
+
+const CRIMINAL_MEMBER_STATUS_LABELS = Object.freeze({
+  available: "待機",
+  assigned: "作戦中",
+  report_ready: "報告待ち",
+  recovering: "療養中",
+  captured: "拘束",
+  left: "離脱",
+});
+
+const CRIMINAL_OPERATION_LABELS = Object.freeze({
+  extortion: "恐喝",
+  robbery: "強盗",
+  smuggling: "密輸",
+  sabotage: "破壊工作",
+  kidnapping: "誘拐",
+  assassination: "暗殺",
+});
+
+const CRIMINAL_DECISION_LABELS = Object.freeze({
+  ransom: "身代金を要求",
+  leverage: "交渉材料にする",
+  release: "解放する",
+  recover: "身請けする",
+  abandon: "見捨てる",
+});
+
+function currentCriminalOrganizationContext() {
+  const jurisdictionId = currentCrimeJurisdictionId();
+  let jurisdictionName = activeVillageContext()?.regionName ?? jurisdictionId;
+  try { jurisdictionName = currentAdventureContext().region.name ?? jurisdictionName; } catch {}
+  return { jurisdictionId, jurisdictionName };
+}
+
+function criminalMemberStatus(member, activeOrders) {
+  if (member.status === "assigned") {
+    const order = activeOrders.find((entry) => entry.id === member.assignedOrderId);
+    if (order?.status === "report_ready") return CRIMINAL_MEMBER_STATUS_LABELS.report_ready;
+  }
+  return CRIMINAL_MEMBER_STATUS_LABELS[member.status] ?? member.status;
+}
+
+function renderCriminalOrganizationBoard() {
+  const context = currentCriminalOrganizationContext();
+  const model = getCriminalOrganizationView(state, context);
+  const wealth = Number(state.player.metrics?.wealth) || 0;
+  const activeMemberOptions = model.availableMembers.map((member) => `<option value="${escapeHtml(member.id)}">${escapeHtml(member.name)} · ${escapeHtml(member.role)} · 忠誠${member.loyalty}</option>`).join("");
+  const recruitCards = model.candidates.map((candidate) => {
+    const affordable = wealth >= candidate.fee;
+    return `<article class="criminal-recruit-card">
+      <header><span><small>${escapeHtml(candidate.role)}</small><strong>${escapeHtml(candidate.name)}</strong></span><b>財産${candidate.fee}</b></header>
+      <p>${candidate.specialties.map(escapeHtml).join("・")}</p>
+      <dl><div><dt>忠誠</dt><dd>${candidate.loyalty}</dd></div><div><dt>得意</dt><dd>${candidate.specialties.map(escapeHtml).join(" / ")}</dd></div></dl>
+      <button type="button" data-criminal-recruit="${escapeHtml(candidate.id)}" data-jurisdiction-id="${escapeHtml(context.jurisdictionId)}" ${affordable ? "" : "disabled"} title="${affordable ? "この人材を雇う" : `財産${candidate.fee}が必要です`}">人員に加える</button>
+    </article>`;
+  }).join("");
+  const memberCards = model.members.map((member) => `<article class="criminal-member-card is-${escapeHtml(member.status)}">
+    <header><span><small>${escapeHtml(member.role)}</small><strong>${escapeHtml(member.name)}</strong></span><b>${escapeHtml(criminalMemberStatus(member, model.activeOrders))}</b></header>
+    <p>${member.specialties.map(escapeHtml).join("・")}</p><footer><span>忠誠 ${member.loyalty}</span><span>偵察${member.skills.recon}・実働${member.skills.force}・運搬${member.skills.logistics}・隠密${member.skills.discretion}・交渉${member.skills.influence}</span></footer>
+  </article>`).join("");
+  const orderCards = model.activeOrders.map((order) => {
+    const ready = order.status === "report_ready";
+    return `<article class="criminal-active-order ${ready ? "is-report-ready" : ""}">
+      <header><span><small>${escapeHtml(CRIMINAL_OPERATION_LABELS[order.type] ?? order.type)} · ${escapeHtml(order.approachName)}</small><strong>${escapeHtml(order.target.name)}</strong></span><b>${ready ? "報告待ち" : `残り${order.remainingMonths}か月`}</b></header>
+      <p>担当 ${order.assignedMembers.map((entry) => escapeHtml(entry.name)).join("・")} · 危険度 ${escapeHtml(order.riskLabel)}</p>
+      ${ready ? `<button type="button" data-criminal-operation-report="${escapeHtml(order.id)}">作戦報告を確認</button>` : ""}
+    </article>`;
+  }).join("");
+  const decisionCards = model.pendingDecisions.map((decision) => `<article class="criminal-decision-card" data-criminal-decision-card="${escapeHtml(decision.id)}">
+    <header><span><small>${decision.kind === "captive_disposition" ? "誘拐後の処遇" : "構成員の拘束"}</small><strong>${escapeHtml(decision.targetName ?? decision.memberName)}</strong></span><b>要判断</b></header>
+    <div>${decision.options.map((choice) => `<button type="button" data-criminal-decision="${escapeHtml(decision.id)}" data-criminal-decision-choice="${escapeHtml(choice.id)}" ${choice.id === "recover" && model.treasury < decision.recoveryCost ? "disabled" : ""}><strong>${escapeHtml(CRIMINAL_DECISION_LABELS[choice.id] ?? choice.name)}</strong><small>${escapeHtml(choice.description)}</small></button>`).join("")}</div>
+  </article>`).join("");
+  const operationCards = model.operations.map((operation) => {
+    const enoughPeople = model.availableMembers.length >= operation.minimumCrew;
+    const enoughFunds = model.treasury >= operation.treasuryCost;
+    const executable = operation.unlocked && enoughPeople && enoughFunds;
+    const blockedReason = operation.lockedReason ?? (!enoughPeople ? `待機中の構成員${operation.minimumCrew}名が必要です` : !enoughFunds ? `組織金庫${operation.treasuryCost}が必要です` : null);
+    return `<article class="criminal-operation-card ${operation.unlocked ? "" : "is-locked"}" data-criminal-operation-card data-criminal-operation-type="${escapeHtml(operation.type)}">
+      <header><span><small>${escapeHtml(CRIMINAL_OPERATION_LABELS[operation.type] ?? operation.type)}</small><strong>${escapeHtml(operation.target.name)}</strong></span><b>危険度 ${escapeHtml(operation.riskLabel)}</b></header>
+      <dl><div><dt>期間</dt><dd>${operation.durationMonths}か月</dd></div><div><dt>作戦資金</dt><dd>金庫${operation.treasuryCost}</dd></div><div><dt>見込報酬</dt><dd>${escapeHtml(operation.expectedReward.text)}</dd></div><div><dt>必要影響力</dt><dd>${operation.minimumInfluence}</dd></div></dl>
+      ${operation.unlocked ? `<fieldset><legend>人員の手配</legend><label>責任者<select data-criminal-operation-leader><option value="">選択する</option>${activeMemberOptions}</select></label><label>支援役<select data-criminal-operation-support><option value="">${operation.minimumCrew > 1 ? "選択する" : "単独で担当"}</option>${activeMemberOptions}</select></label><label>方針<select data-criminal-operation-approach>${Object.values(CRIMINAL_OPERATION_APPROACHES).map((approach) => `<option value="${approach.id}" ${approach.id === "balanced" ? "selected" : ""}>${escapeHtml(approach.name)} — ${escapeHtml(approach.description)}</option>`).join("")}</select></label></fieldset>` : `<p class="criminal-operation-lock">${escapeHtml(blockedReason)}</p>`}
+      <button type="button" data-criminal-operation-order="${escapeHtml(operation.id)}" ${executable ? "" : "disabled"} title="${escapeHtml(blockedReason ?? "この編成で指示を出す")}">この作戦を指示</button>
+    </article>`;
+  }).join("");
+  const formation = model.formed ? "" : `<section class="criminal-formation-card">
+    <header><div><small>FORM A CREW</small><h3>一味を結成</h3></div><b>${model.members.length} / 2名</b></header>
+    <p>${escapeHtml(model.formationReason)}</p><label>組織名<input type="text" data-criminal-organization-name value="灰影団" maxlength="24"></label>
+    <button type="button" data-criminal-form data-jurisdiction-id="${escapeHtml(context.jurisdictionId)}" ${model.canForm ? "" : "disabled"}>財産2で結成する</button>
+  </section>`;
+  const recruitment = model.soloExperience && model.brokerKnown
+    ? `<details class="criminal-recruitment" ${model.formed ? "" : "open"}><summary><span>人材確保</span><strong>現地候補 ${model.candidates.length}名</strong></summary><div class="criminal-recruit-grid">${recruitCards || "<p>現地で雇える人材は全員確認済みです。</p>"}</div></details>`
+    : `<p class="criminal-organization-gate">${escapeHtml(model.formationReason)}</p>`;
+  const formedContent = model.formed ? `<section class="criminal-organization-command">
+    <header><div><small>ORGANIZATION COMMAND</small><h3>${escapeHtml(model.name)}</h3></div><p>${escapeHtml(model.nextStageReason)}</p></header>
+    <div class="criminal-organization-ledger"><span><small>段階</small><strong>${escapeHtml(model.stageName)}</strong></span><span><small>構成員</small><strong>${model.members.length}名</strong></span><span><small>影響力</small><strong>${model.influence}</strong></span><span><small>組織金庫</small><strong>${model.treasury}</strong></span><span><small>指示枠</small><strong>${model.activeOrderCount} / ${model.activeOrderLimit}</strong></span></div>
+    <nav class="criminal-finance-actions" aria-label="犯罪組織の資金管理"><button type="button" data-criminal-finance="fund" ${wealth >= 1 ? "" : "disabled"}>財産1を金庫へ</button><button type="button" data-criminal-finance="withdraw" ${model.treasury >= 1 ? "" : "disabled"}>金庫1を取り分へ</button><button type="button" data-criminal-finance="distribute" ${model.treasury >= Math.max(1, model.members.length) ? "" : "disabled"}>利益を構成員へ分配</button></nav>
+    ${decisionCards ? `<section class="criminal-decision-list"><h4>今すぐ決めること</h4>${decisionCards}</section>` : ""}
+    <section class="criminal-member-section"><header><h4>構成員と配置</h4><small>待機・作戦中・報告待ち・療養・拘束を管理</small></header><div class="criminal-member-grid">${memberCards}</div></section>
+    <section class="criminal-active-orders"><header><h4>進行中の指示</h4><small>月を進めると作戦報告が届く</small></header>${orderCards || "<p>進行中の作戦はありません。</p>"}</section>
+    <details class="criminal-operation-catalog" open><summary><span>新しい作戦指示</span><strong>恐喝・強盗・密輸・破壊工作・誘拐・暗殺</strong></summary><div class="criminal-operation-grid">${operationCards}</div></details>
+  </section>` : "";
+  const progressIndex = model.stage === "network" ? 3 : model.stage === "crew" ? 2 : model.members.length ? 1 : 0;
+  return `<section class="criminal-organization-board" aria-labelledby="criminalOrganizationTitle">
+    <header><div><small>SOLO → CREW → ORGANIZATION</small><h2 id="criminalOrganizationTitle">犯罪組織</h2></div><p>${escapeHtml(model.stageDescription)}</p></header>
+    <ol class="criminal-organization-route" aria-label="単独犯から犯罪組織まで"><li class="${progressIndex >= 0 ? "is-complete" : ""}"><b>1</b><span>単独犯</span></li><li class="${progressIndex >= 1 ? "is-complete" : ""}"><b>2</b><span>人材確保</span></li><li class="${progressIndex >= 2 ? "is-complete" : ""}"><b>3</b><span>一味</span></li><li class="${progressIndex >= 3 ? "is-complete" : ""}"><b>4</b><span>犯罪組織</span></li></ol>
+    ${recruitment}${formation}${formedContent}
+  </section>`;
 }
 
 function governedCrimeJurisdictionIds() {
@@ -5545,6 +5664,7 @@ function renderCareerPanel() {
       <section class="panel-section"><div class="realm-facts career-facts"><div><i>⚔</i><small>武勲</small><strong>${player.metrics.martialMerit}</strong></div><div><i>政</i><small>政績</small><strong>${player.metrics.civilMerit}</strong></div><div><i>✦</i><small>${escapeHtml(regionalReputation.regionName)}の名声</small><strong>${regionalReputation.value}</strong></div><div><i>¤</i><small>財産</small><strong>${player.metrics.wealth}</strong></div></div></section>
       <section class="panel-section"><div class="section-heading"><h2>最新の年代記</h2><small>${latest.year ?? state.year}年</small></div><p class="adviser-note"><strong>${escapeHtml(latest.title)}</strong><br>${escapeHtml(latest.detail)}</p></section>
       ${renderCrimeStatusBoard()}
+      ${renderCriminalOrganizationBoard()}
       ${stage.governance ? `<section class="panel-section"><button class="town-open-commands" type="button" data-panel="governance">管轄統治を開く</button></section>` : ""}
     </div>`;
 }
@@ -5641,6 +5761,7 @@ function renderCareerWorkspace() {
       ${renderTravelCrimeSection()}
       ${renderPersonCrimeSection()}
       ${renderCrimeStatusBoard()}
+      ${renderCriminalOrganizationBoard()}
       ${renderLifeToRealmBoard()}
       <section class="career-actions"><header><div><small>CURRENT CHOICES</small><h2>今できること</h2></div><p>権限を得ていない国家命令は表示しません。</p></header><div>${careerActionButtons(player) || (stage.governance ? `<button type="button" data-panel="governance"><strong>統治画面を開く</strong><small>現在の管轄と委任権限で実行可能な命令だけを表示</small></button>` : `<p class="career-action-note">上の仕官先を選び、具体的な主君との主従関係を結んでください。</p>`)}</div></section>
       ${roleDelegationSection()}
@@ -9056,6 +9177,80 @@ document.addEventListener("click", async (event) => {
       const next = resolveCrimeRecovery(state, { action, jurisdictionId, destinationJurisdictionId, incidentId: incident?.id, severity: incident?.severity, crimeType: incident?.type, governedJurisdictionIds });
       const labels = { surrender: "出頭して刑に服しました。", safehouse: "裏社会の隠れ家へ身を隠しました。", escape: "管轄外へ逃亡しました。", pardon: "恩赦により現地の手配が解かれました。", asylum: "他国へ亡命し、元の管轄から追放されました。" };
       commit(next, labels[action], action === "pardon" ? "confirm" : "event");
+    } catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
+  const criminalRecruit = event.target.closest("[data-criminal-recruit]");
+  if (criminalRecruit && !criminalRecruit.disabled) {
+    try {
+      const next = recruitCriminalMember(state, {
+        candidateId: criminalRecruit.dataset.criminalRecruit,
+        jurisdictionId: criminalRecruit.dataset.jurisdictionId,
+        jurisdictionName: currentCriminalOrganizationContext().jurisdictionName,
+      });
+      const member = next.player.crime.organization.members.at(-1);
+      commit(next, `${member.name}（${member.role}）を人員に加えました。`, "confirm");
+    } catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
+  const criminalForm = event.target.closest("[data-criminal-form]");
+  if (criminalForm && !criminalForm.disabled) {
+    try {
+      const board = criminalForm.closest(".criminal-organization-board");
+      const name = board?.querySelector("[data-criminal-organization-name]")?.value ?? "灰影団";
+      const next = formCriminalOrganization(state, { jurisdictionId: criminalForm.dataset.jurisdictionId, name });
+      commit(next, `${next.player.crime.organization.name}を結成し、構成員への作戦指示が可能になりました。`, "event");
+    } catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
+  const criminalOrder = event.target.closest("[data-criminal-operation-order]");
+  if (criminalOrder && !criminalOrder.disabled) {
+    try {
+      const card = criminalOrder.closest("[data-criminal-operation-card]");
+      const context = currentCriminalOrganizationContext();
+      const next = issueCriminalOperationOrder(state, {
+        optionId: criminalOrder.dataset.criminalOperationOrder,
+        jurisdictionId: context.jurisdictionId,
+        jurisdictionName: context.jurisdictionName,
+        leaderId: card?.querySelector("[data-criminal-operation-leader]")?.value,
+        supportId: card?.querySelector("[data-criminal-operation-support]")?.value || null,
+        approach: card?.querySelector("[data-criminal-operation-approach]")?.value ?? "balanced",
+      });
+      const order = next.player.crime.organization.activeOrders.at(-1);
+      commit(next, `${order.assignedMembers.map((entry) => entry.name).join("・")}へ${CRIMINAL_OPERATION_LABELS[order.type]}を指示しました。${order.durationMonths}か月後に報告が届きます。`, "confirm");
+    } catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
+  const criminalReport = event.target.closest("[data-criminal-operation-report]");
+  if (criminalReport && !criminalReport.disabled) {
+    try {
+      const next = resolveCriminalOperationReport(state, { orderId: criminalReport.dataset.criminalOperationReport });
+      const result = next.player.crime.organization.completedOrders[0];
+      const label = `組織の${CRIMINAL_OPERATION_LABELS[result.type] ?? result.type}`;
+      const suffix = result.type === "kidnapping" && result.outcome.startsWith("success_") ? " 標的の処遇を決めてください。" : result.outcome === "captured" ? " 拘束された構成員への対応を決めてください。" : "";
+      commit(next, `${crimeOutcomeMessage(label, result)}${suffix}`, result.detected ? "event" : "confirm");
+    } catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
+  const criminalDecision = event.target.closest("[data-criminal-decision]");
+  if (criminalDecision && !criminalDecision.disabled) {
+    try {
+      const choice = criminalDecision.dataset.criminalDecisionChoice;
+      const next = resolveCriminalOrganizationDecision(state, { decisionId: criminalDecision.dataset.criminalDecision, choice });
+      commit(next, `${CRIMINAL_DECISION_LABELS[choice] ?? "組織判断"}を選びました。金庫・影響力・忠誠・手配へ結果が反映されます。`, choice === "ransom" || choice === "leverage" || choice === "abandon" ? "event" : "confirm");
+    } catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
+  const criminalFinance = event.target.closest("[data-criminal-finance]");
+  if (criminalFinance && !criminalFinance.disabled) {
+    try {
+      const action = criminalFinance.dataset.criminalFinance;
+      const next = action === "fund"
+        ? fundCriminalOrganization(state, { amount: 1 })
+        : action === "withdraw" ? withdrawCriminalOrganizationFunds(state, { amount: 1 })
+          : distributeCriminalOrganizationProfits(state);
+      const labels = { fund: "財産1を組織金庫へ入れました。", withdraw: "組織金庫1を自分の取り分にしました。構成員の忠誠が下がります。", distribute: "利益を構成員へ分配し、忠誠と組織影響力を得ました。" };
+      commit(next, labels[action], action === "withdraw" ? "event" : "confirm");
     } catch (error) { showToast(error.message, "danger"); }
     return;
   }

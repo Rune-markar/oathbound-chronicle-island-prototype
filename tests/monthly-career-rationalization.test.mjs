@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import * as simulation from "../src/simulation.js";
 import { advanceCareerMonth as advancePlayerCareerMonth, advanceCareerMonthOnDraft as advancePlayerCareerMonthOnDraft } from "../src/player-career.js";
 import { advanceCrimeMonth, advanceCrimeMonthOnDraft } from "../src/crime-system.js";
+import { advanceCriminalOrganizationMonth, advanceCriminalOrganizationMonthOnDraft } from "../src/criminal-organization-system.js";
 import { advanceMilitaryCareerMissionMonth, advanceMilitaryCareerMissionMonthOnDraft } from "../src/military-career-system.js";
 import { advanceLifeToRealmMonth, advanceLifeToRealmMonthOnDraft } from "../src/life-to-realm-system.js";
 import { advancePropertyEnterpriseMonth, advancePropertyEnterpriseMonthOnDraft } from "../src/property-enterprise-system.js";
@@ -15,6 +16,7 @@ import { advanceGeneratedCampaignMonth, advanceGeneratedCampaignMonthOnDraft } f
 const stages = [
   ["player", advancePlayerCareerMonth, advancePlayerCareerMonthOnDraft],
   ["crime", advanceCrimeMonth, advanceCrimeMonthOnDraft],
+  ["criminal organization", advanceCriminalOrganizationMonth, advanceCriminalOrganizationMonthOnDraft],
   ["military", advanceMilitaryCareerMissionMonth, advanceMilitaryCareerMissionMonthOnDraft],
   ["life", advanceLifeToRealmMonth, advanceLifeToRealmMonthOnDraft],
   ["property", advancePropertyEnterpriseMonth, advancePropertyEnterpriseMonthOnDraft],
@@ -45,6 +47,7 @@ test("the facade keeps draft operations internal and clones the full career stat
   for (const exportName of [
     "advanceCareerMonthOnDraft",
     "advanceCrimeMonthOnDraft",
+    "advanceCriminalOrganizationMonthOnDraft",
     "advanceMilitaryCareerMissionMonthOnDraft",
     "advanceLifeToRealmMonthOnDraft",
     "advancePropertyEnterpriseMonthOnDraft",

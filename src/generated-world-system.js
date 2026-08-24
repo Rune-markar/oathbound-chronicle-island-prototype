@@ -121,7 +121,7 @@ function capPendingStrategicDecisions(decisions) {
 }
 
 function generatedWorldRuntimeKey(generatedState) {
-  return ["regional-hd-v9-continental-scale", generatedState.seed, generatedState.width, generatedState.height, generatedState.plateCount, generatedState.nationCount].join("|");
+  return ["regional-hd-v10-geographic-features", generatedState.seed, generatedState.width, generatedState.height, generatedState.plateCount, generatedState.nationCount].join("|");
 }
 
 function cloneGeneratedWorldState(value) {
@@ -815,7 +815,7 @@ export async function buildGeneratedWorldAsync(stateOrGeneratedWorld, onProgress
     plateCount: generatedState.plateCount,
     wrapX: true,
   });
-  onProgress({ progress: 66, stage: "terrain", label: "河川・森林・資源を確定しました" });
+  onProgress({ progress: 66, stage: "terrain", label: "海岸・水系・火山・遺跡を確定しました" });
   await yieldGenerationFrame();
   onProgress({ progress: 72, stage: "nations", label: "種族の適地に国家を築いています" });
   await yieldGenerationFrame();

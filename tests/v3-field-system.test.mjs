@@ -77,6 +77,20 @@ function memoryStorage() {
   };
 }
 
+function detailedMacroTiles(context, macroX, macroY) {
+  const tiles = [];
+  for (let localY = 0; localY < V3_DETAIL_SCALE; localY += 1) {
+    for (let localX = 0; localX < V3_DETAIL_SCALE; localX += 1) {
+      tiles.push(getV3DetailedTile(
+        context,
+        macroX * V3_DETAIL_SCALE + localX,
+        macroY * V3_DETAIL_SCALE + localY,
+      ));
+    }
+  }
+  return tiles;
+}
+
 test("概算世界の1マスを8×8の詳細地形へ投影する", () => {
   const context = createV3WorldContext(fixtureRuntime());
   assert.equal(context.width, 8 * V3_DETAIL_SCALE);
@@ -105,13 +119,70 @@ test("開始時は周辺チャンクだけを生成し、待機生成は1区画�
 
 test("プレイヤーは通行可能な隣の1マスへだけ進み、発見範囲と時刻を更新する", () => {
   const context = createV3WorldContext(fixtureRuntime());
-  const state = createV3FieldState(context);
-  const directions = ["north", "east", "south", "west"];
-  const moved = directions.map((direction) => moveV3Player(context, state, direction)).find((candidate) => candidate.steps === 1);
+  const base = createV3FieldState(context);
+  const directions = [
+    { name: "north", dx: 0, dy: -1 },
+    { name: "east", dx: 1, dy: 0 },
+    { name: "south", dx: 0, dy: 1 },
+    { name: "west", dx: -1, dy: 0 },
+  ];
+  const blockedEntities = directions.map(({ dx, dy }) => `${(base.player.x + dx + context.width) % context.width},${base.player.y + dy}`);
+  const state = { ...base, interactedTiles: blockedEntities };
+  const choice = directions
+    .map((direction) => ({ direction, destination: getV3DetailedTile(context, base.player.x + direction.dx, base.player.y + direction.dy) }))
+    .find(({ destination }) => destination.passable);
+  assert.ok(choice);
+  const moved = moveV3Player(context, state, choice.direction.name);
   assert.ok(moved);
-  assert.equal(moved.clockMinutes, state.clockMinutes + 10);
+  assert.equal(moved.clockMinutes, state.clockMinutes + choice.destination.travelMinutes);
+  assert.match(moved.messageLog[0], new RegExp(`${choice.destination.travelMinutes}分`));
   assert.notDeepEqual([moved.player.x, moved.player.y], [state.player.x, state.player.y]);
   assert.ok(moved.discoveredTiles.length >= state.discoveredTiles.length);
+});
+
+test("複合地理はオアシス・農地・運河・沿岸・探索地点として詳細マスへ現れる", () => {
+  const runtime = fixtureRuntime();
+  Object.assign(runtime.tiles[10], {
+    geographyTags: ["desert", "sand_desert", "oasis", "spring"],
+    primaryGeography: "oasis",
+  });
+  Object.assign(runtime.tiles[18], {
+    geographyTags: ["grassland", "farmland", "canal"],
+    landUse: "farmland",
+    infrastructure: "canal",
+  });
+  Object.assign(runtime.tiles[22], {
+    geographyTags: ["grassland", "cave"],
+    terrainSite: { id: "fixture-cave", type: "cave", name: "試験洞窟", category: "site" },
+  });
+  Object.assign(runtime.tiles[50], {
+    geographyTags: ["forest", "rainforest"],
+    feature: "rainforest",
+  });
+  Object.assign(runtime.tiles[16], {
+    terrain: "coast",
+    passable: false,
+    geographyTags: ["sea", "coast", "shoal", "tidal_flat"],
+  });
+  const context = createV3WorldContext(runtime, "geography-fixture");
+
+  const oasisTypes = new Set(detailedMacroTiles(context, 2, 1).map((tile) => tile.type));
+  assert.ok(oasisTypes.has("spring"));
+  assert.ok(oasisTypes.has("oasis"));
+  const cultivatedTypes = new Set(detailedMacroTiles(context, 2, 2).map((tile) => tile.type));
+  assert.ok(cultivatedTypes.has("farmland"));
+  assert.ok(cultivatedTypes.has("canal"));
+  assert.ok(detailedMacroTiles(context, 6, 2).some((tile) => tile.type === "cave" && tile.name === "試験洞窟"));
+  assert.ok(detailedMacroTiles(context, 2, 6).some((tile) => tile.type === "forest" && tile.name === "密林"));
+  const coastTypes = new Set(detailedMacroTiles(context, 0, 2).map((tile) => tile.type));
+  assert.ok(coastTypes.has("tidal-flat"));
+  assert.ok(coastTypes.has("shoal"));
+  assert.ok(coastTypes.has("water"));
+
+  const farmland = detailedMacroTiles(context, 2, 2).find((tile) => tile.type === "farmland");
+  const oasis = detailedMacroTiles(context, 2, 1).find((tile) => tile.type === "oasis");
+  assert.ok(farmland.travelMinutes < getV3DetailedTile(context, 2 * V3_DETAIL_SCALE, 6 * V3_DETAIL_SCALE).travelMinutes);
+  assert.ok(oasis.dangerBias < getV3DetailedTile(context, 2 * V3_DETAIL_SCALE, 6 * V3_DETAIL_SCALE).dangerBias);
 });
 
 test("個人戦は現在のフィールド、集団戦は従来の専用戦闘画面を使う", () => {
@@ -344,11 +415,16 @@ test("既定入口はV3フィールドで、個人戦はフィールド内、集
   assert.match(index, /id="v3PersonalBattleStatus"/);
   assert.match(index, /id="v3PersonalBattleCommands"/);
   assert.match(index, /id="v3MilitaryButton"/);
+  assert.match(index, /id="v3TerrainEffect"/);
   assert.match(app, /encounter\?\.type === "enemy"/);
   assert.match(app, /encounterModal\.hidden = !encounter \|\| Boolean\(personalEnemy\)/);
   assert.match(app, /createV3GroupBattleHandoff/);
+  assert.match(app, /startV3MilitaryMission\(context, state, worldSimulation\)/);
   assert.match(app, /legacy-v2\.html/);
   assert.match(styles, /\.v3-game\.is-personal-battle \.v3-field-shell/);
+  assert.match(styles, /\.v3-tile\.is-oasis/);
+  assert.match(styles, /\.v3-tile\.is-volcano/);
+  assert.match(styles, /\.v3-world-map > footer i\.is-site/);
   assert.match(index, /legacy-v2\.html/);
   assert.match(legacy, /src\/app\.js/);
   assert.match(legacy, /id="battlePreparationScreen"/);

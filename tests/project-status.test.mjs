@@ -36,8 +36,23 @@ test("現状台帳のローカル出典と開始画面の導線が存在する",
   assert.match(statusPage, /src="\.\/src\/project-status\.js"/);
 });
 
+test("天地創造の複合地理と未実装の資源開発を分けて追跡する", () => {
+  const geography = STATUS_ENTRIES.find((item) => item.id === "generated-world-geography");
+  assert.equal(geography?.category, "implemented");
+  ["自然", "文明", "幻想", "天体", "田畑", "運河", "移動時間", "危険度"].forEach((term) => {
+    assert.match(`${geography.title} ${geography.summary} ${geography.evidence}`, new RegExp(term));
+  });
+  assert.ok(geography.sources.some((item) => item.href === "./src/terrain-geography.js" && /applyTerrainGeography/.test(item.ref)));
+  assert.ok(geography.sources.some((item) => item.href === "./src/v3-field-system.js" && /getV3DetailedTile/.test(item.ref)));
+  assert.ok(geography.sources.some((item) => item.href === "./tests/terrain-geography.test.mjs"));
+
+  const resources = STATUS_ENTRIES.find((item) => item.id === "geological-resources");
+  assert.equal(resources?.category, "planned");
+  assert.match(`${resources.title} ${resources.summary}`, /地熱.*石油.*石炭.*埋蔵量.*採掘権/s);
+});
+
 test("犯罪プレーの通常導線、六行動、帰結を実装済みとして追跡する", async () => {
-  assert.equal(STATUS_LEDGER_META.lastAuditedAt, "2026-08-19");
+  assert.equal(STATUS_LEDGER_META.lastAuditedAt, "2026-08-24");
   const crime = STATUS_ENTRIES.find((item) => item.id === "criminal-play-flow");
   assert.ok(crime, "criminal-play-flow ledger entry is required");
   assert.equal(crime.category, "implemented");
@@ -47,6 +62,14 @@ test("犯罪プレーの通常導線、六行動、帰結を実装済みとし�
   assert.ok(crime.sources.some((item) => item.href === "./src/crime-system.js" && /getCrimeStatusView/.test(item.ref)));
   assert.ok(crime.sources.some((item) => item.href === "./src/app.js" && /renderSettlementCrimeSection/.test(item.ref)));
   assert.ok(crime.sources.some((item) => item.href === "./tests/criminal-ui.test.mjs"));
+  const organization = STATUS_ENTRIES.find((item) => item.id === "criminal-organization");
+  assert.equal(organization?.category, "implemented");
+  ["単独犯", "人材", "一味", "犯罪組織", "誘拐", "暗殺", "月次"].forEach((term) => {
+    assert.match(`${organization.summary} ${organization.evidence}`, new RegExp(term));
+  });
+  assert.ok(organization.sources.some((item) => item.href === "./src/criminal-organization-system.js" && /issueCriminalOperationOrder/.test(item.ref)));
+  assert.ok(organization.sources.some((item) => item.href === "./src/app.js" && /renderCriminalOrganizationBoard/.test(item.ref)));
+  assert.ok(organization.sources.some((item) => item.href === "./tests/criminal-organization-system.test.mjs"));
 
   const projectRoot = new URL("../", import.meta.url);
   const [readme, manual, changelog] = await Promise.all([
@@ -124,4 +147,14 @@ test("生成国家間の攻撃・防衛戦争と残る全面統合境界を追�
   assert.match(backlog, /生成国家間の自律戦争.*実装済み/s);
   assert.match(backlog, /生成戦争の全面統合と併合統治.*実装済み/s);
   assert.match(spec, /未知の戦争は通常UIへ出ず/);
+});
+
+test("V3動的世界は事前史・年代再生・月次進行を通常導線の実装として追跡する", () => {
+  const dynamicWorld = STATUS_ENTRIES.find((item) => item.id === "v3-dynamic-world-history");
+  assert.equal(dynamicWorld?.category, "implemented");
+  assert.match(`${dynamicWorld.summary} ${dynamicWorld.evidence}`, /50年.*戦争.*独立.*年代.*1か月.*12か月/s);
+  assert.ok(dynamicWorld.sources.some((item) => item.href === "./src/v3-world-simulation.js" && /buildV3WorldPrehistory/.test(item.ref)));
+  assert.ok(dynamicWorld.sources.some((item) => item.href === "./src/v3-app.js" && /advanceWorld/.test(item.ref)));
+  assert.ok(dynamicWorld.sources.some((item) => item.href === "./tests/v3-world-simulation.test.mjs"));
+  assert.ok(dynamicWorld.sources.some((item) => item.href === "./docs/gameplay-reviews/2026-08-24-v3-dynamic-world.md"));
 });

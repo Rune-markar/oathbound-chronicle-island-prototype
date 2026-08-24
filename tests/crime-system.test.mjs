@@ -80,6 +80,7 @@ test("all crime heat gains and heat-label boundaries are exact", () => {
     extortion: 25,
     robbery: 35,
     sabotage: 45,
+    kidnapping: 55,
     assassination: 70,
   });
   for (const [heat, label] of [[0, "平常"], [19, "平常"], [20, "警戒"], [39, "警戒"], [40, "指名手配"], [69, "指名手配"], [70, "厳戒"], [100, "厳戒"]]) {

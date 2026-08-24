@@ -89,6 +89,149 @@
 .crime-status-content li span { color: #cdbda8; text-align: right; }
 .crime-recovery-actions { grid-column: 1 / -1; }
 
+.criminal-organization-board {
+  display: grid;
+  gap: 14px;
+  margin-block: 14px;
+  padding: 16px;
+  min-width: 0;
+  border: 1px solid rgba(160, 80, 68, .72);
+  border-radius: 14px;
+  background: linear-gradient(145deg, rgba(42, 24, 27, .97), rgba(17, 24, 29, .97));
+  color: #f2e8d4;
+}
+.criminal-organization-board > header,
+.criminal-organization-command > header,
+.criminal-formation-card > header,
+.criminal-member-section > header,
+.criminal-active-orders > header,
+.criminal-recruit-card > header,
+.criminal-member-card > header,
+.criminal-operation-card > header,
+.criminal-active-order > header,
+.criminal-decision-card > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.criminal-organization-board h2,
+.criminal-organization-board h3,
+.criminal-organization-board h4,
+.criminal-organization-board p { margin: 0; }
+.criminal-organization-board > header > div,
+.criminal-organization-command > header > div,
+.criminal-recruit-card > header > span,
+.criminal-member-card > header > span,
+.criminal-operation-card > header > span,
+.criminal-active-order > header > span,
+.criminal-decision-card > header > span { display: grid; min-width: 0; }
+.criminal-organization-board > header p,
+.criminal-organization-command > header p,
+.criminal-operation-lock { color: #cdbda8; }
+.criminal-organization-route {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.criminal-organization-route li {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid rgba(255, 255, 255, .12);
+  border-radius: 9px;
+  color: #9f9488;
+  background: rgba(0, 0, 0, .18);
+}
+.criminal-organization-route li b { display: grid; place-items: center; flex: 0 0 24px; min-height: 24px; border-radius: 50%; background: rgba(255,255,255,.08); }
+.criminal-organization-route li span { min-width: 0; overflow-wrap: anywhere; }
+.criminal-organization-route li.is-complete { color: #fff0cc; border-color: rgba(224, 164, 91, .55); background: rgba(105, 57, 39, .4); }
+.criminal-organization-route li.is-complete b { background: #8c4b3d; }
+.criminal-recruitment,
+.criminal-operation-catalog { border: 1px solid rgba(255,255,255,.12); border-radius: 10px; padding: 10px; }
+.criminal-recruitment > summary,
+.criminal-operation-catalog > summary { display: flex; justify-content: space-between; gap: 10px; cursor: pointer; }
+.criminal-recruit-grid,
+.criminal-member-grid,
+.criminal-operation-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 245px), 1fr)); gap: 10px; margin-top: 10px; }
+.criminal-recruit-card,
+.criminal-member-card,
+.criminal-operation-card,
+.criminal-active-order,
+.criminal-decision-card,
+.criminal-formation-card {
+  display: grid;
+  gap: 9px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid rgba(205, 172, 126, .28);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, .22);
+}
+.criminal-recruit-card header b,
+.criminal-operation-card header b,
+.criminal-active-order header b,
+.criminal-decision-card header b { color: #efb36d; white-space: nowrap; }
+.criminal-member-card header b { color: #b8d8c1; white-space: nowrap; }
+.criminal-member-card.is-captured { border-color: rgba(209, 72, 69, .75); }
+.criminal-member-card.is-recovering { border-color: rgba(213, 159, 74, .6); }
+.criminal-member-card footer { display: grid; gap: 3px; color: #cdbda8; font-size: 12px; }
+.criminal-recruit-card dl,
+.criminal-operation-card dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin: 0; }
+.criminal-recruit-card dl div,
+.criminal-operation-card dl div { display: grid; padding: 6px; background: rgba(255,255,255,.04); }
+.criminal-recruit-card dt,
+.criminal-operation-card dt { color: #a99a88; font-size: 11px; }
+.criminal-recruit-card dd,
+.criminal-operation-card dd { margin: 0; overflow-wrap: anywhere; }
+.criminal-formation-card label,
+.criminal-operation-card label { display: grid; gap: 4px; color: #d6c7ad; }
+.criminal-operation-card fieldset { display: grid; gap: 8px; margin: 0; padding: 10px; border: 1px solid rgba(255,255,255,.12); }
+.criminal-operation-card legend { padding-inline: 5px; color: #efc987; }
+.criminal-organization-board input,
+.criminal-organization-board select {
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  border: 1px solid #8e695a;
+  border-radius: 7px;
+  background: #1e1b1d;
+  color: #fff3dc;
+  padding: 8px;
+}
+.criminal-organization-board button {
+  min-height: 42px;
+  border: 1px solid #ad725d;
+  border-radius: 8px;
+  background: #65382f;
+  color: #fff3dc;
+  padding: 9px 11px;
+  font: inherit;
+  cursor: pointer;
+}
+.criminal-organization-board button:disabled { opacity: .42; cursor: not-allowed; filter: grayscale(.55); }
+.criminal-organization-ledger { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 8px; }
+.criminal-organization-ledger span { display: grid; padding: 9px; border: 1px solid rgba(255,255,255,.1); background: rgba(0,0,0,.18); }
+.criminal-organization-ledger small { color: #a99a88; }
+.criminal-finance-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.criminal-finance-actions button { flex: 1 1 160px; }
+.criminal-decision-list,
+.criminal-member-section,
+.criminal-active-orders { display: grid; gap: 9px; }
+.criminal-decision-list { padding: 10px; border: 1px solid rgba(235, 153, 75, .48); border-radius: 10px; background: rgba(84, 42, 28, .28); }
+.criminal-decision-card > div { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: 8px; }
+.criminal-decision-card button { display: grid; gap: 3px; text-align: left; }
+.criminal-decision-card button small { color: #d9c7b0; }
+.criminal-active-orders { padding: 10px; border: 1px solid rgba(255,255,255,.1); border-radius: 10px; }
+.criminal-active-order.is-report-ready { border-color: rgba(230, 170, 75, .75); box-shadow: inset 3px 0 #d69245; }
+.criminal-operation-card.is-locked { opacity: .74; }
+.criminal-organization-gate { padding: 12px; border-left: 3px solid #ad725d; background: rgba(101, 56, 47, .25); }
+
 @media (max-width: 720px) {
   .crime-context-section,
   .crime-status-board { padding: 12px; border-radius: 10px; }
@@ -96,6 +239,18 @@
   .crime-opportunity-grid,
   .crime-status-content { grid-template-columns: minmax(0, 1fr); }
   .crime-recovery-actions button { flex: 1 1 9em; }
+  .criminal-organization-board { padding: 12px; border-radius: 10px; }
+  .criminal-organization-board > header,
+  .criminal-organization-command > header { flex-direction: column; }
+  .criminal-organization-route { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .criminal-recruit-grid,
+  .criminal-member-grid,
+  .criminal-operation-grid,
+  .criminal-organization-ledger { grid-template-columns: minmax(0, 1fr); }
+  .criminal-organization-board button,
+  .criminal-organization-board input,
+  .criminal-organization-board select { min-height: 44px; }
+  .criminal-decision-card > div { grid-template-columns: minmax(0, 1fr); }
 }
 
 .merchant-market-toolbar button,

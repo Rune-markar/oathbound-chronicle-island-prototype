@@ -16,6 +16,10 @@ import {
   createCommander,
   setBattleTerrain,
 } from "./tactical-battle.js";
+import {
+  getV3NationAtTile,
+  getV3WorldSimulationView,
+} from "./v3-world-simulation.js";
 
 export const V3_GROUP_BATTLE_BRIDGE_KEY = "leviathan-covenant-v3-group-battle-bridge";
 export const V3_GROUP_BATTLE_BRIDGE_VERSION = 1;
@@ -50,6 +54,16 @@ function normalizeNation(nation, fallbackId, fallbackName) {
     peopleName: String(nation?.peopleName ?? (peopleId === "human" ? "人間" : peopleId)),
     color: nation?.color ?? null,
   };
+}
+
+function normalizeWorldNation(context, nation, fallbackId, fallbackName) {
+  const base = context.runtime.nationById.get(nation?.id);
+  return normalizeNation(base ? { ...base, ...nation, peopleId: nation?.peopleId ?? base.peopleId } : nation, fallbackId, fallbackName);
+}
+
+function nationAtDetailedTile(context, tile, worldSimulation = null) {
+  if (!worldSimulation || !Number.isInteger(tile?.macroIndex)) return tile?.nation ?? null;
+  return getV3NationAtTile(context.runtime, worldSimulation, tile.macroIndex);
 }
 
 function normalizeMission(source) {
@@ -92,25 +106,41 @@ function targetDirection(context, from, target) {
   return `${vertical}${horizontal}` || "現在地";
 }
 
-function enemyNationFor(context, playerNation, originRegion, missionSeed) {
+function enemyNationFor(context, playerNation, originRegion, missionSeed, worldSimulation = null) {
+  if (worldSimulation) {
+    const map = getV3WorldSimulationView(context.runtime, worldSimulation);
+    const neighborIds = [...new Set(map.borderSegments.flatMap((segment) => (
+      segment.nations?.includes(playerNation.id)
+        ? segment.nations.filter((nationId) => nationId && nationId !== playerNation.id)
+        : []
+    )))].sort();
+    const liveCandidates = [
+      ...neighborIds.map((nationId) => map.nationById.get(nationId)).filter(Boolean),
+      ...map.nations.filter((nation) => nation?.id !== playerNation.id && !neighborIds.includes(nation?.id) && !nation?.dissolved),
+    ];
+    if (liveCandidates.length) {
+      const index = Math.min(liveCandidates.length - 1, Math.floor(v3HashUnit(context.seed, "military-enemy", missionSeed) * liveCandidates.length));
+      return normalizeWorldNation(context, liveCandidates[index], "foreign-host", "外征軍");
+    }
+  }
   const neighborNation = (originRegion?.neighborIds ?? [])
     .map((regionId) => context.runtime.regionById.get(regionId))
     .filter((region) => region?.nationId && region.nationId !== playerNation.id)
     .sort((left, right) => left.id.localeCompare(right.id))
     .map((region) => context.runtime.nationById.get(region.nationId))
     .find(Boolean);
-  if (neighborNation) return normalizeNation(neighborNation, "border-host", "国境外軍");
+  if (neighborNation) return normalizeWorldNation(context, neighborNation, "border-host", "国境外軍");
   const candidates = (context.runtime.nations.nations ?? [])
     .filter((nation) => nation?.id !== playerNation.id && !nation?.dissolved)
     .sort((left, right) => left.id.localeCompare(right.id));
   if (candidates.length) {
     const index = Math.min(candidates.length - 1, Math.floor(v3HashUnit(context.seed, "military-enemy", missionSeed) * candidates.length));
-    return normalizeNation(candidates[index], "foreign-host", "外征軍");
+    return normalizeWorldNation(context, candidates[index], "foreign-host", "外征軍");
   }
   return normalizeNation(null, "border-raiders", "境外連合軍");
 }
 
-function findMissionTarget(context, state, nationId) {
+function findMissionTarget(context, state, nationId, worldSimulation = null) {
   const origin = { x: state.player.x, y: state.player.y };
   const queue = [{ ...origin, distance: 0 }];
   const visited = new Set([tileKey(origin.x, origin.y)]);
@@ -120,7 +150,8 @@ function findMissionTarget(context, state, nationId) {
     if (current.distance >= TARGET_MINIMUM_DISTANCE) {
       const tile = getV3DetailedTile(context, current.x, current.y);
       const entity = getV3TileEntity(context, current.x, current.y, state);
-      if (tile.passable && !tile.type.startsWith("settlement-") && !entity && (!nationId || tile.nation?.id === nationId)) {
+      const tileNation = nationAtDetailedTile(context, tile, worldSimulation);
+      if (tile.passable && !tile.type.startsWith("settlement-") && !entity && (!nationId || tileNation?.id === nationId)) {
         candidates.push({ tile, distance: current.distance });
       }
     }
@@ -174,7 +205,7 @@ export function getV3MilitaryView(context, requestedState) {
   };
 }
 
-export function startV3MilitaryMission(context, requestedState) {
+export function startV3MilitaryMission(context, requestedState, worldSimulation = null) {
   const state = normalizeV3MilitaryState(requestedState);
   if (state.pendingEncounter) throw new Error("目の前の相手に対処してから軍務を受けてください。");
   if (state.military.activeMission) throw new Error("進行中の軍務があります。");
@@ -182,16 +213,21 @@ export function startV3MilitaryMission(context, requestedState) {
   if (!nearby) throw new Error("軍務は集落の近くで受けられます。");
   const currentTile = getV3DetailedTile(context, state.player.x, state.player.y);
   const originRegion = currentTile.region ?? context.runtime.regionById.get(nearby.settlement.regionId) ?? null;
-  const playerNation = normalizeNation(
-    context.runtime.nationById.get(nearby.settlement.nationId) ?? currentTile.nation,
+  const settlementTile = context.runtime.tiles[nearby.settlement.tileIndex] ?? currentTile.macroTile;
+  const currentOwner = worldSimulation
+    ? getV3NationAtTile(context.runtime, worldSimulation, settlementTile.index)
+    : context.runtime.nationById.get(nearby.settlement.nationId) ?? currentTile.nation;
+  const playerNation = normalizeWorldNation(
+    context,
+    currentOwner,
     "local-defense",
     "現地守備軍",
   );
   const sequence = state.military.history.length + 1;
-  const targetCandidate = findMissionTarget(context, state, playerNation.id);
+  const targetCandidate = findMissionTarget(context, state, playerNation.id, worldSimulation);
   const targetTile = targetCandidate.tile;
   const missionId = `v3-military:${context.seed}:${sequence}:${targetTile.x},${targetTile.y}`;
-  const enemyNation = enemyNationFor(context, playerNation, originRegion, missionId);
+  const enemyNation = enemyNationFor(context, playerNation, originRegion, missionId, worldSimulation);
   const mission = {
     schemaVersion: MISSION_SCHEMA_VERSION,
     id: missionId,

@@ -42,7 +42,7 @@
     <main class="v3-game" id="v3Game" hidden>
       <header class="v3-game-header">
         <div><small id="v3NationName">生成世界</small><strong id="v3RegionName">現在地</strong></div>
-        <div class="v3-header-actions"><button type="button" data-v3-action="map">世界地図</button><button type="button" data-v3-action="military" id="v3MilitaryButton">軍務</button><button type="button" data-v3-action="menu">道具</button></div>
+        <div class="v3-header-actions"><button type="button" data-v3-action="commerce">交易・商会</button><button type="button" data-v3-action="map">世界地図</button><button type="button" data-v3-action="military" id="v3MilitaryButton">軍務</button><button type="button" data-v3-action="menu">道具</button></div>
       </header>
 
       <section class="v3-play-layout">
@@ -65,6 +65,7 @@
         <aside class="v3-place-window" aria-live="polite">
           <small id="v3ClockLabel">第1日 08:00</small>
           <strong id="v3TerrainLabel">草原</strong>
+          <span id="v3TerrainEffect">移動10分 · 通常の地勢</span>
           <span id="v3NearbyLabel">周辺を確認中</span>
           <span class="v3-military-summary" id="v3MilitaryLabel">軍務を確認中</span>
           <span id="v3ChunkLabel">周辺生成 9区画</span>
@@ -103,10 +104,36 @@
       </article>
     </section>
 
+    <section class="v3-commerce" id="v3CommerceModal" role="dialog" aria-modal="true" aria-labelledby="v3CommerceTitle" hidden>
+      <article class="v3-commerce-card">
+        <header><div><small>MERCHANT ROAD / COMPANY</small><h1 id="v3CommerceTitle">交易・商会</h1><p>市場で仕入れ、別の市場へ運び、国家の営業資格を得て商会を広げます。</p></div><button type="button" data-v3-close="commerce">閉じる</button></header>
+        <div id="v3CommerceContent"></div>
+      </article>
+    </section>
+
     <section class="v3-world-map" id="v3WorldMap" role="dialog" aria-modal="true" aria-labelledby="v3WorldMapTitle" hidden>
-      <header><div><small>GENERATED WORLD / OVERVIEW</small><h1 id="v3WorldMapTitle">世界地図</h1><p>国家・地方・街道・集落を持つ概算世界。現在地は白い輪で表示されます。</p></div><button type="button" data-v3-close="map">地図を閉じる</button></header>
-      <div class="v3-world-map-canvas"><canvas id="v3WorldCanvas" aria-label="生成された世界の全体地図"></canvas></div>
-      <footer><span><i class="is-player"></i>現在地</span><span id="v3WorldMissionLegend" hidden><i class="is-mission"></i>軍務作戦地</span><span><i class="is-city"></i>都市・町・村</span><span><i class="is-road"></i>街道</span><strong id="v3WorldMapPosition">現在地</strong></footer>
+      <header><div><small>GENERATED WORLD / LIVING HISTORY</small><h1 id="v3WorldMapTitle">動く世界地図</h1><p>50年の事前史から現在まで、国家・地方・戦争・独立を月単位で保存します。</p></div><div class="v3-world-date"><span>誓暦</span><strong id="v3WorldDate">317年 4月</strong></div><button type="button" data-v3-close="map" aria-label="地図を閉じる">閉じる</button></header>
+      <nav class="v3-world-layers" aria-label="地図レイヤー">
+        <button class="is-active" type="button" data-v3-map-layer="nations" aria-pressed="true">国家</button>
+        <button type="button" data-v3-map-layer="terrain" aria-pressed="false">地形</button>
+        <button type="button" data-v3-map-layer="regions" aria-pressed="false">地方</button>
+        <button type="button" data-v3-map-layer="wars" aria-pressed="false">戦争</button>
+      </nav>
+      <div class="v3-world-map-workspace">
+        <section class="v3-world-map-stage" aria-label="世界地図と年代操作">
+          <div class="v3-world-map-canvas"><canvas id="v3WorldCanvas" aria-label="生成された世界の全体地図。国家一覧からも勢力を選択できます"></canvas></div>
+          <div class="v3-world-history-control">
+            <label for="v3WorldHistory"><span>年代</span><input id="v3WorldHistory" type="range" min="0" max="0" value="0" /><output id="v3WorldHistoryLabel">現在</output></label>
+            <button type="button" data-v3-history-current>現在へ戻る</button>
+          </div>
+        </section>
+        <aside class="v3-world-intelligence" aria-label="世界情勢">
+          <section class="v3-world-summary"><header><small>WORLD STATE</small><strong>世界情勢</strong></header><div id="v3WorldStats"></div><div class="v3-world-nation-list" id="v3WorldNationList" aria-label="国家一覧"></div></section>
+          <section class="v3-world-dossier" id="v3WorldDossier" aria-live="polite"><p>地図か国家一覧から勢力を選択してください。</p></section>
+          <section class="v3-world-chronicle"><header><small>CHRONICLE</small><strong>年代記</strong></header><ol id="v3WorldChronicle"></ol></section>
+        </aside>
+      </div>
+      <footer><span><i class="is-player"></i>現在地</span><span id="v3WorldMissionLegend" hidden><i class="is-mission"></i>軍務作戦地</span><span><i class="is-city"></i>都市・町・村</span><span><i class="is-road"></i>街道</span><span><i class="is-site"></i>地形地点</span><strong id="v3WorldMapPosition">現在地</strong><div><button type="button" data-v3-world-advance="1">1か月進める</button><button type="button" data-v3-world-advance="12">12か月観測</button></div></footer>
     </section>
 
     <div class="v3-toast" id="v3Toast" role="status" aria-live="polite"></div>

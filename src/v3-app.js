@@ -27,6 +27,32 @@ import {
   startV3MilitaryMission,
   writeV3GroupBattleBridge,
 } from "./v3-group-combat.js";
+import {
+  advanceV3CompanyMonth,
+  buyV3Commodity,
+  contributeV3CompanyCapital,
+  foundV3MerchantCompany,
+  getV3MerchantView,
+  normalizeV3MerchantState,
+  observeV3Market,
+  openV3CompanyBranch,
+  recruitV3CompanyStaff,
+  resolveV3CharterApplication,
+  resolveV3CompanyIncident,
+  secureV3CompanyRoute,
+  sellV3Commodity,
+  startV3CharterApplication,
+} from "./v3-merchant-system.js";
+import {
+  advanceV3WorldSimulation,
+  buildV3WorldPrehistory,
+  getV3NationAtTile,
+  getV3NationDossier,
+  getV3WorldChronicle,
+  getV3WorldSimulationView,
+  normalizeV3WorldSimulation,
+  V3_PREHISTORY_MONTHS,
+} from "./v3-world-simulation.js";
 
 const STORAGE_KEY = "leviathan-covenant-v3-save";
 const WORLD_CONFIG = Object.freeze({ width: 192, height: 120, plateCount: 28, nationCount: 7 });
@@ -60,6 +86,7 @@ const elements = {
   field: document.querySelector("#v3Field"),
   clockLabel: document.querySelector("#v3ClockLabel"),
   terrainLabel: document.querySelector("#v3TerrainLabel"),
+  terrainEffect: document.querySelector("#v3TerrainEffect"),
   nearbyLabel: document.querySelector("#v3NearbyLabel"),
   chunkLabel: document.querySelector("#v3ChunkLabel"),
   messages: document.querySelector("#v3Messages"),
@@ -70,6 +97,7 @@ const elements = {
   personalBattleHpBar: document.querySelector("#v3PersonalBattleHpBar"),
   personalBattleHpLabel: document.querySelector("#v3PersonalBattleHpLabel"),
   personalBattleCommands: document.querySelector("#v3PersonalBattleCommands"),
+  commerceButton: document.querySelector('[data-v3-action="commerce"]'),
   mapButton: document.querySelector('[data-v3-action="map"]'),
   militaryButton: document.querySelector("#v3MilitaryButton"),
   militaryLabel: document.querySelector("#v3MilitaryLabel"),
@@ -82,9 +110,18 @@ const elements = {
   encounterActions: document.querySelector("#v3EncounterActions"),
   inventoryModal: document.querySelector("#v3InventoryModal"),
   inventoryList: document.querySelector("#v3InventoryList"),
+  commerceModal: document.querySelector("#v3CommerceModal"),
+  commerceContent: document.querySelector("#v3CommerceContent"),
   worldMap: document.querySelector("#v3WorldMap"),
   worldCanvas: document.querySelector("#v3WorldCanvas"),
   worldMissionLegend: document.querySelector("#v3WorldMissionLegend"),
+  worldDate: document.querySelector("#v3WorldDate"),
+  worldHistory: document.querySelector("#v3WorldHistory"),
+  worldHistoryLabel: document.querySelector("#v3WorldHistoryLabel"),
+  worldStats: document.querySelector("#v3WorldStats"),
+  worldNationList: document.querySelector("#v3WorldNationList"),
+  worldDossier: document.querySelector("#v3WorldDossier"),
+  worldChronicle: document.querySelector("#v3WorldChronicle"),
   worldMapPosition: document.querySelector("#v3WorldMapPosition"),
   toast: document.querySelector("#v3Toast"),
 };
@@ -93,8 +130,14 @@ let runtime = null;
 let context = null;
 let state = null;
 let worldOptions = null;
+let worldSimulation = null;
 let backgroundTimer = null;
 let toastTimer = null;
+let mapLayer = "nations";
+let mapHistoryIndex = null;
+let selectedNationId = null;
+let worldAdvanceBusy = false;
+const worldChronicleCache = new WeakMap();
 
 function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>'"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[character]));
@@ -116,15 +159,21 @@ function readSave() {
 }
 
 function saveGame() {
-  if (!state || !worldOptions) return;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 3, world: worldOptions, field: state, savedAt: new Date().toISOString() }));
+  if (!state || !worldOptions || !worldSimulation) return;
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({
+    version: 3,
+    world: worldOptions,
+    field: state,
+    worldSimulation,
+    savedAt: new Date().toISOString(),
+  }));
 }
 
 function updateContinueButton() {
   const saved = readSave();
   elements.continueButton.disabled = !saved;
   elements.continueSummary.textContent = saved
-    ? `${saved.field.player?.name ?? "冒険者"} · ${saved.field.steps ?? 0}歩 · 周辺${saved.field.generatedChunks?.length ?? 0}区画生成済み`
+    ? `${saved.field.player?.name ?? "冒険者"} · ${saved.worldSimulation?.year ?? 317}年${saved.worldSimulation?.month ?? 4}月 · ${saved.field.steps ?? 0}歩`
     : "保存された冒険はありません";
 }
 
@@ -136,35 +185,56 @@ function setGenerationProgress(progress, label) {
   if (label) elements.generationDetail.textContent = label;
 }
 
-async function prepareWorld(options, savedField = null, groupBattleReturn = null) {
+async function prepareWorld(options, savedField = null, savedWorldSimulation = null, groupBattleReturn = null) {
   elements.launch.hidden = true;
   elements.game.hidden = true;
   elements.generation.hidden = false;
   elements.generationLabel.textContent = savedField ? "世界を読み戻しています" : "概算世界を構築しています";
   setGenerationProgress(0, "地形の輪郭を定めています。");
   const generatedWorld = createGeneratedWorldState(options);
-  runtime = await buildGeneratedWorldAsync(generatedWorld, ({ progress, label }) => setGenerationProgress(progress * 0.88, label));
-  setGenerationProgress(92, "現在地の周囲を1マス単位へ展開しています。");
+  runtime = await buildGeneratedWorldAsync(generatedWorld, ({ progress, label }) => setGenerationProgress(progress * 0.68, label));
+  if (savedWorldSimulation) {
+    setGenerationProgress(86, "保存された国境と年代記を読み戻しています。");
+    worldSimulation = normalizeV3WorldSimulation(runtime, options, savedWorldSimulation);
+  } else {
+    elements.generationLabel.textContent = "世界の50年史を編んでいます";
+    worldSimulation = await buildV3WorldPrehistory(runtime, options, {
+      months: V3_PREHISTORY_MONTHS,
+      onProgress: ({ progress, year, month }) => setGenerationProgress(70 + progress * 27, `誓暦${year}年${month}月 · 国家が選択と対立を重ねています。`),
+    });
+  }
+  setGenerationProgress(98, "現在地の周囲を1マス単位へ展開しています。");
   context = createV3WorldContext(runtime, options.seed);
   state = normalizeV3MilitaryState(savedField ? normalizeV3FieldState(context, savedField) : createV3FieldState(context, { playerName: options.playerName }));
+  normalizeV3MerchantState(state);
   if (groupBattleReturn) {
     state = applyV3GroupBattleReturn(state, groupBattleReturn);
     clearV3GroupBattleBridge(localStorage);
   }
   worldOptions = { ...WORLD_CONFIG, ...options, playerName: state.player.name };
+  mapHistoryIndex = null;
+  selectedNationId = null;
   setGenerationProgress(100, "足元の世界が形になりました。");
   saveGame();
   await new Promise((resolve) => setTimeout(resolve, 260));
   elements.generation.hidden = true;
   elements.game.hidden = false;
   renderGame();
-  if (groupBattleReturn) showToast(groupBattleReturn.status === "completed" ? "集団戦の戦果をV3へ反映しました。" : "作戦地点へ戻りました。集団戦を再開できます。");
+  if (groupBattleReturn) {
+    showToast(groupBattleReturn.status === "completed" ? "集団戦の戦果をV3へ反映しました。" : "作戦地点へ戻りました。集団戦を再開できます。");
+    requestAnimationFrame(() => (state.pendingEncounter?.type === "group-battle"
+      ? elements.encounterActions.querySelector("button")
+      : elements.field.querySelector(".is-player"))?.focus());
+  }
   scheduleBackgroundGeneration();
   window.__v3Game = {
     get state() { return state; },
     get context() { return context; },
     get runtime() { return runtime; },
+    get worldSimulation() { return worldSimulation; },
     move: movePlayer,
+    advanceWorld,
+    openWorldMap,
     military: handleMilitaryAction,
     groupBattle: beginV3GroupBattle,
   };
@@ -217,6 +287,7 @@ function renderEncounter() {
   elements.movementPad.hidden = Boolean(personalEnemy);
   elements.mapButton.disabled = Boolean(personalEnemy);
   elements.inventoryButton.disabled = Boolean(personalEnemy);
+  elements.commerceButton.disabled = Boolean(personalEnemy);
   elements.encounterModal.hidden = !encounter || Boolean(personalEnemy);
   if (!encounter) return;
   if (personalEnemy) {
@@ -259,10 +330,65 @@ function renderInventory() {
   elements.inventoryList.innerHTML = items.length ? items.map((item, index) => `<button type="button" data-v3-use-item="${index}" ${item.heal && state.player.hp < state.player.maxHp ? "" : "disabled"}><i>${escapeHtml(item.id === "medicinal-herb" ? "草" : item.id === "wild-berries" ? "実" : "物")}</i><span><strong>${escapeHtml(item.name)}</strong><small>${item.heal ? `HPを${item.heal}回復` : "素材"}</small></span><b>${item.heal ? "使う" : "所持"}</b></button>`).join("") : "<p>道具はまだ持っていない。</p>";
 }
 
+function renderCommerce() {
+  const previousScroll = elements.commerceContent.scrollTop;
+  const model = getV3MerchantView(context, state);
+  const cargoById = Object.fromEntries(model.cargo.map((entry) => [entry.commodityId, entry]));
+  const market = model.market;
+  const marketBlock = market ? `<section class="v3-commerce-section"><header><div><small>CURRENT MARKET</small><h2>${escapeHtml(model.marketSettlement.name)}の市場</h2></div><button type="button" data-v3-trade-action="observe">相場を記録</button></header><div class="v3-market-grid">${model.commodities.map((commodity) => {
+    const good = market.goods[commodity.id];
+    const cargo = cargoById[commodity.id];
+    return `<article><header><strong>${escapeHtml(commodity.name)}</strong><small>在庫${good.stock}</small></header><p>仕入 ${good.buyPrice} ／ 売却 ${good.sellPrice}</p><div><button type="button" data-v3-trade-action="buy" data-v3-commodity="${commodity.id}" ${state.player.gold < good.buyPrice || good.stock < 1 ? "disabled" : ""}>1個仕入</button><button type="button" data-v3-trade-action="sell" data-v3-commodity="${commodity.id}" ${cargo?.quantity ? "" : "disabled"}>1個売却${cargo?.quantity ? ` · 所持${cargo.quantity}` : ""}</button></div></article>`;
+  }).join("")}</div></section>` : `<section class="v3-commerce-section is-empty"><small>CURRENT MARKET</small><h2>市場まで歩く</h2><p>都市・町・村の中心街へ入ると、現地相場と売買操作が開きます。</p></section>`;
+  const cargo = `<section class="v3-commerce-section v3-trade-ledger"><header><div><small>PERSONAL TRADE</small><h2>個人商売</h2></div><b>${model.cargoLoad.units}/${model.cargoLoad.unitCapacity}個 · ${model.cargoLoad.weight}/${model.cargoLoad.weightCapacity}重量</b></header><ul>${model.cargo.length ? model.cargo.map((entry) => `<li><strong>${escapeHtml(entry.name)} × ${entry.quantity}</strong><span>平均原価 ${entry.averageCost}</span></li>`).join("") : "<li>積荷なし</li>"}</ul><p>市場${model.knownMarkets.length}か所 · 売却${model.tradeStats.unitsSold}個 · 実現利益${model.tradeStats.realizedProfit >= 0 ? "+" : ""}${model.tradeStats.realizedProfit}</p></section>`;
+  let companyBlock;
+  if (model.company.status !== "company") {
+    const requirements = model.founding.requirements.map((entry) => `<li class="${entry.value >= entry.target ? "is-met" : ""}"><span>${escapeHtml(entry.label)}</span><strong>${entry.value} / ${entry.target}</strong></li>`).join("");
+    companyBlock = `<section class="v3-commerce-section"><header><div><small>FOUND A COMPANY</small><h2>商会を結成する</h2></div><b>${model.founding.ready ? "設立可能" : "実績が必要"}</b></header><ul class="v3-company-requirements">${requirements}</ul><label class="v3-company-name"><span>商会名</span><input id="v3CompanyName" maxlength="24" value="${escapeHtml(`${state.player.name}商会`)}"></label><div class="v3-strategy-grid">${model.strategies.map((strategy) => `<button type="button" data-v3-company-found="${strategy.id}" ${model.founding.ready ? "" : "disabled"}><strong>${escapeHtml(strategy.name)}</strong><small>${escapeHtml(strategy.description)} · 設立資金12</small></button>`).join("")}</div></section>`;
+  } else {
+    const charterCards = model.jurisdictions.map((jurisdiction) => {
+      if (jurisdiction.charter) return `<article class="v3-charter-card is-active"><header><span><small>${escapeHtml(jurisdiction.government)}</small><strong>${escapeHtml(jurisdiction.name)}</strong></span><b>営業可</b></header><p>${escapeHtml(jurisdiction.charter.authority)}：${escapeHtml(jurisdiction.charter.basis)}</p><small>義務：${escapeHtml(jurisdiction.charter.obligation)}${jurisdiction.charter.monthlyDue ? ` · 月${jurisdiction.charter.monthlyDue}` : ""}</small></article>`;
+      if (jurisdiction.application) return `<article class="v3-charter-card is-pending"><header><span><small>${escapeHtml(jurisdiction.government)}</small><strong>${escapeHtml(jurisdiction.name)}</strong></span><b>条件提示</b></header><p>${escapeHtml(jurisdiction.application.authority)}への返答を選ぶ。</p><div>${jurisdiction.decisions.map((decision) => `<button type="button" data-v3-charter-decision="${decision.id}" data-v3-application="${escapeHtml(jurisdiction.application.id)}" ${model.company.treasury < decision.effectiveCost ? "disabled" : ""}><strong>${escapeHtml(decision.name)}</strong><small>${escapeHtml(decision.description)}${decision.effectiveCost ? ` · 資金${decision.effectiveCost}` : ""}${decision.monthlyDue ? ` · 月${decision.monthlyDue}` : ""}${decision.minimumReputation ? ` · 信用${decision.minimumReputation}${decision.eligible ? "達成" : "未達・却下見込み"}` : ""}</small></button>`).join("")}</div></article>`;
+      return `<article class="v3-charter-card"><header><span><small>${escapeHtml(jurisdiction.government)}</small><strong>${escapeHtml(jurisdiction.name)}</strong></span><b>資格なし</b></header><p><strong>${escapeHtml(jurisdiction.procedure.name)}</strong> · ${escapeHtml(jurisdiction.procedure.authority)}</p><p>${escapeHtml(jurisdiction.procedure.summary)}</p><div>${jurisdiction.procedure.filings.map((filing) => `<button type="button" data-v3-charter-start="${escapeHtml(jurisdiction.id)}" data-v3-filing="${filing.id}" ${model.company.treasury < filing.cost ? "disabled" : ""}><strong>${escapeHtml(filing.name)}</strong><small>${escapeHtml(filing.description)}${filing.cost ? ` · 資金${filing.cost}` : ""}</small></button>`).join("")}</div></article>`;
+    }).join("") || "<p>市場の相場を記録すると、その国の営業手続きが現れます。</p>";
+    const staff = model.company.staff.map((entry) => `<li><strong>${escapeHtml(entry.name)} · ${escapeHtml(entry.roleName)}</strong><span>${entry.assignmentId ? "配置済み" : "配置待ち"} · 月給${entry.wage}</span></li>`).join("") || "<li>人員なし</li>";
+    const candidates = model.candidates.map((entry) => `<button type="button" data-v3-company-hire="${escapeHtml(entry.id)}" ${model.company.treasury < entry.signingBonus ? "disabled" : ""}><strong>${escapeHtml(entry.name)} · ${escapeHtml(entry.roleName)}</strong><small>${escapeHtml(entry.originSettlementName)}出身 · 契約${entry.signingBonus} · 月給${entry.wage}</small></button>`).join("") || "<p>候補者は全員雇用済みです。</p>";
+    const sourceOptions = model.marketOptions.map((entry) => `<option value="${escapeHtml(entry.id)}">${escapeHtml(entry.name)} · ${escapeHtml(entry.nationName)}${entry.licensed ? "" : "（資格なし）"}</option>`).join("");
+    const destinationOptions = model.marketOptions.map((entry, index) => `<option value="${escapeHtml(entry.id)}" ${index === 1 ? "selected" : ""}>${escapeHtml(entry.name)} · ${escapeHtml(entry.nationName)}${entry.licensed ? "" : "（資格なし）"}</option>`).join("");
+    const routeForm = model.routeLeaders.length && model.marketOptions.length >= 2 ? `<div class="v3-company-form" data-v3-route-form><label>仕入地<select data-v3-route-source>${sourceOptions}</select></label><label>販売地<select data-v3-route-destination>${destinationOptions}</select></label><label>商品<select data-v3-route-commodity>${model.commodities.map((entry) => `<option value="${entry.id}">${escapeHtml(entry.name)}</option>`).join("")}</select></label><label>運行<select data-v3-route-approach>${model.routeApproaches.map((entry) => `<option value="${entry.id}">${escapeHtml(entry.name)} · 契約${entry.cost}</option>`).join("")}</select></label><label>責任者<select data-v3-route-leader>${model.routeLeaders.map((entry) => `<option value="${escapeHtml(entry.id)}">${escapeHtml(entry.name)} · ${escapeHtml(entry.roleName)}</option>`).join("")}</select></label><button type="button" data-v3-route-secure>販路を契約</button></div>` : "<p>二市場の記録と、配置待ちの隊商頭または護衛頭が必要です。</p>";
+    const routes = model.company.routes.map((entry) => `<li><strong>${escapeHtml(entry.sourceName)} → ${escapeHtml(entry.destinationName)} · ${escapeHtml(entry.commodityName)}</strong><span>${entry.status === "active" ? "運行中" : entry.status === "blocked" ? "事故対応待ち" : "休止"} · ${entry.successfulRuns}便</span></li>`).join("") || "<li>販路なし</li>";
+    const localJurisdiction = model.marketSettlement ? model.jurisdictions.find((entry) => entry.settlementIds.includes(model.marketSettlement.id)) : null;
+    const branchForm = model.marketSettlement && localJurisdiction?.charter && model.branchManagers.length ? `<div class="v3-company-form" data-v3-branch-form><label>規模<select data-v3-branch-format>${model.branchFormats.map((entry) => `<option value="${entry.id}">${escapeHtml(entry.name)} · 開業${entry.cost}</option>`).join("")}</select></label><label>開店方法<select data-v3-branch-launch>${model.launchPlans.map((entry) => `<option value="${entry.id}">${escapeHtml(entry.name)} · ${entry.months}か月</option>`).join("")}</select></label><label>店長<select data-v3-branch-manager>${model.branchManagers.map((entry) => `<option value="${escapeHtml(entry.id)}">${escapeHtml(entry.name)} · ${escapeHtml(entry.roleName)}</option>`).join("")}</select></label><button type="button" data-v3-branch-open>${escapeHtml(model.marketSettlement.name)}へ出店</button></div>` : `<p>${model.marketSettlement ? localJurisdiction?.charter ? "配置待ちの番頭か仕入役が必要です。" : "先にこの国の営業資格を取得してください。" : "出店する市場まで歩いてください。"}</p>`;
+    const branches = model.company.branches.map((entry) => `<li><strong>${escapeHtml(entry.settlementName)}</strong><span>${entry.status === "preparing" ? `準備${entry.preparationProgress}/${entry.preparationMonths}` : entry.status === "open" ? "営業中" : "休業"}</span></li>`).join("") || "<li>支店なし</li>";
+    const incidents = model.company.pendingIncidents.map((entry) => `<article class="v3-company-incident"><strong>${escapeHtml(entry.title)}</strong><div><button type="button" data-v3-incident="${escapeHtml(entry.id)}" data-v3-decision="escort" ${model.company.treasury < 4 ? "disabled" : ""}>資金4で護衛増強</button><button type="button" data-v3-incident="${escapeHtml(entry.id)}" data-v3-decision="detour">一か月迂回</button><button type="button" data-v3-incident="${escapeHtml(entry.id)}" data-v3-decision="take_loss">損失受入れ</button></div></article>`).join("");
+    const ledger = model.company.monthlyLedger.slice(0, 4).map((entry) => `<li><strong>${escapeHtml(entry.period)} · 損益${entry.profit >= 0 ? "+" : ""}${entry.profit}</strong><span>売上${entry.revenue}／費用${entry.costs}（給金${entry.wages}・資格${entry.charterDues}）</span></li>`).join("") || "<li>決算なし</li>";
+    companyBlock = `<section class="v3-company-board"><header><div><small>MERCHANT COMPANY</small><h2>${escapeHtml(model.company.name)}</h2><p>${escapeHtml(model.strategies.find((entry) => entry.id === model.company.strategyId)?.name ?? "商会経営")}</p></div><div><strong>資金${model.company.treasury}</strong><span>信用${model.company.reputation}</span><button type="button" data-v3-company-invest ${state.player.gold < 10 ? "disabled" : ""}>個人資金10を出資</button></div></header>${incidents}<section class="v3-commerce-section"><header><div><small>LICENSES</small><h2>国家制度と営業資格</h2></div><b>${model.company.charters.length}/${model.jurisdictions.length}か国</b></header><div class="v3-charter-grid">${charterCards}</div></section><section class="v3-company-columns"><div class="v3-commerce-section"><header><div><small>STAFF</small><h2>人員の手配</h2></div></header><ul>${staff}</ul><details><summary>採用候補</summary><div class="v3-candidate-grid">${candidates}</div></details></div><div class="v3-commerce-section"><header><div><small>ROUTES</small><h2>販路の確保</h2></div></header>${routeForm}<ul>${routes}</ul></div><div class="v3-commerce-section"><header><div><small>BRANCH</small><h2>出店の段取り</h2></div></header>${branchForm}<ul>${branches}</ul></div><div class="v3-commerce-section"><header><div><small>MONTHLY</small><h2>月次決算</h2></div><button type="button" data-v3-company-month>翌月へ進む</button></header><ul>${ledger}</ul></div></section></section>`;
+  }
+  elements.commerceContent.innerHTML = `${marketBlock}${cargo}${companyBlock}`;
+  elements.commerceContent.scrollTop = previousScroll;
+}
+
+function focusCommercePrimaryAction() {
+  const primary = elements.commerceContent.querySelector([
+    '[data-v3-trade-action="observe"]:not(:disabled)',
+    '[data-v3-company-found]:not(:disabled)',
+    '[data-v3-charter-decision]:not(:disabled)',
+    '[data-v3-charter-start]:not(:disabled)',
+    '[data-v3-company-hire]:not(:disabled)',
+    '[data-v3-route-secure]:not(:disabled)',
+    '[data-v3-branch-open]:not(:disabled)',
+    '[data-v3-company-month]:not(:disabled)',
+  ].join(", "));
+  (primary ?? elements.commerceModal.querySelector("[data-v3-close='commerce']"))?.focus();
+}
+
 function renderGame() {
   if (!state || !context) return;
   const location = getV3LocationSummary(context, state);
-  elements.nationName.textContent = location.nationName;
+  const currentNation = worldSimulation && location.tile.macroIndex !== undefined
+    ? getV3NationAtTile(runtime, worldSimulation, location.tile.macroIndex)
+    : null;
+  elements.nationName.textContent = currentNation?.name ?? location.nationName;
   elements.regionName.textContent = location.regionName;
   elements.playerLabel.textContent = state.player.name;
   elements.levelLabel.textContent = `LV ${state.player.level}`;
@@ -272,6 +398,7 @@ function renderGame() {
   elements.goldLabel.textContent = String(state.player.gold);
   elements.clockLabel.textContent = `第${location.day}日 ${location.time}`;
   elements.terrainLabel.textContent = location.tile.name;
+  elements.terrainEffect.textContent = `${location.tile.passable ? `移動${location.tile.travelMinutes}分` : "通行不能"} · ${location.tile.terrainNote}`;
   elements.nearbyLabel.textContent = location.nearestSettlement
     ? `${location.nearestSettlement.settlement.name}まで約${Math.round(location.nearestSettlement.distance)}歩`
     : "近くに集落はない";
@@ -281,6 +408,7 @@ function renderGame() {
   renderEncounter();
   renderMilitary();
   renderInventory();
+  if (!elements.commerceModal.hidden) renderCommerce();
 }
 
 function movePlayer(direction) {
@@ -327,7 +455,7 @@ function handleMilitaryAction() {
   try {
     let military = getV3MilitaryView(context, state);
     if (!military.active) {
-      state = startV3MilitaryMission(context, state);
+      state = startV3MilitaryMission(context, state, worldSimulation);
       saveGame();
       renderGame();
       military = getV3MilitaryView(context, state);
@@ -368,7 +496,100 @@ function scheduleBackgroundGeneration() {
   backgroundTimer = setTimeout(run, 850);
 }
 
+function colorMix(color, target, amount) {
+  const parse = (value) => /^#[0-9a-f]{6}$/i.test(value ?? "")
+    ? [1, 3, 5].map((index) => Number.parseInt(value.slice(index, index + 2), 16)) : [116, 134, 93];
+  const source = parse(color);
+  const destination = parse(target);
+  return `#${source.map((value, index) => Math.round(value + (destination[index] - value) * amount).toString(16).padStart(2, "0")).join("")}`;
+}
+
+function regionMapColor(color, regionId) {
+  let hash = 0;
+  for (const character of String(regionId)) hash = (Math.imul(hash, 31) + character.charCodeAt(0)) >>> 0;
+  const amount = 0.08 + (hash % 5) * 0.035;
+  return colorMix(color, hash % 2 ? "#ffffff" : "#071416", amount);
+}
+
+function formatWorldPeriod(periodOrState) {
+  const period = typeof periodOrState === "string" ? periodOrState : `${periodOrState.year}-${periodOrState.month}`;
+  const [year, month] = period.split("-");
+  return `誓暦${year}年 ${month}月`;
+}
+
+function currentMapView() {
+  return getV3WorldSimulationView(runtime, worldSimulation, mapHistoryIndex);
+}
+
+function chronicleEntries() {
+  const cached = worldChronicleCache.get(worldSimulation);
+  if (cached) return cached;
+  const entries = getV3WorldChronicle(runtime, worldSimulation, 120);
+  worldChronicleCache.set(worldSimulation, entries);
+  return entries;
+}
+
+function periodNumber(period) {
+  const [year, month] = String(period).split("-").map(Number);
+  return year * 12 + month;
+}
+
+function regionCountFor(map, nationId) {
+  return [...map.regionById.values()].filter((region) => region.nationId === nationId).length;
+}
+
+function renderWorldPanels(map) {
+  const historyMaximum = Math.max(0, worldSimulation.history.length - 1);
+  elements.worldHistory.max = String(historyMaximum);
+  elements.worldHistory.value = String(mapHistoryIndex ?? historyMaximum);
+  elements.worldHistoryLabel.value = `${formatWorldPeriod(map)} · ${map.reason}`;
+  elements.worldDate.textContent = `${map.year}年 ${map.month}月${map.isCurrent ? "" : "（回顧）"}`;
+  const currentButton = elements.worldMap.querySelector("[data-v3-history-current]");
+  currentButton.disabled = map.isCurrent;
+  elements.worldMap.querySelectorAll("[data-v3-world-advance]").forEach((button) => {
+    button.disabled = worldAdvanceBusy || !map.isCurrent;
+  });
+  elements.worldMap.querySelectorAll("[data-v3-map-layer]").forEach((button) => {
+    const active = button.dataset.v3MapLayer === mapLayer;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-pressed", String(active));
+  });
+
+  const activeNations = map.nations.filter((nation) => regionCountFor(map, nation.id) > 0);
+  const settlementCount = map.objects.filter((object) => object.settlementLevel).length;
+  elements.worldStats.innerHTML = `<span><b>${activeNations.length}</b>勢力</span><span><b>${map.regionById.size}</b>地方</span><span><b>${settlementCount}</b>集落</span><span><b>${map.activeWars.length}</b>戦争</span>`;
+  elements.worldNationList.innerHTML = activeNations.sort((left, right) => regionCountFor(map, right.id) - regionCountFor(map, left.id) || left.name.localeCompare(right.name, "ja"))
+    .map((nation) => `<button type="button" data-v3-select-nation="${escapeHtml(nation.id)}" class="${nation.id === selectedNationId ? "is-selected" : ""}" aria-pressed="${nation.id === selectedNationId}"><i style="--nation-color:${escapeHtml(nation.color)}"></i><span><strong>${escapeHtml(nation.name)}</strong><small>${regionCountFor(map, nation.id)}地方</small></span></button>`).join("");
+
+  const dossier = getV3NationDossier(runtime, worldSimulation, selectedNationId, mapHistoryIndex);
+  if (!dossier) {
+    elements.worldDossier.innerHTML = "<p>地図か国家一覧から勢力を選択してください。</p>";
+  } else {
+    const condition = dossier.condition;
+    const relationWarning = dossier.relations.filter((relation) => ["戦争", "危機", "緊張"].includes(relation.status)).length;
+    const warText = dossier.wars.length
+      ? dossier.wars.map((war) => `${escapeHtml(map.nationById.get(war.attackerNationId)?.name ?? war.attackerName ?? "不明勢力")} 対 ${escapeHtml(map.nationById.get(war.defenderNationId)?.name ?? war.defenderName ?? "不明勢力")}`).join(" / ")
+      : "交戦なし";
+    elements.worldDossier.innerHTML = `<header><i style="--nation-color:${escapeHtml(dossier.nation.color)}"></i><div><small>${dossier.isHistorical ? "HISTORICAL POLITY" : "NATION DOSSIER"}</small><strong>${escapeHtml(dossier.nation.name)}</strong><span>${escapeHtml(dossier.nation.government ?? "統治形態不明")}</span></div></header><dl><div><dt>領域</dt><dd>${dossier.regions.length}地方</dd></div><div><dt>人口</dt><dd>${Math.round(dossier.population).toLocaleString("ja-JP")}人</dd></div><div><dt>集落</dt><dd>都${dossier.settlementCounts.city}・町${dossier.settlementCounts.town}・村${dossier.settlementCounts.village}</dd></div><div><dt>隣国</dt><dd>${dossier.neighbors.length}勢力</dd></div>${condition ? `<div><dt>結束</dt><dd>${condition.cohesion}</dd></div><div><dt>備蓄</dt><dd>${condition.reserves}</dd></div><div><dt>態勢</dt><dd>${escapeHtml(condition.posture)}</dd></div><div><dt>緊張関係</dt><dd>${relationWarning}</dd></div>` : ""}</dl><p class="v3-dossier-war">${warText}</p>${dossier.latestAction ? `<p><strong>直近の判断</strong><span>${escapeHtml(dossier.latestAction.title)}</span><small>${escapeHtml(dossier.latestAction.summary)}</small></p>` : ""}`;
+  }
+
+  const maximumPeriod = periodNumber(map.period);
+  const availableEntries = chronicleEntries().filter((entry) => periodNumber(entry.period) <= maximumPeriod);
+  const entries = [...new Map([
+    ...availableEntries.slice(0, 6),
+    ...availableEntries.filter((entry) => entry.importance >= 4).slice(0, 10),
+  ].map((entry) => [entry.id, entry])).values()].sort((left, right) => periodNumber(right.period) - periodNumber(left.period)
+    || right.importance - left.importance).slice(0, 14);
+  elements.worldChronicle.innerHTML = entries.length ? entries.map((entry) => `<li class="is-priority-${entry.importance}"><time>${formatWorldPeriod(entry.period)}</time><strong>${escapeHtml(entry.title)}</strong><span>${escapeHtml(entry.summary ?? "")}</span></li>`).join("") : "<li><span>大きな事件はまだ記録されていません。</span></li>";
+}
+
 function drawWorldMap() {
+  const map = currentMapView();
+  if (!selectedNationId || !map.nationById.has(selectedNationId) || regionCountFor(map, selectedNationId) === 0) {
+    const location = getV3LocationSummary(context, state);
+    selectedNationId = map.tileNationIds[location.tile.macroIndex] ?? map.nations.find((nation) => regionCountFor(map, nation.id) > 0)?.id ?? null;
+  }
+  renderWorldPanels(map);
   const canvas = elements.worldCanvas;
   const scale = 4;
   canvas.width = runtime.terrain.width * scale;
@@ -377,26 +598,56 @@ function drawWorldMap() {
   drawing.imageSmoothingEnabled = false;
   drawing.fillStyle = "#214650";
   drawing.fillRect(0, 0, canvas.width, canvas.height);
+  const warRegionIds = new Set(map.activeWars.map((war) => war.targetRegionId).filter(Boolean));
   for (const tile of runtime.tiles) {
+    const nationId = map.tileNationIds[tile.index] ?? null;
+    const nationColor = map.nationById.get(nationId)?.color;
     let color = TERRAIN_COLORS[tile.terrain] ?? (tile.passable ? "#74865d" : "#315e68");
-    if (tile.passable && tile.nationId) color = runtime.nationById.get(tile.nationId)?.color ?? color;
-    drawing.globalAlpha = tile.passable ? 0.78 : 1;
+    if (tile.passable && mapLayer !== "terrain" && nationColor) color = nationColor;
+    if (tile.passable && mapLayer === "regions" && tile.regionId) color = regionMapColor(color, tile.regionId);
+    if (tile.passable && nationId === selectedNationId) color = colorMix(color, "#ffffff", 0.18);
+    drawing.globalAlpha = tile.passable ? mapLayer === "terrain" ? 0.94 : 0.82 : 1;
     drawing.fillStyle = color;
     drawing.fillRect(tile.x * scale, tile.y * scale, scale, scale);
-    if (tile.feature === "forest") {
-      drawing.globalAlpha = 0.28;
-      drawing.fillStyle = "#163c31";
+    const tags = new Set(tile.geographyTags ?? []);
+    const geographyTint = tags.has("volcano") ? "#a64b32"
+      : tags.has("marsh") ? "#315e4c"
+        : tags.has("forest") ? "#163c31"
+          : tags.has("farmland") ? "#b3a04f"
+            : tags.has("snowfield") ? "#d8e3de"
+              : tags.has("desert") ? "#c2a15d"
+                : tags.has("tidal_flat") ? "#718b75"
+                  : null;
+    if (geographyTint) {
+      drawing.globalAlpha = tags.has("volcano") ? 0.58 : 0.3;
+      drawing.fillStyle = geographyTint;
+      drawing.fillRect(tile.x * scale, tile.y * scale, scale, scale);
+    }
+    if (mapLayer === "wars" && warRegionIds.has(tile.regionId)) {
+      drawing.globalAlpha = 0.46;
+      drawing.fillStyle = (tile.x + tile.y) % 2 ? "#b62929" : "#6f171b";
       drawing.fillRect(tile.x * scale, tile.y * scale, scale, scale);
     }
   }
-  drawing.globalAlpha = 0.55;
+  drawing.globalAlpha = mapLayer === "terrain" ? 0.35 : mapLayer === "regions" ? 0.5 : 0.62;
+  drawing.strokeStyle = mapLayer === "regions" ? "#172823" : "#f0d99c";
+  drawing.lineWidth = mapLayer === "wars" ? 1.5 : 1;
+  const visibleBorders = mapLayer === "regions" ? runtime.nations.regionBorderSegments ?? [] : map.borderSegments;
+  for (const segment of visibleBorders) {
+    drawing.beginPath();
+    drawing.moveTo(segment.x1 * scale, segment.y1 * scale);
+    drawing.lineTo(segment.x2 * scale, segment.y2 * scale);
+    drawing.stroke();
+  }
+  drawing.globalAlpha = 0.5;
   drawing.strokeStyle = "#e4d5a0";
   drawing.lineWidth = 1;
-  for (const road of runtime.nations.roads ?? []) {
+  for (const road of map.roads) {
+    if (road.available === false) continue;
     drawing.beginPath();
     let previousTile = null;
-    for (let index = 0; index < road.tileIndices.length; index += 1) {
-      const tile = runtime.tiles[road.tileIndices[index]];
+    for (const tileIndex of road.tileIndices) {
+      const tile = runtime.tiles[tileIndex];
       if (!tile) continue;
       if (!previousTile || Math.abs(tile.x - previousTile.x) > runtime.terrain.width / 2) drawing.moveTo(tile.x * scale + 2, tile.y * scale + 2);
       else drawing.lineTo(tile.x * scale + 2, tile.y * scale + 2);
@@ -405,53 +656,91 @@ function drawWorldMap() {
     drawing.stroke();
   }
   drawing.globalAlpha = 1;
-  for (const object of runtime.nations.objects ?? []) {
+  for (const object of map.objects) {
     if (!object.settlementLevel) continue;
-    drawing.fillStyle = "#f4e5b5";
+    drawing.fillStyle = warRegionIds.has(object.regionId) && mapLayer === "wars" ? "#fff1a6" : "#f4e5b5";
     const size = object.settlementLevel === "city" ? 4 : object.settlementLevel === "town" ? 3 : 2;
     drawing.fillRect(object.x * scale + 2 - size / 2, object.y * scale + 2 - size / 2, size, size);
   }
-  const playerX = state.player.x / V3_DETAIL_SCALE * scale;
-  const playerY = state.player.y / V3_DETAIL_SCALE * scale;
-  drawing.beginPath();
-  drawing.arc(playerX, playerY, 6, 0, Math.PI * 2);
-  drawing.strokeStyle = "#ffffff";
-  drawing.lineWidth = 2;
-  drawing.stroke();
+  for (const tile of runtime.tiles.filter((candidate) => candidate.terrainSite)) {
+    drawing.fillStyle = tile.terrainSite.category === "fantasy" ? "#d9c0ec" : tile.terrainSite.category === "astronomy" ? "#b6dbe7" : "#dc875c";
+    drawing.fillRect(tile.x * scale + 1, tile.y * scale + 1, 2, 2);
+  }
   const militaryMission = state.military?.activeMission ?? null;
-  elements.worldMissionLegend.hidden = !militaryMission;
-  if (militaryMission) {
-    const targetX = militaryMission.target.x / V3_DETAIL_SCALE * scale;
-    const targetY = militaryMission.target.y / V3_DETAIL_SCALE * scale;
+  elements.worldMissionLegend.hidden = !map.isCurrent || !militaryMission;
+  if (map.isCurrent) {
+    const playerX = state.player.x / V3_DETAIL_SCALE * scale;
+    const playerY = state.player.y / V3_DETAIL_SCALE * scale;
     drawing.beginPath();
-    drawing.arc(targetX, targetY, 7, 0, Math.PI * 2);
-    drawing.fillStyle = "rgba(116, 31, 27, .72)";
-    drawing.fill();
-    drawing.strokeStyle = "#ffd878";
+    drawing.arc(playerX, playerY, 6, 0, Math.PI * 2);
+    drawing.strokeStyle = "#ffffff";
     drawing.lineWidth = 2;
     drawing.stroke();
-    drawing.fillStyle = "#fff3bd";
-    drawing.font = "bold 7px sans-serif";
-    drawing.textAlign = "center";
-    drawing.textBaseline = "middle";
-    drawing.fillText("軍", targetX, targetY + .5);
+    if (militaryMission) {
+      const targetX = militaryMission.target.x / V3_DETAIL_SCALE * scale;
+      const targetY = militaryMission.target.y / V3_DETAIL_SCALE * scale;
+      drawing.beginPath();
+      drawing.arc(targetX, targetY, 7, 0, Math.PI * 2);
+      drawing.fillStyle = "rgba(116, 31, 27, .72)";
+      drawing.fill();
+      drawing.strokeStyle = "#ffd878";
+      drawing.lineWidth = 2;
+      drawing.stroke();
+      drawing.fillStyle = "#fff3bd";
+      drawing.font = "bold 7px sans-serif";
+      drawing.textAlign = "center";
+      drawing.textBaseline = "middle";
+      drawing.fillText("軍", targetX, targetY + .5);
+    }
   }
   const location = getV3LocationSummary(context, state);
-  elements.worldMapPosition.textContent = militaryMission
-    ? `${location.regionName} · 現在 ${state.player.x},${state.player.y} ／ 作戦 ${militaryMission.target.x},${militaryMission.target.y}`
-    : `${location.regionName} · 詳細座標 ${state.player.x}, ${state.player.y}`;
+  elements.worldMapPosition.textContent = map.isCurrent
+    ? militaryMission
+      ? `${location.regionName} · 現在 ${state.player.x},${state.player.y} ／ 作戦 ${militaryMission.target.x},${militaryMission.target.y}`
+      : `${location.regionName} · ${location.tile.name} · 詳細座標 ${state.player.x}, ${state.player.y}`
+    : `${map.headline ?? map.reason} · ${formatWorldPeriod(map)}`;
 }
 
 function openWorldMap() {
   elements.worldMap.hidden = false;
+  mapHistoryIndex = null;
   drawWorldMap();
   elements.worldMap.querySelector("[data-v3-close='map']").focus();
+}
+
+async function advanceWorld(months = 1) {
+  const amount = Number(months) === 12 ? 12 : 1;
+  if (worldAdvanceBusy || !worldSimulation) return;
+  if (amount === 12 && !window.confirm("世界を12か月進めます。戦争や国境が変化する場合があります。続けますか？")) return;
+  const location = getV3LocationSummary(context, state);
+  const previousNation = getV3NationAtTile(runtime, worldSimulation, location.tile.macroIndex)?.name ?? "無主地";
+  worldAdvanceBusy = true;
+  elements.worldDate.textContent = "世界を進行中…";
+  elements.worldMap.querySelectorAll("[data-v3-world-advance]").forEach((button) => { button.disabled = true; });
+  await new Promise((resolve) => requestAnimationFrame(resolve));
+  try {
+    worldSimulation = advanceV3WorldSimulation(runtime, worldSimulation, amount);
+    mapHistoryIndex = null;
+    saveGame();
+    renderGame();
+    const currentNation = getV3NationAtTile(runtime, worldSimulation, location.tile.macroIndex)?.name ?? "無主地";
+    showToast(previousNation === currentNation ? `${amount}か月進行しました。` : `現在地の支配が${currentNation}へ変わりました。`);
+  } finally {
+    worldAdvanceBusy = false;
+    drawWorldMap();
+  }
 }
 
 function handleAction(action) {
   if (state.pendingEncounter?.type === "enemy") return showToast("個人戦を決着させてください。");
   if (action === "map") return openWorldMap();
   if (action === "military") return handleMilitaryAction();
+  if (action === "commerce") {
+    elements.commerceModal.hidden = false;
+    renderCommerce();
+    focusCommercePrimaryAction();
+    return;
+  }
   if (action === "menu") {
     elements.inventoryModal.hidden = false;
     renderInventory();
@@ -481,10 +770,29 @@ elements.newWorld.addEventListener("submit", async (event) => {
 });
 elements.continueButton.addEventListener("click", async () => {
   const saved = readSave();
-  if (saved) await prepareWorld(saved.world, saved.field);
+  if (saved) await prepareWorld(saved.world, saved.field, saved.worldSimulation);
 });
 
 document.addEventListener("click", (event) => {
+  const mapLayerId = event.target.closest("[data-v3-map-layer]")?.dataset.v3MapLayer;
+  if (mapLayerId) {
+    mapLayer = mapLayerId;
+    drawWorldMap();
+    return;
+  }
+  const nationId = event.target.closest("[data-v3-select-nation]")?.dataset.v3SelectNation;
+  if (nationId) {
+    selectedNationId = nationId;
+    drawWorldMap();
+    return;
+  }
+  const worldAdvance = event.target.closest("[data-v3-world-advance]")?.dataset.v3WorldAdvance;
+  if (worldAdvance) return advanceWorld(Number(worldAdvance));
+  if (event.target.closest("[data-v3-history-current]")) {
+    mapHistoryIndex = null;
+    drawWorldMap();
+    return;
+  }
   const move = event.target.closest("[data-v3-move]")?.dataset.v3Move;
   if (move) return movePlayer(move);
   const groupBattleAction = event.target.closest("[data-v3-group-battle]")?.dataset.v3GroupBattle;
@@ -498,6 +806,82 @@ document.addEventListener("click", (event) => {
   }
   const encounterAction = event.target.closest("[data-v3-encounter]")?.dataset.v3Encounter;
   if (encounterAction) return applyEncounterAction(encounterAction);
+  const tradeAction = event.target.closest("[data-v3-trade-action]");
+  if (tradeAction) {
+    try {
+      if (tradeAction.dataset.v3TradeAction === "observe") state = observeV3Market(context, state);
+      if (tradeAction.dataset.v3TradeAction === "buy") state = buyV3Commodity(context, state, tradeAction.dataset.v3Commodity, 1);
+      if (tradeAction.dataset.v3TradeAction === "sell") state = sellV3Commodity(context, state, tradeAction.dataset.v3Commodity, 1);
+      saveGame(); renderGame(); showToast("交易台帳を更新しました。");
+    } catch (error) { showToast(error.message); }
+    return;
+  }
+  const foundStrategy = event.target.closest("[data-v3-company-found]")?.dataset.v3CompanyFound;
+  if (foundStrategy) {
+    try { state = foundV3MerchantCompany(context, state, { strategyId: foundStrategy, name: document.querySelector("#v3CompanyName")?.value }); saveGame(); renderGame(); showToast("商会を設立しました。"); }
+    catch (error) { showToast(error.message); }
+    return;
+  }
+  if (event.target.closest("[data-v3-company-invest]")) {
+    try { state = contributeV3CompanyCapital(state, 10); saveGame(); renderGame(); }
+    catch (error) { showToast(error.message); }
+    return;
+  }
+  const charterStart = event.target.closest("[data-v3-charter-start]");
+  if (charterStart) {
+    try { state = startV3CharterApplication(context, state, charterStart.dataset.v3CharterStart, charterStart.dataset.v3Filing); saveGame(); renderGame(); }
+    catch (error) { showToast(error.message); }
+    return;
+  }
+  const charterDecision = event.target.closest("[data-v3-charter-decision]");
+  if (charterDecision) {
+    try { state = resolveV3CharterApplication(context, state, charterDecision.dataset.v3Application, charterDecision.dataset.v3CharterDecision); saveGame(); renderGame(); }
+    catch (error) { showToast(error.message); }
+    return;
+  }
+  const hire = event.target.closest("[data-v3-company-hire]")?.dataset.v3CompanyHire;
+  if (hire) {
+    try { state = recruitV3CompanyStaff(context, state, hire); saveGame(); renderGame(); }
+    catch (error) { showToast(error.message); }
+    return;
+  }
+  if (event.target.closest("[data-v3-route-secure]")) {
+    const form = elements.commerceContent.querySelector("[data-v3-route-form]");
+    try {
+      state = secureV3CompanyRoute(context, state, {
+        sourceId: form.querySelector("[data-v3-route-source]").value,
+        destinationId: form.querySelector("[data-v3-route-destination]").value,
+        commodityId: form.querySelector("[data-v3-route-commodity]").value,
+        approachId: form.querySelector("[data-v3-route-approach]").value,
+        leaderId: form.querySelector("[data-v3-route-leader]").value,
+      });
+      saveGame(); renderGame();
+    } catch (error) { showToast(error.message); }
+    return;
+  }
+  if (event.target.closest("[data-v3-branch-open]")) {
+    const form = elements.commerceContent.querySelector("[data-v3-branch-form]");
+    try {
+      state = openV3CompanyBranch(context, state, {
+        formatId: form.querySelector("[data-v3-branch-format]").value,
+        launchId: form.querySelector("[data-v3-branch-launch]").value,
+        managerId: form.querySelector("[data-v3-branch-manager]").value,
+      });
+      saveGame(); renderGame();
+    } catch (error) { showToast(error.message); }
+    return;
+  }
+  if (event.target.closest("[data-v3-company-month]")) {
+    try { state = advanceV3CompanyMonth(context, state); saveGame(); renderGame(); }
+    catch (error) { showToast(error.message); }
+    return;
+  }
+  const incident = event.target.closest("[data-v3-incident]");
+  if (incident) {
+    try { state = resolveV3CompanyIncident(state, incident.dataset.v3Incident, incident.dataset.v3Decision); saveGame(); renderGame(); }
+    catch (error) { showToast(error.message); }
+    return;
+  }
   const itemIndex = event.target.closest("[data-v3-use-item]")?.dataset.v3UseItem;
   if (itemIndex !== undefined) {
     const next = useV3Item(state, Number(itemIndex));
@@ -512,6 +896,26 @@ document.addEventListener("click", (event) => {
   const close = event.target.closest("[data-v3-close]")?.dataset.v3Close;
   if (close === "map") elements.worldMap.hidden = true;
   if (close === "inventory") elements.inventoryModal.hidden = true;
+  if (close === "commerce") elements.commerceModal.hidden = true;
+});
+
+elements.worldHistory.addEventListener("input", () => {
+  const value = Number(elements.worldHistory.value);
+  const maximum = Number(elements.worldHistory.max);
+  mapHistoryIndex = value >= maximum ? null : value;
+  drawWorldMap();
+});
+
+elements.worldCanvas.addEventListener("click", (event) => {
+  const map = currentMapView();
+  const bounds = elements.worldCanvas.getBoundingClientRect();
+  if (!bounds.width || !bounds.height) return;
+  const x = Math.min(runtime.terrain.width - 1, Math.max(0, Math.floor((event.clientX - bounds.left) / bounds.width * runtime.terrain.width)));
+  const y = Math.min(runtime.terrain.height - 1, Math.max(0, Math.floor((event.clientY - bounds.top) / bounds.height * runtime.terrain.height)));
+  const nationId = map.tileNationIds[y * runtime.terrain.width + x];
+  if (!nationId || !map.nationById.has(nationId)) return showToast("海または無主地です。");
+  selectedNationId = nationId;
+  drawWorldMap();
 });
 
 document.addEventListener("keydown", (event) => {
@@ -519,6 +923,7 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
     if (!elements.worldMap.hidden) elements.worldMap.hidden = true;
     else if (!elements.inventoryModal.hidden) elements.inventoryModal.hidden = true;
+    else if (!elements.commerceModal.hidden) elements.commerceModal.hidden = true;
     return;
   }
   if (state.pendingEncounter?.type === "enemy") {
@@ -538,7 +943,7 @@ document.addEventListener("keydown", (event) => {
 const returnedGroupBattle = readV3GroupBattleBridge(localStorage);
 const returnedSave = readSave();
 if (returnedGroupBattle && returnedSave?.field?.military?.activeMission?.id === returnedGroupBattle.missionId) {
-  void prepareWorld(returnedSave.world, returnedSave.field, returnedGroupBattle).catch((error) => {
+  void prepareWorld(returnedSave.world, returnedSave.field, returnedSave.worldSimulation, returnedGroupBattle).catch((error) => {
     clearV3GroupBattleBridge(localStorage);
     updateContinueButton();
     showToast(error.message);
