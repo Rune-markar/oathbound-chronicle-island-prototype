@@ -7,6 +7,7 @@ import { advanceCrimeMonth, advanceCrimeMonthOnDraft } from "../src/crime-system
 import { advanceMilitaryCareerMissionMonth, advanceMilitaryCareerMissionMonthOnDraft } from "../src/military-career-system.js";
 import { advanceLifeToRealmMonth, advanceLifeToRealmMonthOnDraft } from "../src/life-to-realm-system.js";
 import { advancePropertyEnterpriseMonth, advancePropertyEnterpriseMonthOnDraft } from "../src/property-enterprise-system.js";
+import { advanceMerchantCompanyMonth, advanceMerchantCompanyMonthOnDraft } from "../src/merchant-company-system.js";
 import { advanceCompanionQuests, advanceCompanionQuestsOnDraft } from "../src/companion-quest-system.js";
 import { advanceEstatePoliticsMonth, advanceEstatePoliticsMonthOnDraft } from "../src/estate-politics-system.js";
 import { advanceGeneratedCampaignMonth, advanceGeneratedCampaignMonthOnDraft } from "../src/generated-campaign-system.js";
@@ -17,6 +18,7 @@ const stages = [
   ["military", advanceMilitaryCareerMissionMonth, advanceMilitaryCareerMissionMonthOnDraft],
   ["life", advanceLifeToRealmMonth, advanceLifeToRealmMonthOnDraft],
   ["property", advancePropertyEnterpriseMonth, advancePropertyEnterpriseMonthOnDraft],
+  ["merchant company", advanceMerchantCompanyMonth, advanceMerchantCompanyMonthOnDraft],
   ["companion", advanceCompanionQuests, advanceCompanionQuestsOnDraft],
   ["estate", advanceEstatePoliticsMonth, advanceEstatePoliticsMonthOnDraft],
   ["generated campaign", advanceGeneratedCampaignMonth, advanceGeneratedCampaignMonthOnDraft],
@@ -46,6 +48,7 @@ test("the facade keeps draft operations internal and clones the full career stat
     "advanceMilitaryCareerMissionMonthOnDraft",
     "advanceLifeToRealmMonthOnDraft",
     "advancePropertyEnterpriseMonthOnDraft",
+    "advanceMerchantCompanyMonthOnDraft",
     "advanceCompanionQuestsOnDraft",
     "advanceEstatePoliticsMonthOnDraft",
     "advanceGeneratedCampaignMonthOnDraft",

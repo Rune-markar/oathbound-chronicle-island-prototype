@@ -158,6 +158,14 @@ import {
   stockPlayerShop,
   transferCargoToWarehouse,
   withdrawWarehouseCargo,
+  contributeCompanyCapital,
+  foundMerchantCompany,
+  getMerchantCompanyView,
+  normalizeMerchantCompanyState,
+  openCompanyBranch,
+  recruitCompanyStaff,
+  resolveCompanyIncident,
+  secureCompanyTradeRoute,
   getCompanionQuestView,
   normalizeCompanionQuestState,
   respondToCompanionQuest,
@@ -800,6 +808,7 @@ function loadState() {
     parsed.fiscal.totalDebtRepaid = Number.isFinite(parsed.fiscal.totalDebtRepaid) ? parsed.fiscal.totalDebtRepaid : 0;
     const loaded = normalizeLifeToRealmState(normalizeWarState(parsed));
     normalizePropertyEnterpriseState(loaded);
+    normalizeMerchantCompanyState(loaded);
     normalizeCompanionQuestState(loaded);
     normalizeEstatePoliticsState(loaded);
     normalizeGeneratedCampaignState(loaded);
@@ -824,6 +833,7 @@ function commit(nextState, message = "", cue = "confirm") {
   const wasAtWar = Boolean(state.war);
   state = observeMasteryProgress(normalizeMasteryState(normalizeLifeToRealmState(normalizeAdventureState(refreshGeneratedWorldForDate(nextState)))));
   normalizePropertyEnterpriseState(state);
+  normalizeMerchantCompanyState(state);
   normalizeCompanionQuestState(state);
   normalizeEstatePoliticsState(state);
   normalizeGeneratedCampaignState(state);
@@ -4146,6 +4156,46 @@ function renderPropertyEnterpriseBoard() {
   return `<details class="life-loop-section"><summary><span>住居・倉庫・商店</span><strong>現地資産と重量物流</strong><small>${load.weight}/${load.weightCapacity}重量 · 物件${model.properties.length}件</small></summary><div class="life-loop-content"><div class="life-action-grid">${acquisition}</div>${transfer}<ul>${warehouse}</ul>${shopArea}<ol>${model.monthlyLedger.slice(0, 3).map((entry) => `<li>${escapeHtml(entry.period)} 売上${entry.revenue}・費用${entry.costs}・損益${entry.profit}</li>`).join("")}</ol></div></details>`;
 }
 
+function merchantCompanyNextStep(model, settlement) {
+  if (model.status !== "company") return model.founding.ready ? "三つの方針から商会の強みを決める" : "個人で二つの市場を回り、三個以上を利益付きで売る";
+  if (!model.staff.length) return "隊商頭か護衛頭を採用し、最初の販路を任せる";
+  if (!model.routes.length) return model.routeLeaders.length ? "二つの市場、商品、運び方を選んで販路を契約する" : "販路を任せる隊商頭か護衛頭を採用する";
+  if (!model.branchManagers.length && !model.branches.length) return "番頭か仕入役を採用し、出店を任せる";
+  if (!model.branches.length) return settlement ? `${settlement.name}で店の規模と開店方法を決める` : "訪問済みの市場へ移動し、現地で出店準備を行う";
+  if (model.pendingIncidents.length) return "止まった販路への対応を決める";
+  return "月を進めて販路と支店の損益を確認し、次の拠点へ投資する";
+}
+
+function renderMerchantCompanyBoard() {
+  const model = getMerchantCompanyView(state);
+  const settlement = activeVillageContext();
+  const nextStep = merchantCompanyNextStep(model, settlement);
+  if (model.status !== "company") {
+    const requirements = model.founding.requirements.map((entry) => `<article class="merchant-company-requirement ${entry.value >= entry.target ? "is-complete" : ""}"><small>${escapeHtml(entry.label)}</small><strong>${entry.value}<i> / ${entry.target}</i></strong></article>`).join("");
+    const strategies = model.strategies.map((strategy) => `<button type="button" data-company-found="${strategy.id}" ${model.founding.ready ? "" : "disabled"}><strong>${escapeHtml(strategy.name)}</strong><small>${escapeHtml(strategy.description)}</small></button>`).join("");
+    return `<details class="life-loop-section merchant-company-board" open><summary><span>商人の道</span><strong>個人商売から商会へ</strong><small>次：${escapeHtml(nextStep)}</small></summary><div class="life-loop-content"><div class="merchant-company-next"><small>NEXT STEP</small><strong>${escapeHtml(nextStep)}</strong></div><div class="merchant-company-requirements">${requirements}</div><div class="merchant-company-choice-grid">${strategies}</div></div></details>`;
+  }
+  const strategy = model.strategies.find((entry) => entry.id === model.strategyId);
+  const incidents = model.pendingIncidents.map((incident) => `<article class="merchant-company-incident"><header><strong>${escapeHtml(incident.title)}</strong><b>判断待ち</b></header><p>${escapeHtml(incident.detail)}</p><div><button type="button" data-company-incident="${escapeHtml(incident.id)}" data-company-decision="escort" ${model.treasury < 4 ? "disabled title=\"商会資金4が必要です\"" : ""}>商会資金4で護衛増強</button><button type="button" data-company-incident="${escapeHtml(incident.id)}" data-company-decision="detour">一か月迂回</button><button type="button" data-company-incident="${escapeHtml(incident.id)}" data-company-decision="take_loss">損失を受け入れる</button></div></article>`).join("");
+  const candidates = model.candidates.map((candidate) => `<article><header><span><small>${escapeHtml(candidate.originSettlementName)}出身</small><strong>${escapeHtml(candidate.name)}</strong></span><b>${escapeHtml(candidate.roleName)} · 腕${candidate.skill}</b></header><p>${escapeHtml(candidate.description)}</p><button type="button" data-company-hire="${escapeHtml(candidate.id)}">契約金${candidate.signingBonus}・月給${candidate.wage}で雇う</button></article>`).join("") || "<p>全職種の候補を雇用済みです。</p>";
+  const staff = model.staff.map((member) => `<li><strong>${escapeHtml(member.name)} · ${escapeHtml(member.roleName)}</strong><span>${member.assignmentId ? `${member.assignmentType === "route" ? "販路" : "支店"}担当` : "配置待ち"} · 月給${member.wage} · 士気${member.morale}</span></li>`).join("") || "<li>人員なし</li>";
+  const marketOptions = model.sourceOptions.map((place, index) => `<option value="${escapeHtml(place.id)}" ${index === 0 ? "selected" : ""}>${escapeHtml(place.name)}</option>`).join("");
+  const destinationOptions = model.destinationOptions.map((place, index) => `<option value="${escapeHtml(place.id)}" ${index === 1 ? "selected" : ""}>${escapeHtml(place.name)}</option>`).join("");
+  const commodityOptions = model.commodities.map((commodity) => `<option value="${commodity.id}">${escapeHtml(commodity.name)}</option>`).join("");
+  const approachOptions = model.routeApproaches.map((approach) => `<option value="${approach.id}">${escapeHtml(approach.name)} · 契約${approach.cost} · ${escapeHtml(approach.description)}</option>`).join("");
+  const leaderOptions = model.routeLeaders.map((leader) => `<option value="${escapeHtml(leader.id)}">${escapeHtml(leader.name)} · ${escapeHtml(leader.roleName)} 腕${leader.skill}</option>`).join("");
+  const routeForm = model.sourceOptions.length >= 2 && model.routeLeaders.length ? `<div class="merchant-company-form" data-company-route-form><label>仕入地<select data-company-route-source>${marketOptions}</select></label><label>販売地<select data-company-route-destination>${destinationOptions}</select></label><label>商品<select data-company-route-commodity>${commodityOptions}</select></label><label>運び方<select data-company-route-approach>${approachOptions}</select></label><label>責任者<select data-company-route-leader>${leaderOptions}</select></label><button type="button" data-company-route-secure>この条件で販路を確保</button></div>` : `<p>${model.sourceOptions.length < 2 ? "先に二つの市場を訪れてください。" : "配置待ちの隊商頭か護衛頭が必要です。"}</p>`;
+  const routes = model.routes.map((route) => `<li><strong>${escapeHtml(route.sourceName)} → ${escapeHtml(route.destinationName)} · ${escapeHtml(route.commodityName)}</strong><span>${escapeHtml(model.routeApproaches.find((entry) => entry.id === route.approachId)?.name ?? route.approachId)} · ${route.status === "active" ? "運行中" : route.status === "blocked" ? "事故対応待ち" : "休止中"} · 累計${route.successfulRuns}便</span></li>`).join("") || "<li>販路なし</li>";
+  const managers = model.branchManagers.map((manager) => `<option value="${escapeHtml(manager.id)}">${escapeHtml(manager.name)} · ${escapeHtml(manager.roleName)} 腕${manager.skill}</option>`).join("");
+  const formatOptions = model.branchFormats.map((format) => `<option value="${format.id}">${escapeHtml(format.name)} · 開業${format.cost} / 月${format.monthlyCost}</option>`).join("");
+  const launchOptions = model.launchPlans.map((launch) => `<option value="${launch.id}">${escapeHtml(launch.name)} · ${launch.months}か月 · 追加${launch.cost}</option>`).join("");
+  const localKnown = settlement && model.sourceOptions.some((entry) => entry.id === settlement.id);
+  const branchForm = localKnown && model.branchManagers.length ? `<div class="merchant-company-form" data-company-branch-form><p><strong>${escapeHtml(settlement.name)}への出店</strong><small>出店は現在地でのみ段取りできます。</small></p><label>店の規模<select data-company-branch-format>${formatOptions}</select></label><label>開店方法<select data-company-branch-launch>${launchOptions}</select></label><label>店長<select data-company-branch-manager>${managers}</select></label><button type="button" data-company-branch-open data-company-settlement="${escapeHtml(settlement.id)}">出店準備を始める</button></div>` : `<p>${settlement ? "この市場の相場を確認し、配置待ちの番頭か仕入役を用意してください。" : "出店したい市場へ移動し、集落に入ってください。"}</p>`;
+  const branches = model.branches.map((branch) => `<li><strong>${escapeHtml(branch.settlementName)} · ${escapeHtml(model.branchFormats.find((entry) => entry.id === branch.formatId)?.name ?? branch.formatId)}</strong><span>${branch.status === "preparing" ? `準備 ${branch.preparationProgress}/${branch.preparationMonths}か月` : branch.status === "open" ? "営業中" : "資金不足で休業"}</span></li>`).join("") || "<li>支店なし</li>";
+  const ledger = model.monthlyLedger.slice(0, 4).map((entry) => `<li><strong>${escapeHtml(entry.period)} · 損益${entry.profit >= 0 ? "+" : ""}${entry.profit}</strong><span>売上${entry.revenue} / 費用${entry.costs}（人件費${entry.wages}）</span></li>`).join("") || "<li>月次決算はまだありません。</li>";
+  return `<details class="life-loop-section merchant-company-board" open><summary><span>${escapeHtml(model.name)}</span><strong>${escapeHtml(strategy?.name ?? "商会経営")}</strong><small>資金${model.treasury} · 信用${model.reputation} · 次：${escapeHtml(nextStep)}</small></summary><div class="life-loop-content"><div class="merchant-company-next"><small>NEXT STEP</small><strong>${escapeHtml(nextStep)}</strong><button type="button" data-company-invest="10" ${state.player.metrics.wealth < 10 ? "disabled" : ""}>個人財産10を追加出資</button></div>${incidents}<section class="merchant-company-section"><header><h3>人員の手配</h3><small>${model.staff.length}名 / 月給計${model.staff.reduce((sum, member) => sum + member.wage, 0)}</small></header><ul class="merchant-company-list">${staff}</ul><details><summary>採用候補を見る</summary><div class="merchant-company-candidates">${candidates}</div></details></section><section class="merchant-company-section"><header><h3>販路の確保</h3><small>${model.routes.length}路線</small></header>${routeForm}<ul class="merchant-company-list">${routes}</ul></section><section class="merchant-company-section"><header><h3>出店の段取り</h3><small>${model.branches.length}拠点</small></header>${branchForm}<ul class="merchant-company-list">${branches}</ul></section><section class="merchant-company-section"><header><h3>月次決算</h3><small>運転資金 ${model.treasury}</small></header><ul class="merchant-company-list">${ledger}</ul></section></div></details>`;
+}
+
 function renderCompanionQuestBoard() {
   const model = getCompanionQuestView(state);
   const cards = model.companions.map((companion) => {
@@ -4256,7 +4306,7 @@ function renderLifeToRealmBoard() {
     : `<article data-realm-campaign-form><p>二つの軍団へ別々の指揮官と補給を割り当て、集結・行軍・会戦を順番に処理します。</p><label>対象地方<select data-campaign-target>${model.campaign.options.map((option) => `<option value="${option.targetRegionId}">${escapeHtml(option.targetRegionName)} · ${option.borderType === "foreign" ? "国外" : "国内"}</option>`).join("")}</select></label><label>政治目的<select data-campaign-objective>${model.campaign.objectives.map((objective) => `<option value="${objective.id}">${escapeHtml(objective.name)}</option>`).join("")}</select></label><label>主力軍<select data-campaign-commander="first">${model.campaign.commanders.map((commander) => `<option value="${commander.id}">${escapeHtml(WORLD.characters[commander.id]?.name ?? commander.name)}</option>`).join("")}</select></label><label>支援軍<select data-campaign-commander="second">${model.campaign.commanders.map((commander, index) => `<option value="${commander.id}" ${index === 1 ? "selected" : ""}>${escapeHtml(WORLD.characters[commander.id]?.name ?? commander.name)}</option>`).join("")}</select></label><button type="button" data-realm-campaign-start>二軍団を集結させる（財産5）</button></article>`}</div></details>` : "";
   const lifePath = `<details class="life-loop-section"><summary><span>生き方</span><strong>${escapeHtml(model.lifePath.active?.name ?? "人生目標を選ぶ")}</strong><small>${model.lifePath.epithets.length ? escapeHtml(model.lifePath.epithets.join("・")) : "二つ名なし"}</small></summary><div class="life-loop-content life-path-grid">${model.lifePath.paths.map((path) => `<article class="${path.id === model.lifePath.active?.id ? "is-active" : ""}"><header><h3>${escapeHtml(path.name)}</h3><b>${path.claimed ? "達成済" : path.complete ? "達成" : "進行中"}</b></header><p>${escapeHtml(path.description)}</p><ul>${path.checks.map((check) => `<li>${escapeHtml(check.label)} ${Math.min(check.value, check.target)}/${check.target}</li>`).join("")}</ul><button type="button" data-life-path="${path.id}">${path.id === model.lifePath.active?.id ? "選択中" : "この生き方を追う"}</button>${path.id === model.lifePath.active?.id && path.complete && !path.claimed ? `<button type="button" data-life-path-claim>二つ名「${escapeHtml(path.epithet)}」を受ける</button>` : ""}</article>`).join("")}</div></details>`;
   const succession = model.succession.available ? `<details class="life-loop-section"><summary><span>継承</span><strong>第${model.succession.generation}代</strong><small>${model.succession.heirId ? "後継指名済み" : "後継未定"}</small></summary><div class="life-loop-content" data-succession-form><p>現君主を退位させ、同じ世界・国家・所領・年代記を次代へ渡します。</p><label>後継者<select data-succession-heir>${model.succession.candidates.map((candidate) => `<option value="${candidate.id}" ${candidate.id === model.succession.heirId ? "selected" : ""}>${escapeHtml(WORLD.characters[candidate.id]?.name ?? candidate.name)} · ${escapeHtml(candidate.role)}</option>`).join("")}</select></label><button type="button" data-designate-heir>後継者として公示する</button><label>継ぐ遺産<select data-succession-legacy>${model.succession.choices.map((choice) => `<option value="${choice.id}">${escapeHtml(choice.name)} — ${escapeHtml(choice.description)}</option>`).join("")}</select></label><button class="is-danger" type="button" data-execute-succession ${model.succession.heirId ? "" : "disabled"}>退位し、次代の年代記を始める</button></div></details>` : "";
-  return `<section class="life-to-realm-board"><header><div><small>LIFE TO REALM</small><h2>生活から国家へ</h2></div><p>時間、身体、仕事、仲間、所領、家中、戦役、継承を同じ人物状態で扱います。</p></header><section class="life-vitals"><article><small>世界時刻</small><strong>${escapeHtml(lifeClockLabel(model.clockMinutes))}</strong><span>移動と生活行動で進行</span></article><article><small>身体</small><strong>HP ${body.hp}/${body.maxHp}</strong><span>空腹${body.hunger}・疲労${body.fatigue}</span></article><article><small>生活基盤</small><strong>${escapeHtml(model.home.name)}</strong><span>家賃${model.home.monthlyRent}・負債${model.home.debt}</span></article>${warning}</section><details class="life-loop-section" open><summary><span>一日</span><strong>食事・労働・休養</strong><small>財産${state.player.metrics.wealth}・食料${body.food}</small></summary><div class="life-loop-content life-action-grid">${lifeActions}</div></details><details class="life-loop-section" open><summary><span>生計</span><strong>${activeContract ? escapeHtml(activeContract.title) : `${escapeHtml(livelihood.currentRegionName)}の仕事3件`}</strong><small>期限と移動を比較</small></summary><div class="life-loop-content">${contractArea}</div></details>${renderPropertyEnterpriseBoard()}<details class="life-loop-section"><summary><span>仲間</span><strong>賃金・忠誠・要望</strong><small>${model.companions.length}名</small></summary><div class="life-loop-content companion-agency-grid">${companions}</div></details>${renderCompanionQuestBoard()}${fief}${renderEstatePoliticsBoard()}${household}${campaign}${renderGeneratedCampaignBoard()}${lifePath}${succession}</section>`;
+  return `<section class="life-to-realm-board"><header><div><small>LIFE TO REALM</small><h2>生活から国家へ</h2></div><p>時間、身体、仕事、仲間、所領、家中、戦役、継承を同じ人物状態で扱います。</p></header><section class="life-vitals"><article><small>世界時刻</small><strong>${escapeHtml(lifeClockLabel(model.clockMinutes))}</strong><span>移動と生活行動で進行</span></article><article><small>身体</small><strong>HP ${body.hp}/${body.maxHp}</strong><span>空腹${body.hunger}・疲労${body.fatigue}</span></article><article><small>生活基盤</small><strong>${escapeHtml(model.home.name)}</strong><span>家賃${model.home.monthlyRent}・負債${model.home.debt}</span></article>${warning}</section><details class="life-loop-section" open><summary><span>一日</span><strong>食事・労働・休養</strong><small>財産${state.player.metrics.wealth}・食料${body.food}</small></summary><div class="life-loop-content life-action-grid">${lifeActions}</div></details><details class="life-loop-section" open><summary><span>生計</span><strong>${activeContract ? escapeHtml(activeContract.title) : `${escapeHtml(livelihood.currentRegionName)}の仕事3件`}</strong><small>期限と移動を比較</small></summary><div class="life-loop-content">${contractArea}</div></details>${renderPropertyEnterpriseBoard()}${renderMerchantCompanyBoard()}<details class="life-loop-section"><summary><span>仲間</span><strong>賃金・忠誠・要望</strong><small>${model.companions.length}名</small></summary><div class="life-loop-content companion-agency-grid">${companions}</div></details>${renderCompanionQuestBoard()}${fief}${renderEstatePoliticsBoard()}${household}${campaign}${renderGeneratedCampaignBoard()}${lifePath}${succession}</section>`;
 }
 
 function careerActionButtons(player) {
@@ -9500,6 +9550,55 @@ document.addEventListener("click", async (event) => {
   const companionRequest = event.target.closest("[data-companion-request]");
   if (companionRequest) {
     try { commit(answerCompanionRequest(state, companionRequest.dataset.companionRequest, companionRequest.dataset.companionDecision), companionRequest.dataset.companionDecision === "accept" ? "同行者の要望に応じました。" : "同行者の要望を断り、関係へ影響が残りました。", companionRequest.dataset.companionDecision === "accept" ? "confirm" : "cancel"); }
+    catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
+  const companyFound = event.target.closest("[data-company-found]");
+  if (companyFound) {
+    try { commit(foundMerchantCompany(state, { name: `${state.player.name}商会`, strategyId: companyFound.dataset.companyFound }), "個人商売の信用と資本をまとめ、商会を設立しました。", "event"); }
+    catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
+  const companyInvest = event.target.closest("[data-company-invest]");
+  if (companyInvest) {
+    try { commit(contributeCompanyCapital(state, Number(companyInvest.dataset.companyInvest)), "個人財産を商会の運転資金へ移しました。", "confirm"); }
+    catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
+  const companyHire = event.target.closest("[data-company-hire]");
+  if (companyHire) {
+    try { commit(recruitCompanyStaff(state, companyHire.dataset.companyHire), "役割と賃金を確認し、商会の人員を採用しました。", "event"); }
+    catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
+  if (event.target.closest("[data-company-route-secure]")) {
+    try {
+      const form = event.target.closest("[data-company-route-form]");
+      commit(secureCompanyTradeRoute(state, {
+        sourceId: form.querySelector("[data-company-route-source]")?.value,
+        destinationId: form.querySelector("[data-company-route-destination]")?.value,
+        commodityId: form.querySelector("[data-company-route-commodity]")?.value,
+        approachId: form.querySelector("[data-company-route-approach]")?.value,
+        leaderId: form.querySelector("[data-company-route-leader]")?.value,
+      }), "仕入地、販売地、商品、運び方、責任者を定めて販路を確保しました。", "event");
+    } catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
+  if (event.target.closest("[data-company-branch-open]")) {
+    try {
+      const form = event.target.closest("[data-company-branch-form]");
+      const settlement = activeVillageContext();
+      commit(openCompanyBranch(state, settlement, {
+        formatId: form.querySelector("[data-company-branch-format]")?.value,
+        launchId: form.querySelector("[data-company-branch-launch]")?.value,
+        managerId: form.querySelector("[data-company-branch-manager]")?.value,
+      }), "店の規模、開店方法、店長を定めて出店準備を始めました。", "event");
+    } catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
+  const companyIncident = event.target.closest("[data-company-incident]");
+  if (companyIncident) {
+    try { commit(resolveCompanyIncident(state, companyIncident.dataset.companyIncident, companyIncident.dataset.companyDecision), "街道事故への対応を決め、販路を再開しました。", "event"); }
     catch (error) { showToast(error.message, "danger"); }
     return;
   }

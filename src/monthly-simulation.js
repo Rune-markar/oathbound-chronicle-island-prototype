@@ -288,6 +288,23 @@ import {
   PROPERTY_TYPES, acquireProperty, advancePropertyEnterpriseMonth, advancePropertyEnterpriseMonthOnDraft, closePlayerShop, getPropertyEnterpriseView,
   normalizePropertyEnterpriseState, openPlayerShop, priceShopCommodity, stockPlayerShop, transferCargoToWarehouse, withdrawWarehouseCargo,
 } from "./property-enterprise-system.js";
+import {
+  COMPANY_BRANCH_FORMATS,
+  COMPANY_LAUNCH_PLANS,
+  COMPANY_ROUTE_APPROACHES,
+  COMPANY_STAFF_ROLES,
+  COMPANY_STRATEGIES,
+  advanceMerchantCompanyMonth,
+  advanceMerchantCompanyMonthOnDraft,
+  contributeCompanyCapital,
+  foundMerchantCompany,
+  getMerchantCompanyView,
+  normalizeMerchantCompanyState,
+  openCompanyBranch,
+  recruitCompanyStaff,
+  resolveCompanyIncident,
+  secureCompanyTradeRoute,
+} from "./merchant-company-system.js";
 import { advanceCompanionQuests, advanceCompanionQuestsOnDraft, completeCompanionQuest, getCompanionQuestView, normalizeCompanionQuestState, respondToCompanionQuest } from "./companion-quest-system.js";
 import { ESTATE_DEBATE_OPTIONS, ESTATE_FACTIONS, advanceEstatePoliticsMonth, advanceEstatePoliticsMonthOnDraft, getEstatePoliticsView, normalizeEstatePoliticsState, resolveEstateProjectDebate, startEstateProjectDebate } from "./estate-politics-system.js";
 import { GENERATED_CAMPAIGN_OBJECTIVES, GENERATED_SIEGE_DECISIONS, advanceGeneratedCampaign, advanceGeneratedCampaignMonth, advanceGeneratedCampaignMonthOnDraft, decideGeneratedSiege, getGeneratedCampaignView, interveneGeneratedWorldWar, normalizeGeneratedCampaignState, requestAlliedContingent, respondGeneratedWorldWar, retreatGeneratedCampaign, settleGeneratedCampaign, startGeneratedCampaign } from "./generated-campaign-system.js";
@@ -383,6 +400,20 @@ export {
   stockPlayerShop,
   transferCargoToWarehouse,
   withdrawWarehouseCargo,
+  COMPANY_BRANCH_FORMATS,
+  COMPANY_LAUNCH_PLANS,
+  COMPANY_ROUTE_APPROACHES,
+  COMPANY_STAFF_ROLES,
+  COMPANY_STRATEGIES,
+  advanceMerchantCompanyMonth,
+  contributeCompanyCapital,
+  foundMerchantCompany,
+  getMerchantCompanyView,
+  normalizeMerchantCompanyState,
+  openCompanyBranch,
+  recruitCompanyStaff,
+  resolveCompanyIncident,
+  secureCompanyTradeRoute,
   advanceCompanionQuests,
   completeCompanionQuest,
   getCompanionQuestView,
@@ -992,6 +1023,7 @@ export function normalizeWarState(state) {
   normalizeStrategicState(WORLD, state);
   normalizeHistoryState(WORLD, state);
   normalizeCareerState(state);
+  normalizeMerchantCompanyState(state);
   normalizeRoleDelegationState(state);
   normalizeSimulationCreeds(state);
   normalizeCentralizationCampaign(WORLD, state);
@@ -1069,6 +1101,7 @@ export function createCareerInitialState(options = {}) {
   const normalized = normalizeWarState(state);
   const career = normalizeLifeToRealmState(normalizeMilitaryCareerState(setGeneratedPlayerNation(normalized, normalized.generatedWorld.playerNationId, generatedWorldRuntime)));
   normalizePropertyEnterpriseState(career);
+  normalizeMerchantCompanyState(career);
   normalizeCompanionQuestState(career);
   normalizeEstatePoliticsState(career);
   normalizeGeneratedCampaignState(career);
@@ -1176,6 +1209,7 @@ export function advanceCareerMonth(state) {
   next = advanceMilitaryCareerMissionMonthOnDraft(next);
   next = advanceLifeToRealmMonthOnDraft(next);
   next = advancePropertyEnterpriseMonthOnDraft(next);
+  next = advanceMerchantCompanyMonthOnDraft(next);
   next = advanceCompanionQuestsOnDraft(next);
   next = advanceEstatePoliticsMonthOnDraft(next);
   next = advanceGeneratedCampaignMonthOnDraft(next);
