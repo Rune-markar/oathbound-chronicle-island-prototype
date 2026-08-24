@@ -283,6 +283,24 @@ import {
   resolveCrimeSentence,
   resolveCrimeRecovery,
 } from "./crime-system.js";
+import {
+  CRIMINAL_OPERATION_APPROACHES,
+  CRIMINAL_OPERATION_DEFINITIONS,
+  CRIMINAL_ORGANIZATION_SCHEMA_VERSION,
+  CRIMINAL_ORGANIZATION_STAGES,
+  advanceCriminalOrganizationMonth,
+  distributeCriminalOrganizationProfits,
+  formCriminalOrganization,
+  fundCriminalOrganization,
+  getCriminalOrganizationView,
+  getCriminalRecruitCandidates,
+  issueCriminalOperationOrder,
+  normalizeCriminalOrganizationState,
+  recruitCriminalMember,
+  resolveCriminalOperationReport,
+  resolveCriminalOrganizationDecision,
+  withdrawCriminalOrganizationFunds,
+} from "./criminal-organization-system.js";
 import { advanceMerchantMarkets } from "./merchant-trade.js";
 import {
   PROPERTY_TYPES, acquireProperty, advancePropertyEnterpriseMonth, advancePropertyEnterpriseMonthOnDraft, closePlayerShop, getPropertyEnterpriseView,
@@ -352,6 +370,22 @@ import {
 } from "./life-to-realm-system.js";
 
 export {
+  CRIMINAL_OPERATION_APPROACHES,
+  CRIMINAL_OPERATION_DEFINITIONS,
+  CRIMINAL_ORGANIZATION_SCHEMA_VERSION,
+  CRIMINAL_ORGANIZATION_STAGES,
+  advanceCriminalOrganizationMonth,
+  distributeCriminalOrganizationProfits,
+  formCriminalOrganization,
+  fundCriminalOrganization,
+  getCriminalOrganizationView,
+  getCriminalRecruitCandidates,
+  issueCriminalOperationOrder,
+  normalizeCriminalOrganizationState,
+  recruitCriminalMember,
+  resolveCriminalOperationReport,
+  resolveCriminalOrganizationDecision,
+  withdrawCriminalOrganizationFunds,
   CRIME_HEAT_GAINS,
   CRIME_OUTCOMES,
   CRIME_RISK_LABELS,
@@ -2548,7 +2582,8 @@ function finalizeMonth(state, report) {
   }
   getServingOfficers(WORLD, state).forEach((officer) => { if (!state.officers[officer.id].assignment) state.officers[officer.id].stamina = clamp(state.officers[officer.id].stamina + 8, 0, 100); });
   logEntry(state, "月次", `${report.season} ${report.monthName}の月次報告`, `都市金 ${report.realm.money >= 0 ? "+" : ""}${report.realm.money.toFixed(1)}、食料 ${report.realm.food >= 0 ? "+" : ""}${Math.round(report.realm.food).toLocaleString("ja-JP")}。`, "info");
-  return state.player ? advanceCrimeMonth(state) : state;
+  if (!state.player) return state;
+  return advanceCriminalOrganizationMonth(advanceCrimeMonth(state));
 }
 
 function refreshReportTotals(state, report) {

@@ -37,7 +37,7 @@ test("現状台帳のローカル出典と開始画面の導線が存在する",
 });
 
 test("犯罪プレーの通常導線、六行動、帰結を実装済みとして追跡する", async () => {
-  assert.equal(STATUS_LEDGER_META.lastAuditedAt, "2026-08-19");
+  assert.equal(STATUS_LEDGER_META.lastAuditedAt, "2026-08-24");
   const crime = STATUS_ENTRIES.find((item) => item.id === "criminal-play-flow");
   assert.ok(crime, "criminal-play-flow ledger entry is required");
   assert.equal(crime.category, "implemented");
@@ -47,6 +47,14 @@ test("犯罪プレーの通常導線、六行動、帰結を実装済みとし�
   assert.ok(crime.sources.some((item) => item.href === "./src/crime-system.js" && /getCrimeStatusView/.test(item.ref)));
   assert.ok(crime.sources.some((item) => item.href === "./src/app.js" && /renderSettlementCrimeSection/.test(item.ref)));
   assert.ok(crime.sources.some((item) => item.href === "./tests/criminal-ui.test.mjs"));
+  const organization = STATUS_ENTRIES.find((item) => item.id === "criminal-organization");
+  assert.equal(organization?.category, "implemented");
+  ["単独犯", "人材", "一味", "犯罪組織", "誘拐", "暗殺", "月次"].forEach((term) => {
+    assert.match(`${organization.summary} ${organization.evidence}`, new RegExp(term));
+  });
+  assert.ok(organization.sources.some((item) => item.href === "./src/criminal-organization-system.js" && /issueCriminalOperationOrder/.test(item.ref)));
+  assert.ok(organization.sources.some((item) => item.href === "./src/app.js" && /renderCriminalOrganizationBoard/.test(item.ref)));
+  assert.ok(organization.sources.some((item) => item.href === "./tests/criminal-organization-system.test.mjs"));
 
   const projectRoot = new URL("../", import.meta.url);
   const [readme, manual, changelog] = await Promise.all([
