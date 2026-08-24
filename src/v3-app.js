@@ -14,6 +14,22 @@ import {
   useV3Item,
   V3_DETAIL_SCALE,
 } from "./v3-field-system.js";
+import {
+  advanceV3CompanyMonth,
+  buyV3Commodity,
+  contributeV3CompanyCapital,
+  foundV3MerchantCompany,
+  getV3MerchantView,
+  normalizeV3MerchantState,
+  observeV3Market,
+  openV3CompanyBranch,
+  recruitV3CompanyStaff,
+  resolveV3CharterApplication,
+  resolveV3CompanyIncident,
+  secureV3CompanyRoute,
+  sellV3Commodity,
+  startV3CharterApplication,
+} from "./v3-merchant-system.js";
 
 const STORAGE_KEY = "leviathan-covenant-v3-save";
 const WORLD_CONFIG = Object.freeze({ width: 192, height: 120, plateCount: 28, nationCount: 7 });
@@ -58,6 +74,7 @@ const elements = {
   personalBattleHpBar: document.querySelector("#v3PersonalBattleHpBar"),
   personalBattleHpLabel: document.querySelector("#v3PersonalBattleHpLabel"),
   personalBattleCommands: document.querySelector("#v3PersonalBattleCommands"),
+  commerceButton: document.querySelector('[data-v3-action="commerce"]'),
   mapButton: document.querySelector('[data-v3-action="map"]'),
   inventoryButton: document.querySelector('[data-v3-action="menu"]'),
   encounterModal: document.querySelector("#v3EncounterModal"),
@@ -68,6 +85,8 @@ const elements = {
   encounterActions: document.querySelector("#v3EncounterActions"),
   inventoryModal: document.querySelector("#v3InventoryModal"),
   inventoryList: document.querySelector("#v3InventoryList"),
+  commerceModal: document.querySelector("#v3CommerceModal"),
+  commerceContent: document.querySelector("#v3CommerceContent"),
   worldMap: document.querySelector("#v3WorldMap"),
   worldCanvas: document.querySelector("#v3WorldCanvas"),
   worldMapPosition: document.querySelector("#v3WorldMapPosition"),
@@ -132,6 +151,7 @@ async function prepareWorld(options, savedField = null) {
   setGenerationProgress(92, "現在地の周囲を1マス単位へ展開しています。");
   context = createV3WorldContext(runtime, options.seed);
   state = savedField ? normalizeV3FieldState(context, savedField) : createV3FieldState(context, { playerName: options.playerName });
+  normalizeV3MerchantState(state);
   worldOptions = { ...WORLD_CONFIG, ...options, playerName: state.player.name };
   setGenerationProgress(100, "足元の世界が形になりました。");
   saveGame();
@@ -183,6 +203,7 @@ function renderEncounter() {
   elements.movementPad.hidden = Boolean(personalEnemy);
   elements.mapButton.disabled = Boolean(personalEnemy);
   elements.inventoryButton.disabled = Boolean(personalEnemy);
+  elements.commerceButton.disabled = Boolean(personalEnemy);
   elements.encounterModal.hidden = !encounter || Boolean(personalEnemy);
   if (!encounter) return;
   if (personalEnemy) {
@@ -202,6 +223,58 @@ function renderEncounter() {
 function renderInventory() {
   const items = state.player.inventory;
   elements.inventoryList.innerHTML = items.length ? items.map((item, index) => `<button type="button" data-v3-use-item="${index}" ${item.heal && state.player.hp < state.player.maxHp ? "" : "disabled"}><i>${escapeHtml(item.id === "medicinal-herb" ? "草" : item.id === "wild-berries" ? "実" : "物")}</i><span><strong>${escapeHtml(item.name)}</strong><small>${item.heal ? `HPを${item.heal}回復` : "素材"}</small></span><b>${item.heal ? "使う" : "所持"}</b></button>`).join("") : "<p>道具はまだ持っていない。</p>";
+}
+
+function renderCommerce() {
+  const previousScroll = elements.commerceContent.scrollTop;
+  const model = getV3MerchantView(context, state);
+  const cargoById = Object.fromEntries(model.cargo.map((entry) => [entry.commodityId, entry]));
+  const market = model.market;
+  const marketBlock = market ? `<section class="v3-commerce-section"><header><div><small>CURRENT MARKET</small><h2>${escapeHtml(model.marketSettlement.name)}の市場</h2></div><button type="button" data-v3-trade-action="observe">相場を記録</button></header><div class="v3-market-grid">${model.commodities.map((commodity) => {
+    const good = market.goods[commodity.id];
+    const cargo = cargoById[commodity.id];
+    return `<article><header><strong>${escapeHtml(commodity.name)}</strong><small>在庫${good.stock}</small></header><p>仕入 ${good.buyPrice} ／ 売却 ${good.sellPrice}</p><div><button type="button" data-v3-trade-action="buy" data-v3-commodity="${commodity.id}" ${state.player.gold < good.buyPrice || good.stock < 1 ? "disabled" : ""}>1個仕入</button><button type="button" data-v3-trade-action="sell" data-v3-commodity="${commodity.id}" ${cargo?.quantity ? "" : "disabled"}>1個売却${cargo?.quantity ? ` · 所持${cargo.quantity}` : ""}</button></div></article>`;
+  }).join("")}</div></section>` : `<section class="v3-commerce-section is-empty"><small>CURRENT MARKET</small><h2>市場まで歩く</h2><p>都市・町・村の中心街へ入ると、現地相場と売買操作が開きます。</p></section>`;
+  const cargo = `<section class="v3-commerce-section v3-trade-ledger"><header><div><small>PERSONAL TRADE</small><h2>個人商売</h2></div><b>${model.cargoLoad.units}/${model.cargoLoad.unitCapacity}個 · ${model.cargoLoad.weight}/${model.cargoLoad.weightCapacity}重量</b></header><ul>${model.cargo.length ? model.cargo.map((entry) => `<li><strong>${escapeHtml(entry.name)} × ${entry.quantity}</strong><span>平均原価 ${entry.averageCost}</span></li>`).join("") : "<li>積荷なし</li>"}</ul><p>市場${model.knownMarkets.length}か所 · 売却${model.tradeStats.unitsSold}個 · 実現利益${model.tradeStats.realizedProfit >= 0 ? "+" : ""}${model.tradeStats.realizedProfit}</p></section>`;
+  let companyBlock;
+  if (model.company.status !== "company") {
+    const requirements = model.founding.requirements.map((entry) => `<li class="${entry.value >= entry.target ? "is-met" : ""}"><span>${escapeHtml(entry.label)}</span><strong>${entry.value} / ${entry.target}</strong></li>`).join("");
+    companyBlock = `<section class="v3-commerce-section"><header><div><small>FOUND A COMPANY</small><h2>商会を結成する</h2></div><b>${model.founding.ready ? "設立可能" : "実績が必要"}</b></header><ul class="v3-company-requirements">${requirements}</ul><label class="v3-company-name"><span>商会名</span><input id="v3CompanyName" maxlength="24" value="${escapeHtml(`${state.player.name}商会`)}"></label><div class="v3-strategy-grid">${model.strategies.map((strategy) => `<button type="button" data-v3-company-found="${strategy.id}" ${model.founding.ready ? "" : "disabled"}><strong>${escapeHtml(strategy.name)}</strong><small>${escapeHtml(strategy.description)} · 設立資金12</small></button>`).join("")}</div></section>`;
+  } else {
+    const charterCards = model.jurisdictions.map((jurisdiction) => {
+      if (jurisdiction.charter) return `<article class="v3-charter-card is-active"><header><span><small>${escapeHtml(jurisdiction.government)}</small><strong>${escapeHtml(jurisdiction.name)}</strong></span><b>営業可</b></header><p>${escapeHtml(jurisdiction.charter.authority)}：${escapeHtml(jurisdiction.charter.basis)}</p><small>義務：${escapeHtml(jurisdiction.charter.obligation)}${jurisdiction.charter.monthlyDue ? ` · 月${jurisdiction.charter.monthlyDue}` : ""}</small></article>`;
+      if (jurisdiction.application) return `<article class="v3-charter-card is-pending"><header><span><small>${escapeHtml(jurisdiction.government)}</small><strong>${escapeHtml(jurisdiction.name)}</strong></span><b>条件提示</b></header><p>${escapeHtml(jurisdiction.application.authority)}への返答を選ぶ。</p><div>${jurisdiction.decisions.map((decision) => `<button type="button" data-v3-charter-decision="${decision.id}" data-v3-application="${escapeHtml(jurisdiction.application.id)}" ${model.company.treasury < decision.effectiveCost ? "disabled" : ""}><strong>${escapeHtml(decision.name)}</strong><small>${escapeHtml(decision.description)}${decision.effectiveCost ? ` · 資金${decision.effectiveCost}` : ""}${decision.monthlyDue ? ` · 月${decision.monthlyDue}` : ""}${decision.minimumReputation ? ` · 信用${decision.minimumReputation}${decision.eligible ? "達成" : "未達・却下見込み"}` : ""}</small></button>`).join("")}</div></article>`;
+      return `<article class="v3-charter-card"><header><span><small>${escapeHtml(jurisdiction.government)}</small><strong>${escapeHtml(jurisdiction.name)}</strong></span><b>資格なし</b></header><p><strong>${escapeHtml(jurisdiction.procedure.name)}</strong> · ${escapeHtml(jurisdiction.procedure.authority)}</p><p>${escapeHtml(jurisdiction.procedure.summary)}</p><div>${jurisdiction.procedure.filings.map((filing) => `<button type="button" data-v3-charter-start="${escapeHtml(jurisdiction.id)}" data-v3-filing="${filing.id}" ${model.company.treasury < filing.cost ? "disabled" : ""}><strong>${escapeHtml(filing.name)}</strong><small>${escapeHtml(filing.description)}${filing.cost ? ` · 資金${filing.cost}` : ""}</small></button>`).join("")}</div></article>`;
+    }).join("") || "<p>市場の相場を記録すると、その国の営業手続きが現れます。</p>";
+    const staff = model.company.staff.map((entry) => `<li><strong>${escapeHtml(entry.name)} · ${escapeHtml(entry.roleName)}</strong><span>${entry.assignmentId ? "配置済み" : "配置待ち"} · 月給${entry.wage}</span></li>`).join("") || "<li>人員なし</li>";
+    const candidates = model.candidates.map((entry) => `<button type="button" data-v3-company-hire="${escapeHtml(entry.id)}" ${model.company.treasury < entry.signingBonus ? "disabled" : ""}><strong>${escapeHtml(entry.name)} · ${escapeHtml(entry.roleName)}</strong><small>${escapeHtml(entry.originSettlementName)}出身 · 契約${entry.signingBonus} · 月給${entry.wage}</small></button>`).join("") || "<p>候補者は全員雇用済みです。</p>";
+    const sourceOptions = model.marketOptions.map((entry) => `<option value="${escapeHtml(entry.id)}">${escapeHtml(entry.name)} · ${escapeHtml(entry.nationName)}${entry.licensed ? "" : "（資格なし）"}</option>`).join("");
+    const destinationOptions = model.marketOptions.map((entry, index) => `<option value="${escapeHtml(entry.id)}" ${index === 1 ? "selected" : ""}>${escapeHtml(entry.name)} · ${escapeHtml(entry.nationName)}${entry.licensed ? "" : "（資格なし）"}</option>`).join("");
+    const routeForm = model.routeLeaders.length && model.marketOptions.length >= 2 ? `<div class="v3-company-form" data-v3-route-form><label>仕入地<select data-v3-route-source>${sourceOptions}</select></label><label>販売地<select data-v3-route-destination>${destinationOptions}</select></label><label>商品<select data-v3-route-commodity>${model.commodities.map((entry) => `<option value="${entry.id}">${escapeHtml(entry.name)}</option>`).join("")}</select></label><label>運行<select data-v3-route-approach>${model.routeApproaches.map((entry) => `<option value="${entry.id}">${escapeHtml(entry.name)} · 契約${entry.cost}</option>`).join("")}</select></label><label>責任者<select data-v3-route-leader>${model.routeLeaders.map((entry) => `<option value="${escapeHtml(entry.id)}">${escapeHtml(entry.name)} · ${escapeHtml(entry.roleName)}</option>`).join("")}</select></label><button type="button" data-v3-route-secure>販路を契約</button></div>` : "<p>二市場の記録と、配置待ちの隊商頭または護衛頭が必要です。</p>";
+    const routes = model.company.routes.map((entry) => `<li><strong>${escapeHtml(entry.sourceName)} → ${escapeHtml(entry.destinationName)} · ${escapeHtml(entry.commodityName)}</strong><span>${entry.status === "active" ? "運行中" : entry.status === "blocked" ? "事故対応待ち" : "休止"} · ${entry.successfulRuns}便</span></li>`).join("") || "<li>販路なし</li>";
+    const localJurisdiction = model.marketSettlement ? model.jurisdictions.find((entry) => entry.settlementIds.includes(model.marketSettlement.id)) : null;
+    const branchForm = model.marketSettlement && localJurisdiction?.charter && model.branchManagers.length ? `<div class="v3-company-form" data-v3-branch-form><label>規模<select data-v3-branch-format>${model.branchFormats.map((entry) => `<option value="${entry.id}">${escapeHtml(entry.name)} · 開業${entry.cost}</option>`).join("")}</select></label><label>開店方法<select data-v3-branch-launch>${model.launchPlans.map((entry) => `<option value="${entry.id}">${escapeHtml(entry.name)} · ${entry.months}か月</option>`).join("")}</select></label><label>店長<select data-v3-branch-manager>${model.branchManagers.map((entry) => `<option value="${escapeHtml(entry.id)}">${escapeHtml(entry.name)} · ${escapeHtml(entry.roleName)}</option>`).join("")}</select></label><button type="button" data-v3-branch-open>${escapeHtml(model.marketSettlement.name)}へ出店</button></div>` : `<p>${model.marketSettlement ? localJurisdiction?.charter ? "配置待ちの番頭か仕入役が必要です。" : "先にこの国の営業資格を取得してください。" : "出店する市場まで歩いてください。"}</p>`;
+    const branches = model.company.branches.map((entry) => `<li><strong>${escapeHtml(entry.settlementName)}</strong><span>${entry.status === "preparing" ? `準備${entry.preparationProgress}/${entry.preparationMonths}` : entry.status === "open" ? "営業中" : "休業"}</span></li>`).join("") || "<li>支店なし</li>";
+    const incidents = model.company.pendingIncidents.map((entry) => `<article class="v3-company-incident"><strong>${escapeHtml(entry.title)}</strong><div><button type="button" data-v3-incident="${escapeHtml(entry.id)}" data-v3-decision="escort" ${model.company.treasury < 4 ? "disabled" : ""}>資金4で護衛増強</button><button type="button" data-v3-incident="${escapeHtml(entry.id)}" data-v3-decision="detour">一か月迂回</button><button type="button" data-v3-incident="${escapeHtml(entry.id)}" data-v3-decision="take_loss">損失受入れ</button></div></article>`).join("");
+    const ledger = model.company.monthlyLedger.slice(0, 4).map((entry) => `<li><strong>${escapeHtml(entry.period)} · 損益${entry.profit >= 0 ? "+" : ""}${entry.profit}</strong><span>売上${entry.revenue}／費用${entry.costs}（給金${entry.wages}・資格${entry.charterDues}）</span></li>`).join("") || "<li>決算なし</li>";
+    companyBlock = `<section class="v3-company-board"><header><div><small>MERCHANT COMPANY</small><h2>${escapeHtml(model.company.name)}</h2><p>${escapeHtml(model.strategies.find((entry) => entry.id === model.company.strategyId)?.name ?? "商会経営")}</p></div><div><strong>資金${model.company.treasury}</strong><span>信用${model.company.reputation}</span><button type="button" data-v3-company-invest ${state.player.gold < 10 ? "disabled" : ""}>個人資金10を出資</button></div></header>${incidents}<section class="v3-commerce-section"><header><div><small>LICENSES</small><h2>国家制度と営業資格</h2></div><b>${model.company.charters.length}/${model.jurisdictions.length}か国</b></header><div class="v3-charter-grid">${charterCards}</div></section><section class="v3-company-columns"><div class="v3-commerce-section"><header><div><small>STAFF</small><h2>人員の手配</h2></div></header><ul>${staff}</ul><details><summary>採用候補</summary><div class="v3-candidate-grid">${candidates}</div></details></div><div class="v3-commerce-section"><header><div><small>ROUTES</small><h2>販路の確保</h2></div></header>${routeForm}<ul>${routes}</ul></div><div class="v3-commerce-section"><header><div><small>BRANCH</small><h2>出店の段取り</h2></div></header>${branchForm}<ul>${branches}</ul></div><div class="v3-commerce-section"><header><div><small>MONTHLY</small><h2>月次決算</h2></div><button type="button" data-v3-company-month>翌月へ進む</button></header><ul>${ledger}</ul></div></section></section>`;
+  }
+  elements.commerceContent.innerHTML = `${marketBlock}${cargo}${companyBlock}`;
+  elements.commerceContent.scrollTop = previousScroll;
+}
+
+function focusCommercePrimaryAction() {
+  const primary = elements.commerceContent.querySelector([
+    '[data-v3-trade-action="observe"]:not(:disabled)',
+    '[data-v3-company-found]:not(:disabled)',
+    '[data-v3-charter-decision]:not(:disabled)',
+    '[data-v3-charter-start]:not(:disabled)',
+    '[data-v3-company-hire]:not(:disabled)',
+    '[data-v3-route-secure]:not(:disabled)',
+    '[data-v3-branch-open]:not(:disabled)',
+    '[data-v3-company-month]:not(:disabled)',
+  ].join(", "));
+  (primary ?? elements.commerceModal.querySelector("[data-v3-close='commerce']"))?.focus();
 }
 
 function renderGame() {
@@ -226,6 +299,7 @@ function renderGame() {
   renderField();
   renderEncounter();
   renderInventory();
+  if (!elements.commerceModal.hidden) renderCommerce();
 }
 
 function movePlayer(direction) {
@@ -342,6 +416,12 @@ function openWorldMap() {
 function handleAction(action) {
   if (state.pendingEncounter?.type === "enemy") return showToast("個人戦を決着させてください。");
   if (action === "map") return openWorldMap();
+  if (action === "commerce") {
+    elements.commerceModal.hidden = false;
+    renderCommerce();
+    focusCommercePrimaryAction();
+    return;
+  }
   if (action === "menu") {
     elements.inventoryModal.hidden = false;
     renderInventory();
@@ -379,6 +459,82 @@ document.addEventListener("click", (event) => {
   if (move) return movePlayer(move);
   const encounterAction = event.target.closest("[data-v3-encounter]")?.dataset.v3Encounter;
   if (encounterAction) return applyEncounterAction(encounterAction);
+  const tradeAction = event.target.closest("[data-v3-trade-action]");
+  if (tradeAction) {
+    try {
+      if (tradeAction.dataset.v3TradeAction === "observe") state = observeV3Market(context, state);
+      if (tradeAction.dataset.v3TradeAction === "buy") state = buyV3Commodity(context, state, tradeAction.dataset.v3Commodity, 1);
+      if (tradeAction.dataset.v3TradeAction === "sell") state = sellV3Commodity(context, state, tradeAction.dataset.v3Commodity, 1);
+      saveGame(); renderGame(); showToast("交易台帳を更新しました。");
+    } catch (error) { showToast(error.message); }
+    return;
+  }
+  const foundStrategy = event.target.closest("[data-v3-company-found]")?.dataset.v3CompanyFound;
+  if (foundStrategy) {
+    try { state = foundV3MerchantCompany(context, state, { strategyId: foundStrategy, name: document.querySelector("#v3CompanyName")?.value }); saveGame(); renderGame(); showToast("商会を設立しました。"); }
+    catch (error) { showToast(error.message); }
+    return;
+  }
+  if (event.target.closest("[data-v3-company-invest]")) {
+    try { state = contributeV3CompanyCapital(state, 10); saveGame(); renderGame(); }
+    catch (error) { showToast(error.message); }
+    return;
+  }
+  const charterStart = event.target.closest("[data-v3-charter-start]");
+  if (charterStart) {
+    try { state = startV3CharterApplication(context, state, charterStart.dataset.v3CharterStart, charterStart.dataset.v3Filing); saveGame(); renderGame(); }
+    catch (error) { showToast(error.message); }
+    return;
+  }
+  const charterDecision = event.target.closest("[data-v3-charter-decision]");
+  if (charterDecision) {
+    try { state = resolveV3CharterApplication(context, state, charterDecision.dataset.v3Application, charterDecision.dataset.v3CharterDecision); saveGame(); renderGame(); }
+    catch (error) { showToast(error.message); }
+    return;
+  }
+  const hire = event.target.closest("[data-v3-company-hire]")?.dataset.v3CompanyHire;
+  if (hire) {
+    try { state = recruitV3CompanyStaff(context, state, hire); saveGame(); renderGame(); }
+    catch (error) { showToast(error.message); }
+    return;
+  }
+  if (event.target.closest("[data-v3-route-secure]")) {
+    const form = elements.commerceContent.querySelector("[data-v3-route-form]");
+    try {
+      state = secureV3CompanyRoute(context, state, {
+        sourceId: form.querySelector("[data-v3-route-source]").value,
+        destinationId: form.querySelector("[data-v3-route-destination]").value,
+        commodityId: form.querySelector("[data-v3-route-commodity]").value,
+        approachId: form.querySelector("[data-v3-route-approach]").value,
+        leaderId: form.querySelector("[data-v3-route-leader]").value,
+      });
+      saveGame(); renderGame();
+    } catch (error) { showToast(error.message); }
+    return;
+  }
+  if (event.target.closest("[data-v3-branch-open]")) {
+    const form = elements.commerceContent.querySelector("[data-v3-branch-form]");
+    try {
+      state = openV3CompanyBranch(context, state, {
+        formatId: form.querySelector("[data-v3-branch-format]").value,
+        launchId: form.querySelector("[data-v3-branch-launch]").value,
+        managerId: form.querySelector("[data-v3-branch-manager]").value,
+      });
+      saveGame(); renderGame();
+    } catch (error) { showToast(error.message); }
+    return;
+  }
+  if (event.target.closest("[data-v3-company-month]")) {
+    try { state = advanceV3CompanyMonth(context, state); saveGame(); renderGame(); }
+    catch (error) { showToast(error.message); }
+    return;
+  }
+  const incident = event.target.closest("[data-v3-incident]");
+  if (incident) {
+    try { state = resolveV3CompanyIncident(state, incident.dataset.v3Incident, incident.dataset.v3Decision); saveGame(); renderGame(); }
+    catch (error) { showToast(error.message); }
+    return;
+  }
   const itemIndex = event.target.closest("[data-v3-use-item]")?.dataset.v3UseItem;
   if (itemIndex !== undefined) {
     const next = useV3Item(state, Number(itemIndex));
@@ -393,6 +549,7 @@ document.addEventListener("click", (event) => {
   const close = event.target.closest("[data-v3-close]")?.dataset.v3Close;
   if (close === "map") elements.worldMap.hidden = true;
   if (close === "inventory") elements.inventoryModal.hidden = true;
+  if (close === "commerce") elements.commerceModal.hidden = true;
 });
 
 document.addEventListener("keydown", (event) => {
@@ -400,6 +557,7 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
     if (!elements.worldMap.hidden) elements.worldMap.hidden = true;
     else if (!elements.inventoryModal.hidden) elements.inventoryModal.hidden = true;
+    else if (!elements.commerceModal.hidden) elements.commerceModal.hidden = true;
     return;
   }
   if (state.pendingEncounter?.type === "enemy") {

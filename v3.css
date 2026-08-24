@@ -8,7 +8,7 @@
 * { box-sizing: border-box; }
 html, body { min-height: 100%; margin: 0; }
 body { min-height: 100dvh; overflow-x: hidden; background: radial-gradient(circle at 50% 10%, #214145 0, #0b1d20 38%, #061012 100%); }
-button, input { font: inherit; }
+button, input, select { font: inherit; }
 button { color: inherit; }
 [hidden] { display: none !important; }
 
@@ -191,6 +191,61 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .v3-toast { position: fixed; z-index: 40; left: 50%; bottom: 24px; translate: -50% 20px; padding: 10px 16px; border: 1px solid #e1d488; border-radius: 3px; background: #102628; opacity: 0; pointer-events: none; transition: .2s; }
 .v3-toast.is-visible { translate: -50% 0; opacity: 1; }
 
+.v3-commerce { position: fixed; inset: 0; z-index: 24; display: grid; place-items: center; padding: max(18px, env(safe-area-inset-top)) 18px max(18px, env(safe-area-inset-bottom)); background: rgba(1,7,8,.88); backdrop-filter: blur(7px); }
+.v3-commerce-card { display: grid; grid-template-rows: auto minmax(0, 1fr); width: min(1180px, 100%); max-height: calc(100dvh - 36px); border: 3px solid #eee9d6; border-radius: 6px; background: #0a191b; box-shadow: inset 0 0 0 2px #4b635c, 0 24px 70px #010404; overflow: hidden; }
+.v3-commerce-card > header { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 16px 18px; border-bottom: 1px solid #536a62; background: #10282a; }
+.v3-commerce-card > header small, .v3-commerce-section small, .v3-company-board > header small { color: #d7c572; font-size: 9px; font-weight: 900; letter-spacing: .13em; }
+.v3-commerce-card > header h1 { margin: 2px 0; font: 800 28px/1.1 Georgia, "Yu Mincho", serif; }
+.v3-commerce-card > header p { margin: 3px 0 0; color: #aebbb3; font-size: 11px; }
+.v3-commerce-card > header button { flex: none; min-width: 72px; min-height: 44px; border: 1px solid #8b9a93; border-radius: 3px; background: #173336; cursor: pointer; font-weight: 800; }
+#v3CommerceContent { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(280px, .6fr); align-content: start; gap: 12px; min-height: 0; padding: 14px; overflow: auto; overscroll-behavior: contain; }
+.v3-commerce-section, .v3-company-board { min-width: 0; padding: 14px; border: 1px solid #52675f; border-radius: 4px; background: #0d2224; box-shadow: inset 0 0 0 1px rgba(255,255,255,.025); }
+.v3-commerce-section > header, .v3-charter-card > header, .v3-company-board > header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.v3-commerce-section h2, .v3-company-board h2 { margin: 2px 0 6px; font: 800 20px/1.2 Georgia, "Yu Mincho", serif; }
+.v3-commerce-section p, .v3-company-board p { color: #b3c0b8; font-size: 12px; line-height: 1.55; }
+.v3-commerce-section button, .v3-company-board button { min-height: 44px; padding: 8px 10px; border: 1px solid #768b82; border-radius: 3px; background: #173336; cursor: pointer; text-align: left; }
+.v3-commerce-section button:hover:not(:disabled), .v3-commerce-section button:focus-visible, .v3-company-board button:hover:not(:disabled), .v3-company-board button:focus-visible { border-color: #ead782; background: #29473f; outline: none; }
+.v3-commerce-section button strong, .v3-commerce-section button small, .v3-company-board button strong, .v3-company-board button small { display: block; }
+.v3-commerce-section button small, .v3-company-board button small { margin-top: 3px; color: #aab7af; font-size: 10px; line-height: 1.4; letter-spacing: 0; }
+.v3-commerce-section ul { display: grid; gap: 5px; margin: 8px 0; padding: 0; list-style: none; }
+.v3-commerce-section li { display: flex; justify-content: space-between; gap: 8px; padding: 7px 9px; border: 1px solid #334b45; background: #0a1a1c; font-size: 11px; }
+.v3-commerce-section li span { color: #aab7af; text-align: right; }
+.v3-commerce-section.is-empty { display: grid; align-content: center; min-height: 178px; background: repeating-linear-gradient(135deg, #0d2224 0 12px, #102729 13px 24px); }
+.v3-market-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.v3-market-grid article { display: grid; gap: 7px; min-width: 0; padding: 10px; border: 1px solid #405951; background: #091a1c; }
+.v3-market-grid article header, .v3-market-grid article div { display: flex; justify-content: space-between; gap: 6px; }
+.v3-market-grid article p { margin: 0; color: #e7dcad; }
+.v3-market-grid article button { flex: 1; min-width: 0; font-size: 10px; text-align: center; }
+.v3-trade-ledger { grid-row: span 1; }
+.v3-company-requirements { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.v3-company-requirements li { display: grid; text-align: center; }
+.v3-company-requirements li.is-met { border-color: #76976e; background: #173324; }
+.v3-company-name { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 10px; margin: 10px 0; color: #d9c979; font-size: 11px; font-weight: 800; }
+.v3-company-name input, .v3-company-form select { width: 100%; min-height: 44px; padding: 8px 10px; border: 1px solid #647b72; border-radius: 3px; background: #071719; color: #f8f3df; }
+.v3-strategy-grid, .v3-candidate-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
+.v3-company-board { grid-column: 1 / -1; padding: 0; overflow: visible; }
+.v3-company-board > header { padding: 16px; border-bottom: 1px solid #5b7067; border-radius: 3px 3px 0 0; background: linear-gradient(115deg, #183c37, #112729); }
+.v3-company-board > header > div:last-child { display: flex; align-items: center; gap: 10px; }
+.v3-company-board > header span { color: #b9c5bd; font-size: 11px; }
+.v3-company-board > .v3-commerce-section { margin: 12px; }
+.v3-charter-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.v3-charter-card { min-width: 0; padding: 11px; border: 1px solid #475e56; background: #09191b; }
+.v3-charter-card header span { display: grid; }
+.v3-charter-card header b { color: #d7bf72; font-size: 11px; }
+.v3-charter-card.is-active { border-color: #71936c; background: #112d24; }
+.v3-charter-card.is-pending { border-color: #b18b54; background: #302717; }
+.v3-charter-card > div { display: grid; gap: 6px; }
+.v3-company-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding: 0 12px 12px; }
+.v3-company-columns .v3-commerce-section { padding: 12px; }
+.v3-company-columns details { margin-top: 10px; }
+.v3-company-columns summary { min-height: 44px; padding: 12px 8px; color: #e3d183; cursor: pointer; font-weight: 800; }
+.v3-company-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+.v3-company-form label { display: grid; gap: 4px; color: #b6c2ba; font-size: 10px; }
+.v3-company-form > button { align-self: end; text-align: center; font-weight: 800; }
+.v3-company-incident { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 12px; padding: 10px 12px; border: 1px solid #bd735d; background: #3b201d; }
+.v3-company-incident > div { display: flex; flex-wrap: wrap; gap: 6px; }
+
+
 @media (min-width: 721px) and (min-height: 681px) {
   .v3-command-area { height: 152px; min-height: 152px; }
   .v3-message-window { height: 128px; min-height: 0; overflow-y: auto; }
@@ -201,9 +256,12 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   .v3-launch { align-content: end; gap: 18px; }
   .v3-launch-actions { grid-template-columns: 1fr; }
   .v3-new-world { grid-template-columns: 1fr; }
-  .v3-game-header { min-height: 58px; }
+  .v3-game-header { min-height: 58px; padding-inline: 7px; }
+  .v3-game-header > div:first-child { min-width: 0; max-width: 92px; }
+  .v3-game-header > div:first-child strong, .v3-game-header > div:first-child small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .v3-game-header strong { font-size: 14px; }
-  .v3-header-actions button { min-height: 44px; padding: 6px 10px; font-size: 11px; }
+  .v3-header-actions { gap: 4px; }
+  .v3-header-actions button { min-height: 44px; padding: 6px 7px; font-size: 10px; }
   .v3-play-layout { align-content: start; min-height: 0; padding: 0; }
   .v3-field-shell { width: 100%; aspect-ratio: 13 / 11; border-width: 0 0 3px; border-radius: 0; }
   .v3-status-window { top: 8px; left: 8px; width: 136px; padding: 8px 10px; border-width: 2px; }
@@ -228,6 +286,21 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   .v3-world-map > header p { display: none; }
   .v3-world-map > footer { flex-wrap: wrap; gap: 8px 14px; }
   .v3-world-map > footer strong { width: 100%; margin: 0; }
+  .v3-commerce { place-items: stretch; padding: 0; }
+  .v3-commerce-card { max-height: 100dvh; border-width: 0; border-radius: 0; }
+  .v3-commerce-card > header { position: sticky; top: 0; z-index: 2; padding: max(10px, env(safe-area-inset-top)) 10px 9px; }
+  .v3-commerce-card > header h1 { font-size: 22px; }
+  .v3-commerce-card > header p { display: none; }
+  #v3CommerceContent { grid-template-columns: 1fr; gap: 9px; padding: 9px 9px max(12px, env(safe-area-inset-bottom)); }
+  .v3-commerce-section, .v3-company-board { grid-column: 1; }
+  .v3-market-grid, .v3-strategy-grid, .v3-candidate-grid, .v3-charter-grid, .v3-company-columns, .v3-company-form { grid-template-columns: 1fr; }
+  .v3-company-requirements { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .v3-company-name { grid-template-columns: 1fr; }
+  .v3-company-board > header { align-items: flex-start; }
+  .v3-company-board > header > div:last-child { display: grid; justify-items: end; }
+  .v3-company-columns { padding-inline: 9px; }
+  .v3-company-incident { align-items: stretch; flex-direction: column; }
+  .v3-company-incident button { flex: 1 1 120px; }
 }
 
 @media (max-height: 680px) and (orientation: landscape) {
