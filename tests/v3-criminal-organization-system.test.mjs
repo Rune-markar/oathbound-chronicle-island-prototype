@@ -140,6 +140,7 @@ test("単独実績から現地仲介人、人員二名、一味結成へ通常�
 test("一味の作戦指示は実在地方を対象に一か月進み、報告確認で事件になる", () => {
   const { context, state: formed } = formedState("v3-operation-route");
   const view = getV3CriminalView(context, formed);
+  assert.equal(view.cycleLabel, "317年4月");
   const extortion = view.organization.operations.find((entry) => entry.type === "extortion");
   const ordered = issueV3CriminalOperation(context, formed, {
     optionId: extortion.id,
@@ -151,6 +152,7 @@ test("一味の作戦指示は実在地方を対象に一か月進み、報告�
 
   const advanced = advanceV3CriminalCycle(context, ordered);
   assert.equal(advanced.clockMinutes, ordered.clockMinutes + V3_CRIMINAL_CYCLE_MINUTES);
+  assert.equal(getV3CriminalView(context, advanced).cycleLabel, "317年5月");
   assert.equal(advanced.criminal.crime.organization.activeOrders[0].status, "report_ready");
   const reported = resolveV3CriminalReport(context, advanced, advanced.criminal.crime.organization.activeOrders[0].id, {
     outcome: "success_exposed",
@@ -250,6 +252,9 @@ test("V3犯罪UIは既定入口へ接続し、V2は比較アーカイブとし�
   assert.match(index, /V2 比較アーカイブ/);
   assert.match(app, /renderUnderworld/);
   assert.match(app, /resolveV3PersonalCrime/);
+  assert.match(app, /function advancePlayerMonth[\s\S]*advanceV3WorldSimulation/);
+  assert.match(app, /data-v3-criminal-cycle[\s\S]*advancePlayerMonth/);
+  assert.match(app, /const cycleLabel = worldSimulation/);
   assert.match(styles, /\.v3-underworld/);
   assert.match(agents, /Generation V3/);
   assert.match(agents, /V2.*比較/);

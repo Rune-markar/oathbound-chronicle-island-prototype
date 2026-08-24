@@ -8,7 +8,7 @@
 * { box-sizing: border-box; }
 html, body { min-height: 100%; margin: 0; }
 body { min-height: 100dvh; overflow-x: hidden; background: radial-gradient(circle at 50% 10%, #214145 0, #0b1d20 38%, #061012 100%); }
-button, input { font: inherit; }
+button, input, select { font: inherit; }
 button { color: inherit; }
 [hidden] { display: none !important; }
 
@@ -70,12 +70,28 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .v3-tile.is-tundra { background: #80978a; }
 .v3-tile.is-snow { background: #cedbd5; color: #60736d; }
 .v3-tile.is-water { background: repeating-linear-gradient(165deg, #326875 0 5px, #3c7780 6px 9px); color: #a5d3d3; }
+.v3-tile.is-beach { background: linear-gradient(155deg, #d0bd7d, #aa9561); color: #705f38; }
+.v3-tile.is-shoal { background: repeating-linear-gradient(165deg, #78aeb0 0 5px, #9bc1b8 6px 9px); color: #e0f1df; }
+.v3-tile.is-tidal-flat { background: radial-gradient(circle at 25% 35%, #7d8f73 0 8%, transparent 9%), #819a81; color: #d8e8d0; }
 .v3-tile.is-river { background: linear-gradient(90deg, #7ca15d 0 28%, #3c7c87 30% 70%, #7ca15d 72%); color: #d1eded; }
+.v3-tile.is-canyon-river { background: linear-gradient(90deg, #5a624e 0 26%, #2f6b76 30% 70%, #5a624e 74%); color: #d3ebdf; }
+.v3-tile.is-canal { background: linear-gradient(90deg, #9ca65c 0 34%, #4b8790 36% 64%, #9ca65c 66%); color: #d7eeee; }
+.v3-tile.is-spring { background: radial-gradient(circle, #75b6b5 0 28%, #568d6a 31% 54%, #7ea861 57%); color: #e3f3de; }
+.v3-tile.is-oasis { background: radial-gradient(circle at 52% 56%, #417f7b 0 22%, #4f7e49 24% 47%, #c2a766 49%); color: #e5edbd; }
 .v3-tile.is-road { background: linear-gradient(90deg, #789858 0 29%, #b39763 31% 69%, #789858 71%); color: #6f5835; }
 .v3-tile.is-road:nth-child(even) { background: linear-gradient(#789858 0 29%, #b39763 31% 69%, #789858 71%); }
 .v3-tile.is-forest { background: #356746; color: #142f23; text-shadow: 1px 1px #65915d; }
+.v3-tile.is-marsh { background: repeating-radial-gradient(ellipse at 30% 70%, #496f5b 0 14%, #657b57 16% 31%); color: #bad0a8; }
+.v3-tile.is-farmland { background: repeating-linear-gradient(90deg, #80934d 0 4px, #aa9a55 5px 8px); color: #f0d98d; }
 .v3-tile.is-hill { background: #718557; color: #4a553a; }
 .v3-tile.is-mountain { background: #59675c; color: #29342d; }
+.v3-tile.is-volcano { background: radial-gradient(circle at 50% 65%, #e1733d 0 12%, #6e4238 15% 42%, #4d5148 45%); color: #ffd18d; }
+.v3-tile.is-crater { background: radial-gradient(circle, #4d5148 0 27%, #7c755f 30% 48%, #657652 51%); color: #ddd0a3; }
+.v3-tile.is-cave { background: radial-gradient(ellipse at 50% 70%, #151d1b 0 32%, #66725f 35% 56%, #75895b 59%); color: #d5cfac; }
+.v3-tile.is-mine { background: repeating-linear-gradient(135deg, #4f584f 0 6px, #76705a 7px 11px); color: #f0d791; }
+.v3-tile.is-ruins { background: linear-gradient(135deg, #8c835f 0 35%, #5f704f 36% 63%, #9b9069 64%); color: #efe2b2; }
+.v3-tile.is-floating-island { background: radial-gradient(ellipse at 50% 25%, #b6d6d2 0 20%, #738c75 23% 42%, #536957 45%); color: #f5eac4; }
+.v3-tile.is-sky-peak { background: linear-gradient(135deg, #d4e0dc 0 24%, #65736d 26% 67%, #384640 69%); color: #fff4cf; }
 .v3-tile.is-settlement-ground { background: #ae9669; }
 .v3-tile[class*="is-settlement-"]:not(.is-settlement-ground) { background: #9b825c; color: #fff1bd; text-shadow: 1px 2px #2b2117; }
 .v3-tile.is-fog, .v3-tile.is-ungenerated, .v3-tile.is-void { background: #101f20; color: transparent; }
@@ -116,13 +132,13 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .v3-place-window small { color: #dbc879; font-weight: 800; }
 .v3-place-window strong { font-family: Georgia, "Yu Mincho", serif; font-size: 17px; }
 .v3-place-window span { color: #b7c3ba; font-size: 10px; }
-.v3-command-area { display: grid; grid-template-columns: minmax(0, 1fr) 124px; gap: 12px; min-height: 152px; padding: 12px max(16px, calc((100vw - 1180px) / 2)) max(12px, env(safe-area-inset-bottom)); border-top: 1px solid #52685f; background: #071416; }
+.v3-command-area { display: grid; grid-template-columns: minmax(0, 1fr) 144px; gap: 12px; min-height: 152px; padding: 12px max(16px, calc((100vw - 1180px) / 2)) max(12px, env(safe-area-inset-bottom)); border-top: 1px solid #52685f; background: #071416; }
 .v3-message-window { min-height: 112px; padding: 12px 16px; overflow: hidden; }
 .v3-message-window div { display: grid; gap: 4px; }
 .v3-message-window p { margin: 0; color: #899a92; font-size: 11px; line-height: 1.5; }
 .v3-message-window p.is-latest { color: #fff8dd; font-size: 14px; }
 .v3-message-window p.is-latest::before { content: "▸ "; color: #e3ce79; }
-.v3-dpad { display: grid; grid-template-columns: repeat(3, 38px); grid-template-rows: repeat(3, 34px); align-content: center; justify-content: center; }
+.v3-dpad { display: grid; grid-template-columns: repeat(3, 44px); grid-template-rows: repeat(3, 44px); align-content: center; justify-content: center; }
 .v3-dpad button { border: 1px solid #81928a; background: #153034; cursor: pointer; font-size: 13px; }
 .v3-dpad button:hover, .v3-dpad button:focus-visible { background: #38564e; }
 .v3-dpad button:nth-child(1) { grid-column: 2; }
@@ -243,20 +259,125 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .v3-criminal-decision button { display: grid; text-align: left; }
 .v3-criminal-decision small { color: #cbb9ad; letter-spacing: 0; }
 
-.v3-world-map { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; place-items: stretch; padding: max(18px, env(safe-area-inset-top)) max(18px, calc((100vw - 1220px) / 2)) max(18px, env(safe-area-inset-bottom)); background: #071416; }
-.v3-world-map > header { display: flex; justify-content: space-between; gap: 16px; padding-bottom: 12px; }
-.v3-world-map h1 { margin: 3px 0; font: 800 30px Georgia, "Yu Mincho", serif; }
-.v3-world-map p { margin: 0; color: #aebbb3; font-size: 12px; }
+.v3-world-map { display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; place-items: stretch; gap: 8px; padding: max(12px, env(safe-area-inset-top)) max(14px, calc((100vw - 1380px) / 2)) max(12px, env(safe-area-inset-bottom)); background: #071416; }
+.v3-world-map > header { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 18px; }
+.v3-world-map h1 { margin: 3px 0; font: 800 28px Georgia, "Yu Mincho", serif; }
+.v3-world-map p { margin: 0; color: #aebbb3; font-size: 11px; }
+.v3-world-date { display: grid; min-width: 116px; padding: 7px 11px; border-left: 1px solid #65776f; text-align: right; }
+.v3-world-date span { color: #8fa097; font-size: 9px; font-weight: 900; letter-spacing: .12em; }
+.v3-world-date strong { color: #ead98d; font: 800 15px Georgia, "Yu Mincho", serif; }
+.v3-world-layers { display: flex; gap: 6px; }
+.v3-world-layers button { min-height: 36px; padding: 5px 16px; border-width: 1px; color: #aebbb3; box-shadow: none; }
+.v3-world-layers button.is-active { border-color: #e5cf7c; color: #fff7d7; background: #3e594b; }
+.v3-world-map-workspace { display: grid; grid-template-columns: minmax(0, 1fr) 350px; gap: 10px; min-height: 0; overflow: hidden; }
+.v3-world-map-stage { display: grid; grid-template-rows: minmax(0, 1fr) auto; min-width: 0; min-height: 0; }
 .v3-world-map-canvas { min-height: 0; display: grid; place-items: center; overflow: auto; border: 3px solid #e9e7d8; border-radius: 4px; background: #173b43; box-shadow: inset 0 0 0 2px #516861; }
-.v3-world-map canvas { display: block; width: min(100%, calc((100dvh - 190px) * 1.6)); height: auto; image-rendering: pixelated; }
-.v3-world-map > footer { display: flex; align-items: center; gap: 18px; min-height: 48px; font-size: 11px; }
+.v3-world-map canvas { display: block; width: min(100%, calc((100dvh - 250px) * 1.6)); height: auto; image-rendering: pixelated; cursor: crosshair; }
+.v3-world-history-control { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 8px 0 0; }
+.v3-world-history-control label { display: grid; grid-template-columns: auto minmax(100px, 1fr) auto; align-items: center; gap: 9px; color: #aebbb3; font-size: 10px; }
+.v3-world-history-control input { width: 100%; accent-color: #d8c576; }
+.v3-world-history-control output { min-width: 148px; color: #ead98d; text-align: right; }
+.v3-world-history-control button { min-height: 34px; padding: 4px 10px; border-width: 1px; box-shadow: none; }
+.v3-world-intelligence { display: grid; gap: 8px; min-height: 0; padding-right: 2px; overflow-y: auto; scrollbar-color: #63786e #0b1c1e; }
+.v3-world-intelligence > section { padding: 10px; border: 1px solid #50655d; background: #0b2022; }
+.v3-world-intelligence header { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.v3-world-intelligence header > strong { font: 800 17px Georgia, "Yu Mincho", serif; }
+.v3-world-summary > div:first-of-type { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin: 9px 0; }
+.v3-world-summary > div:first-of-type span { display: grid; justify-items: center; padding: 6px 2px; background: #142c2e; color: #9fafa6; font-size: 9px; }
+.v3-world-summary > div:first-of-type b { color: #fff5ce; font-size: 15px; }
+.v3-world-nation-list { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.v3-world-nation-list button { display: grid; grid-template-columns: 10px minmax(0, 1fr); align-items: center; gap: 6px; min-height: 38px; padding: 5px 7px; border: 1px solid #435750; box-shadow: none; text-align: left; }
+.v3-world-nation-list button.is-selected { border-color: #ead98d; background: #344e43; }
+.v3-world-nation-list i, .v3-world-dossier > header > i { display: block; width: 9px; height: 22px; background: var(--nation-color, #74865d); }
+.v3-world-nation-list span { display: grid; min-width: 0; }
+.v3-world-nation-list strong { overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.v3-world-nation-list small { color: #91a098; font-size: 8px; letter-spacing: 0; }
+.v3-world-dossier > header { display: grid; grid-template-columns: 13px minmax(0, 1fr); justify-content: start; }
+.v3-world-dossier > header > i { width: 13px; height: 42px; }
+.v3-world-dossier > header div { display: grid; }
+.v3-world-dossier > header strong { font: 800 18px Georgia, "Yu Mincho", serif; }
+.v3-world-dossier > header span { color: #a9b6ae; font-size: 10px; }
+.v3-world-dossier dl { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; margin: 10px 0 7px; font-size: 10px; }
+.v3-world-dossier dl div { display: flex; justify-content: space-between; gap: 6px; border-bottom: 1px solid #2b403a; }
+.v3-world-dossier dt { color: #91a29a; }
+.v3-world-dossier dd { margin: 0; color: #f4e9bd; font-weight: 800; }
+.v3-world-dossier p { display: grid; gap: 3px; margin: 7px 0 0; color: #aebbb3; font-size: 10px; line-height: 1.45; }
+.v3-world-dossier p > strong { color: #e5d181; }
+.v3-world-dossier p > small { color: #8fa098; letter-spacing: 0; }
+.v3-world-dossier .v3-dossier-war { display: block; padding: 6px; border-left: 2px solid #ad685e; background: #241a1a; }
+.v3-world-chronicle ol, .v3-world-chronicle { min-height: 0; }
+.v3-world-chronicle ol { display: grid; gap: 0; margin: 8px 0 0; padding: 0; list-style: none; }
+.v3-world-chronicle li { display: grid; padding: 7px 0; border-top: 1px solid #2e433d; }
+.v3-world-chronicle li.is-priority-4, .v3-world-chronicle li.is-priority-5 { border-left: 2px solid #b86c5d; padding-left: 7px; }
+.v3-world-chronicle time { color: #d8c576; font-size: 9px; }
+.v3-world-chronicle li strong { font-size: 11px; }
+.v3-world-chronicle li span { color: #91a199; font-size: 9px; line-height: 1.45; }
+.v3-world-map > footer { display: flex; align-items: center; gap: 15px; min-height: 44px; font-size: 10px; }
 .v3-world-map > footer span { display: flex; align-items: center; gap: 6px; }
 .v3-world-map > footer i { display: block; width: 14px; height: 8px; background: #f4e5b5; }
 .v3-world-map > footer i.is-player { width: 12px; height: 12px; border: 2px solid #fff; border-radius: 50%; background: none; }
 .v3-world-map > footer i.is-road { height: 2px; background: #e4d5a0; }
-.v3-world-map > footer strong { margin-left: auto; color: #d9c979; }
+.v3-world-map > footer i.is-site { width: 9px; height: 9px; rotate: 45deg; background: #d98758; }
+.v3-world-map > footer > strong { margin-left: auto; color: #d9c979; }
+.v3-world-map > footer > div { display: flex; gap: 6px; }
+.v3-world-map > footer button { min-height: 36px; padding: 5px 10px; border-width: 1px; box-shadow: none; }
 .v3-toast { position: fixed; z-index: 40; left: 50%; bottom: 24px; translate: -50% 20px; padding: 10px 16px; border: 1px solid #e1d488; border-radius: 3px; background: #102628; opacity: 0; pointer-events: none; transition: .2s; }
 .v3-toast.is-visible { translate: -50% 0; opacity: 1; }
+
+.v3-commerce { position: fixed; inset: 0; z-index: 24; display: grid; place-items: center; padding: max(18px, env(safe-area-inset-top)) 18px max(18px, env(safe-area-inset-bottom)); background: rgba(1,7,8,.88); backdrop-filter: blur(7px); }
+.v3-commerce-card { display: grid; grid-template-rows: auto minmax(0, 1fr); width: min(1180px, 100%); max-height: calc(100dvh - 36px); border: 3px solid #eee9d6; border-radius: 6px; background: #0a191b; box-shadow: inset 0 0 0 2px #4b635c, 0 24px 70px #010404; overflow: hidden; }
+.v3-commerce-card > header { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 16px 18px; border-bottom: 1px solid #536a62; background: #10282a; }
+.v3-commerce-card > header small, .v3-commerce-section small, .v3-company-board > header small { color: #d7c572; font-size: 9px; font-weight: 900; letter-spacing: .13em; }
+.v3-commerce-card > header h1 { margin: 2px 0; font: 800 28px/1.1 Georgia, "Yu Mincho", serif; }
+.v3-commerce-card > header p { margin: 3px 0 0; color: #aebbb3; font-size: 11px; }
+.v3-commerce-card > header button { flex: none; min-width: 72px; min-height: 44px; border: 1px solid #8b9a93; border-radius: 3px; background: #173336; cursor: pointer; font-weight: 800; }
+#v3CommerceContent { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(280px, .6fr); align-content: start; gap: 12px; min-height: 0; padding: 14px; overflow: auto; overscroll-behavior: contain; }
+.v3-commerce-section, .v3-company-board { min-width: 0; padding: 14px; border: 1px solid #52675f; border-radius: 4px; background: #0d2224; box-shadow: inset 0 0 0 1px rgba(255,255,255,.025); }
+.v3-commerce-section > header, .v3-charter-card > header, .v3-company-board > header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.v3-commerce-section h2, .v3-company-board h2 { margin: 2px 0 6px; font: 800 20px/1.2 Georgia, "Yu Mincho", serif; }
+.v3-commerce-section p, .v3-company-board p { color: #b3c0b8; font-size: 12px; line-height: 1.55; }
+.v3-commerce-section button, .v3-company-board button { min-height: 44px; padding: 8px 10px; border: 1px solid #768b82; border-radius: 3px; background: #173336; cursor: pointer; text-align: left; }
+.v3-commerce-section button:hover:not(:disabled), .v3-commerce-section button:focus-visible, .v3-company-board button:hover:not(:disabled), .v3-company-board button:focus-visible { border-color: #ead782; background: #29473f; outline: none; }
+.v3-commerce-section button strong, .v3-commerce-section button small, .v3-company-board button strong, .v3-company-board button small { display: block; }
+.v3-commerce-section button small, .v3-company-board button small { margin-top: 3px; color: #aab7af; font-size: 10px; line-height: 1.4; letter-spacing: 0; }
+.v3-commerce-section ul { display: grid; gap: 5px; margin: 8px 0; padding: 0; list-style: none; }
+.v3-commerce-section li { display: flex; justify-content: space-between; gap: 8px; padding: 7px 9px; border: 1px solid #334b45; background: #0a1a1c; font-size: 11px; }
+.v3-commerce-section li span { color: #aab7af; text-align: right; }
+.v3-commerce-section.is-empty { display: grid; align-content: center; min-height: 178px; background: repeating-linear-gradient(135deg, #0d2224 0 12px, #102729 13px 24px); }
+.v3-market-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.v3-market-grid article { display: grid; gap: 7px; min-width: 0; padding: 10px; border: 1px solid #405951; background: #091a1c; }
+.v3-market-grid article header, .v3-market-grid article div { display: flex; justify-content: space-between; gap: 6px; }
+.v3-market-grid article p { margin: 0; color: #e7dcad; }
+.v3-market-grid article button { flex: 1; min-width: 0; font-size: 10px; text-align: center; }
+.v3-trade-ledger { grid-row: span 1; }
+.v3-company-requirements { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.v3-company-requirements li { display: grid; text-align: center; }
+.v3-company-requirements li.is-met { border-color: #76976e; background: #173324; }
+.v3-company-name { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 10px; margin: 10px 0; color: #d9c979; font-size: 11px; font-weight: 800; }
+.v3-company-name input, .v3-company-form select { width: 100%; min-height: 44px; padding: 8px 10px; border: 1px solid #647b72; border-radius: 3px; background: #071719; color: #f8f3df; }
+.v3-strategy-grid, .v3-candidate-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
+.v3-company-board { grid-column: 1 / -1; padding: 0; overflow: visible; }
+.v3-company-board > header { padding: 16px; border-bottom: 1px solid #5b7067; border-radius: 3px 3px 0 0; background: linear-gradient(115deg, #183c37, #112729); }
+.v3-company-board > header > div:last-child { display: flex; align-items: center; gap: 10px; }
+.v3-company-board > header span { color: #b9c5bd; font-size: 11px; }
+.v3-company-board > .v3-commerce-section { margin: 12px; }
+.v3-charter-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.v3-charter-card { min-width: 0; padding: 11px; border: 1px solid #475e56; background: #09191b; }
+.v3-charter-card header span { display: grid; }
+.v3-charter-card header b { color: #d7bf72; font-size: 11px; }
+.v3-charter-card.is-active { border-color: #71936c; background: #112d24; }
+.v3-charter-card.is-pending { border-color: #b18b54; background: #302717; }
+.v3-charter-card > div { display: grid; gap: 6px; }
+.v3-company-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding: 0 12px 12px; }
+.v3-company-columns .v3-commerce-section { padding: 12px; }
+.v3-company-columns details { margin-top: 10px; }
+.v3-company-columns summary { min-height: 44px; padding: 12px 8px; color: #e3d183; cursor: pointer; font-weight: 800; }
+.v3-company-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+.v3-company-form label { display: grid; gap: 4px; color: #b6c2ba; font-size: 10px; }
+.v3-company-form > button { align-self: end; text-align: center; font-weight: 800; }
+.v3-company-incident { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 12px; padding: 10px 12px; border: 1px solid #bd735d; background: #3b201d; }
+.v3-company-incident > div { display: flex; flex-wrap: wrap; gap: 6px; }
+
 
 @media (min-width: 721px) and (min-height: 681px) {
   .v3-command-area { height: 152px; min-height: 152px; }
@@ -268,9 +389,12 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   .v3-launch { align-content: end; gap: 18px; }
   .v3-launch-actions { grid-template-columns: 1fr; }
   .v3-new-world { grid-template-columns: 1fr; }
-  .v3-game-header { min-height: 58px; }
+  .v3-game-header { min-height: 58px; padding-inline: 7px; }
+  .v3-game-header > div:first-child { min-width: 0; max-width: 92px; }
+  .v3-game-header > div:first-child strong, .v3-game-header > div:first-child small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .v3-game-header strong { font-size: 14px; }
-  .v3-header-actions button { min-width: 44px; min-height: 44px; padding: 6px 8px; font-size: 11px; }
+  .v3-header-actions { gap: 3px; }
+  .v3-header-actions button { min-width: 44px; min-height: 44px; padding: 6px 5px; font-size: 10px; }
   .v3-play-layout { align-content: start; min-height: 0; padding: 0; }
   .v3-field-shell { width: 100%; aspect-ratio: 13 / 11; border-width: 0 0 3px; border-radius: 0; }
   .v3-status-window { top: 8px; left: 8px; width: 136px; padding: 8px 10px; border-width: 2px; }
@@ -282,19 +406,36 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   .v3-personal-battle-status { top: 8px; right: 8px; width: 210px; padding: 7px 9px; border-width: 2px; }
   .v3-personal-battle-status small { font-size: 6px; }
   .v3-personal-battle-status > strong { font-size: 14px; }
-  .v3-command-area { grid-template-columns: minmax(0, 1fr) 108px; min-height: 0; padding: 8px 8px max(8px, env(safe-area-inset-bottom)); }
+  .v3-command-area { grid-template-columns: minmax(0, 1fr) 140px; min-height: 0; padding: 8px 8px max(8px, env(safe-area-inset-bottom)); }
   .v3-message-window { min-height: 128px; max-height: none; height: 100%; padding: 10px; overflow: auto; border-width: 2px; }
   .v3-message-window p { font-size: 9px; }
   .v3-message-window p.is-latest { font-size: 12px; }
-  .v3-dpad { grid-template-columns: repeat(3, 34px); grid-template-rows: repeat(3, 36px); }
+  .v3-dpad { grid-template-columns: repeat(3, 44px); grid-template-rows: repeat(3, 44px); }
   .v3-personal-battle-commands button { min-height: 48px; }
   .v3-encounter-card { grid-template-columns: 70px 1fr; gap: 12px; padding: 14px; }
   .v3-encounter-card > i { width: 70px; font-size: 25px; }
   .v3-encounter-card h2 { font-size: 23px; }
-  .v3-world-map { padding: 12px; }
+  .v3-world-map { gap: 6px; padding: max(8px, env(safe-area-inset-top)) 10px max(8px, env(safe-area-inset-bottom)); }
+  .v3-world-map > header { grid-template-columns: minmax(0, 1fr) auto auto; gap: 7px; }
+  .v3-world-map h1 { font-size: 21px; }
   .v3-world-map > header p { display: none; }
+  .v3-world-map > header button { min-height: 44px; padding: 5px 8px; border-width: 1px; box-shadow: none; font-size: 9px; }
+  .v3-world-date { min-width: 82px; padding: 5px 7px; }
+  .v3-world-date strong { font-size: 11px; }
+  .v3-world-layers { gap: 4px; }
+  .v3-world-layers button { flex: 1; min-height: 44px; padding: 5px; }
+  .v3-world-map-workspace { display: block; overflow-y: auto; }
+  .v3-world-map-stage { min-height: 0; }
+  .v3-world-map-canvas { min-height: 210px; max-height: 38dvh; }
+  .v3-world-map canvas { width: 100%; }
+  .v3-world-history-control { grid-template-columns: 1fr auto; gap: 6px; padding: 6px 0; }
+  .v3-world-history-control label { grid-template-columns: auto minmax(80px, 1fr); gap: 6px; }
+  .v3-world-history-control output { grid-column: 2; min-width: 0; text-align: left; }
+  .v3-world-history-control button { min-height: 44px; }
+  .v3-world-intelligence { overflow: visible; padding: 0 0 8px; }
+  .v3-world-intelligence > section { padding: 9px; }
+  .v3-world-nation-list button { min-height: 44px; }
   .v3-world-map > footer { flex-wrap: wrap; gap: 8px 14px; }
-  .v3-world-map > footer strong { width: 100%; margin: 0; }
   .v3-underworld { padding: 0; }
   .v3-underworld-card { width: 100%; max-height: 100dvh; border: 0; border-radius: 0; }
   .v3-underworld-card > header { padding: max(10px, env(safe-area-inset-top)) 10px 9px; }
@@ -317,13 +458,32 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   .v3-criminal-organization > .v3-criminal-section { margin-inline: 9px; }
   .v3-criminal-decision { margin-inline: 9px; }
   .v3-criminal-decision > div { grid-template-columns: 1fr; }
+  .v3-world-map > footer > span:not(:first-child) { display: none; }
+  .v3-world-map > footer > strong { width: calc(100% - 90px); margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .v3-world-map > footer > div { width: 100%; }
+  .v3-world-map > footer > div button { flex: 1; min-height: 44px; }
+  .v3-commerce { place-items: stretch; padding: 0; }
+  .v3-commerce-card { max-height: 100dvh; border-width: 0; border-radius: 0; }
+  .v3-commerce-card > header { position: sticky; top: 0; z-index: 2; padding: max(10px, env(safe-area-inset-top)) 10px 9px; }
+  .v3-commerce-card > header h1 { font-size: 22px; }
+  .v3-commerce-card > header p { display: none; }
+  #v3CommerceContent { grid-template-columns: 1fr; gap: 9px; padding: 9px 9px max(12px, env(safe-area-inset-bottom)); }
+  .v3-commerce-section, .v3-company-board { grid-column: 1; }
+  .v3-market-grid, .v3-strategy-grid, .v3-candidate-grid, .v3-charter-grid, .v3-company-columns, .v3-company-form { grid-template-columns: 1fr; }
+  .v3-company-requirements { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .v3-company-name { grid-template-columns: 1fr; }
+  .v3-company-board > header { align-items: flex-start; }
+  .v3-company-board > header > div:last-child { display: grid; justify-items: end; }
+  .v3-company-columns { padding-inline: 9px; }
+  .v3-company-incident { align-items: stretch; flex-direction: column; }
+  .v3-company-incident button { flex: 1 1 120px; }
 }
 
 @media (max-height: 680px) and (orientation: landscape) {
   .v3-game-header { min-height: 48px; }
   .v3-play-layout { min-height: calc(100dvh - 162px); padding: 0; }
   .v3-field-shell { width: min(720px, calc((100dvh - 162px) * 1.18)); }
-  .v3-command-area { position: absolute; z-index: 6; right: 6px; bottom: 6px; grid-template-columns: 220px 106px; min-height: 94px; padding: 6px; border: 0; background: transparent; }
+  .v3-command-area { position: absolute; z-index: 6; right: 6px; bottom: 6px; grid-template-columns: 220px 140px; min-height: 94px; padding: 6px; border: 0; background: transparent; }
   .v3-message-window { min-height: 88px; max-height: 92px; padding: 8px; }
   .v3-message-window p:not(.is-latest) { display: none; }
 }

@@ -96,7 +96,8 @@ function periodIndex(state) {
 
 function periodParts(state) {
   const index = periodIndex(state);
-  return { turn: index, year: 317 + Math.floor(index / 12), month: index % 12 + 1 };
+  const monthIndex = 3 + index;
+  return { turn: index, year: 317 + Math.floor(monthIndex / 12), month: monthIndex % 12 + 1 };
 }
 
 function emptyCriminalState() {

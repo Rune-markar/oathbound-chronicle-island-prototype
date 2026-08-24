@@ -91,6 +91,29 @@ export function buildSquareOperationalWorld(world, nationWorld = null) {
     groups.get(object.tileIndex).push(object);
     return groups;
   }, new Map());
+  const roadTileIndices = new Set((nationWorld?.roads ?? []).flatMap((road) => road.tileIndices ?? []));
+  const cultivatedReach = new Set();
+  for (const object of nationWorld?.objects ?? []) {
+    if (!object.settlementLevel || !Number.isInteger(object.tileIndex)) continue;
+    const radius = object.settlementLevel === "city" ? 2 : 1;
+    const localReach = new Set([object.tileIndex]);
+    let frontier = [object.tileIndex];
+    cultivatedReach.add(object.tileIndex);
+    for (let step = 0; step < radius; step += 1) {
+      const next = [];
+      for (const index of frontier) {
+        for (const neighbor of squareNeighborIndices(index, world, { diagonal: false })) {
+          if (localReach.has(neighbor)) continue;
+          const neighborTile = world.tiles[neighbor];
+          if (!neighborTile || ["ocean", "coast", "lake"].includes(neighborTile.terrain)) continue;
+          localReach.add(neighbor);
+          cultivatedReach.add(neighbor);
+          next.push(neighbor);
+        }
+      }
+      frontier = next;
+    }
+  }
   const ownership = nationWorld?.tileNationIds ?? Array(world.tiles.length).fill(null);
   const regionalOwnership = nationWorld?.tileRegionIds ?? Array(world.tiles.length).fill(null);
   if (ownership.length !== world.tiles.length) throw new RangeError("Nation ownership must contain one value for every square tile.");
@@ -113,6 +136,17 @@ export function buildSquareOperationalWorld(world, nationWorld = null) {
       if (regionId && neighborRegionId && regionId !== neighborRegionId) regionBorderSides.push(direction.name);
     }
     const worldObjects = (objectsByIndex.get(tile.index) ?? []).map((object) => ({ ...object }));
+    const cultivable = !["ocean", "coast", "lake"].includes(tile.terrain)
+      && tile.relief === "flat"
+      && !["forest", "rainforest", "marsh"].includes(tile.feature)
+      && (tile.resourcePotential?.agriculture ?? 0) >= 0.42;
+    const farmland = cultivable && (cultivatedReach.has(tile.index) || roadTileIndices.has(tile.index));
+    const canal = farmland && !tile.riverId && (tile.freshwater ?? 0) >= 0.36;
+    const geographyTags = [...new Set([
+      ...(tile.geographyTags ?? []),
+      ...(farmland ? ["farmland"] : []),
+      ...(canal ? ["canal"] : []),
+    ])].sort();
     return {
       id: `tile-${tile.x}-${tile.y}`,
       index: tile.index,
@@ -123,15 +157,30 @@ export function buildSquareOperationalWorld(world, nationWorld = null) {
       terrain: tile.terrain,
       relief: tile.relief,
       feature: tile.feature,
+      geographyTags,
+      primaryGeography: tile.primaryGeography ?? null,
+      geographyName: tile.geographyName ?? null,
+      terrainSite: tile.terrainSite ? { ...tile.terrainSite } : null,
+      landUse: farmland ? "farmland" : null,
+      infrastructure: canal ? "canal" : null,
       terrainTemplateId: tile.terrainTemplateId ?? null,
       terrainTemplateName: tile.terrainTemplateName ?? null,
       terrainTemplatePieceId: tile.terrainTemplatePieceId ?? null,
       elevation: tile.elevation,
+      hydrologyElevation: tile.hydrologyElevation,
+      slope: tile.slope,
+      temperatureC: tile.temperatureC,
+      precipitationMm: tile.precipitationMm,
       fertility: tile.fertility,
       freshwater: tile.freshwater,
       riverId: tile.riverId,
+      riverOrder: tile.riverOrder,
       flowTo: tile.flowTo,
+      floodRisk: tile.floodRisk,
+      soilMoisture: tile.soilMoisture,
       movementCost: tile.movementCost,
+      defense: tile.defense,
+      settlementScore: tile.settlementScore,
       yields: { ...tile.yields },
       resourcePotential: { ...tile.resourcePotential },
       nationId,
