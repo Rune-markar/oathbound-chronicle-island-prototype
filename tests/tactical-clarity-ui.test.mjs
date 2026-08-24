@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const app = readFileSync(new URL("../src/app.js", import.meta.url), "utf8");
-const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
+const html = readFileSync(new URL("../legacy-v2.html", import.meta.url), "utf8");
 const styles = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
 
 test("tactical combat keeps the four-step command loop and ally roster visible", () => {
@@ -23,4 +23,3 @@ test("the selected spell controls target highlighting and renders a pre-cast pre
   assert.match(styles, /\.tactical-tile\.is-magic-target/);
   assert.match(styles, /\.tactical-action-preview\.is-magic/);
 });
-

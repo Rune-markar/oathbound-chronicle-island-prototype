@@ -1,0 +1,197 @@
+:root {
+  color-scheme: dark;
+  font-family: "Yu Gothic", "Hiragino Kaku Gothic ProN", system-ui, sans-serif;
+  background: #071214;
+  color: #f8f3df;
+}
+
+* { box-sizing: border-box; }
+html, body { min-height: 100%; margin: 0; }
+body { min-height: 100dvh; overflow-x: hidden; background: radial-gradient(circle at 50% 10%, #214145 0, #0b1d20 38%, #061012 100%); }
+button, input { font: inherit; }
+button { color: inherit; }
+[hidden] { display: none !important; }
+
+.v3-launch { position: relative; display: grid; align-content: center; gap: 28px; min-height: 100dvh; padding: max(32px, env(safe-area-inset-top)) max(24px, calc((100vw - 820px) / 2)) max(28px, env(safe-area-inset-bottom)); overflow: hidden; isolation: isolate; }
+.v3-launch::after { content: ""; position: absolute; inset: 0; z-index: -2; background: linear-gradient(180deg, rgba(5,15,18,.16), rgba(5,15,18,.9)), radial-gradient(circle at 50% 24%, rgba(210,188,111,.18), transparent 38%); }
+.v3-launch-sky { position: absolute; inset: 0; z-index: -3; background: linear-gradient(#1e4b52, #162f32 46%, #071113 75%); }
+.v3-launch-sky::before, .v3-launch-sky::after, .v3-launch-sky i { content: ""; position: absolute; left: -10%; width: 120%; border-radius: 50%; background: #18342d; box-shadow: inset 0 10px rgba(106,142,107,.2); }
+.v3-launch-sky::before { bottom: 7%; height: 38%; clip-path: polygon(0 62%, 12% 37%, 21% 50%, 32% 23%, 43% 55%, 57% 17%, 68% 49%, 79% 29%, 100% 58%, 100% 100%, 0 100%); }
+.v3-launch-sky::after { bottom: 0; height: 25%; background: #0d241e; clip-path: polygon(0 48%, 13% 30%, 26% 55%, 39% 17%, 55% 49%, 70% 22%, 84% 52%, 100% 34%, 100% 100%, 0 100%); }
+.v3-launch > header { max-width: 680px; }
+.v3-launch small { color: #d9c77c; font-weight: 900; letter-spacing: .18em; }
+.v3-launch h1 { max-width: 720px; margin: 8px 0 12px; font-family: Georgia, "Yu Mincho", serif; font-size: clamp(42px, 8vw, 82px); line-height: .98; letter-spacing: -.04em; text-shadow: 0 4px 30px #061012; }
+.v3-launch header p { max-width: 640px; margin: 0; color: #d8dfd6; font-size: clamp(14px, 2vw, 18px); line-height: 1.8; }
+.v3-launch-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.v3-launch-actions button, .v3-new-world button { min-height: 72px; padding: 14px 18px; border: 1px solid #6f8176; border-radius: 6px; background: rgba(7,20,22,.86); cursor: pointer; text-align: left; box-shadow: inset 0 0 0 2px rgba(255,255,255,.04); }
+.v3-launch-actions button strong, .v3-launch-actions button span { display: block; }
+.v3-launch-actions button strong { font: 800 18px/1.4 Georgia, "Yu Mincho", serif; }
+.v3-launch-actions button span { margin-top: 4px; color: #aab8ae; font-size: 12px; }
+button.is-primary, .v3-launch-actions .is-primary { border-color: #d9c77c; background: linear-gradient(135deg, #48604d, #263e36); }
+button:disabled { opacity: .45; cursor: not-allowed; }
+.v3-new-world { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 18px; border: 1px solid #566f67; background: rgba(6,19,21,.94); }
+.v3-new-world label { display: grid; gap: 6px; }
+.v3-new-world label span { color: #d9c77c; font-size: 12px; font-weight: 800; }
+.v3-new-world input { width: 100%; min-height: 44px; padding: 10px 12px; border: 1px solid #70837a; border-radius: 3px; background: #102527; color: #fff; }
+.v3-new-world p { grid-column: 1 / -1; margin: 0; color: #aab8ae; font-size: 12px; }
+.v3-new-world > div { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 8px; }
+.v3-new-world button { min-height: 44px; text-align: center; }
+.v3-legacy-link { width: max-content; color: #aab8ae; font-size: 12px; }
+.v3-launch > footer { display: flex; justify-content: space-between; color: #71857c; font-size: 10px; font-weight: 800; letter-spacing: .12em; }
+
+.v3-generation { display: grid; place-content: center; justify-items: center; min-height: 100dvh; padding: 24px; text-align: center; background: radial-gradient(circle, #224447, #071214 64%); }
+.v3-generation-mark { position: relative; display: grid; place-items: center; width: 130px; aspect-ratio: 1; margin-bottom: 24px; }
+.v3-generation-mark i { position: absolute; inset: 8px; border: 1px solid #cdbd77; border-radius: 50%; animation: v3-spin 9s linear infinite; }
+.v3-generation-mark i:nth-child(2) { inset: 25px; border-style: dashed; animation-direction: reverse; animation-duration: 6s; }
+.v3-generation-mark b { color: #f0dfa1; font: 700 28px Georgia, serif; }
+.v3-generation small { color: #d8c675; letter-spacing: .2em; }
+.v3-generation h1 { margin: 8px 0; font: 700 clamp(28px, 5vw, 46px) Georgia, "Yu Mincho", serif; }
+.v3-generation p { min-height: 1.5em; margin: 0 0 20px; color: #b6c3ba; }
+.v3-generation-track { width: min(520px, 80vw); height: 8px; padding: 2px; border: 1px solid #61786e; background: #061012; }
+.v3-generation-track i { display: block; width: var(--progress, 0%); height: 100%; background: linear-gradient(90deg, #6d9c77, #e0ca78); transition: width .2s; }
+.v3-generation > strong { margin-top: 8px; color: #e4d58e; }
+@keyframes v3-spin { to { transform: rotate(360deg); } }
+
+.v3-game { min-height: 100dvh; background: #071214; }
+.v3-game-header { position: relative; z-index: 5; display: flex; align-items: center; justify-content: space-between; min-height: 64px; padding: 8px max(16px, calc((100vw - 1180px) / 2)); border-bottom: 1px solid #546b61; background: #0c1f21; box-shadow: 0 4px 16px #020708; }
+.v3-game-header > div:first-child { display: grid; gap: 2px; }
+.v3-game-header small { color: #cdbd77; font-size: 10px; font-weight: 900; letter-spacing: .1em; }
+.v3-game-header strong { font: 800 18px/1.2 Georgia, "Yu Mincho", serif; }
+.v3-header-actions { display: flex; gap: 8px; }
+.v3-header-actions button, .v3-world-map button { min-height: 42px; padding: 8px 14px; border: 2px solid #e9e7d8; border-radius: 4px; background: #102a2d; box-shadow: inset 0 0 0 2px #455b55, 2px 2px #000; cursor: pointer; font-size: 12px; font-weight: 800; }
+.v3-play-layout { position: relative; display: grid; place-items: center; min-height: calc(100dvh - 216px); padding: 18px 16px; overflow: hidden; background: #142d2b; }
+.v3-field-shell { position: relative; width: min(900px, calc(100vw - 32px), calc((100dvh - 250px) * 1.18)); aspect-ratio: 13 / 11; border: 4px solid #e9e7d8; border-radius: 6px; background: #071214; box-shadow: 0 0 0 3px #273c38, 0 18px 50px #020708; overflow: hidden; }
+.v3-field { display: grid; grid-template-columns: repeat(var(--field-columns), 1fr); width: 100%; height: 100%; }
+.v3-tile { position: relative; display: grid; place-items: center; min-width: 0; padding: 0; border: 0; outline: 1px solid rgba(0,0,0,.045); background: #72985d; color: rgba(22,52,34,.55); overflow: hidden; font: 900 clamp(8px, 1.6vw, 18px)/1 system-ui, sans-serif; }
+.v3-tile::after { content: ""; position: absolute; inset: 0; background: radial-gradient(circle at 30% 22%, rgba(255,255,255,.08), transparent 30%), linear-gradient(140deg, transparent 60%, rgba(0,0,0,.08)); pointer-events: none; }
+.v3-tile.is-grass:nth-child(3n) { background: #789e61; }
+.v3-tile.is-sand { background: #c2a766; color: #6d5a27; }
+.v3-tile.is-tundra { background: #80978a; }
+.v3-tile.is-snow { background: #cedbd5; color: #60736d; }
+.v3-tile.is-water { background: repeating-linear-gradient(165deg, #326875 0 5px, #3c7780 6px 9px); color: #a5d3d3; }
+.v3-tile.is-river { background: linear-gradient(90deg, #7ca15d 0 28%, #3c7c87 30% 70%, #7ca15d 72%); color: #d1eded; }
+.v3-tile.is-road { background: linear-gradient(90deg, #789858 0 29%, #b39763 31% 69%, #789858 71%); color: #6f5835; }
+.v3-tile.is-road:nth-child(even) { background: linear-gradient(#789858 0 29%, #b39763 31% 69%, #789858 71%); }
+.v3-tile.is-forest { background: #356746; color: #142f23; text-shadow: 1px 1px #65915d; }
+.v3-tile.is-hill { background: #718557; color: #4a553a; }
+.v3-tile.is-mountain { background: #59675c; color: #29342d; }
+.v3-tile.is-settlement-ground { background: #ae9669; }
+.v3-tile[class*="is-settlement-"]:not(.is-settlement-ground) { background: #9b825c; color: #fff1bd; text-shadow: 1px 2px #2b2117; }
+.v3-tile.is-fog, .v3-tile.is-ungenerated, .v3-tile.is-void { background: #101f20; color: transparent; }
+.v3-tile.is-adjacent[data-v3-move] { cursor: pointer; }
+.v3-tile.is-adjacent[data-v3-move]:hover, .v3-tile.is-adjacent[data-v3-move]:focus-visible { z-index: 2; outline: 3px solid #fff1a5; outline-offset: -3px; filter: brightness(1.15); }
+.v3-player-sprite, .v3-entity { position: relative; z-index: 2; display: grid; place-items: center; width: 72%; aspect-ratio: 1; border: 2px solid #f5e9ba; border-radius: 45% 45% 36% 36%; background: #1c385d; color: #fff6cf; box-shadow: 0 2px 3px #17231d; font-size: clamp(8px, 1.3vw, 15px); }
+.v3-player-sprite::before { content: ""; position: absolute; top: -22%; width: 45%; aspect-ratio: 1; border-radius: 50%; background: #e8c39b; border: 1px solid #47382e; }
+.v3-entity { width: 66%; border-radius: 50%; background: #7b3b35; }
+.v3-entity.is-npc { background: #73558b; }
+.v3-field-vignette { position: absolute; inset: 0; box-shadow: inset 0 0 60px 16px rgba(5,15,16,.46); pointer-events: none; }
+
+.v3-status-window, .v3-place-window, .v3-message-window, .v3-encounter-card, .v3-inventory-card { border: 3px solid #efeee2; border-radius: 5px; background: rgba(5,19,22,.96); box-shadow: inset 0 0 0 2px #536761, 4px 5px 0 rgba(0,0,0,.6); }
+.v3-status-window { position: absolute; z-index: 3; top: 28px; left: max(24px, calc((100vw - 1120px) / 2)); width: 190px; padding: 12px 14px; }
+.v3-status-window header { display: flex; justify-content: space-between; padding-bottom: 7px; border-bottom: 1px solid #64756e; }
+.v3-status-window header small { color: #dccb7e; }
+.v3-status-window dl { display: grid; gap: 4px; margin: 8px 0; font-size: 12px; }
+.v3-status-window dl div { display: flex; justify-content: space-between; }
+.v3-status-window dt { color: #b9c4bc; }
+.v3-status-window dd { margin: 0; font-weight: 800; }
+.v3-hp-track { height: 5px; background: #351d1d; }
+.v3-hp-track i { display: block; height: 100%; background: #69a66c; }
+.v3-place-window { position: absolute; z-index: 3; right: max(24px, calc((100vw - 1120px) / 2)); bottom: 30px; display: grid; gap: 4px; width: 230px; padding: 11px 14px; }
+.v3-place-window small { color: #dbc879; font-weight: 800; }
+.v3-place-window strong { font-family: Georgia, "Yu Mincho", serif; font-size: 17px; }
+.v3-place-window span { color: #b7c3ba; font-size: 10px; }
+.v3-command-area { display: grid; grid-template-columns: minmax(0, 1fr) 124px; gap: 12px; min-height: 152px; padding: 12px max(16px, calc((100vw - 1180px) / 2)) max(12px, env(safe-area-inset-bottom)); border-top: 1px solid #52685f; background: #071416; }
+.v3-message-window { min-height: 112px; padding: 12px 16px; overflow: hidden; }
+.v3-message-window div { display: grid; gap: 4px; }
+.v3-message-window p { margin: 0; color: #899a92; font-size: 11px; line-height: 1.5; }
+.v3-message-window p.is-latest { color: #fff8dd; font-size: 14px; }
+.v3-message-window p.is-latest::before { content: "▸ "; color: #e3ce79; }
+.v3-dpad { display: grid; grid-template-columns: repeat(3, 38px); grid-template-rows: repeat(3, 34px); align-content: center; justify-content: center; }
+.v3-dpad button { border: 1px solid #81928a; background: #153034; cursor: pointer; font-size: 13px; }
+.v3-dpad button:hover, .v3-dpad button:focus-visible { background: #38564e; }
+.v3-dpad button:nth-child(1) { grid-column: 2; }
+.v3-dpad button:nth-child(2) { grid-row: 2; grid-column: 1; }
+.v3-dpad i { grid-row: 2; grid-column: 2; display: grid; place-items: center; border: 1px solid #4e635b; color: #d4c474; font: normal 10px/1 system-ui; }
+.v3-dpad button:nth-child(4) { grid-row: 2; grid-column: 3; }
+.v3-dpad button:nth-child(5) { grid-row: 3; grid-column: 2; }
+
+.v3-modal, .v3-world-map { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 20px; background: rgba(1,7,8,.82); backdrop-filter: blur(5px); }
+.v3-encounter-card { display: grid; grid-template-columns: 100px 1fr; gap: 18px; width: min(620px, 100%); padding: 20px; }
+.v3-encounter-card > i { display: grid; place-items: center; align-self: center; width: 100px; aspect-ratio: 1; border: 3px solid #e6d68f; border-radius: 50%; background: radial-gradient(circle at 36% 26%, #97534a, #401f20); color: #fff1c0; font: normal 36px Georgia, serif; }
+.v3-encounter-card small, .v3-inventory-card small, .v3-world-map small { color: #d8c576; font-weight: 900; letter-spacing: .12em; }
+.v3-encounter-card h2 { margin: 4px 0 8px; font: 800 30px Georgia, "Yu Mincho", serif; }
+.v3-encounter-card p { color: #c8d1cb; }
+.v3-encounter-card footer { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 8px; }
+.v3-encounter-card button, .v3-inventory-card button { min-height: 44px; padding: 8px 16px; border: 1px solid #87978f; border-radius: 3px; background: #153034; cursor: pointer; font-weight: 800; }
+.v3-enemy-hp { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; font-size: 11px; }
+.v3-enemy-hp > i { height: 7px; background: #32191a; }
+.v3-enemy-hp b { display: block; height: 100%; background: #a9584d; }
+.v3-inventory-card { width: min(560px, 100%); padding: 18px; }
+.v3-inventory-card > header { display: flex; justify-content: space-between; align-items: center; }
+.v3-inventory-card h2 { margin: 2px 0 12px; }
+.v3-inventory-card > header button { width: 44px; padding: 0; }
+.v3-inventory-card > div { display: grid; gap: 6px; min-height: 120px; }
+.v3-inventory-card > div > button { display: grid; grid-template-columns: 38px 1fr auto; align-items: center; text-align: left; }
+.v3-inventory-card > div > button i { grid-row: 1 / span 2; display: grid; place-items: center; width: 32px; aspect-ratio: 1; border-radius: 50%; background: #496348; font-style: normal; }
+.v3-inventory-card > div > button span { display: grid; }
+.v3-inventory-card > div > button small { color: #9eada5; letter-spacing: 0; }
+.v3-inventory-card > footer { display: flex; justify-content: flex-end; margin-top: 18px; padding-top: 12px; border-top: 1px solid #53665f; }
+.v3-inventory-card button.is-danger { border-color: #905b55; color: #e6b5ae; background: #321d1f; }
+
+.v3-world-map { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; place-items: stretch; padding: max(18px, env(safe-area-inset-top)) max(18px, calc((100vw - 1220px) / 2)) max(18px, env(safe-area-inset-bottom)); background: #071416; }
+.v3-world-map > header { display: flex; justify-content: space-between; gap: 16px; padding-bottom: 12px; }
+.v3-world-map h1 { margin: 3px 0; font: 800 30px Georgia, "Yu Mincho", serif; }
+.v3-world-map p { margin: 0; color: #aebbb3; font-size: 12px; }
+.v3-world-map-canvas { min-height: 0; display: grid; place-items: center; overflow: auto; border: 3px solid #e9e7d8; border-radius: 4px; background: #173b43; box-shadow: inset 0 0 0 2px #516861; }
+.v3-world-map canvas { display: block; width: min(100%, calc((100dvh - 190px) * 1.6)); height: auto; image-rendering: pixelated; }
+.v3-world-map > footer { display: flex; align-items: center; gap: 18px; min-height: 48px; font-size: 11px; }
+.v3-world-map > footer span { display: flex; align-items: center; gap: 6px; }
+.v3-world-map > footer i { display: block; width: 14px; height: 8px; background: #f4e5b5; }
+.v3-world-map > footer i.is-player { width: 12px; height: 12px; border: 2px solid #fff; border-radius: 50%; background: none; }
+.v3-world-map > footer i.is-road { height: 2px; background: #e4d5a0; }
+.v3-world-map > footer strong { margin-left: auto; color: #d9c979; }
+.v3-toast { position: fixed; z-index: 40; left: 50%; bottom: 24px; translate: -50% 20px; padding: 10px 16px; border: 1px solid #e1d488; border-radius: 3px; background: #102628; opacity: 0; pointer-events: none; transition: .2s; }
+.v3-toast.is-visible { translate: -50% 0; opacity: 1; }
+
+@media (max-width: 720px) {
+  .v3-game { display: grid; grid-template-rows: 58px auto minmax(0, 1fr); }
+  .v3-launch { align-content: end; gap: 18px; }
+  .v3-launch-actions { grid-template-columns: 1fr; }
+  .v3-new-world { grid-template-columns: 1fr; }
+  .v3-game-header { min-height: 58px; }
+  .v3-game-header strong { font-size: 14px; }
+  .v3-header-actions button { min-height: 40px; padding: 6px 10px; font-size: 11px; }
+  .v3-play-layout { align-content: start; min-height: 0; padding: 0; }
+  .v3-field-shell { width: 100%; aspect-ratio: 13 / 11; border-width: 0 0 3px; border-radius: 0; }
+  .v3-status-window { top: 8px; left: 8px; width: 136px; padding: 8px 10px; border-width: 2px; }
+  .v3-status-window header { font-size: 11px; }
+  .v3-status-window dl { margin: 5px 0; font-size: 9px; }
+  .v3-place-window { right: 8px; bottom: 8px; width: 164px; padding: 7px 9px; border-width: 2px; }
+  .v3-place-window strong { font-size: 13px; }
+  .v3-place-window span { font-size: 8px; }
+  .v3-command-area { grid-template-columns: minmax(0, 1fr) 108px; min-height: 0; padding: 8px 8px max(8px, env(safe-area-inset-bottom)); }
+  .v3-message-window { min-height: 128px; max-height: none; height: 100%; padding: 10px; overflow: auto; border-width: 2px; }
+  .v3-message-window p { font-size: 9px; }
+  .v3-message-window p.is-latest { font-size: 12px; }
+  .v3-dpad { grid-template-columns: repeat(3, 34px); grid-template-rows: repeat(3, 36px); }
+  .v3-encounter-card { grid-template-columns: 70px 1fr; gap: 12px; padding: 14px; }
+  .v3-encounter-card > i { width: 70px; font-size: 25px; }
+  .v3-encounter-card h2 { font-size: 23px; }
+  .v3-world-map { padding: 12px; }
+  .v3-world-map > header p { display: none; }
+  .v3-world-map > footer { flex-wrap: wrap; gap: 8px 14px; }
+  .v3-world-map > footer strong { width: 100%; margin: 0; }
+}
+
+@media (max-height: 680px) and (orientation: landscape) {
+  .v3-game-header { min-height: 48px; }
+  .v3-play-layout { min-height: calc(100dvh - 162px); padding: 0; }
+  .v3-field-shell { width: min(720px, calc((100dvh - 162px) * 1.18)); }
+  .v3-command-area { position: absolute; z-index: 6; right: 6px; bottom: 6px; grid-template-columns: 220px 106px; min-height: 94px; padding: 6px; border: 0; background: transparent; }
+  .v3-message-window { min-height: 88px; max-height: 92px; padding: 8px; }
+  .v3-message-window p:not(.is-latest) { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; }
+}

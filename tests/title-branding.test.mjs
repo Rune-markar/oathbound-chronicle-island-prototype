@@ -12,7 +12,7 @@ const proposalFiles = [
 
 test("正式タイトルは主要な利用者向け画面と資料で統一される", async () => {
   const [index, styles, readme, manualMarkdown, manualHtml, statusHtml] = await Promise.all([
-    readFile(new URL("index.html", root), "utf8"),
+    readFile(new URL("legacy-v2.html", root), "utf8"),
     readFile(new URL("styles.css", root), "utf8"),
     readFile(new URL("README.md", root), "utf8"),
     readFile(new URL("MANUAL.md", root), "utf8"),

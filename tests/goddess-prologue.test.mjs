@@ -73,7 +73,7 @@ test("開発者設定は相反する二つの世界終局を正本として保�
 });
 
 test("開始画面は女神立ち絵、下部テキストウィンドウ、魂設定、開発者メモを備える", async () => {
-  const index = await readFile(new URL("../index.html", import.meta.url), "utf8");
+  const index = await readFile(new URL("../legacy-v2.html", import.meta.url), "utf8");
   assert.match(index, /class="goddess-prologue"/);
   assert.match(index, /assets\/generated\/goddess-ilysia\.png/);
   assert.doesNotMatch(index, /goddessMercyReveal|goddess-mercy-companion/);
@@ -106,7 +106,7 @@ test("世界生成中も女神界を閉じず、画面上部の進捗バーへ�
 });
 
 test("転生時は女神の連続移動と世界へ降り立つ三段階演出を保つ", async () => {
-  const index = await readFile(new URL("../index.html", import.meta.url), "utf8");
+  const index = await readFile(new URL("../legacy-v2.html", import.meta.url), "utf8");
   const app = await readFile(new URL("../src/app.js", import.meta.url), "utf8");
   const styles = await readFile(new URL("../styles.css", import.meta.url), "utf8");
   assert.match(index, /id="worldArrivalOverlay"/);
@@ -118,7 +118,7 @@ test("転生時は女神の連続移動と世界へ降り立つ三段階演出�
 });
 
 test("女神の会話窓は物語全体の共通テキストウィンドウ契約になる", async () => {
-  const index = await readFile(new URL("../index.html", import.meta.url), "utf8");
+  const index = await readFile(new URL("../legacy-v2.html", import.meta.url), "utf8");
   const app = await readFile(new URL("../src/app.js", import.meta.url), "utf8");
   const styles = await readFile(new URL("../styles.css", import.meta.url), "utf8");
   assert.match(index, /goddess-dialogue story-text-window/);
@@ -137,7 +137,7 @@ test("スマートフォンでは魂確定ボタンをスクロール領域の�
 });
 
 test("女神界では右側の女神画像だけが連打対象となり、奴隷少女は表示しない", async () => {
-  const index = await readFile(new URL("../index.html", import.meta.url), "utf8");
+  const index = await readFile(new URL("../legacy-v2.html", import.meta.url), "utf8");
   const styles = await readFile(new URL("../styles.css", import.meta.url), "utf8");
   assert.match(index, /class="goddess-portrait"[^>]*>\s*<img[^>]*data-goddess-persistent-tap/);
   assert.doesNotMatch(index, /class="goddess-portrait"[^>]*data-goddess-persistent-tap/);

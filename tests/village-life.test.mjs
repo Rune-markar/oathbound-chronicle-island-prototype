@@ -277,7 +277,7 @@ test("the tavern uses a dedicated transparent human hostess portrait instead of 
 test("the village opens large vertical facilities and their actions in a second window before conversation", () => {
   const app = readFileSync(new URL("../src/app.js", import.meta.url), "utf8");
   const css = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
-  const markup = readFileSync(new URL("../index.html", import.meta.url), "utf8");
+  const markup = readFileSync(new URL("../legacy-v2.html", import.meta.url), "utf8");
   const actionHandler = app.match(/const villageAction = event\.target\.closest[\s\S]*?const villageExit =/)?.[0] ?? "";
   const conversationStage = app.match(/function renderVillageConversation\(\)[\s\S]*?function completeVillageConversation/)?.[0] ?? "";
   const villageWorkspace = app.match(/function renderVillageWorkspace\(\)[\s\S]*?function renderCareerPanel/)?.[0] ?? "";

@@ -76,7 +76,7 @@ test("strategic commands remain city or national orders without a town target", 
 
 test("the UI routes map and council town actions into town administration", () => {
   const app = readFileSync(new URL("../src/app.js", import.meta.url), "utf8");
-  const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
+  const html = readFileSync(new URL("../legacy-v2.html", import.meta.url), "utf8");
   assert.match(html, /data-panel="town"/);
   assert.equal((html.match(/class="village-hit"/g) ?? []).length, 6);
   assert.match(app, /data-open-town-command/);

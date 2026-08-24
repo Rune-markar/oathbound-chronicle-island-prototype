@@ -8,7 +8,7 @@ const root = new URL("../", import.meta.url);
 test("開始画面の版表示はパッケージ版とGitコミットを同時に示す", async () => {
   const [packageText, index, policy, changelog] = await Promise.all([
     readFile(new URL("package.json", root), "utf8"),
-    readFile(new URL("index.html", root), "utf8"),
+    readFile(new URL("legacy-v2.html", root), "utf8"),
     readFile(new URL("WORLD_SIMULATION_POLICY.md", root), "utf8"),
     readFile(new URL("CHANGELOG.md", root), "utf8"),
   ]);

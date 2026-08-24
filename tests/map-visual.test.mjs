@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { buildTerritorySectorPaths, TERRITORY_SECTOR_COUNT } from "../src/map-tiles.js";
 
-const markup = readFileSync(new URL("../index.html", import.meta.url), "utf8");
+const markup = readFileSync(new URL("../legacy-v2.html", import.meta.url), "utf8");
 const appSource = readFileSync(new URL("../src/app.js", import.meta.url), "utf8");
 const worldDossierNavigationSource = readFileSync(new URL("../src/world-dossier-navigation.js", import.meta.url), "utf8");
 const generatedWorldSource = readFileSync(new URL("../src/generated-world-system.js", import.meta.url), "utf8");

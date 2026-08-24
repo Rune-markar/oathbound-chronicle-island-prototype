@@ -6,7 +6,7 @@ const root = new URL("../", import.meta.url);
 
 test("キャラクター辞典に画像・補足記録・現在状況を持つ敵キャラ辞典を表示する", async () => {
   const [markup, app, styles] = await Promise.all([
-    readFile(new URL("index.html", root), "utf8"),
+    readFile(new URL("legacy-v2.html", root), "utf8"),
     readFile(new URL("src/app.js", root), "utf8"),
     readFile(new URL("styles.css", root), "utf8"),
   ]);

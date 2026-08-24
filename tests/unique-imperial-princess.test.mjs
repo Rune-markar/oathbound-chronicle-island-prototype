@@ -99,7 +99,7 @@ test("戦闘前編成で自軍指揮官を差し替えても皇女と帝国軍�
 
 test("開発メニューと生成ルールから皇女親征戦と顔設計票へ到達できる", () => {
   const app = readFileSync(new URL("../src/app.js", import.meta.url), "utf8");
-  const index = readFileSync(new URL("../index.html", import.meta.url), "utf8");
+  const index = readFileSync(new URL("../legacy-v2.html", import.meta.url), "utf8");
   const rules = readFileSync(new URL("../CHARACTER_ART_GENERATION_RULES.md", import.meta.url), "utf8");
   assert.match(index, /data-developer-action="imperial-princess-battle"/);
   assert.match(index, /皇女将官戦/);
