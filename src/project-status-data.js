@@ -1,12 +1,12 @@
 export const STATUS_LEDGER_META = Object.freeze({
   schemaVersion: 1,
-  projectGeneration: "ver2",
-  lastAuditedAt: "2026-08-19",
+  projectGeneration: "ver3",
+  lastAuditedAt: "2026-08-24",
   auditScope: Object.freeze({
     codexPrimaryTasks: 80,
-    codexRange: "2026-08-02 — 2026-08-19",
-    gitCommits: 91,
-    gitRange: "initial — 2026-08-19 all national combat units generated from stable seeds",
+    codexRange: "2026-08-02 — 2026-08-24",
+    gitCommits: 110,
+    gitRange: "initial — 2026-08-24 V3 dynamic world history",
     workingTreeIncluded: false,
   }),
   maintenanceRule: "仕様・導入状態・廃止方針を変更する際は、実装と同じ変更でこの台帳を更新し、一次出典を最低1件付ける。",
@@ -25,6 +25,7 @@ const source = (label, href, ref, kind = "source") => Object.freeze({ label, hre
 const entry = (value) => Object.freeze({ updatedAt: "2026-08-11", ...value, sources: Object.freeze(value.sources) });
 
 export const STATUS_ENTRIES = Object.freeze([
+  entry({ id: "v3-dynamic-world-history", category: "implemented", area: "Generation V3・世界情勢", title: "50年事前史と月次で変化するV3世界", summary: "V3新規世界で50年の国家外交・戦争・地方変動を決定論的に生成し、現在の国境、独立勢力、年代スナップショットを通常の世界地図と専用セーブへ接続する。", evidence: "国家判断と最大5正面の生成戦争は月次、事前史の集落人口・地方資産は4か月間隔で処理し、詳細147万4560マスは月次総当たりしない。国家・地形・地方・戦争レイヤー、国家詳細、重要年代記、過去国境の再生、1か月・確認付き12か月進行、JSON保存復帰をPCと390×844で検証する。", updatedAt: "2026-08-24", sources: [source("V3動的世界", "./src/v3-world-simulation.js", "buildV3WorldPrehistory / advanceV3WorldSimulation / getV3WorldSimulationView / getV3NationDossier"), source("通常地図UI", "./src/v3-app.js", "drawWorldMap / renderWorldPanels / advanceWorld"), source("地図操作", "./index.html", "v3WorldHistory / data-v3-map-layer / data-v3-world-advance"), source("回帰テスト", "./tests/v3-world-simulation.test.mjs", "deterministic history / secession / replay / save normalization / UI contract"), source("実ブラウザ記録", "./docs/gameplay-reviews/2026-08-24-v3-dynamic-world.md", "PC and 390x844 / prehistory / replay / persistence"), source("設計仕様", "./V3_DESIGN.md", "動的世界と事前史") ] }),
   entry({ id: "compact-mobile-game-shell", category: "implemented", area: "表示・操作", title: "スマホ縦向き固定三層ゲーム画面", summary: "スマートフォン縦向きの本編を94px二段上部バー、中央地図、64px＋安全領域の下部6枠ナビへ固定し、ページスクロールなしで主要操作へ到達できる。", evidence: "長い情報は本文12px以上・横幅いっぱいの内部スクロール式下部シートへ収納する。ドロワーの開閉後も地図状態を保持し、背景タップ・Esc終了とフォーカス復帰に対応する。狭い横画面は縦向き開始案内へ切り替え、PCの既存ナビゲーションは維持する。", updatedAt: "2026-08-20", sources: [source("本編シェル", "./index.html", "portraitGuard / mobileTimeLabel / mobileMoreMenu / ledgerDrawerScrim"), source("表示・状態制御", "./src/app.js", "isCompactMobileShell / renderTabs / openLedgerDrawer / closeLedgerDrawer"), source("スマホ縦向きレイアウト", "./styles.css", "2026-08 mobile portrait readability pass"), source("回帰テスト", "./tests/map-visual.test.mjs", "compact portrait readability overrides"), source("設計仕様", "./docs/superpowers/specs/2026-08-20-mobile-portrait-game-shell-design.md", "縦向き固定三層シェル") ] }),
   entry({ id: "goddess-prologue", category: "implemented", area: "ゲーム開始", title: "女神界での転生導入と並行世界生成", summary: "新規開始では直ちに世界へ出ず、冷徹な覇道の助言、シード決定、種族・出自・適性・能力決定を経て生成世界へ転生する。女神界を基調とした共通会話窓を転生後の物語会話にも使用する。", evidence: "魂の確定後も女神界を維持し、女神画像のdecodeと二回の描画フレームを待ってから重い世界生成を始める。これにより生成中の立ち絵欠落を防ぎ、buildGeneratedWorldAsyncの実進捗を並行表示する。", updatedAt: "2026-08-15", sources: [source("女神導入定義", "./src/goddess-prologue.js", "GODDESS_ARRIVAL_LINES / GODDESS_GENERATION_LINES"), source("開始・共通会話フロー", "./src/app.js", "beginGoddessReincarnation / resetChronicle / goddessPortrait.decode"), source("女神界UI", "./index.html", "goddess-prologue / story-text-window"), source("共通会話意匠", "./styles.css", "story-text-window"), source("回帰テスト", "./tests/goddess-prologue.test.mjs", "generation paint wait / common story text window")] }),
   entry({ id: "contextual-fast-navigation", category: "implemented", area: "表示・操作", title: "現在目標への直行と反復操作の短縮", summary: "上部の現在目標を、次の集落・施設・依頼地点・戦闘・人物行動・統治判断へ直行する文脈操作へ変更し、主要画面と現在目標へキーボードから到達できる。", evidence: "Nは現在の状態から次の実行地点を解決し、1〜6は表示中の主要ナビを開く。女神演出と通常会話は任意に省略できるが、世界生成や行動結果の検証は省略しない。保存済みの村別名も実在生成集落へ解決し、デスクトップと横844×390の通常UIで確認した。", updatedAt: "2026-08-19", sources: [source("文脈ルーティング", "./src/app.js", "careerNextActionModel / focusCampaignNextAction / openCampaignSettlement"), source("操作UI", "./index.html", "goddessSkip / primaryTabs"), source("操作回帰", "./tests/gameplay-speed-ux.test.mjs", "current objective / shortcuts / quick conversation"), source("実プレイ記録", "./docs/gameplay-reviews/2026-08-19-speed-and-flow-iteration.md", "三回の反復とブラウザ証跡") ] }),
