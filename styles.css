@@ -16570,7 +16570,19 @@ body.is-location-focus .village-central-status article > strong { font-size: cla
 .merchant-company-incident { display:grid; gap:9px; padding:12px; border:1px solid rgba(205,95,65,.65); background:rgba(112,42,27,.2); }
 .merchant-company-incident b { color:#f1a37c; }
 .merchant-company-incident > div { display:flex; flex-wrap:wrap; gap:7px; }
-@media (max-width:720px) { .life-to-realm-board > header { align-items:start; flex-direction:column; } .life-vitals { grid-template-columns:1fr 1fr; } .life-loop-section > summary { grid-template-columns:70px 1fr; } .life-loop-section > summary small { grid-column:2; text-align:left; } .realm-campaign-active > div { grid-template-columns:1fr; } .merchant-company-requirements { grid-template-columns:1fr 1fr; } .merchant-company-next { grid-template-columns:1fr; } .merchant-company-next button { grid-column:1; grid-row:auto; min-height:44px; } .merchant-company-form { grid-template-columns:1fr; } .merchant-company-form select,.merchant-company-form button,.merchant-company-choice-grid button,.merchant-company-candidates button,.merchant-company-incident button { min-height:44px; } .merchant-company-list li { align-items:flex-start; flex-direction:column; } .merchant-company-list span { text-align:left; } }
+.merchant-charter-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:9px; }
+.merchant-charter-card { display:grid; align-content:start; gap:8px; padding:11px; border:1px solid rgba(214,190,132,.28); background:rgba(0,0,0,.2); }
+.merchant-charter-card.is-active { border-color:rgba(89,173,125,.55); background:rgba(45,114,76,.12); }
+.merchant-charter-card.is-pending { border-color:rgba(213,179,106,.65); background:rgba(113,81,34,.16); }
+.merchant-charter-card > header { display:flex; justify-content:space-between; gap:10px; align-items:start; }
+.merchant-charter-card > header span { display:grid; gap:3px; }
+.merchant-charter-card > header b { white-space:nowrap; color:#d5b36a; }
+.merchant-charter-card.is-active > header b { color:#8ed0a8; }
+.merchant-charter-card p { margin:0; line-height:1.5; }
+.merchant-charter-card > small { opacity:.75; }
+.merchant-charter-actions { display:grid; gap:7px; }
+.merchant-charter-actions button { display:grid; gap:4px; min-height:48px; padding:9px; text-align:left; }
+@media (max-width:720px) { .life-to-realm-board > header { align-items:start; flex-direction:column; } .life-vitals { grid-template-columns:1fr 1fr; } .life-loop-section > summary { grid-template-columns:70px 1fr; } .life-loop-section > summary small { grid-column:2; text-align:left; } .realm-campaign-active > div { grid-template-columns:1fr; } .merchant-company-requirements { grid-template-columns:1fr 1fr; } .merchant-company-next { grid-template-columns:1fr; } .merchant-company-next button { grid-column:1; grid-row:auto; min-height:44px; } .merchant-company-form,.merchant-charter-grid { grid-template-columns:1fr; } .merchant-company-form select,.merchant-company-form button,.merchant-company-choice-grid button,.merchant-company-candidates button,.merchant-company-incident button,.merchant-charter-actions button { min-height:44px; } .merchant-company-list li { align-items:flex-start; flex-direction:column; } .merchant-company-list span { text-align:left; } }
 /* Magic and practiced-skill discovery */
 .mastery-board { margin-top: 18px; padding: 18px; border: 1px solid rgba(184,151,89,.32); border-radius: 16px; background: linear-gradient(145deg,rgba(21,24,32,.97),rgba(38,29,31,.96)); color: #eee5d3; }
 .mastery-board > header { display:flex; justify-content:space-between; gap:20px; align-items:flex-start; margin-bottom:18px; }

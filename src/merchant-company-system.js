@@ -1,11 +1,88 @@
 import { MERCHANT_COMMODITIES, getSettlementMarket } from "./merchant-trade.js";
+import { getGeneratedWorldView } from "./generated-world-system.js";
 
 const clone = (value) => structuredClone(value);
 const round1 = (value) => Number(Number(value).toFixed(1));
 const clamp = (value, minimum, maximum) => Math.max(minimum, Math.min(maximum, value));
 const period = (state) => `${state.year ?? 317}-${state.month ?? 1}`;
 
-export const MERCHANT_COMPANY_SCHEMA_VERSION = 1;
+export const MERCHANT_COMPANY_SCHEMA_VERSION = 2;
+
+const charterOption = (id, name, description, extra = {}) => Object.freeze({
+  id, name, description, cost: 0, monthlyDue: 0, reputation: 0, ...extra,
+});
+
+export const COMPANY_CHARTER_PROCEDURES = Object.freeze({
+  republic: Object.freeze({
+    id: "republic", name: "共和国の営業届出", authority: "商業登記所",
+    summary: "許可を請う必要はない。必要事項を届ければ、その日から営業できる。",
+    filings: Object.freeze([
+      charterOption("standard_notice", "標準届出", "商会名、代表者、営業地を届ける。帳簿保存が義務になる。", { cost: 1, immediate: true, obligation: "取引帳簿を五年保存" }),
+      charterOption("public_ledger", "公開帳簿で届ける", "主要な取引先まで公開し、市民からの信用を得る。", { cost: 2, immediate: true, reputation: 1, obligation: "主要取引先を年次公開" }),
+    ]),
+    decisions: Object.freeze([]),
+  }),
+  noble: Object.freeze({
+    id: "noble", name: "貴族特許状", authority: "領主宮廷",
+    summary: "領主の承認がなければ大規模な販路も常設店も持てない。まず謁見を願い出る。",
+    filings: Object.freeze([
+      charterOption("direct_audience", "自ら謁見を願う", "紹介者を立てず、宮廷へ商会の実績を示す。", { cost: 1 }),
+      charterOption("court_broker", "宮廷仲介人を立てる", "費用を払い、条件交渉の公共投資額を軽くする。", { cost: 3, decisionDiscount: 1 }),
+    ]),
+    decisions: Object.freeze([
+      charterOption("noble_share", "領主を後援者に迎える", "毎月の上納と引き換えに、領主名義の保護を受ける。", { monthlyDue: 1, obligation: "領主へ月次上納1" }),
+      charterOption("market_works", "市場整備を請け負う", "一時金を出し、経営への直接介入を避ける。", { cost: 5, reputation: 2, obligation: "市場設備を商会負担で整備" }),
+      charterOption("independent_patent", "独立商会の特許を求める", "信用だけを担保に介入のない特許を求める。信用10未満なら却下される。", { cost: 1, minimumReputation: 10, obligation: "価格法と度量衡令を遵守" }),
+    ]),
+  }),
+  council: Object.freeze({
+    id: "council", name: "都市・ギルド評議登録", authority: "商業評議会",
+    summary: "都市や構成団体の同意が必要。共同体への参加方法を示して評議を受ける。",
+    filings: Object.freeze([
+      charterOption("guild_examination", "ギルド審査を受ける", "帳簿と人員を提出し、評議の席を待つ。", { cost: 2 }),
+    ]),
+    decisions: Object.freeze([
+      charterOption("guild_bond", "営業保証金を積む", "保証金で取引上の責任を示す。", { cost: 4, obligation: "紛争時は評議会の仲裁に従う" }),
+      charterOption("local_partner", "地元商人を共同人にする", "利益の一部を地域へ戻し、早く信用を得る。", { monthlyDue: 0.5, reputation: 1, obligation: "地元共同人へ月次配当0.5" }),
+      charterOption("open_books", "帳簿を公開して審査を通す", "商会信用7以上なら追加負担なしで認められる。", { minimumReputation: 7, obligation: "評議会監査へ帳簿を公開" }),
+    ]),
+  }),
+  temple: Object.freeze({
+    id: "temple", name: "神殿営業認証", authority: "大神殿会計院",
+    summary: "利得が教義と共同体を害さないことを誓い、神殿の認証を受ける。",
+    filings: Object.freeze([
+      charterOption("temple_review", "神殿審査を願う", "扱う商品と度量衡を申告する。", { cost: 1 }),
+    ]),
+    decisions: Object.freeze([
+      charterOption("temple_tithe", "商会十分の一税を受け入れる", "神殿の保護と引き換えに定期献納を行う。", { monthlyDue: 1, obligation: "神殿へ月次献納1" }),
+      charterOption("fair_measure_oath", "公正な度量衡を誓う", "一時金で公認の秤を整え、不正利得を禁じる。", { cost: 4, reputation: 1, obligation: "神殿公認の度量衡を使用" }),
+      charterOption("secular_exception", "世俗商会の例外を求める", "信用12以上なら宗教献納なしの例外を得る。", { cost: 1, minimumReputation: 12, obligation: "救荒時の優先供出に応じる" }),
+    ]),
+  }),
+  clan: Object.freeze({
+    id: "clan", name: "氏族交易盟約", authority: "族長会議",
+    summary: "紙の許可より、贈答と相互扶助の約束が営業資格になる。",
+    filings: Object.freeze([
+      charterOption("clan_guest_gift", "族長会議へ贈答する", "客人として迎えられ、盟約条件を話し合う。", { cost: 2 }),
+    ]),
+    decisions: Object.freeze([
+      charterOption("kinship_compact", "氏族の保護下に入る", "保護を受ける代わりに毎月の贈答を続ける。", { monthlyDue: 0.5, obligation: "氏族へ月次贈答0.5" }),
+      charterOption("local_hiring", "現地雇用を約束する", "地域の人員を優先し、共同体の一員として認められる。", { cost: 2, reputation: 1, obligation: "現地人員の優先雇用" }),
+    ]),
+  }),
+  command: Object.freeze({
+    id: "command", name: "官許営業証", authority: "軍政・官僚府",
+    summary: "交易が兵站と治安へ影響するため、官庁の審査と供給義務を受ける。",
+    filings: Object.freeze([
+      charterOption("official_review", "官許審査へ出頭する", "責任者、倉庫、販路を官庁へ申告する。", { cost: 2 }),
+    ]),
+    decisions: Object.freeze([
+      charterOption("supply_pledge", "非常時供給を約束する", "平時負担を避け、戦時の供出義務を負う。", { obligation: "非常時は在庫を優先供出" }),
+      charterOption("security_bond", "治安保証金を積む", "一時金で官庁の直接介入を抑える。", { cost: 5, obligation: "密輸・禁制品の監査を受ける" }),
+      charterOption("monthly_license", "月次許可料を払う", "少ない初期費用で営業を開始する。", { monthlyDue: 1, obligation: "官許料を毎月1納付" }),
+    ]),
+  }),
+});
 
 export const COMPANY_STRATEGIES = Object.freeze({
   caravan: Object.freeze({ id: "caravan", name: "隊商本位", description: "販路の利益と街道対応を優先する。", routeMargin: 1.2, routeRisk: -0.04, branchRevenue: 0, hiringDiscount: 0 }),
@@ -67,6 +144,9 @@ function baseline() {
     staff: [],
     routes: [],
     branches: [],
+    charters: [],
+    charterApplications: [],
+    charterHistory: [],
     pendingIncidents: [],
     incidentHistory: [],
     monthlyLedger: [],
@@ -74,10 +154,82 @@ function baseline() {
   };
 }
 
+const PLAYER_GOVERNMENT_NAMES = Object.freeze({
+  empire: "帝国", republic: "共和国", city_state: "都市国家", theocracy: "神権国家",
+  nomadic_state: "遊牧国家", tribal_confederation: "部族連合", military_regime: "軍事政権",
+  magocracy: "魔導国家", maritime_state: "海洋国家", federation: "連邦",
+});
+
+const PLAYER_GOVERNMENT_PROCEDURES = Object.freeze({
+  republic: "republic", city_state: "council", federation: "council", maritime_state: "council",
+  theocracy: "temple", nomadic_state: "clan", tribal_confederation: "clan",
+  military_regime: "command", magocracy: "command", empire: "noble",
+});
+
+export function getCompanyCharterProcedure(government = {}) {
+  const formId = government.formId ?? government.governmentFormId;
+  if (PLAYER_GOVERNMENT_PROCEDURES[formId]) return COMPANY_CHARTER_PROCEDURES[PLAYER_GOVERNMENT_PROCEDURES[formId]];
+  const name = String(government.government ?? government.name ?? "");
+  if (/共和/.test(name)) return COMPANY_CHARTER_PROCEDURES.republic;
+  if (/神権|神国|大神官|神殿/.test(name)) return COMPANY_CHARTER_PROCEDURES.temple;
+  if (/氏族|部族|遊牧|大汗|族長/.test(name)) return COMPANY_CHARTER_PROCEDURES.clan;
+  if (/軍政|軍事|魔導|官僚/.test(name)) return COMPANY_CHARTER_PROCEDURES.command;
+  if (/評議|連邦|連合|同盟|都市国家/.test(name)) return COMPANY_CHARTER_PROCEDURES.council;
+  return COMPANY_CHARTER_PROCEDURES.noble;
+}
+
+function generatedJurisdictions(state) {
+  const known = knownSettlements(state);
+  let runtime;
+  try { runtime = getGeneratedWorldView(state).runtime; } catch { runtime = null; }
+  const entries = new Map();
+  known.forEach((settlement) => {
+    const region = runtime?.regionById.get(settlement.regionId);
+    const nationId = settlement.nationId ?? region?.nationId ?? state.generatedWorld?.playerNationId ?? "unknown";
+    const nation = runtime?.nationById.get(nationId);
+    const isPlayerNation = nationId === state.generatedWorld?.playerNationId;
+    const formId = state.player?.sovereign && isPlayerNation ? state.player.governmentFormId : null;
+    const government = formId ? PLAYER_GOVERNMENT_NAMES[formId] : nation?.government ?? settlement.government ?? "地域政権";
+    const current = entries.get(nationId) ?? {
+      id: nationId,
+      name: nation?.name ?? settlement.nationName ?? "所在国",
+      government,
+      formId,
+      settlementIds: [],
+      settlementNames: [],
+    };
+    current.settlementIds.push(settlement.id);
+    current.settlementNames.push(settlement.name);
+    entries.set(nationId, current);
+  });
+  return [...entries.values()].map((entry) => ({ ...entry, procedure: getCompanyCharterProcedure(entry) }));
+}
+
+function inferLegacyCharters(state, sourceVersion) {
+  const company = state.player.merchantCompany;
+  if (sourceVersion >= MERCHANT_COMPANY_SCHEMA_VERSION || company.status !== "company" || company.charters.length) return;
+  generatedJurisdictions(state).forEach((jurisdiction) => {
+    company.charters.push({
+      id: `charter:legacy:${jurisdiction.id}`,
+      nationId: jurisdiction.id,
+      nationName: jurisdiction.name,
+      government: jurisdiction.government,
+      procedureId: "legacy",
+      authority: "従来営業の継承",
+      status: "active",
+      basis: "既存商会の営業実績を新制度下で追認",
+      obligation: "従来契約を遵守",
+      monthlyDue: 0,
+      grantedPeriod: period(state),
+    });
+  });
+}
+
 export function normalizeMerchantCompanyState(state) {
   if (!state?.player) return state;
   const base = baseline();
   const source = state.player.merchantCompany ?? {};
+  const sourceVersion = Number(source.schemaVersion) || 1;
   state.player.merchantCompany = {
     ...base,
     ...source,
@@ -85,11 +237,15 @@ export function normalizeMerchantCompanyState(state) {
     staff: clone(source.staff ?? []),
     routes: clone(source.routes ?? []),
     branches: clone(source.branches ?? []),
+    charters: clone(source.charters ?? []),
+    charterApplications: clone(source.charterApplications ?? []),
+    charterHistory: clone(source.charterHistory ?? []),
     pendingIncidents: clone(source.pendingIncidents ?? []),
     incidentHistory: clone(source.incidentHistory ?? []),
     monthlyLedger: clone(source.monthlyLedger ?? []),
     stats: { ...base.stats, ...(source.stats ?? {}) },
   };
+  inferLegacyCharters(state, sourceVersion);
   return state;
 }
 
@@ -109,6 +265,111 @@ function companyLog(state, title, detail) {
   state.player.history ??= [];
   state.player.history.unshift({ id: `company:${state.turn ?? 0}:${state.player.history.length}`, type: "merchant_company", title, detail, summary: detail, year: state.year, month: state.month });
   state.player.history = state.player.history.slice(0, 60);
+}
+
+function activeCharter(company, nationId) {
+  return company.charters.find((entry) => entry.nationId === nationId && entry.status === "active") ?? null;
+}
+
+function requireJurisdiction(state, nationId) {
+  const jurisdiction = generatedJurisdictions(state).find((entry) => entry.id === nationId);
+  if (!jurisdiction) throw new Error("営業国を特定できません");
+  return jurisdiction;
+}
+
+function grantCharter(state, jurisdiction, procedure, option, application = null) {
+  const company = state.player.merchantCompany;
+  const discount = application?.decisionDiscount ?? 0;
+  const cost = Math.max(0, option.cost - discount);
+  if (company.treasury < cost) throw new Error("営業資格を得るための商会資金が不足しています");
+  company.treasury = round1(company.treasury - cost);
+  company.reputation = Math.max(0, company.reputation + option.reputation);
+  const charter = {
+    id: `charter:${jurisdiction.id}:${company.charters.length + 1}`,
+    nationId: jurisdiction.id,
+    nationName: jurisdiction.name,
+    government: jurisdiction.government,
+    procedureId: procedure.id,
+    authority: procedure.authority,
+    status: "active",
+    basis: option.name,
+    obligation: option.obligation,
+    monthlyDue: option.monthlyDue,
+    grantedPeriod: period(state),
+  };
+  company.charters.push(charter);
+  companyLog(state, `${jurisdiction.name}で営業資格を取得`, `${procedure.authority}により「${option.name}」が認められた。義務：${option.obligation}。`);
+  return charter;
+}
+
+export function startCompanyCharterApplication(state, nationId, filingId) {
+  const next = prepared(state);
+  const company = next.player.merchantCompany;
+  if (company.status !== "company") throw new Error("商会の設立が必要です");
+  if (activeCharter(company, nationId)) throw new Error("この国ではすでに営業できます");
+  if (company.charterApplications.some((entry) => entry.nationId === nationId && entry.status === "pending")) throw new Error("この国では審査結果を待っています");
+  const jurisdiction = requireJurisdiction(next, nationId);
+  const procedure = jurisdiction.procedure;
+  const filing = procedure.filings.find((entry) => entry.id === filingId);
+  if (!filing) throw new Error("営業資格の申請方法を選んでください");
+  if (company.treasury < filing.cost) throw new Error("申請費用の商会資金が不足しています");
+  company.treasury = round1(company.treasury - filing.cost);
+  if (filing.immediate) {
+    grantCharter(next, jurisdiction, procedure, { ...filing, cost: 0 });
+    company.charterHistory.unshift({ nationId, nationName: jurisdiction.name, procedureId: procedure.id, filingId, outcome: "granted", period: period(next) });
+    return next;
+  }
+  const application = {
+    id: `charter-application:${jurisdiction.id}:${company.charterApplications.length + company.charterHistory.length + 1}`,
+    nationId: jurisdiction.id,
+    nationName: jurisdiction.name,
+    government: jurisdiction.government,
+    procedureId: procedure.id,
+    authority: procedure.authority,
+    filingId: filing.id,
+    filingName: filing.name,
+    decisionDiscount: filing.decisionDiscount ?? 0,
+    status: "pending",
+    startedPeriod: period(next),
+  };
+  company.charterApplications.push(application);
+  companyLog(next, `${jurisdiction.name}へ営業資格を申請`, `${procedure.authority}へ「${filing.name}」で手続きを始めた。次に提示条件を選ぶ。`);
+  return next;
+}
+
+export function resolveCompanyCharterApplication(state, applicationId, decisionId) {
+  const next = prepared(state);
+  const company = next.player.merchantCompany;
+  const application = company.charterApplications.find((entry) => entry.id === applicationId && entry.status === "pending");
+  if (!application) throw new Error("判断待ちの営業資格申請がありません");
+  const jurisdiction = requireJurisdiction(next, application.nationId);
+  const procedure = COMPANY_CHARTER_PROCEDURES[application.procedureId];
+  const decision = procedure?.decisions.find((entry) => entry.id === decisionId);
+  if (!decision) throw new Error("提示された条件への答えを選んでください");
+  if (decision.minimumReputation && company.reputation < decision.minimumReputation) {
+    company.charterApplications = company.charterApplications.filter((entry) => entry.id !== application.id);
+    company.charterHistory.unshift({ ...application, decisionId, outcome: "denied", reason: `商会信用${decision.minimumReputation}が必要`, resolvedPeriod: period(next) });
+    company.reputation = Math.max(0, company.reputation - 1);
+    companyLog(next, `${jurisdiction.name}の営業申請が却下`, `「${decision.name}」を申し出たが、商会信用${decision.minimumReputation}に届かず認められなかった。実績を積めば再申請できる。`);
+    return next;
+  }
+  const charter = grantCharter(next, jurisdiction, procedure, decision, application);
+  company.charterApplications = company.charterApplications.filter((entry) => entry.id !== application.id);
+  company.charterHistory.unshift({ ...application, decisionId, outcome: "granted", charterId: charter.id, resolvedPeriod: period(next) });
+  return next;
+}
+
+function requireChartersForSettlements(state, settlements) {
+  const company = state.player.merchantCompany;
+  const known = generatedJurisdictions(state);
+  const requiredIds = new Set(settlements.map((settlement) => {
+    const jurisdiction = known.find((entry) => entry.settlementIds.includes(settlement.id));
+    if (!jurisdiction) throw new Error(`${settlement.name}の営業国を特定できません`);
+    return jurisdiction.id;
+  }));
+  const missing = [...requiredIds].map((id) => known.find((entry) => entry.id === id)).filter((entry) => !activeCharter(company, entry.id));
+  if (missing.length) throw new Error(`${missing.map((entry) => entry.name).join("・")}の営業資格が必要です`);
+  return [...requiredIds];
 }
 
 function foundingProgress(state) {
@@ -223,6 +484,7 @@ export function secureCompanyTradeRoute(state, options = {}) {
   if (!source || !destination || source.id === destination.id) throw new Error("異なる既知の市場を二つ選んでください");
   if (!MERCHANT_COMMODITIES[options.commodityId]) throw new Error("扱う商品を選んでください");
   if (!approach) throw new Error("運び方を選んでください");
+  const jurisdictionIds = requireChartersForSettlements(next, [source, destination]);
   const leader = requireAvailableStaff(company, options.leaderId, ["caravan_master", "guard_captain"]);
   if (company.treasury < approach.cost) throw new Error("販路契約の資金が不足しています");
   if (company.routes.some((entry) => entry.sourceId === source.id && entry.destinationId === destination.id && entry.commodityId === options.commodityId && entry.status !== "closed")) throw new Error("同じ販路はすでに確保しています");
@@ -235,6 +497,7 @@ export function secureCompanyTradeRoute(state, options = {}) {
     sourceName: source.name,
     destinationId: destination.id,
     destinationName: destination.name,
+    jurisdictionIds,
     commodityId: options.commodityId,
     commodityName: MERCHANT_COMMODITIES[options.commodityId].name,
     approachId: approach.id,
@@ -268,6 +531,7 @@ export function openCompanyBranch(state, settlement, options = {}) {
   if (company.status !== "company") throw new Error("商会の設立が必要です");
   if (!settlement?.id || !knownSettlements(next).some((entry) => entry.id === settlement.id) || !atSettlement(next, settlement)) throw new Error("訪問済みの現在地で出店準備を行ってください");
   if (!format || !launch) throw new Error("店の規模と開店方法を選んでください");
+  const jurisdictionIds = requireChartersForSettlements(next, [settlement]);
   if (company.branches.some((entry) => entry.settlementId === settlement.id && entry.status !== "closed")) throw new Error("この集落にはすでに支店があります");
   const manager = requireAvailableStaff(company, options.managerId, ["factor", "buyer"]);
   const cost = format.cost + launch.cost;
@@ -279,6 +543,7 @@ export function openCompanyBranch(state, settlement, options = {}) {
     settlementId: settlement.id,
     settlementName: settlement.name,
     regionId: settlement.regionId,
+    jurisdictionIds,
     formatId: format.id,
     launchId: launch.id,
     managerId: manager.id,
@@ -385,9 +650,12 @@ export function advanceMerchantCompanyMonthOnDraft(state) {
   normalizeMerchantCompanyState(state);
   const company = state.player.merchantCompany;
   if (company.status !== "company") return state;
-  const entry = { period: period(state), revenue: 0, costs: 0, profit: 0, wages: 0, routeResults: [], branchResults: [], incidents: [] };
+  const entry = { period: period(state), revenue: 0, costs: 0, profit: 0, wages: 0, charterDues: 0, routeResults: [], branchResults: [], incidents: [] };
+  company.charters.filter((charter) => charter.status === "active").forEach((charter) => {
+    entry.charterDues = round1(entry.charterDues + (Number(charter.monthlyDue) || 0));
+  });
   company.staff.forEach((staff) => { entry.wages = round1(entry.wages + staff.wage); });
-  entry.costs = entry.wages;
+  entry.costs = round1(entry.wages + entry.charterDues);
   company.branches.forEach((branch) => {
     if (branch.status === "preparing") {
       branch.preparationProgress += 1;
@@ -443,9 +711,25 @@ export function getMerchantCompanyView(state) {
   const next = preparedView(state);
   const company = next.player.merchantCompany;
   const settlements = knownSettlements(next);
+  const jurisdictions = generatedJurisdictions(next).map((jurisdiction) => {
+    const charter = activeCharter(company, jurisdiction.id);
+    const application = company.charterApplications.find((entry) => entry.nationId === jurisdiction.id && entry.status === "pending") ?? null;
+    const decisions = application
+      ? jurisdiction.procedure.decisions.map((decision) => ({
+        ...decision,
+        effectiveCost: Math.max(0, decision.cost - (application.decisionDiscount ?? 0)),
+        eligible: !decision.minimumReputation || company.reputation >= decision.minimumReputation,
+      }))
+      : [];
+    return { ...jurisdiction, charter: clone(charter), application: clone(application), decisions };
+  });
   const availableStaff = company.staff.filter((entry) => !entry.assignmentId);
-  const sourceOptions = settlements.map((settlement) => ({ id: settlement.id, name: settlement.name }));
-  const destinationOptions = settlements.map((settlement) => ({ id: settlement.id, name: settlement.name }));
+  const marketOption = (settlement) => {
+    const jurisdiction = jurisdictions.find((entry) => entry.settlementIds.includes(settlement.id));
+    return { id: settlement.id, name: settlement.name, nationId: jurisdiction?.id ?? null, nationName: jurisdiction?.name ?? "所在国", licensed: Boolean(jurisdiction?.charter) };
+  };
+  const sourceOptions = settlements.map(marketOption);
+  const destinationOptions = settlements.map(marketOption);
   const routeLeaders = availableStaff.filter((entry) => ["caravan_master", "guard_captain"].includes(entry.roleId));
   const branchManagers = availableStaff.filter((entry) => ["factor", "buyer"].includes(entry.roleId));
   return {
@@ -453,6 +737,7 @@ export function getMerchantCompanyView(state) {
     founding: foundingProgress(next),
     strategies: Object.values(COMPANY_STRATEGIES),
     candidates: candidatePool(next).filter((candidate) => !company.staff.some((staff) => staff.candidateId === candidate.id)),
+    jurisdictions,
     sourceOptions,
     destinationOptions,
     routeLeaders: clone(routeLeaders),

@@ -164,8 +164,10 @@ import {
   normalizeMerchantCompanyState,
   openCompanyBranch,
   recruitCompanyStaff,
+  resolveCompanyCharterApplication,
   resolveCompanyIncident,
   secureCompanyTradeRoute,
+  startCompanyCharterApplication,
   getCompanionQuestView,
   normalizeCompanionQuestState,
   respondToCompanionQuest,
@@ -4158,6 +4160,10 @@ function renderPropertyEnterpriseBoard() {
 
 function merchantCompanyNextStep(model, settlement) {
   if (model.status !== "company") return model.founding.ready ? "三つの方針から商会の強みを決める" : "個人で二つの市場を回り、三個以上を利益付きで売る";
+  const pendingCharter = model.jurisdictions.find((entry) => entry.application);
+  if (pendingCharter) return `${pendingCharter.name}の${pendingCharter.procedure.authority}へ返答する`;
+  const missingCharter = model.jurisdictions.find((entry) => !entry.charter);
+  if (missingCharter) return `${missingCharter.name}で${missingCharter.procedure.name}を済ませる`;
   if (!model.staff.length) return "隊商頭か護衛頭を採用し、最初の販路を任せる";
   if (!model.routes.length) return model.routeLeaders.length ? "二つの市場、商品、運び方を選んで販路を契約する" : "販路を任せる隊商頭か護衛頭を採用する";
   if (!model.branchManagers.length && !model.branches.length) return "番頭か仕入役を採用し、出店を任せる";
@@ -4176,11 +4182,21 @@ function renderMerchantCompanyBoard() {
     return `<details class="life-loop-section merchant-company-board" open><summary><span>商人の道</span><strong>個人商売から商会へ</strong><small>次：${escapeHtml(nextStep)}</small></summary><div class="life-loop-content"><div class="merchant-company-next"><small>NEXT STEP</small><strong>${escapeHtml(nextStep)}</strong></div><div class="merchant-company-requirements">${requirements}</div><div class="merchant-company-choice-grid">${strategies}</div></div></details>`;
   }
   const strategy = model.strategies.find((entry) => entry.id === model.strategyId);
+  const charterCards = model.jurisdictions.map((jurisdiction) => {
+    if (jurisdiction.charter) return `<article class="merchant-charter-card is-active"><header><span><small>${escapeHtml(jurisdiction.government)}</small><strong>${escapeHtml(jurisdiction.name)}</strong></span><b>営業可</b></header><p>${escapeHtml(jurisdiction.charter.authority)}：${escapeHtml(jurisdiction.charter.basis)}</p><small>義務：${escapeHtml(jurisdiction.charter.obligation)}${jurisdiction.charter.monthlyDue ? ` · 月次負担${jurisdiction.charter.monthlyDue}` : ""}</small></article>`;
+    if (jurisdiction.application) {
+      const decisions = jurisdiction.decisions.map((decision) => `<button type="button" data-company-charter-decision="${escapeHtml(decision.id)}" data-company-charter-application="${escapeHtml(jurisdiction.application.id)}" ${model.treasury < decision.effectiveCost ? "disabled" : ""}><strong>${escapeHtml(decision.name)}</strong><small>${escapeHtml(decision.description)}${decision.effectiveCost ? ` · 資金${decision.effectiveCost}` : ""}${decision.monthlyDue ? ` · 月${decision.monthlyDue}` : ""}${decision.minimumReputation ? ` · 信用${decision.minimumReputation}${decision.eligible ? "達成" : "未達・却下見込み"}` : ""}</small></button>`).join("");
+      return `<article class="merchant-charter-card is-pending"><header><span><small>${escapeHtml(jurisdiction.government)}</small><strong>${escapeHtml(jurisdiction.name)}</strong></span><b>返答待ち</b></header><p>${escapeHtml(jurisdiction.application.authority)}が営業条件を示した。どの義務を引き受けるか決める。</p><div class="merchant-charter-actions">${decisions}</div></article>`;
+    }
+    const filings = jurisdiction.procedure.filings.map((filing) => `<button type="button" data-company-charter-start="${escapeHtml(jurisdiction.id)}" data-company-charter-filing="${escapeHtml(filing.id)}" ${model.treasury < filing.cost ? "disabled" : ""}><strong>${escapeHtml(filing.name)}</strong><small>${escapeHtml(filing.description)}${filing.cost ? ` · 資金${filing.cost}` : ""}</small></button>`).join("");
+    return `<article class="merchant-charter-card"><header><span><small>${escapeHtml(jurisdiction.government)}</small><strong>${escapeHtml(jurisdiction.name)}</strong></span><b>営業資格なし</b></header><p><strong>${escapeHtml(jurisdiction.procedure.name)}</strong> · ${escapeHtml(jurisdiction.procedure.authority)}</p><p>${escapeHtml(jurisdiction.procedure.summary)}</p><div class="merchant-charter-actions">${filings}</div></article>`;
+  }).join("");
+  const charterBoard = `<section class="merchant-company-section merchant-charter-section"><header><h3>国家制度と営業資格</h3><small>${model.charters.filter((entry) => entry.status === "active").length}/${model.jurisdictions.length}か国</small></header><div class="merchant-charter-grid">${charterCards}</div></section>`;
   const incidents = model.pendingIncidents.map((incident) => `<article class="merchant-company-incident"><header><strong>${escapeHtml(incident.title)}</strong><b>判断待ち</b></header><p>${escapeHtml(incident.detail)}</p><div><button type="button" data-company-incident="${escapeHtml(incident.id)}" data-company-decision="escort" ${model.treasury < 4 ? "disabled title=\"商会資金4が必要です\"" : ""}>商会資金4で護衛増強</button><button type="button" data-company-incident="${escapeHtml(incident.id)}" data-company-decision="detour">一か月迂回</button><button type="button" data-company-incident="${escapeHtml(incident.id)}" data-company-decision="take_loss">損失を受け入れる</button></div></article>`).join("");
   const candidates = model.candidates.map((candidate) => `<article><header><span><small>${escapeHtml(candidate.originSettlementName)}出身</small><strong>${escapeHtml(candidate.name)}</strong></span><b>${escapeHtml(candidate.roleName)} · 腕${candidate.skill}</b></header><p>${escapeHtml(candidate.description)}</p><button type="button" data-company-hire="${escapeHtml(candidate.id)}">契約金${candidate.signingBonus}・月給${candidate.wage}で雇う</button></article>`).join("") || "<p>全職種の候補を雇用済みです。</p>";
   const staff = model.staff.map((member) => `<li><strong>${escapeHtml(member.name)} · ${escapeHtml(member.roleName)}</strong><span>${member.assignmentId ? `${member.assignmentType === "route" ? "販路" : "支店"}担当` : "配置待ち"} · 月給${member.wage} · 士気${member.morale}</span></li>`).join("") || "<li>人員なし</li>";
-  const marketOptions = model.sourceOptions.map((place, index) => `<option value="${escapeHtml(place.id)}" ${index === 0 ? "selected" : ""}>${escapeHtml(place.name)}</option>`).join("");
-  const destinationOptions = model.destinationOptions.map((place, index) => `<option value="${escapeHtml(place.id)}" ${index === 1 ? "selected" : ""}>${escapeHtml(place.name)}</option>`).join("");
+  const marketOptions = model.sourceOptions.map((place, index) => `<option value="${escapeHtml(place.id)}" ${index === 0 ? "selected" : ""}>${escapeHtml(place.name)} · ${escapeHtml(place.nationName)}${place.licensed ? "" : "（資格なし）"}</option>`).join("");
+  const destinationOptions = model.destinationOptions.map((place, index) => `<option value="${escapeHtml(place.id)}" ${index === 1 ? "selected" : ""}>${escapeHtml(place.name)} · ${escapeHtml(place.nationName)}${place.licensed ? "" : "（資格なし）"}</option>`).join("");
   const commodityOptions = model.commodities.map((commodity) => `<option value="${commodity.id}">${escapeHtml(commodity.name)}</option>`).join("");
   const approachOptions = model.routeApproaches.map((approach) => `<option value="${approach.id}">${escapeHtml(approach.name)} · 契約${approach.cost} · ${escapeHtml(approach.description)}</option>`).join("");
   const leaderOptions = model.routeLeaders.map((leader) => `<option value="${escapeHtml(leader.id)}">${escapeHtml(leader.name)} · ${escapeHtml(leader.roleName)} 腕${leader.skill}</option>`).join("");
@@ -4190,10 +4206,11 @@ function renderMerchantCompanyBoard() {
   const formatOptions = model.branchFormats.map((format) => `<option value="${format.id}">${escapeHtml(format.name)} · 開業${format.cost} / 月${format.monthlyCost}</option>`).join("");
   const launchOptions = model.launchPlans.map((launch) => `<option value="${launch.id}">${escapeHtml(launch.name)} · ${launch.months}か月 · 追加${launch.cost}</option>`).join("");
   const localKnown = settlement && model.sourceOptions.some((entry) => entry.id === settlement.id);
-  const branchForm = localKnown && model.branchManagers.length ? `<div class="merchant-company-form" data-company-branch-form><p><strong>${escapeHtml(settlement.name)}への出店</strong><small>出店は現在地でのみ段取りできます。</small></p><label>店の規模<select data-company-branch-format>${formatOptions}</select></label><label>開店方法<select data-company-branch-launch>${launchOptions}</select></label><label>店長<select data-company-branch-manager>${managers}</select></label><button type="button" data-company-branch-open data-company-settlement="${escapeHtml(settlement.id)}">出店準備を始める</button></div>` : `<p>${settlement ? "この市場の相場を確認し、配置待ちの番頭か仕入役を用意してください。" : "出店したい市場へ移動し、集落に入ってください。"}</p>`;
+  const localLicensed = model.sourceOptions.find((entry) => entry.id === settlement?.id)?.licensed;
+  const branchForm = localKnown && localLicensed && model.branchManagers.length ? `<div class="merchant-company-form" data-company-branch-form><p><strong>${escapeHtml(settlement.name)}への出店</strong><small>出店は現在地でのみ段取りできます。</small></p><label>店の規模<select data-company-branch-format>${formatOptions}</select></label><label>開店方法<select data-company-branch-launch>${launchOptions}</select></label><label>店長<select data-company-branch-manager>${managers}</select></label><button type="button" data-company-branch-open data-company-settlement="${escapeHtml(settlement.id)}">出店準備を始める</button></div>` : `<p>${settlement && localKnown && !localLicensed ? "先にこの国の営業資格を取得してください。" : settlement ? "この市場の相場を確認し、配置待ちの番頭か仕入役を用意してください。" : "出店したい市場へ移動し、集落に入ってください。"}</p>`;
   const branches = model.branches.map((branch) => `<li><strong>${escapeHtml(branch.settlementName)} · ${escapeHtml(model.branchFormats.find((entry) => entry.id === branch.formatId)?.name ?? branch.formatId)}</strong><span>${branch.status === "preparing" ? `準備 ${branch.preparationProgress}/${branch.preparationMonths}か月` : branch.status === "open" ? "営業中" : "資金不足で休業"}</span></li>`).join("") || "<li>支店なし</li>";
-  const ledger = model.monthlyLedger.slice(0, 4).map((entry) => `<li><strong>${escapeHtml(entry.period)} · 損益${entry.profit >= 0 ? "+" : ""}${entry.profit}</strong><span>売上${entry.revenue} / 費用${entry.costs}（人件費${entry.wages}）</span></li>`).join("") || "<li>月次決算はまだありません。</li>";
-  return `<details class="life-loop-section merchant-company-board" open><summary><span>${escapeHtml(model.name)}</span><strong>${escapeHtml(strategy?.name ?? "商会経営")}</strong><small>資金${model.treasury} · 信用${model.reputation} · 次：${escapeHtml(nextStep)}</small></summary><div class="life-loop-content"><div class="merchant-company-next"><small>NEXT STEP</small><strong>${escapeHtml(nextStep)}</strong><button type="button" data-company-invest="10" ${state.player.metrics.wealth < 10 ? "disabled" : ""}>個人財産10を追加出資</button></div>${incidents}<section class="merchant-company-section"><header><h3>人員の手配</h3><small>${model.staff.length}名 / 月給計${model.staff.reduce((sum, member) => sum + member.wage, 0)}</small></header><ul class="merchant-company-list">${staff}</ul><details><summary>採用候補を見る</summary><div class="merchant-company-candidates">${candidates}</div></details></section><section class="merchant-company-section"><header><h3>販路の確保</h3><small>${model.routes.length}路線</small></header>${routeForm}<ul class="merchant-company-list">${routes}</ul></section><section class="merchant-company-section"><header><h3>出店の段取り</h3><small>${model.branches.length}拠点</small></header>${branchForm}<ul class="merchant-company-list">${branches}</ul></section><section class="merchant-company-section"><header><h3>月次決算</h3><small>運転資金 ${model.treasury}</small></header><ul class="merchant-company-list">${ledger}</ul></section></div></details>`;
+  const ledger = model.monthlyLedger.slice(0, 4).map((entry) => `<li><strong>${escapeHtml(entry.period)} · 損益${entry.profit >= 0 ? "+" : ""}${entry.profit}</strong><span>売上${entry.revenue} / 費用${entry.costs}（人件費${entry.wages}${entry.charterDues ? `・営業資格${entry.charterDues}` : ""}）</span></li>`).join("") || "<li>月次決算はまだありません。</li>";
+  return `<details class="life-loop-section merchant-company-board" open><summary><span>${escapeHtml(model.name)}</span><strong>${escapeHtml(strategy?.name ?? "商会経営")}</strong><small>資金${model.treasury} · 信用${model.reputation} · 次：${escapeHtml(nextStep)}</small></summary><div class="life-loop-content"><div class="merchant-company-next"><small>NEXT STEP</small><strong>${escapeHtml(nextStep)}</strong><button type="button" data-company-invest="10" ${state.player.metrics.wealth < 10 ? "disabled" : ""}>個人財産10を追加出資</button></div>${incidents}${charterBoard}<section class="merchant-company-section"><header><h3>人員の手配</h3><small>${model.staff.length}名 / 月給計${model.staff.reduce((sum, member) => sum + member.wage, 0)}</small></header><ul class="merchant-company-list">${staff}</ul><details><summary>採用候補を見る</summary><div class="merchant-company-candidates">${candidates}</div></details></section><section class="merchant-company-section"><header><h3>販路の確保</h3><small>${model.routes.length}路線</small></header>${routeForm}<ul class="merchant-company-list">${routes}</ul></section><section class="merchant-company-section"><header><h3>出店の段取り</h3><small>${model.branches.length}拠点</small></header>${branchForm}<ul class="merchant-company-list">${branches}</ul></section><section class="merchant-company-section"><header><h3>月次決算</h3><small>運転資金 ${model.treasury}</small></header><ul class="merchant-company-list">${ledger}</ul></section></div></details>`;
 }
 
 function renderCompanionQuestBoard() {
@@ -9557,6 +9574,24 @@ document.addEventListener("click", async (event) => {
   if (companyFound) {
     try { commit(foundMerchantCompany(state, { name: `${state.player.name}商会`, strategyId: companyFound.dataset.companyFound }), "個人商売の信用と資本をまとめ、商会を設立しました。", "event"); }
     catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
+  const companyCharterStart = event.target.closest("[data-company-charter-start]");
+  if (companyCharterStart) {
+    try {
+      const next = startCompanyCharterApplication(state, companyCharterStart.dataset.companyCharterStart, companyCharterStart.dataset.companyCharterFiling);
+      const pending = next.player.merchantCompany.charterApplications.some((entry) => entry.nationId === companyCharterStart.dataset.companyCharterStart && entry.status === "pending");
+      commit(next, pending ? "国家制度に沿って営業資格を申請しました。提示条件への返答が必要です。" : "共和国の登記所へ届け出て、その日から営業可能になりました。", "event");
+    } catch (error) { showToast(error.message, "danger"); }
+    return;
+  }
+  const companyCharterDecision = event.target.closest("[data-company-charter-decision]");
+  if (companyCharterDecision) {
+    try {
+      const next = resolveCompanyCharterApplication(state, companyCharterDecision.dataset.companyCharterApplication, companyCharterDecision.dataset.companyCharterDecision);
+      const granted = next.player.merchantCompany.charterHistory[0]?.outcome === "granted";
+      commit(next, granted ? "引き受ける義務を決め、国家から営業資格を得ました。" : "求めた条件は却下されました。実績を積めば再申請できます。", granted ? "event" : "cancel");
+    } catch (error) { showToast(error.message, "danger"); }
     return;
   }
   const companyInvest = event.target.closest("[data-company-invest]");

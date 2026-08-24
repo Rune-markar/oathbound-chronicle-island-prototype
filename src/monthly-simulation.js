@@ -290,6 +290,7 @@ import {
 } from "./property-enterprise-system.js";
 import {
   COMPANY_BRANCH_FORMATS,
+  COMPANY_CHARTER_PROCEDURES,
   COMPANY_LAUNCH_PLANS,
   COMPANY_ROUTE_APPROACHES,
   COMPANY_STAFF_ROLES,
@@ -298,12 +299,15 @@ import {
   advanceMerchantCompanyMonthOnDraft,
   contributeCompanyCapital,
   foundMerchantCompany,
+  getCompanyCharterProcedure,
   getMerchantCompanyView,
   normalizeMerchantCompanyState,
   openCompanyBranch,
   recruitCompanyStaff,
+  resolveCompanyCharterApplication,
   resolveCompanyIncident,
   secureCompanyTradeRoute,
+  startCompanyCharterApplication,
 } from "./merchant-company-system.js";
 import { advanceCompanionQuests, advanceCompanionQuestsOnDraft, completeCompanionQuest, getCompanionQuestView, normalizeCompanionQuestState, respondToCompanionQuest } from "./companion-quest-system.js";
 import { ESTATE_DEBATE_OPTIONS, ESTATE_FACTIONS, advanceEstatePoliticsMonth, advanceEstatePoliticsMonthOnDraft, getEstatePoliticsView, normalizeEstatePoliticsState, resolveEstateProjectDebate, startEstateProjectDebate } from "./estate-politics-system.js";
@@ -401,6 +405,7 @@ export {
   transferCargoToWarehouse,
   withdrawWarehouseCargo,
   COMPANY_BRANCH_FORMATS,
+  COMPANY_CHARTER_PROCEDURES,
   COMPANY_LAUNCH_PLANS,
   COMPANY_ROUTE_APPROACHES,
   COMPANY_STAFF_ROLES,
@@ -408,12 +413,15 @@ export {
   advanceMerchantCompanyMonth,
   contributeCompanyCapital,
   foundMerchantCompany,
+  getCompanyCharterProcedure,
   getMerchantCompanyView,
   normalizeMerchantCompanyState,
   openCompanyBranch,
   recruitCompanyStaff,
+  resolveCompanyCharterApplication,
   resolveCompanyIncident,
   secureCompanyTradeRoute,
+  startCompanyCharterApplication,
   advanceCompanionQuests,
   completeCompanionQuest,
   getCompanionQuestView,
