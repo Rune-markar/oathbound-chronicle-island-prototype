@@ -11057,7 +11057,7 @@ body.is-battle-preparation-open { overflow: hidden; }
 .battle-logistics-note { margin: 10px 0 0; padding: 8px; border-left: 2px solid #6f7f67; color: #6f857e; background: rgba(31,50,48,.55); font: 7px/1.55 system-ui, sans-serif; }
 .battle-preparation-footer { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 11px 24px; border-top: 1px solid #9b7c42; background: #142829; box-shadow: 0 -7px 24px rgba(0,0,0,.28); }
 .battle-preparation-footer > div { display: grid; gap: 2px; } .battle-preparation-footer > div span { color: #c9a251; font: 800 7px system-ui, sans-serif; letter-spacing: .14em; } .battle-preparation-footer > div strong { color: #aab9b2; font-size: 9px; }
-.battle-preparation-footer > button { min-width: 240px; padding: 11px 18px; border: 1px solid #d2aa54; border-radius: 5px; color: #182a29; background: linear-gradient(#e7c774, #bc9343); box-shadow: 0 5px 18px rgba(0,0,0,.28); font: 800 11px system-ui, sans-serif; cursor: pointer; }
+.battle-preparation-footer > button { min-width: 240px; min-height: 44px; padding: 11px 18px; border: 1px solid #d2aa54; border-radius: 5px; color: #182a29; background: linear-gradient(#e7c774, #bc9343); box-shadow: 0 5px 18px rgba(0,0,0,.28); font: 800 11px system-ui, sans-serif; cursor: pointer; }
 .battle-preparation-footer > button:hover:not(:disabled) { filter: brightness(1.08); } .battle-preparation-footer > button:disabled { opacity: .38; cursor: not-allowed; }
 
 /* Unit-based tactical battle debugger */
@@ -11654,7 +11654,7 @@ body.is-battle-preparation-open { overflow: hidden; }
 .tactical-capture-result p { margin: 0; color: #93a39d; font: 8px/1.55 system-ui, sans-serif; }
 .tactical-capture-result div > b { display: block; margin-top: 5px; color: #d7b666; font: 800 8px system-ui, sans-serif; }
 .tactical-capture-result button,
-.tactical-result-actions button { padding: 10px 13px; border: 1px solid rgba(218,181,93,.42); color: #e3d6b8; background: #284c45; cursor: pointer; font: 800 9px system-ui, sans-serif; }
+.tactical-result-actions button { min-height: 44px; padding: 10px 13px; border: 1px solid rgba(218,181,93,.42); color: #e3d6b8; background: #284c45; cursor: pointer; font: 800 9px system-ui, sans-serif; }
 .tactical-capture-result button:hover,
 .tactical-result-actions button:hover { border-color: #e1b85e; background: #39695b; }
 .tactical-result-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 24px; border-top: 1px solid rgba(211,178,99,.17); background: #101f21; }
@@ -14184,7 +14184,7 @@ body.is-battle-preparation-open { overflow: hidden; }
 }
 
 .battle-preparation-header > div:last-child { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; }
-.battle-preparation-header > div:last-child button { padding: 8px 13px; border: 1px solid #7f704e; border-radius: 4px; color: #d4c49c; background: #263b3b; font: 800 9px system-ui, sans-serif; cursor: pointer; }
+.battle-preparation-header > div:last-child button { min-height: 44px; padding: 8px 13px; border: 1px solid #7f704e; border-radius: 4px; color: #d4c49c; background: #263b3b; font: 800 9px system-ui, sans-serif; cursor: pointer; }
 .battle-preparation-header > div:last-child button[data-preparation-action="skip"],
 #tacticalBattleSkip { color: #f2d7c6; border-color: rgba(204, 111, 83, .62); background: #643933; }
 

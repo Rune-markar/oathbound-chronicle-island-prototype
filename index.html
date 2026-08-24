@@ -42,7 +42,7 @@
     <main class="v3-game" id="v3Game" hidden>
       <header class="v3-game-header">
         <div><small id="v3NationName">生成世界</small><strong id="v3RegionName">現在地</strong></div>
-        <div class="v3-header-actions"><button type="button" data-v3-action="underworld">裏社会</button><button type="button" data-v3-action="commerce">交易・商会</button><button type="button" data-v3-action="map">世界地図</button><button type="button" data-v3-action="menu">道具</button></div>
+        <div class="v3-header-actions"><button type="button" data-v3-action="underworld">裏社会</button><button type="button" data-v3-action="commerce">交易・商会</button><button type="button" data-v3-action="military" id="v3MilitaryButton">軍務</button><button type="button" data-v3-action="map">世界地図</button><button type="button" data-v3-action="menu">道具</button></div>
       </header>
 
       <section class="v3-play-layout">
@@ -67,6 +67,7 @@
           <strong id="v3TerrainLabel">草原</strong>
           <span id="v3TerrainEffect">移動10分 · 通常の地勢</span>
           <span id="v3NearbyLabel">周辺を確認中</span>
+          <span class="v3-military-summary" id="v3MilitaryLabel">軍務を確認中</span>
           <span id="v3ChunkLabel">周辺生成 9区画</span>
         </aside>
       </section>
@@ -139,7 +140,7 @@
           <section class="v3-world-chronicle"><header><small>CHRONICLE</small><strong>年代記</strong></header><ol id="v3WorldChronicle"></ol></section>
         </aside>
       </div>
-      <footer><span><i class="is-player"></i>現在地</span><span><i class="is-city"></i>都市・町・村</span><span><i class="is-road"></i>街道</span><span><i class="is-site"></i>地形地点</span><strong id="v3WorldMapPosition">現在地</strong><div><button type="button" data-v3-world-advance="1">1か月進める</button><button type="button" data-v3-world-advance="12">12か月観測</button></div></footer>
+      <footer><span><i class="is-player"></i>現在地</span><span id="v3WorldMissionLegend" hidden><i class="is-mission"></i>軍務作戦地</span><span><i class="is-city"></i>都市・町・村</span><span><i class="is-road"></i>街道</span><span><i class="is-site"></i>地形地点</span><strong id="v3WorldMapPosition">現在地</strong><div><button type="button" data-v3-world-advance="1">1か月進める</button><button type="button" data-v3-world-advance="12">12か月観測</button></div></footer>
     </section>
 
     <div class="v3-toast" id="v3Toast" role="status" aria-live="polite"></div>

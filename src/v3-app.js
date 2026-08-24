@@ -30,6 +30,19 @@ import {
   withdrawV3CriminalOrganization,
 } from "./v3-criminal-organization-system.js";
 import {
+  advanceV3MilitaryArrival,
+  applyV3GroupBattleReturn,
+  clearV3GroupBattleBridge,
+  createV3GroupBattleHandoff,
+  deferV3GroupBattle,
+  getV3MilitaryView,
+  normalizeV3MilitaryState,
+  readV3GroupBattleBridge,
+  readyV3GroupBattleAtCurrentPosition,
+  startV3MilitaryMission,
+  writeV3GroupBattleBridge,
+} from "./v3-group-combat.js";
+import {
   advanceV3CompanyMonth,
   buyV3Commodity,
   contributeV3CompanyCapital,
@@ -102,6 +115,8 @@ const elements = {
   underworldButton: document.querySelector('[data-v3-action="underworld"]'),
   commerceButton: document.querySelector('[data-v3-action="commerce"]'),
   mapButton: document.querySelector('[data-v3-action="map"]'),
+  militaryButton: document.querySelector("#v3MilitaryButton"),
+  militaryLabel: document.querySelector("#v3MilitaryLabel"),
   inventoryButton: document.querySelector('[data-v3-action="menu"]'),
   encounterModal: document.querySelector("#v3EncounterModal"),
   encounterSymbol: document.querySelector("#v3EncounterSymbol"),
@@ -117,6 +132,7 @@ const elements = {
   commerceContent: document.querySelector("#v3CommerceContent"),
   worldMap: document.querySelector("#v3WorldMap"),
   worldCanvas: document.querySelector("#v3WorldCanvas"),
+  worldMissionLegend: document.querySelector("#v3WorldMissionLegend"),
   worldDate: document.querySelector("#v3WorldDate"),
   worldHistory: document.querySelector("#v3WorldHistory"),
   worldHistoryLabel: document.querySelector("#v3WorldHistoryLabel"),
@@ -187,7 +203,7 @@ function setGenerationProgress(progress, label) {
   if (label) elements.generationDetail.textContent = label;
 }
 
-async function prepareWorld(options, savedField = null, savedWorldSimulation = null) {
+async function prepareWorld(options, savedField = null, savedWorldSimulation = null, groupBattleReturn = null) {
   elements.launch.hidden = true;
   elements.game.hidden = true;
   elements.generation.hidden = false;
@@ -209,7 +225,12 @@ async function prepareWorld(options, savedField = null, savedWorldSimulation = n
   context = createV3WorldContext(runtime, options.seed);
   state = savedField ? normalizeV3FieldState(context, savedField) : createV3FieldState(context, { playerName: options.playerName });
   normalizeV3CriminalState(context, state);
+  state = normalizeV3MilitaryState(state);
   normalizeV3MerchantState(state);
+  if (groupBattleReturn) {
+    state = applyV3GroupBattleReturn(state, groupBattleReturn);
+    clearV3GroupBattleBridge(localStorage);
+  }
   worldOptions = { ...WORLD_CONFIG, ...options, playerName: state.player.name };
   mapHistoryIndex = null;
   selectedNationId = null;
@@ -219,6 +240,12 @@ async function prepareWorld(options, savedField = null, savedWorldSimulation = n
   elements.generation.hidden = true;
   elements.game.hidden = false;
   renderGame();
+  if (groupBattleReturn) {
+    showToast(groupBattleReturn.status === "completed" ? "集団戦の戦果をV3へ反映しました。" : "作戦地点へ戻りました。集団戦を再開できます。");
+    requestAnimationFrame(() => (state.pendingEncounter?.type === "group-battle"
+      ? elements.encounterActions.querySelector("button")
+      : elements.field.querySelector(".is-player"))?.focus());
+  }
   scheduleBackgroundGeneration();
   window.__v3Game = {
     get state() { return state; },
@@ -230,6 +257,8 @@ async function prepareWorld(options, savedField = null, savedWorldSimulation = n
     openWorldMap,
     openUnderworld,
     get criminalView() { return getV3CriminalView(context, state); },
+    military: handleMilitaryAction,
+    groupBattle: beginV3GroupBattle,
   };
 }
 
@@ -243,6 +272,7 @@ function showToast(message) {
 function renderField() {
   const view = getV3FieldView(context, state);
   const personalEnemy = state.pendingEncounter?.type === "enemy" ? state.pendingEncounter : null;
+  const militaryMission = state.military?.activeMission ?? null;
   elements.field.style.setProperty("--field-columns", view.columns);
   elements.field.setAttribute("aria-label", personalEnemy ? `${personalEnemy.name}との個人戦。探索中と同じ周辺フィールド` : "周辺フィールド");
   elements.field.innerHTML = view.tiles.map((tile) => {
@@ -250,23 +280,29 @@ function renderField() {
     const direction = tile.dx === 1 ? "east" : tile.dx === -1 ? "west" : tile.dy === 1 ? "south" : "north";
     const hidden = !tile.visible && !tile.player;
     const encounterTile = Boolean(personalEnemy && personalEnemy.worldX === tile.x && personalEnemy.worldY === tile.y);
-    const visibleEntity = encounterTile ? personalEnemy : tile.entity;
+    const militaryTarget = Boolean(militaryMission && militaryMission.target.x === tile.x && militaryMission.target.y === tile.y);
+    const visibleEntity = encounterTile
+      ? personalEnemy
+      : militaryTarget
+        ? { type: "group-battle", name: `${militaryMission.enemyNation.name}作戦地点`, symbol: "軍" }
+        : tile.entity;
     const sprites = [
       tile.player ? `<b class="v3-player-sprite" aria-label="${escapeHtml(state.player.name)}">旅</b>` : "",
-      !hidden && visibleEntity ? `<b class="v3-entity is-${escapeHtml(visibleEntity.type)}" aria-label="${escapeHtml(visibleEntity.name)}">${escapeHtml(visibleEntity.symbol)}</b>` : "",
+      (!hidden || militaryTarget) && visibleEntity ? `<b class="v3-entity is-${escapeHtml(visibleEntity.type)}" aria-label="${escapeHtml(visibleEntity.name)}">${escapeHtml(visibleEntity.symbol)}</b>` : "",
     ].filter(Boolean);
     const symbol = sprites.length > 1 ? `<span class="v3-combatants">${sprites.join("")}</span>`
       : sprites[0] ?? (hidden ? "" : `<span>${escapeHtml(tile.symbol)}</span>`);
     const labelParts = [hidden ? "未踏" : tile.name];
     if (tile.player) labelParts.push(`${state.player.name}の現在地`);
-    if (!hidden && visibleEntity) labelParts.push(visibleEntity.name);
-    return `<button type="button" role="gridcell" class="v3-tile is-${escapeHtml(hidden ? "fog" : tile.type)}${tile.player ? " is-player" : ""}${personalEnemy && tile.player ? " is-combat-player" : ""}${encounterTile ? " is-combat-enemy" : ""}${adjacent ? " is-adjacent" : ""}" data-x="${tile.x}" data-y="${tile.y}" ${adjacent && tile.passable && !state.pendingEncounter ? `data-v3-move="${direction}"` : ""} aria-label="${escapeHtml(labelParts.join("、"))}" tabindex="${tile.player ? "0" : "-1"}">${symbol}</button>`;
+    if ((!hidden || militaryTarget) && visibleEntity) labelParts.push(visibleEntity.name);
+    return `<button type="button" role="gridcell" class="v3-tile is-${escapeHtml(hidden && !militaryTarget ? "fog" : tile.type)}${tile.player ? " is-player" : ""}${personalEnemy && tile.player ? " is-combat-player" : ""}${encounterTile ? " is-combat-enemy" : ""}${militaryTarget ? " is-military-target" : ""}${adjacent ? " is-adjacent" : ""}" data-x="${tile.x}" data-y="${tile.y}" ${adjacent && tile.passable && !state.pendingEncounter ? `data-v3-move="${direction}"` : ""} aria-label="${escapeHtml(labelParts.join("、"))}" tabindex="${tile.player ? "0" : "-1"}">${symbol}</button>`;
   }).join("");
 }
 
 function renderEncounter() {
   const encounter = state.pendingEncounter;
   const personalEnemy = encounter?.type === "enemy" ? encounter : null;
+  const groupBattle = encounter?.type === "group-battle" ? encounter : null;
   elements.game.classList.toggle("is-personal-battle", Boolean(personalEnemy));
   elements.personalBattleStatus.hidden = !personalEnemy;
   elements.personalBattleCommands.hidden = !personalEnemy;
@@ -284,11 +320,32 @@ function renderEncounter() {
     elements.personalBattleHpLabel.textContent = `${personalEnemy.hp} / ${personalEnemy.maxHp}`;
     return;
   }
+  if (groupBattle) {
+    elements.encounterSymbol.textContent = groupBattle.symbol;
+    elements.encounterType.textContent = "GROUP BATTLE / 専用戦術画面";
+    elements.encounterTitle.textContent = groupBattle.name;
+    elements.encounterText.textContent = groupBattle.message;
+    elements.encounterActions.innerHTML = '<button class="is-primary" type="button" data-v3-group-battle="start">戦闘準備・兵站へ</button><button type="button" data-v3-group-battle="defer">いったん離れる</button>';
+    return;
+  }
   elements.encounterSymbol.textContent = encounter.symbol;
   elements.encounterType.textContent = encounter.role === "merchant" ? "TRAVELING MERCHANT" : "FIELD ENCOUNTER";
   elements.encounterTitle.textContent = encounter.name;
   elements.encounterText.textContent = encounter.message;
   elements.encounterActions.innerHTML = `${encounter.role === "merchant" ? `<button class="is-primary" type="button" data-v3-encounter="buy">薬草を買う · 銀貨${encounter.price ?? 5}</button>` : '<button class="is-primary" type="button" data-v3-encounter="talk">話す</button>'}<button type="button" data-v3-encounter="leave">別れる</button>`;
+}
+
+function renderMilitary() {
+  const military = getV3MilitaryView(context, state);
+  const personalBattle = state.pendingEncounter?.type === "enemy";
+  const blockingEncounter = Boolean(state.pendingEncounter && state.pendingEncounter.type !== "group-battle");
+  elements.militaryButton.disabled = personalBattle || blockingEncounter;
+  elements.militaryButton.textContent = military.active && military.atTarget ? "集団戦" : military.active ? "作戦" : "軍務";
+  elements.militaryButton.title = military.detail;
+  elements.militaryLabel.textContent = military.active
+    ? `${military.label}｜${military.detail}`
+    : military.canAccept ? `${military.nearbySettlement.name}で軍務を受けられる` : military.label;
+  elements.militaryLabel.classList.toggle("is-active", military.active);
 }
 
 function renderInventory() {
@@ -438,6 +495,7 @@ function renderGame() {
   elements.messages.innerHTML = state.messageLog.map((message, index) => `<p${index === 0 ? ' class="is-latest"' : ""}>${escapeHtml(message)}</p>`).join("");
   renderField();
   renderEncounter();
+  renderMilitary();
   renderInventory();
   if (!elements.underworldModal.hidden) renderUnderworld();
   if (!elements.commerceModal.hidden) renderCommerce();
@@ -445,13 +503,16 @@ function renderGame() {
 
 function movePlayer(direction) {
   const encounterBeforeMove = state.pendingEncounter;
-  const next = moveV3Player(context, state, direction);
+  const moved = moveV3Player(context, state, direction);
+  const next = advanceV3MilitaryArrival(context, state, moved);
   if (next === state) return;
   state = next;
   saveGame();
   renderGame();
   if (!encounterBeforeMove && state.pendingEncounter?.type === "enemy") {
     requestAnimationFrame(() => elements.personalBattleCommands.querySelector("button")?.focus());
+  } else if (!encounterBeforeMove && state.pendingEncounter?.type === "group-battle") {
+    requestAnimationFrame(() => elements.encounterActions.querySelector("button")?.focus());
   }
 }
 
@@ -461,6 +522,50 @@ function applyEncounterAction(action) {
   renderGame();
   if (state.pendingEncounter?.type === "enemy") elements.personalBattleCommands.querySelector("button")?.focus();
   else elements.field.querySelector(".is-player")?.focus();
+}
+
+function beginV3GroupBattle() {
+  try {
+    if (state.pendingEncounter?.type !== "group-battle") state = readyV3GroupBattleAtCurrentPosition(context, state);
+    const handoff = createV3GroupBattleHandoff(context, state);
+    const returnUrl = new URL("./index.html", window.location.href).href;
+    handoff.request.origin.returnUrl = returnUrl;
+    writeV3GroupBattleBridge(localStorage, handoff.request);
+    state = handoff.state;
+    saveGame();
+    const battleUrl = new URL("./legacy-v2.html", window.location.href);
+    battleUrl.searchParams.set("v3-group-battle", handoff.request.requestId);
+    window.location.assign(battleUrl.href);
+  } catch (error) {
+    showToast(error.message);
+  }
+}
+
+function handleMilitaryAction() {
+  try {
+    let military = getV3MilitaryView(context, state);
+    if (!military.active) {
+      state = startV3MilitaryMission(context, state, worldSimulation);
+      saveGame();
+      renderGame();
+      military = getV3MilitaryView(context, state);
+      showToast(`${military.mission.target.regionName}の作戦地点を地図に記しました。`);
+      return;
+    }
+    if (military.atTarget) {
+      if (state.pendingEncounter?.type !== "group-battle") {
+        state = readyV3GroupBattleAtCurrentPosition(context, state);
+        saveGame();
+        renderGame();
+      }
+      beginV3GroupBattle();
+      return;
+    }
+    openWorldMap();
+    showToast(`作戦地点まで${military.distance}歩・${military.direction}です。`);
+  } catch (error) {
+    showToast(error.message);
+  }
 }
 
 function scheduleBackgroundGeneration() {
@@ -651,6 +756,8 @@ function drawWorldMap() {
     drawing.fillStyle = tile.terrainSite.category === "fantasy" ? "#d9c0ec" : tile.terrainSite.category === "astronomy" ? "#b6dbe7" : "#dc875c";
     drawing.fillRect(tile.x * scale + 1, tile.y * scale + 1, 2, 2);
   }
+  const militaryMission = state.military?.activeMission ?? null;
+  elements.worldMissionLegend.hidden = !map.isCurrent || !militaryMission;
   if (map.isCurrent) {
     const playerX = state.player.x / V3_DETAIL_SCALE * scale;
     const playerY = state.player.y / V3_DETAIL_SCALE * scale;
@@ -659,10 +766,28 @@ function drawWorldMap() {
     drawing.strokeStyle = "#ffffff";
     drawing.lineWidth = 2;
     drawing.stroke();
+    if (militaryMission) {
+      const targetX = militaryMission.target.x / V3_DETAIL_SCALE * scale;
+      const targetY = militaryMission.target.y / V3_DETAIL_SCALE * scale;
+      drawing.beginPath();
+      drawing.arc(targetX, targetY, 7, 0, Math.PI * 2);
+      drawing.fillStyle = "rgba(116, 31, 27, .72)";
+      drawing.fill();
+      drawing.strokeStyle = "#ffd878";
+      drawing.lineWidth = 2;
+      drawing.stroke();
+      drawing.fillStyle = "#fff3bd";
+      drawing.font = "bold 7px sans-serif";
+      drawing.textAlign = "center";
+      drawing.textBaseline = "middle";
+      drawing.fillText("軍", targetX, targetY + .5);
+    }
   }
   const location = getV3LocationSummary(context, state);
   elements.worldMapPosition.textContent = map.isCurrent
-    ? `${location.regionName} · ${location.tile.name} · 詳細座標 ${state.player.x}, ${state.player.y}`
+    ? militaryMission
+      ? `${location.regionName} · 現在 ${state.player.x},${state.player.y} ／ 作戦 ${militaryMission.target.x},${militaryMission.target.y}`
+      : `${location.regionName} · ${location.tile.name} · 詳細座標 ${state.player.x}, ${state.player.y}`
     : `${map.headline ?? map.reason} · ${formatWorldPeriod(map)}`;
 }
 
@@ -700,6 +825,7 @@ function handleAction(action) {
   if (state.pendingEncounter?.type === "enemy") return showToast("個人戦を決着させてください。");
   if (action === "map") return openWorldMap();
   if (action === "underworld") return openUnderworld();
+  if (action === "military") return handleMilitaryAction();
   if (action === "commerce") {
     elements.commerceModal.hidden = false;
     renderCommerce();
@@ -779,6 +905,15 @@ document.addEventListener("click", (event) => {
   }
   const move = event.target.closest("[data-v3-move]")?.dataset.v3Move;
   if (move) return movePlayer(move);
+  const groupBattleAction = event.target.closest("[data-v3-group-battle]")?.dataset.v3GroupBattle;
+  if (groupBattleAction === "start") return beginV3GroupBattle();
+  if (groupBattleAction === "defer") {
+    state = deferV3GroupBattle(state);
+    saveGame();
+    renderGame();
+    elements.field.querySelector(".is-player")?.focus();
+    return;
+  }
   const encounterAction = event.target.closest("[data-v3-encounter]")?.dataset.v3Encounter;
   if (encounterAction) return applyEncounterAction(encounterAction);
   const tradeAction = event.target.closest("[data-v3-trade-action]");
@@ -945,4 +1080,15 @@ document.addEventListener("keydown", (event) => {
   movePlayer(direction);
 });
 
-updateContinueButton();
+const returnedGroupBattle = readV3GroupBattleBridge(localStorage);
+const returnedSave = readSave();
+if (returnedGroupBattle && returnedSave?.field?.military?.activeMission?.id === returnedGroupBattle.missionId) {
+  void prepareWorld(returnedSave.world, returnedSave.field, returnedSave.worldSimulation, returnedGroupBattle).catch((error) => {
+    clearV3GroupBattleBridge(localStorage);
+    updateContinueButton();
+    showToast(error.message);
+  });
+} else {
+  if (returnedGroupBattle) clearV3GroupBattleBridge(localStorage);
+  updateContinueButton();
+}
