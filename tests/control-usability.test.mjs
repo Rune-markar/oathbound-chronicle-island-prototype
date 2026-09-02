@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const app = await readFile(new URL("../src/app.js", import.meta.url), "utf8");
+const app = (await readFile(new URL("../src/app.js", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
 const styles = await readFile(new URL("../styles.css", import.meta.url), "utf8");
 
 test("集落施設は実行可能な行動を先に出し、条件未達を折りたたむ", () => {
