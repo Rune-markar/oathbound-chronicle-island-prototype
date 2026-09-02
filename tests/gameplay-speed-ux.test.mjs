@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const index = await readFile(new URL("../legacy-v2.html", import.meta.url), "utf8");
-const app = await readFile(new URL("../src/app.js", import.meta.url), "utf8");
+const app = (await readFile(new URL("../src/app.js", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
 const styles = await readFile(new URL("../styles.css", import.meta.url), "utf8");
 
 test("現在目標は説明だけでなく次の実行地点への直行操作になる", () => {

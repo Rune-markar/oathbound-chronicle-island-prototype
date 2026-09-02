@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const app = await readFile(new URL("../src/app.js", import.meta.url), "utf8");
+const app = (await readFile(new URL("../src/app.js", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
 const styles = await readFile(new URL("../styles.css", import.meta.url), "utf8");
 
 test("village actions expose blocked reasons without crowding out executable choices", () => {
