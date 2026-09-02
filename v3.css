@@ -66,8 +66,8 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .v3-play-layout { position: relative; display: grid; place-items: center; min-height: calc(100dvh - 216px); padding: 18px 16px; overflow: hidden; background: linear-gradient(rgba(14,38,37,.88), rgba(8,25,26,.94)), url("./assets/generated/terrain-natural-texture.png") center / 720px 720px; background-blend-mode: normal, soft-light; }
 .v3-field-shell { position: relative; width: min(900px, calc(100vw - 32px), calc((100dvh - 252px) * 1.18)); aspect-ratio: 13 / 11; border: 4px solid #e9e7d8; border-radius: 6px; background: #071214; box-shadow: 0 0 0 3px #273c38, 0 18px 50px #020708; overflow: hidden; }
 .v3-game.is-personal-battle .v3-field-shell { border-color: #f0d47e; box-shadow: 0 0 0 3px #6a4937, 0 18px 50px #020708; }
-.v3-field { display: grid; grid-template-columns: repeat(var(--field-columns), 1fr); width: 100%; height: 100%; }
-.v3-tile { position: relative; display: grid; place-items: center; min-width: 0; padding: 0; border: 0; outline: 1px solid rgba(0,0,0,.045); background: #72985d; color: rgba(22,52,34,.55); overflow: hidden; font: 900 clamp(8px, 1.6vw, 18px)/1 system-ui, sans-serif; }
+.v3-field { display: grid; grid-template-columns: repeat(var(--field-columns), minmax(0, 1fr)); grid-template-rows: repeat(var(--field-rows), minmax(0, 1fr)); width: 100%; height: 100%; }
+.v3-tile { position: relative; display: grid; place-items: center; min-width: 0; min-height: 0; padding: 0; border: 0; outline: 1px solid rgba(0,0,0,.045); background: #72985d; color: rgba(22,52,34,.55); overflow: hidden; font: 900 clamp(8px, 1.6vw, 18px)/1 system-ui, sans-serif; }
 .v3-tile::after { content: ""; position: absolute; inset: 0; background: radial-gradient(circle at 30% 22%, rgba(255,255,255,.08), transparent 30%), linear-gradient(140deg, transparent 60%, rgba(0,0,0,.08)); pointer-events: none; }
 .v3-tile.is-grass:nth-child(3n) { background: #789e61; }
 .v3-tile.is-sand { background: #c2a766; color: #6d5a27; }
@@ -98,7 +98,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .v3-tile.is-sky-peak { background: linear-gradient(135deg, #d4e0dc 0 24%, #65736d 26% 67%, #384640 69%); color: #fff4cf; }
 .v3-tile.is-settlement-ground { background: #ae9669; }
 .v3-tile[class*="is-settlement-"]:not(.is-settlement-ground) { background: #9b825c; color: #fff1bd; text-shadow: 1px 2px #2b2117; }
-.v3-tile[style*="--v3-terrain-position"] { background-image: linear-gradient(145deg, rgba(255,255,255,.08), rgba(0,0,0,.14)), url("./assets/generated/v3/field-terrain-atlas.webp"); background-position: center, var(--v3-terrain-position); background-size: 100% 100%, 400% 400%; background-repeat: no-repeat; background-blend-mode: soft-light, normal; }
+.v3-tile[style*="--v3-terrain-position"] { background-image: url("./assets/generated/v3/field-terrain-atlas-v2.webp"); background-position: var(--v3-terrain-position); background-size: 400% 400%; background-repeat: no-repeat; image-rendering: auto; }
 .v3-tile.is-fog, .v3-tile.is-ungenerated, .v3-tile.is-void { background: #101f20; color: transparent; }
 .v3-tile.is-adjacent[data-v3-move] { cursor: pointer; }
 .v3-tile.is-adjacent[data-v3-move]:hover, .v3-tile.is-adjacent[data-v3-move]:focus-visible { z-index: 2; outline: 3px solid #fff1a5; outline-offset: -3px; filter: brightness(1.15); }

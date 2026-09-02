@@ -295,7 +295,11 @@ function commitStateAction(action, options = {}) {
   const committed = commitV3Action(runtime, context, state, worldSimulation, result, { source: options.source });
   state = committed.state;
   worldSimulation = committed.worldSimulation;
-  if (context) context.raceDynamics = worldSimulation?.generatedWorld?.raceDynamics ?? null;
+  if (context) {
+    context.worldSimulation = worldSimulation;
+    context.raceDynamics = worldSimulation?.generatedWorld?.raceDynamics ?? null;
+    context.actorPlanCache = null;
+  }
   return committed;
 }
 
@@ -339,6 +343,7 @@ async function prepareWorld(options, savedField = null, savedWorldSimulation = n
   }
   setGenerationProgress(98, "現在地の周囲を1マス単位へ展開しています。");
   context = createV3WorldContext(runtime, options.seed);
+  context.worldSimulation = worldSimulation;
   context.raceDynamics = worldSimulation.generatedWorld.raceDynamics;
   state = savedField ? normalizeV3FieldState(context, savedField) : createV3FieldState(context, { playerName: options.playerName, playerRaceId: options.playerRaceId });
   state = normalizeV3IntegratedState(context, state);
@@ -377,7 +382,9 @@ async function prepareWorld(options, savedField = null, savedWorldSimulation = n
     }
     clearV3GroupBattleBridge(localStorage);
   }
+  context.worldSimulation = worldSimulation;
   context.raceDynamics = worldSimulation.generatedWorld.raceDynamics;
+  context.actorPlanCache = null;
   worldOptions = { ...WORLD_CONFIG, ...options, playerName: state.player.name, playerRaceId: state.player.raceId };
   mapHistoryIndex = null;
   selectedNationId = null;
@@ -443,6 +450,7 @@ function renderField() {
   const personalEnemy = state.pendingEncounter?.type === "enemy" ? state.pendingEncounter : null;
   const militaryMission = state.military?.activeMission ?? null;
   elements.field.style.setProperty("--field-columns", view.columns);
+  elements.field.style.setProperty("--field-rows", view.rows);
   elements.field.setAttribute("aria-label", personalEnemy ? `${personalEnemy.name}との個人戦。探索中と同じ周辺フィールド` : "周辺フィールド");
   elements.field.innerHTML = view.tiles.map((tile) => {
     const adjacent = Math.abs(tile.dx) + Math.abs(tile.dy) === 1;
@@ -468,6 +476,7 @@ function renderField() {
     const labelParts = [hidden ? "未踏" : tile.name];
     if (tile.player) labelParts.push(`${state.player.name}の現在地`);
     if ((!hidden || militaryTarget) && visibleEntity) labelParts.push(visibleEntity.name);
+    if ((!hidden || militaryTarget) && visibleEntity?.purpose?.label) labelParts.push(visibleEntity.purpose.label);
     if (!hidden && tile.worldEffect) labelParts.push(`${tile.worldEffect.name}の影響下`);
     const effectClass = !hidden && tile.worldEffect ? ` has-world-effect is-effect-${escapeHtml(tile.worldEffect.motion)}` : "";
     const terrainStyle = terrainArt ? ` style="--v3-terrain-position:${terrainArt.position}"` : "";
@@ -491,7 +500,12 @@ function renderEncounter() {
   if (!encounter) return;
   if (personalEnemy) {
     setAtlasArt(elements.personalBattleArt, getV3EntityArt(personalEnemy), "v3-personal-battle-art", personalEnemy.name);
-    elements.personalBattleEnemy.textContent = personalEnemy.name;
+    elements.personalBattleEnemy.textContent = personalEnemy.purpose?.label
+      ? `${personalEnemy.name} · ${personalEnemy.purpose.label}`
+      : personalEnemy.name;
+    elements.personalBattleStatus.setAttribute("aria-label", personalEnemy.purpose?.reason
+      ? `${personalEnemy.name}。${personalEnemy.purpose.reason}`
+      : personalEnemy.name);
     elements.personalBattleLevel.textContent = `LV ${personalEnemy.level}`;
     elements.personalBattleHpBar.style.width = `${Math.max(0, personalEnemy.hp / personalEnemy.maxHp * 100)}%`;
     elements.personalBattleHpLabel.textContent = `${personalEnemy.hp} / ${personalEnemy.maxHp}`;

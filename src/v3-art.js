@@ -1,11 +1,19 @@
 export const V3_ART_ASSETS = Object.freeze({
-  terrainAtlas: "./assets/generated/v3/field-terrain-atlas.webp",
+  terrainAtlas: "./assets/generated/v3/field-terrain-atlas-v2.webp",
   objectAtlas: "./assets/generated/v3/field-object-atlas.webp",
   entityAtlas: "./assets/generated/v3/field-entity-atlas.webp",
   launchHero: "./assets/generated/v3/launch-hero.webp",
 });
 
-const ATLAS_MAX_INDEX = 3;
+export const V3_TERRAIN_ATLAS_SPEC = Object.freeze({
+  columns: 4,
+  rows: 4,
+  tilePixels: 384,
+  width: 1536,
+  height: 1536,
+});
+
+const ATLAS_MAX_INDEX = V3_TERRAIN_ATLAS_SPEC.columns - 1;
 
 function atlasEntry(atlas, column, row) {
   const percent = (value) => `${Number((value / ATLAS_MAX_INDEX * 100).toFixed(4))}%`;

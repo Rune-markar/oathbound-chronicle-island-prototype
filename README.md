@@ -5,7 +5,7 @@ V3は、生成済みの国家・地方・街道・集落を1マス単位の詳�
 ## V3の現在のゲームループ
 
 - 先に192×120区画の概算世界を生成し、地形・水系・複合地理・探索地点・国家・地方・街道・集落を正本にする
-- V3の地形、集落、探索地点、主人公、NPC、敵、採取物・商品を高解像度WebPアトラスから描画し、操作・天候・戦闘記号は拡大しても崩れないSVGで表示する
+- V3の地形は1チップ384pxの手描きWebPアトラス、集落、探索地点、主人公、NPC、敵、採取物・商品は用途別WebPアトラスから描画し、操作・天候・戦闘記号は拡大しても崩れないSVGで表示する
 - 概算世界1区画を8×8の詳細マスへ投影し、開始地点の周囲3×3チャンクだけを先に生成する
 - 矢印キー、WASD、画面方向キー、隣接マスのクリックで、通行可能な隣の1マスへ進む
 - 野外で敵を発見すると手前で停止し、探索中の詳細フィールドをそのまま使う個人戦へ入る。勝敗後は専用リザルトを挟まず同じ場所へ戻る
@@ -25,7 +25,7 @@ V3は、生成済みの国家・地方・街道・集落を1マス単位の詳�
 - 歩行、世界地図、商会、裏社会は同じゲーム時計と月境界を使う。時間を進めた領域は`ActionResult`自身が宣言するため、どの画面から月を進めても各システムを一度だけ進行し、12か月観測の出来事も実際の発生月を保ってV6セーブへ保存する
 - 移動先周辺を優先しながら、待機中に離れたチャンクも1区画ずつ生成して端末内へ保存する
 
-詳細な生成・保存境界は [V3設計](./V3_DESIGN.md)、V2世界構築の共有境界と実画面検証は [V2世界構築・V3統合レビュー](./docs/gameplay-reviews/2026-08-24-v2-world-generation-v3-integration.md)、高解像度画像の対応範囲と生成条件は [V3高解像度グラフィック実装レビュー](./docs/gameplay-reviews/2026-08-24-v3-high-resolution-graphics.md)、種族変容と確率判断は [実装仕様](./docs/superpowers/specs/2026-08-24-race-transformative-probabilistic-decision-system.md)、システム間の規格化と検証は [ゲームシステム規格化・統合レビュー](./docs/gameplay-reviews/2026-08-24-system-integration-rationalization.md)、複合地理の生成条件と実画面検証は [天地創造・複合地理レビュー](./docs/gameplay-reviews/2026-08-24-terrain-world-creation.md)、気象・天体・戦争を種族、戦闘、出現、市場へ接続した結果は [種族作用型ワールドエフェクトレビュー](./docs/gameplay-reviews/2026-08-24-race-reactive-world-effects.md) を参照してください。
+詳細な生成・保存境界は [V3設計](./V3_DESIGN.md)、V2世界構築の共有境界と実画面検証は [V2世界構築・V3統合レビュー](./docs/gameplay-reviews/2026-08-24-v2-world-generation-v3-integration.md)、画像全体の対応範囲は [V3高解像度グラフィック実装レビュー](./docs/gameplay-reviews/2026-08-24-v3-high-resolution-graphics.md)、1マス地形の再生成条件と比較は [V3マップチップ画質改善レビュー](./docs/gameplay-reviews/2026-09-02-v3-map-chip-quality.md)、行商・集落人物・敵の目的駆動生成は [実装仕様](./docs/superpowers/specs/2026-09-02-v3-purposeful-field-actors.md) と [実装・実画面レビュー](./docs/gameplay-reviews/2026-09-02-v3-purposeful-field-actors.md)、種族変容と確率判断は [実装仕様](./docs/superpowers/specs/2026-08-24-race-transformative-probabilistic-decision-system.md)、システム間の規格化と検証は [ゲームシステム規格化・統合レビュー](./docs/gameplay-reviews/2026-08-24-system-integration-rationalization.md)、複合地理の生成条件と実画面検証は [天地創造・複合地理レビュー](./docs/gameplay-reviews/2026-08-24-terrain-world-creation.md)、気象・天体・戦争を種族、戦闘、出現、市場へ接続した結果は [種族作用型ワールドエフェクトレビュー](./docs/gameplay-reviews/2026-08-24-race-reactive-world-effects.md) を参照してください。
 
 ## 画面方針
 

@@ -12,6 +12,7 @@ import {
   V3_LANDMARK_ART_BY_TYPE,
   V3_NON_ART_TERRAIN_TYPES,
   V3_PLAYER_ART_BY_RACE,
+  V3_TERRAIN_ATLAS_SPEC,
   V3_TERRAIN_ART_BY_TYPE,
 } from "../src/v3-art.js";
 
@@ -23,6 +24,15 @@ test("V3の高精細アトラスは実ファイルとして同梱される", () 
     assert.ok(existsSync(file), `${name} is missing: ${relativePath}`);
     assert.ok(statSync(file).size > 200_000, `${name} must contain production artwork`);
   }
+  assert.deepEqual(V3_TERRAIN_ATLAS_SPEC, {
+    columns: 4,
+    rows: 4,
+    tilePixels: 384,
+    width: 1536,
+    height: 1536,
+  });
+  assert.equal(V3_TERRAIN_ATLAS_SPEC.width % V3_TERRAIN_ATLAS_SPEC.columns, 0);
+  assert.equal(V3_TERRAIN_ATLAS_SPEC.height % V3_TERRAIN_ATLAS_SPEC.rows, 0);
 });
 
 test("V3の全地形表示はアトラス面または意図した未踏表示へ割り当てる", () => {
@@ -68,6 +78,7 @@ test("V3通常画面は文字駒を描かず、地図を端末解像度で描画
   assert.match(index, /id="v3PersonalBattleArt"/);
   assert.doesNotMatch(index, /data-v3-move="north"[^>]*>▲</);
   assert.match(app, /getV3TerrainArt\(tile\.type\)/);
+  assert.match(app, /--field-rows", view\.rows/);
   assert.match(app, /getV3EntityArt\(visibleEntity\)/);
   assert.doesNotMatch(app, /tile\.symbol\}\<\/span>/);
   assert.doesNotMatch(app, /visibleEntity\.symbol\}\<\/b>/);
@@ -77,7 +88,9 @@ test("V3通常画面は文字駒を描かず、地図を端末解像度で描画
   assert.match(groupCombat, /assets\/generated\/officer-edras\.webp/);
   assert.match(app, /window\.devicePixelRatio/);
   assert.match(app, /drawing\.setTransform\(pixelRatio/);
-  assert.match(styles, /field-terrain-atlas\.webp/);
+  assert.match(styles, /field-terrain-atlas-v2\.webp/);
+  assert.doesNotMatch(styles, /field-terrain-atlas\.webp/);
+  assert.match(styles, /grid-template-rows: repeat\(var\(--field-rows\), minmax\(0, 1fr\)\)/);
   assert.match(styles, /field-object-atlas\.webp/);
   assert.match(styles, /field-entity-atlas\.webp/);
   assert.match(styles, /launch-hero\.webp/);
