@@ -157,7 +157,9 @@ test("V3通常地図に政治・地形・地方・戦争レイヤー、年代再
   assert.match(app, /getV3NationDossier/);
   assert.match(app, /renderCurrentPolity/);
   assert.match(app, /renderDecisionProfile/);
-  assert.match(app, /直近判断の確率分布/);
+  assert.match(app, /直近判断の候補比較/);
+  assert.match(app, /初期国家課題/);
+  assert.match(app, /現在の最弱環/);
   assert.match(app, /POPULATION PROJECTIONS/);
   assert.match(app, /長期均衡/);
   assert.match(styles, /\.v3-world-map-workspace/);
