@@ -106,11 +106,13 @@ test("shop sale removes the item selected by the player", () => {
   assert.equal(sold.player.villageLife.inventory.find((item) => item.id === "healing-herb").quantity, beforeHerbs);
 });
 
-test("villages sell primary goods and route requests through taverns while towns add smithies and guilds", () => {
+test("villages and towns use taverns for requests while only cities replace taverns with guilds", () => {
   const village = { id: "oak-village", name: "樫村", settlementLevel: "village" };
   const town = { id: "river-town", name: "河岸町", settlementLevel: "town" };
+  const city = { id: "royal-city", name: "王都", settlementLevel: "city" };
   const villageFacilities = getSettlementFacilities(village);
   const townFacilities = getSettlementFacilities(town);
+  const cityFacilities = getSettlementFacilities(city);
 
   assert.equal(villageFacilities.some((entry) => entry.id === "smithy"), false);
   assert.equal(villageFacilities.some((entry) => entry.id === "guild"), false);
@@ -118,7 +120,10 @@ test("villages sell primary goods and route requests through taverns while towns
   assert.equal(villageFacilities.find((entry) => entry.id === "tavern").actions.some((entry) => entry.id === "buy_healing_potion"), false);
   assert.deepEqual(villageFacilities.find((entry) => entry.id === "shop").actions.map((entry) => entry.id), ["buy_food", "buy_materials", "sell_item"]);
   assert.ok(townFacilities.some((entry) => entry.id === "smithy"));
-  assert.ok(townFacilities.some((entry) => entry.id === "guild"));
+  assert.equal(townFacilities.some((entry) => entry.id === "guild"), false);
+  assert.ok(townFacilities.find((entry) => entry.id === "tavern").actions.some((entry) => entry.id === "accept_request"));
+  assert.ok(cityFacilities.some((entry) => entry.id === "guild"));
+  assert.equal(cityFacilities.some((entry) => entry.id === "tavern"), false);
 
   const state = createCareerInitialState();
   assert.equal(getVillageActionAvailability(state, "buy_weapon", village).allowed, false);
@@ -252,7 +257,7 @@ test("the tavern uses a dedicated transparent human hostess portrait instead of 
 
   assert.match(tavernCast, /name: "酒場女将"/);
   assert.match(tavernCast, /role: "酒場"/);
-  assert.match(tavernCast, /tavern-hostess\.png/);
+  assert.match(tavernCast, /tavern-hostess-v2\.png/);
   assert.match(tavernCast, /transparent: true/);
   assert.doesNotMatch(tavernCast, /officer-dario\.webp/);
   assert.match(app, /counterpart\.transparent \? "has-transparent-art"/);
@@ -301,20 +306,21 @@ test("the village opens large vertical facilities and their actions in a second 
   assert.match(css, /\.conversation-message p\s*\{[^}]*font:\s*600 17px/s);
 });
 
-test("the tavern is entered before its interaction choices are shown", () => {
+test("the tavern and city guild are entered before their interaction choices are shown", () => {
   const app = readFileSync(new URL("../src/app.js", import.meta.url), "utf8");
   const css = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
   const villageWorkspace = app.match(/function renderVillageWorkspace\(\)[\s\S]*?function renderCareerPanel/)?.[0] ?? "";
   const facilityHandler = app.match(/const villageFacility = event\.target\.closest[\s\S]*?if \(event\.target\.closest\("\[data-close-village-actions\]"\)\)/)?.[0] ?? "";
 
-  assert.match(villageWorkspace, /const tavernInterior = view\.villageFacilityOpen && selected\.id === "tavern"/);
-  assert.match(villageWorkspace, /const villageInteriorArt = tavernInterior \? villageFacilityArt\(selected\.id\) : VILLAGE_MAIN_ART/);
-  assert.match(villageWorkspace, /data-village-location="\$\{tavernInterior \? "tavern" : "village-square"\}"/);
-  assert.match(villageWorkspace, /\$\{tavernInterior \? "" : `<section class="village-choice-overlay village-facility-window/);
-  assert.match(villageWorkspace, /is-facility-interior-window is-tavern-window/);
-  assert.match(villageWorkspace, /TAVERN \/ ARRIVED/);
+  assert.match(villageWorkspace, /const facilityInterior = view\.villageFacilityOpen && \["tavern", "guild"\]\.includes\(selected\.id\)/);
+  assert.match(villageWorkspace, /const villageInteriorArt = facilityInterior \? villageFacilityArt\(selected\.id\) : VILLAGE_MAIN_ART/);
+  assert.match(villageWorkspace, /data-village-location="\$\{facilityInterior \? selected\.id : "village-square"\}"/);
+  assert.match(villageWorkspace, /\$\{facilityInterior \? "" : `<section class="village-choice-overlay village-facility-window/);
+  assert.match(villageWorkspace, /is-facility-interior-window is-\$\{selected\.id\}-window/);
+  assert.match(villageWorkspace, /\$\{selected\.id\.toUpperCase\(\)\} \/ ARRIVED/);
   assert.match(villageWorkspace, /AFTER ARRIVAL \/ AVAILABLE CHOICES/);
   assert.ok(facilityHandler.indexOf("selectedVillageFacilityId") < facilityHandler.indexOf("villageFacilityOpen = true"), "移動先を確定してから施設内の選択肢を開く");
-  assert.match(css, /\.village-central-visual\.is-tavern-interior\s*\{[^}]*var\(--village-interior-art\) center \/ cover no-repeat,/s);
+  assert.match(css, /\.village-central-visual\.is-facility-interior\s*\{[^}]*var\(--village-interior-art\) center \/ cover no-repeat,/s);
+  assert.match(css, /\.village-action-window\.is-guild-window/);
   assert.match(css, /\.village-action-window\.is-facility-interior-window\s*\{[^}]*left:\s*clamp\(18px, 2\.2vw, 34px\);/s);
 });

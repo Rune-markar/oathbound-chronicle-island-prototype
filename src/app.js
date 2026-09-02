@@ -564,6 +564,7 @@ const elements = {
   warMapSwitch: document.querySelector("#warMapSwitch"),
   strategyMap: document.querySelector("#strategyMap"),
   generatedWorldMap: document.querySelector("#generatedWorldMap"),
+  generatedWorldCelestial: document.querySelector("#generatedWorldCelestial"),
   generatedWorldScroll: document.querySelector("#generatedWorldScroll"),
   generatedWorldStrip: document.querySelector("#generatedWorldStrip"),
   generatedWorldTime: document.querySelector("#generatedWorldTime"),
@@ -2526,6 +2527,30 @@ function paintGeneratedWorldTime(timeView) {
   elements.generatedWorldMap.dataset.worldPhase = timeView.phase;
   elements.generatedWorldTimeLabel.textContent = `第${timeView.day}日 ${timeView.timeLabel}`;
   elements.generatedWorldPhaseLabel.textContent = `${timeView.phaseLabel} · ${formatDate(state)}`;
+  if (!elements.generatedWorldCelestial) return;
+  const minuteOfDay = timeView.hour * 60 + timeView.minute;
+  const sunProgress = Math.max(0, Math.min(1, (minuteOfDay - 5 * 60) / (15 * 60)));
+  const sunArc = Math.sin(Math.PI * sunProgress);
+  const sunVisibility = Math.max(0, Math.min(1, Math.min(
+    (minuteOfDay - 4.5 * 60) / 75,
+    (20.5 * 60 - minuteOfDay) / 75,
+  )));
+  const nightMinutes = (minuteOfDay - 20 * 60 + 24 * 60) % (24 * 60);
+  const moonProgress = Math.max(0, Math.min(1, nightMinutes / (9 * 60)));
+  const moonArc = Math.sin(Math.PI * moonProgress);
+  const moonVisibility = timeView.phase === "night"
+    ? 1
+    : timeView.phase === "dawn" ? Math.max(0, (7 * 60 - minuteOfDay) / 120) : 0;
+  const sunX = `${8 + sunProgress * 84}%`;
+  const sunY = `${76 - sunArc * 63}%`;
+  elements.generatedWorldMap.style.setProperty("--sun-x", sunX);
+  elements.generatedWorldMap.style.setProperty("--sun-y", sunY);
+  elements.generatedWorldCelestial.style.setProperty("--sun-x", sunX);
+  elements.generatedWorldCelestial.style.setProperty("--sun-y", sunY);
+  elements.generatedWorldCelestial.style.setProperty("--sun-opacity", sunVisibility.toFixed(3));
+  elements.generatedWorldCelestial.style.setProperty("--moon-x", `${8 + moonProgress * 84}%`);
+  elements.generatedWorldCelestial.style.setProperty("--moon-y", `${76 - moonArc * 52}%`);
+  elements.generatedWorldCelestial.style.setProperty("--moon-opacity", moonVisibility.toFixed(3));
 }
 
 function renderGeneratedWorldPanel() {
@@ -3522,7 +3547,7 @@ const VILLAGE_DIALOGUE_CAST = Object.freeze({
   inn: Object.freeze({ name: "宿の女将", role: "宿屋", image: "./assets/generated/race-basics/race-human-female.webp", prompt: "旅の埃を落としていきな。必要な支度は整えておくよ。", reply: "助かる。次の旅に響かないよう、きちんと整えたい。" }),
   shop: Object.freeze({ name: "旅商人ミレル", role: "商店", image: "./assets/generated/officer-mirel.webp", prompt: "品は街道向けに選んである。必要なものを言ってくれ。", reply: "手持ちと旅程を見て決めよう。これを頼む。" }),
   smithy: Object.freeze({ name: "村鍛冶グラム", role: "鍛冶屋", image: "./assets/generated/race-basics/race-dwarf-male.webp", prompt: "刃も鎧も、壊れる前なら手を入れられる。見せてみな。", reply: "頼む。道中で命を預ける装備だ。" }),
-  tavern: Object.freeze({ name: "酒場女将", role: "酒場", image: "./assets/generated/tavern-hostess.png", transparent: true, prompt: "人も噂も今夜は集まっている。どの縁を探す？", reply: "まずは話を聞こう。旅を共にできる相手を見極めたい。" }),
+  tavern: Object.freeze({ name: "酒場女将", role: "酒場", image: "./assets/generated/tavern-hostess-v2.png", transparent: true, prompt: "人も噂も今夜は集まっている。どの縁を探す？", reply: "まずは話を聞こう。旅を共にできる相手を見極めたい。" }),
   guild: Object.freeze({ name: UNIQUE_CHARACTERS[MARIELLE_CROIX_ID].name, role: "冒険者ギルド主任受付官", image: `./${UNIQUE_CHARACTERS[MARIELLE_CROIX_ID].portraitImage}`, transparent: true, prompt: "赤札は危険、青札は期限、金札は達成証拠です。三枚とも確認しますか？", reply: "確認する。仲間の役割も整え、最後まで報告を返そう。" }),
   guild_shop: Object.freeze({ name: UNIQUE_CHARACTERS[COLETTE_LINDE_ID].name, role: "冒険者ギルド補給事務員", image: `./${UNIQUE_CHARACTERS[COLETTE_LINDE_ID].portraitImage}`, transparent: true, prompt: "用途を伺ってから、封蝋印・ロット番号・使用期限を照合します。どの加工品が必要ですか？", reply: "旅程と用途に合う品を選びたい。番号まで確認して、それを頼む。" }),
   temple: Object.freeze({ name: "巡礼医リネア", role: "神殿・治療所", image: "./assets/generated/race-basics/race-angel-female.webp", prompt: "傷も病も、隠せば旅先で重くなります。こちらへ。", reply: "診てほしい。仲間も含め、万全にしておきたい。" }),
@@ -4056,7 +4081,7 @@ function renderGuildAdventureBoard() {
     <figure><img src="./${escapeHtml(receptionist.portraitImage)}" alt="${escapeHtml(receptionist.name)}"><figcaption>UNIQUE RECEPTIONIST</figcaption></figure>
     <div><small>GUILD DESK · THREE SEALED SLIPS</small><h4>${escapeHtml(receptionist.name)}</h4><p>危険・期限・証拠を照合し、受注から報酬精算まで同じ台帳で担当します。</p>
       <ul>${receptionist.guildService.duties.map((duty) => `<li>${escapeHtml(duty)}</li>`).join("")}</ul>
-      <section><span><small>PARTY REFERRAL</small><strong>${referralCandidates.length ? `${referralCandidates.length}名を紹介可能` : "新しい候補者を照会中"}</strong><p>${escapeHtml(referralNames || "現在の隊と依頼内容を確認し、役割の合う候補者を探します。")}</p></span><button type="button" data-village-facility="tavern">マリエルの紹介で候補者に会う →</button></section>
+      <section><span><small>PARTY REFERRAL</small><strong>${referralCandidates.length ? `${referralCandidates.length}名を紹介可能` : "新しい候補者を照会中"}</strong><p>${escapeHtml(referralNames || "現在の隊と依頼内容を確認し、役割の合う候補者を探します。")}</p></span><button type="button" data-village-facility="guild">マリエルの紹介で候補者に会う →</button></section>
     </div>
   </aside>` : "";
   const processedGoodsDesk = venueName === "ギルド" ? renderGuildProcessedGoodsDesk(village) : "";
@@ -4159,8 +4184,8 @@ function renderVillageWorkspace() {
   const facilities = getSettlementFacilities(village);
   const selected = facilities.find((facility) => facility.id === view.selectedVillageFacilityId) ?? facilities[0];
   if (selected.id !== view.selectedVillageFacilityId) view.selectedVillageFacilityId = selected.id;
-  const tavernInterior = view.villageFacilityOpen && selected.id === "tavern";
-  const villageInteriorArt = tavernInterior ? villageFacilityArt(selected.id) : VILLAGE_MAIN_ART;
+  const facilityInterior = view.villageFacilityOpen && ["tavern", "guild"].includes(selected.id);
+  const villageInteriorArt = facilityInterior ? villageFacilityArt(selected.id) : VILLAGE_MAIN_ART;
   const progress = life.villageProgress[village.id] ?? { buildings: 0, facilityLevel: 1, specialists: 0 };
   const regionalReputation = currentRegionalReputationReport(village);
   const activeParty = life.party.filter((member) => member.active && member.alive !== false);
@@ -4182,21 +4207,21 @@ function renderVillageWorkspace() {
       <nav><button type="button" data-leave-village="career">人物画面</button><button type="button" data-leave-village="world">地方地図</button>${administrationButton}</nav>
     </header>
     <div class="village-workspace-body">
-      <section class="village-central-visual has-top-status ${tavernInterior ? "is-tavern-interior" : ""}" data-village-location="${tavernInterior ? "tavern" : "village-square"}" style="--village-interior-art:url('${villageInteriorArt}')">
+      <section class="village-central-visual has-top-status ${facilityInterior ? `is-facility-interior is-${selected.id}-interior` : ""}" data-village-location="${facilityInterior ? selected.id : "village-square"}" style="--village-interior-art:url('${villageInteriorArt}')">
         <div class="village-central-status is-top-status" aria-label="人物と探索物資の状態">
           <article><small>HP / MP</small><strong>${life.hp} / ${life.mp}</strong><span>${escapeHtml(villageConditionSummary(life))}</span></article>
           <article><small>財産</small><strong>${player.metrics.wealth}</strong><span>村内の支払い</span></article>
           <article><small>同行</small><strong>${activeParty.length}<i> / ${life.party.length}</i></strong><span>${escapeHtml(partyConditionSummary(life))}</span></article>
           <article><small>探索物資</small><strong>${life.supplies.food}<i>食</i> ${life.supplies.torches}<i>灯</i></strong><span>所持品 ${life.inventory.reduce((sum, item) => sum + (item.quantity ?? 1), 0)}</span></article>
         </div>
-        ${tavernInterior ? "" : `<section class="village-choice-overlay village-facility-window ${view.villageFacilityOpen ? "has-action-window" : ""}" aria-label="${escapeHtml(village.name)}の施設">
+        ${facilityInterior ? "" : `<section class="village-choice-overlay village-facility-window ${view.villageFacilityOpen ? "has-action-window" : ""}" aria-label="${escapeHtml(village.name)}の施設">
           <header><small>VILLAGE COMMAND</small><div><h2>${escapeHtml(village.name)}</h2><button type="button" data-leave-village="world" aria-label="地方地図へ戻る">×</button></div><p>施設を選び、村人と会話して行動します。</p></header>
           <nav class="village-overlay-facilities village-facility-menu" aria-label="集落の施設">${facilities.map((facility) => `<button type="button" data-village-facility="${facility.id}" class="${view.villageFacilityOpen && facility.id === selected.id ? "is-active" : ""}" aria-haspopup="dialog" aria-expanded="${view.villageFacilityOpen && facility.id === selected.id}"><i>${facility.icon}</i><span><strong>${escapeHtml(facility.name)}</strong><small>${escapeHtml(facility.summary)}</small></span><b>${facility.actions.length}件 <em>→</em></b></button>`).join("")}</nav>
         </section>`}
-        ${view.villageFacilityOpen ? `<section class="village-choice-overlay village-action-window ${tavernInterior ? "is-facility-interior-window is-tavern-window" : ""}" role="dialog" aria-modal="false" aria-label="${escapeHtml(selected.name)}の行動">
-          <header><div><button type="button" class="village-action-back" data-close-village-actions>← 村の施設一覧</button><button type="button" data-leave-village="world" aria-label="地方地図へ戻る">×</button></div><small>${tavernInterior ? "TAVERN / ARRIVED" : `${selected.id.toUpperCase()} / ACTIONS`}</small><h2>${escapeHtml(selected.name)}</h2><p>${tavernInterior ? "酒場へ移動しました。店内で相手と用件を選びます。" : escapeHtml(selected.summary)}</p></header>
+        ${view.villageFacilityOpen ? `<section class="village-choice-overlay village-action-window ${facilityInterior ? `is-facility-interior-window is-${selected.id}-window` : ""}" role="dialog" aria-modal="false" aria-label="${escapeHtml(selected.name)}の行動">
+          <header><div><button type="button" class="village-action-back" data-close-village-actions>← 村の施設一覧</button><button type="button" data-leave-village="world" aria-label="地方地図へ戻る">×</button></div><small>${facilityInterior ? `${selected.id.toUpperCase()} / ARRIVED` : `${selected.id.toUpperCase()} / ACTIONS`}</small><h2>${escapeHtml(selected.name)}</h2><p>${facilityInterior ? `${escapeHtml(selected.name)}へ移動しました。施設内で相手と用件を選びます。` : escapeHtml(selected.summary)}</p></header>
           <div class="village-overlay-actions">
-            <div class="village-overlay-heading"><span><small>${tavernInterior ? "AFTER ARRIVAL / AVAILABLE CHOICES" : "AVAILABLE CHOICES"}</small><strong>行動を選ぶ</strong></span><b>${villageFacilityActions(village, selected).length}件</b></div>
+            <div class="village-overlay-heading"><span><small>${facilityInterior ? "AFTER ARRIVAL / AVAILABLE CHOICES" : "AVAILABLE CHOICES"}</small><strong>行動を選ぶ</strong></span><b>${villageFacilityActions(village, selected).length}件</b></div>
             <div class="village-choice-list">${actions}</div>
             ${villageFacilityAdventureContent(selected.id, village)}
           </div>

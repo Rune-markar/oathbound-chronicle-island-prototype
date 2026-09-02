@@ -41,7 +41,8 @@ test("コレットの顔設計はマリエルと作風を共有しながら顔�
   assert.match(clerk.visuals.signatureExpression, /検品/);
 });
 
-test("町のギルドでは三種の二次加工品を購入でき、村では販売されない", () => {
+test("都市のギルドでは三種の二次加工品を購入でき、町と村では販売されない", () => {
+  const city = { id: "colette-test-city", name: "香草都市", settlementLevel: "city" };
   const town = { id: "colette-test-town", name: "香草町", settlementLevel: "town" };
   const village = { id: "colette-test-village", name: "薬草村", settlementLevel: "village" };
   let state = createCareerInitialState({ seed: "guild-clerk-shop" });
@@ -50,10 +51,11 @@ test("町のギルドでは三種の二次加工品を購入でき、村では�
   assert.deepEqual(GUILD_PROCESSED_GOODS.map((good) => good.name), ["治癒ポーション", "解毒ポーション", "魔力補給薬"]);
   for (const good of GUILD_PROCESSED_GOODS) {
     assert.equal(getVillageActionAvailability(state, good.actionId, village).allowed, false);
-    const access = getVillageActionAvailability(state, good.actionId, town);
+    assert.equal(getVillageActionAvailability(state, good.actionId, town).allowed, false);
+    const access = getVillageActionAvailability(state, good.actionId, city);
     assert.equal(access.allowed, true);
     const beforeWealth = state.player.metrics.wealth;
-    state = performVillageAction(state, town, good.actionId);
+    state = performVillageAction(state, city, good.actionId);
     assert.equal(state.player.metrics.wealth, beforeWealth - access.cost);
     assert.equal(state.player.villageLife.inventory.find((item) => item.id === good.itemId)?.quantity, 1);
     assert.match(state.player.villageLife.lastAction.message, /コレット/);

@@ -23,7 +23,7 @@ const PERSONAL_BATTLE_ROLE_LABELS = Object.freeze({
 
 export const ADVENTURE_ART = Object.freeze({
   village: "./assets/generated/adventure/village.png",
-  guild: "./assets/generated/adventure/guild.png",
+  guild: "./assets/generated/adventure/guild-city-v2.png",
   tavern: "./assets/generated/adventure/tavern.png",
   cave: "./assets/generated/adventure/dungeon-cave.png",
   forest: "./assets/generated/adventure/dungeon-forest.png",

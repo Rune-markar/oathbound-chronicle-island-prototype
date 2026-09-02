@@ -2904,8 +2904,10 @@ a:focus-visible,
 }
 
 .generated-world-map[data-world-phase="dusk"] .generated-world-light {
-  background: linear-gradient(115deg, rgba(42, 42, 75, .28), rgba(185, 91, 62, .28) 55%, rgba(66, 35, 54, .4));
-  backdrop-filter: sepia(.16) saturate(.84) brightness(.76);
+  background:
+    radial-gradient(circle at var(--sun-x, 82%) var(--sun-y, 62%), rgba(255, 222, 154, .16), transparent 28%),
+    linear-gradient(115deg, rgba(91, 91, 129, .14), rgba(239, 181, 121, .14) 55%, rgba(116, 96, 131, .2));
+  backdrop-filter: sepia(.05) saturate(.94) brightness(.9);
 }
 
 .generated-world-map[data-world-phase="night"] .generated-world-light {
@@ -2913,6 +2915,73 @@ a:focus-visible,
     radial-gradient(circle at 78% 14%, rgba(204, 224, 238, .13) 0 3%, transparent 18%),
     linear-gradient(rgba(5, 18, 43, .53), rgba(2, 13, 31, .66));
   backdrop-filter: saturate(.64) brightness(.56) contrast(1.08);
+}
+
+.generated-world-celestial {
+  --sun-x: 25%;
+  --sun-y: 24%;
+  --sun-opacity: 1;
+  --moon-x: 76%;
+  --moon-y: 25%;
+  --moon-opacity: 0;
+  position: absolute;
+  z-index: 4;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.generated-world-celestial b {
+  position: absolute;
+  display: block;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  transition: left .16s linear, top .16s linear, opacity .7s ease;
+  will-change: left, top, opacity;
+}
+
+.generated-world-sun {
+  left: var(--sun-x);
+  top: var(--sun-y);
+  width: clamp(22px, 3.4vw, 42px);
+  aspect-ratio: 1;
+  opacity: var(--sun-opacity);
+  background: radial-gradient(circle at 42% 38%, #fffce4 0 18%, #ffe3a0 45%, #e9b862 100%);
+  box-shadow: 0 0 18px rgba(255, 231, 165, .72), 0 0 52px rgba(255, 211, 117, .35);
+}
+
+.generated-world-moon {
+  left: var(--moon-x);
+  top: var(--moon-y);
+  width: clamp(15px, 2.4vw, 28px);
+  aspect-ratio: 1;
+  opacity: var(--moon-opacity);
+  background: radial-gradient(circle at 36% 34%, #fffef0, #cddce1 72%);
+  box-shadow: 0 0 20px rgba(213, 233, 240, .48);
+}
+
+.generated-world-horizon {
+  position: absolute;
+  right: 4%;
+  bottom: 18%;
+  left: 4%;
+  height: 1px;
+  opacity: .22;
+  background: linear-gradient(90deg, transparent, rgba(255, 236, 190, .75), transparent);
+}
+
+.generated-world-map.is-traveling .generated-world-sun,
+.generated-world-map.is-traveling .generated-world-moon {
+  box-shadow: 0 0 22px rgba(255, 240, 190, .82), 0 0 66px rgba(255, 216, 127, .42);
+}
+
+.generated-world-map.is-traveling .generated-expedition-marker > i {
+  animation: generated-expedition-step .48s ease-in-out infinite alternate;
+}
+
+@keyframes generated-expedition-step {
+  from { transform: translateY(-2px) rotate(-7deg); }
+  to { transform: translateY(2px) rotate(7deg); }
 }
 
 .generated-world-time {
@@ -3021,7 +3090,9 @@ a:focus-visible,
 
 @media (prefers-reduced-motion: reduce) {
   .generated-travel-route path,
-  .generated-travel-compass i { animation: none; }
+  .generated-travel-compass i,
+  .generated-world-map.is-traveling .generated-expedition-marker > i { animation: none; }
+  .generated-world-celestial b { transition: opacity .2s linear; }
 }
 
 .map-stage.is-generated-world > .terrain-legend,
@@ -14444,7 +14515,7 @@ body.is-village-focus .village-central-visual::before {
   animation: village-action-window-in .18s ease-out both;
 }
 
-body.is-village-focus .village-central-visual.is-tavern-interior {
+body.is-village-focus .village-central-visual.is-facility-interior {
   background:
     linear-gradient(90deg, rgba(24, 12, 5, .42), transparent 58%, rgba(18, 9, 4, .16)),
     linear-gradient(0deg, rgba(16, 8, 4, .72), transparent 42%),
@@ -14462,6 +14533,13 @@ body.is-village-focus .village-central-visual.is-tavern-interior {
   border-color: rgba(231, 190, 105, .6);
   border-left-color: #d69e3d;
   background: linear-gradient(155deg, rgba(34, 18, 9, .91), rgba(37, 27, 16, .78));
+  animation-delay: .12s;
+}
+
+.village-action-window.is-guild-window {
+  border-color: rgba(99, 151, 126, .62);
+  border-left-color: #5f9f78;
+  background: linear-gradient(155deg, rgba(11, 28, 24, .93), rgba(20, 34, 29, .82));
   animation-delay: .12s;
 }
 

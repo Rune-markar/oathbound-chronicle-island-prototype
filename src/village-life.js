@@ -53,15 +53,17 @@ export const GUILD_PROCESSED_GOODS = Object.freeze([
 const GUILD_PROCESSED_GOOD_ACTION_IDS = new Set(GUILD_PROCESSED_GOODS.map((good) => good.actionId));
 
 const TOWN_SCALE_LEVELS = new Set(["town", "city", "bay_city"]);
+const CITY_SCALE_LEVELS = new Set(["city", "bay_city"]);
 const VILLAGE_SHOP_ACTION_IDS = new Set(["buy_food", "buy_materials", "sell_item"]);
-const VILLAGE_UNAVAILABLE_ACTION_IDS = new Set([
-  "buy_weapon", "buy_armor", "buy_tools", "enhance_equipment", "repair_equipment", "appraise_equipment",
-  ...GUILD_PROCESSED_GOOD_ACTION_IDS,
-]);
 
 export function getSettlementScale(place = {}) {
   const level = String(place?.settlementLevel ?? place?.level ?? place?.type ?? "village");
   return TOWN_SCALE_LEVELS.has(level) ? "town" : "village";
+}
+
+export function hasAdventurerGuild(place = {}) {
+  const level = String(place?.settlementLevel ?? place?.level ?? place?.type ?? "village");
+  return CITY_SCALE_LEVELS.has(level);
 }
 
 export function getSettlementMeritGain(baseMerit, place = {}, baseRenown = 0) {
@@ -227,15 +229,28 @@ export const VILLAGE_FACILITIES = Object.freeze([
 ]);
 
 export function getSettlementFacilities(place = {}) {
-  if (getSettlementScale(place) === "town") return VILLAGE_FACILITIES;
+  if (hasAdventurerGuild(place)) {
+    const tavern = VILLAGE_FACILITIES.find((entry) => entry.id === "tavern");
+    const guildPartyActionIds = new Set(["recruit_companion", "organize_party", "hear_rumor", "talk_npc", "seek_recommendation"]);
+    return VILLAGE_FACILITIES
+      .filter((entry) => entry.id !== "tavern")
+      .map((entry) => entry.id === "guild"
+        ? {
+            ...entry,
+            summary: "依頼、ダンジョン情報、冒険者の斡旋を扱う都市施設。",
+            actions: [...entry.actions, ...tavern.actions.filter((action) => guildPartyActionIds.has(action.id))],
+          }
+        : entry);
+  }
+  const villageScale = getSettlementScale(place) === "village";
   const guild = VILLAGE_FACILITIES.find((entry) => entry.id === "guild");
   return VILLAGE_FACILITIES
-    .filter((entry) => !["smithy", "guild"].includes(entry.id))
+    .filter((entry) => entry.id !== "guild" && (!villageScale || entry.id !== "smithy"))
     .map((entry) => {
-      if (entry.id === "shop") return { ...entry, summary: "土地で採れた一次素材と食料を売買する。", actions: entry.actions.filter((item) => VILLAGE_SHOP_ACTION_IDS.has(item.id)) };
+      if (entry.id === "shop" && villageScale) return { ...entry, summary: "土地で採れた一次素材と食料を売買する。", actions: entry.actions.filter((item) => VILLAGE_SHOP_ACTION_IDS.has(item.id)) };
       if (entry.id === "tavern") return {
         ...entry,
-        summary: "仲間や土地の人々と縁を結び、村からの依頼を扱う。",
+        summary: `${villageScale ? "村" : "町"}の人々と縁を結び、地域の依頼を扱う。`,
         actions: [...entry.actions, ...guild.actions.filter((item) => !GUILD_PROCESSED_GOOD_ACTION_IDS.has(item.id))],
       };
       return entry;
@@ -404,15 +419,15 @@ function effectiveCost(life, definition) {
 }
 
 export function getVillageActionAvailability(state, actionId, villageInput = null) {
-  const definition = getVillageAction(actionId);
-  if (!definition) return { allowed: false, reason: "不明な村行動です", cost: 0 };
-  if (!state?.player) return { allowed: false, reason: "操作する人物がいません", cost: definition.cost };
+  const canonicalDefinition = getVillageAction(actionId);
+  if (!canonicalDefinition) return { allowed: false, reason: "不明な村行動です", cost: 0 };
   const place = typeof villageInput === "string" ? { id: villageInput } : (villageInput ?? {});
+  const facility = getSettlementFacilities(place).find((entry) => entry.actions.some((action) => action.id === actionId));
+  if (!facility) return { allowed: false, reason: "この集落規模には必要な施設がありません", cost: canonicalDefinition.cost };
+  const definition = { ...canonicalDefinition, facilityId: facility.id, facilityName: facility.name };
+  if (!state?.player) return { allowed: false, reason: "操作する人物がいません", cost: definition.cost };
   const villageId = place.id ?? null;
   const life = createVillageLifeState(state.player.villageLife);
-  if (getSettlementScale(place) === "village" && VILLAGE_UNAVAILABLE_ACTION_IDS.has(actionId)) {
-    return { allowed: false, reason: "この設備と加工品は町規模の集落でのみ利用できます", cost: definition.cost };
-  }
   const reason = requirementReason(life, actionId, villageId);
   const baseCost = effectiveCost(life, definition);
   const standing = getGuildStanding(life);
@@ -555,12 +570,16 @@ function issueServiceInvitations(state, village) {
 }
 
 export function performVillageAction(state, villageInput, actionId, options = {}) {
-  const definition = getVillageAction(actionId);
-  if (!definition) throw new Error("不明な村行動です");
+  const canonicalDefinition = getVillageAction(actionId);
+  if (!canonicalDefinition) throw new Error("不明な村行動です");
   const village = typeof villageInput === "string"
     ? { id: villageInput, name: villageInput }
     : { ...villageInput, id: villageInput?.id, name: villageInput?.name };
   if (!village.id || !village.name) throw new Error("行動する村を指定してください");
+  const facility = getSettlementFacilities(village).find((entry) => entry.actions.some((action) => action.id === actionId));
+  const definition = facility
+    ? { ...canonicalDefinition, facilityId: facility.id, facilityName: facility.name }
+    : canonicalDefinition;
   const access = getVillageActionAvailability(state, actionId, village);
   if (!access.allowed) throw new Error(access.reason);
 
@@ -674,7 +693,9 @@ export function performVillageAction(state, villageInput, actionId, options = {}
         routeEvent: template.routeEvent ?? null,
         acceptedVillageId: village.id,
       });
-      message = `受付官マリエルが危険度・期限・達成証拠を読み上げ、${template.title}を受注票へ登録した。酒場で仲間を集め、探索準備を整えてから出発する。`;
+      const clerk = hasAdventurerGuild(village) ? "受付官マリエル" : "酒場の女将";
+      const partyNote = hasAdventurerGuild(village) ? "仲間と合流し" : "酒場で仲間を集め";
+      message = `${clerk}が危険度・期限・達成証拠を読み上げ、${template.title}を受注票へ登録した。${partyNote}、探索準備を整えてから出発する。`;
       break;
     }
     case "complete_request": {
@@ -703,9 +724,12 @@ export function performVillageAction(state, villageInput, actionId, options = {}
       recordRegionalAchievement(next, village, { label: quest.name, merit: meritGain.merit, renown: REGIONAL_REPUTATION_GAINS.completedRequest });
       villageRelation(life, village.id, meritGain.scale === "village" ? 3 : 1);
       const standing = getGuildStanding(life);
-      const venue = meritGain.scale === "village" ? "酒場" : "ギルド";
-      const fameNote = meritGain.scale === "town" ? `（基本名声${meritGain.baseRenown}・町内係数${meritGain.factor.toFixed(2)}）` : "（村内係数1.00）";
-      message = `${quest.name}を${venue}の受付官マリエルへ報告した。功績${meritGain.merit}${fameNote}、武勲8、地方名声${REGIONAL_REPUTATION_GAINS.completedRequest}を得た。現在の扱いは「${standing.name}」となった。`;
+      const guildAvailable = hasAdventurerGuild(village);
+      const venue = guildAvailable ? "冒険者ギルド" : "酒場";
+      const clerk = guildAvailable ? "受付官マリエル" : "女将";
+      const areaLabel = guildAvailable ? "都市内" : meritGain.scale === "town" ? "町内" : "村内";
+      const fameNote = meritGain.scale === "town" ? `（基本名声${meritGain.baseRenown}・${areaLabel}係数${meritGain.factor.toFixed(2)}）` : "（村内係数1.00）";
+      message = `${quest.name}を${venue}の${clerk}へ報告した。功績${meritGain.merit}${fameNote}、武勲8、地方名声${REGIONAL_REPUTATION_GAINS.completedRequest}を得た。現在の扱いは「${standing.name}」となった。`;
       break;
     }
     case "receive_reward": {
@@ -715,7 +739,8 @@ export function performVillageAction(state, villageInput, actionId, options = {}
       life.guildRequestsCompleted += 1;
       player.metrics.wealth += reward.wealth;
       recordRegionalAchievement(next, village, { label: `${quest.name}の公式評価`, merit: 0, renown: reward.renown });
-      message = `受付官マリエルが${quest.name}の証拠と台帳を照合した。報酬として財産${reward.wealth}を得て、この町での評価が${reward.renown}高まった。`;
+      const clerk = hasAdventurerGuild(village) ? "受付官マリエル" : "酒場の女将";
+      message = `${clerk}が${quest.name}の証拠と台帳を照合した。報酬として財産${reward.wealth}を得て、この集落での評価が${reward.renown}高まった。`;
       break;
     }
     case "emergency_party_recovery": {

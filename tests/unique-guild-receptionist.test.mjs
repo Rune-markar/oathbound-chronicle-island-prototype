@@ -40,13 +40,13 @@ test("マリエルは酒場の加入候補へ混ざらず、ギルドから候�
   const appSource = readFileSync(new URL("../src/app.js", import.meta.url), "utf8");
   assert.match(appSource, /guild-receptionist-desk/);
   assert.match(appSource, /マリエルの紹介で候補者に会う/);
-  assert.match(appSource, /data-village-facility="tavern"/);
+  assert.match(appSource, /data-village-facility="guild"/);
   assert.match(appSource, /UNIQUE_CHARACTERS\[MARIELLE_CROIX_ID\]/);
 });
 
 test("依頼受注・達成報告・報酬精算の共有処理にマリエルが現れる", () => {
   let state = createCareerInitialState({ seed: "guild-receptionist-request-loop" });
-  const town = { id: "marielle-test-town", name: "三封札町", settlementLevel: "town" };
+  const town = { id: "marielle-test-city", name: "三封札都市", settlementLevel: "city" };
 
   state = performVillageAction(state, town, "accept_request");
   assert.match(state.player.villageLife.lastAction.message, /マリエル/);

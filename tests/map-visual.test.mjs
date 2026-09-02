@@ -185,6 +185,8 @@ test("world-map travel persists time and plays a visible route, clock, progress,
   assert.match(markup, /id="generatedWorldTime"/);
   assert.match(markup, /id="generatedTravelOverlay"/);
   assert.match(markup, /id="generatedTravelProgress"/);
+  assert.match(markup, /id="generatedWorldCelestial"/);
+  assert.match(markup, /class="generated-world-sun"/);
   assert.match(generatedWorldSource, /expeditionClockMinutes/);
   assert.match(generatedWorldSource, /getGeneratedWorldTimeView/);
   assert.match(generatedWorldSource, /GENERATED_TRAVEL_MODES/);
@@ -195,12 +197,16 @@ test("world-map travel persists time and plays a visible route, clock, progress,
   assert.match(appSource, /marker\?\.animate\(/);
   assert.match(appSource, /generatedTravelPathData\(pathTiles/);
   assert.match(appSource, /requestAnimationFrame\(tick\)/);
+  assert.match(appSource, /--sun-x/);
+  assert.match(appSource, /Math\.sin\(Math\.PI \* sunProgress\)/);
   assert.match(appSource, /await playGeneratedTravel\(next, destination\.name/);
   assert.match(appSource, /await playGeneratedTravel\(next, site\.name/);
   assert.match(appSource, /await playGeneratedTravel\(next, result\.locationName/);
   assert.match(styleSource, /\.generated-travel-route\.is-active/);
   assert.match(styleSource, /data-world-phase="night"/);
   assert.match(styleSource, /data-world-phase="dusk"/);
+  assert.match(styleSource, /\.generated-world-sun/);
+  assert.match(styleSource, /generated-expedition-step/);
   assert.match(styleSource, /\.generated-world-map\.is-traveling/);
 });
 
