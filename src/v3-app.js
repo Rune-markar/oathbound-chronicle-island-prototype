@@ -1136,6 +1136,11 @@ elements.continueButton.addEventListener("click", async () => {
   if (saved) await prepareWorld(saved.world, saved.field, saved.worldSimulation);
 });
 
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) saveGame();
+});
+window.addEventListener("pagehide", saveGame);
+
 document.addEventListener("click", (event) => {
   const mapLayerId = event.target.closest("[data-v3-map-layer]")?.dataset.v3MapLayer;
   if (mapLayerId) {

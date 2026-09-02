@@ -495,6 +495,8 @@ test("既定入口はV3フィールドで、個人戦はフィールド内、集
   assert.match(app, /createV3GroupBattleHandoff/);
   assert.match(app, /startV3MilitaryMission\(context, state, worldSimulation\)/);
   assert.match(app, /legacy-v2\.html/);
+  assert.match(app, /document\.addEventListener\("visibilitychange", \(\) => \{\s*if \(document\.hidden\) saveGame\(\);\s*\}\);/);
+  assert.match(app, /window\.addEventListener\("pagehide", saveGame\);/);
   assert.match(app, /polity\?\.politicalSystemName/);
   assert.match(styles, /\.v3-world-current-polity/);
   assert.match(styles, /\.v3-game\.is-personal-battle \.v3-field-shell/);
