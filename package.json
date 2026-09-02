@@ -5,6 +5,10 @@
   "type": "module",
   "scripts": {
     "test": "node --test",
-    "check": "node scripts/check-source.mjs && node --test --test-concurrency=4"
+    "check": "node scripts/check-source.mjs && node --test --test-concurrency=4",
+    "remote:check": "node scripts/remote-environment.mjs check",
+    "remote:setup": "node scripts/remote-environment.mjs bootstrap",
+    "remote:verify": "node scripts/remote-environment.mjs verify",
+    "remote:guard-deploy": "node scripts/remote-environment.mjs guard-deploy"
   }
 }
