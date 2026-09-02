@@ -13,6 +13,12 @@ import {
   deriveGeopoliticalProfiles,
 } from "../src/geopolitical-world.js";
 import { advanceCareerMonth, createCareerInitialState } from "../src/simulation.js";
+import {
+  STATE_REASON_CONDITIONS,
+  STATE_REASON_PRINCIPLE,
+  chooseStateReasonAction,
+  createStateReason,
+} from "../src/state-reason-system.js";
 
 function createWorld(seed = "geopolitics-contract") {
   return createCareerInitialState({ seed, width: 48, height: 32, plateCount: 9, nationCount: 7 });
@@ -38,7 +44,57 @@ test("a generated world initializes a compact autonomous geopolitical state", ()
   assert.equal(state.generatedWorld.geopolitics.events.length, 0);
   assert.equal(JSON.stringify(state.generatedWorld.geopolitics).includes("tiles"), false);
   assert.ok(view.nations.every((entry) => entry.profile.capability >= 0 && entry.condition.foodSecurity >= 0));
+  assert.ok(view.nations.every((entry) => entry.condition.stateReason.principleId === STATE_REASON_PRINCIPLE.id));
+  assert.ok(view.nations.every((entry) => STATE_REASON_CONDITIONS.every(({ id }) => Number.isFinite(entry.condition.stateReason.conditions[id]))));
+  assert.ok(view.nations.every((entry) => entry.condition.stateReason.initialImperativeId === entry.condition.stateReason.weakestConditionId));
   assert.ok(GEOPOLITICAL_MODEL_REFERENCES.every((reference) => reference.url.startsWith("https://")));
+});
+
+test("state reason maximizes the weakest post-action condition, then breaks ties by cost and national character", () => {
+  const condition = {
+    foodSecurity: 30,
+    cohesion: 70,
+    reserves: 70,
+    readiness: 70,
+    sovereignty: 70,
+  };
+  condition.stateReason = createStateReason(condition);
+  const result = chooseStateReasonAction(condition, [
+    { id: "consolidate", pullId: "consolidate", personalityFit: 100 },
+    { id: "secure_food", pullId: "secure_food", personalityFit: -100 },
+    { id: "open_trade", pullId: "open_trade", personalityFit: 100 },
+  ]);
+  assert.equal(result.selected.pullId, "secure_food");
+  assert.equal(result.selected.stateReason.value, 36);
+
+  const tied = chooseStateReasonAction(condition, [
+    { id: "consolidate", pullId: "consolidate", personalityFit: 100 },
+    { id: "open_trade", pullId: "open_trade", personalityFit: -100 },
+  ]);
+  assert.equal(tied.selected.pullId, "open_trade", "the cheaper action wins before personality");
+
+  const characterTie = chooseStateReasonAction({ ...condition, foodSecurity: 70 }, [
+    { id: "open_trade", pullId: "open_trade", personalityFit: -20 },
+    { id: "coerce_neighbor", pullId: "coerce_neighbor", personalityFit: 40 },
+  ]);
+  assert.equal(characterTie.selected.pullId, "coerce_neighbor");
+});
+
+test("schema v1 geopolitical saves migrate without discarding national conditions", () => {
+  const state = createWorld("state-reason-v1-migration");
+  const legacy = structuredClone(state.generatedWorld.geopolitics);
+  legacy.schemaVersion = 1;
+  for (const condition of Object.values(legacy.nationStates)) {
+    delete condition.sovereignty;
+    delete condition.stateReason;
+  }
+  const firstNationId = Object.keys(legacy.nationStates)[0];
+  legacy.nationStates[firstNationId].foodSecurity = 17;
+  const runtime = getGeneratedWorldView(state).runtime;
+  const migrated = advanceGeopoliticalWorld(runtime, legacy, { year: 317, month: 5 });
+  assert.equal(migrated.schemaVersion, GEOPOLITICAL_SCHEMA_VERSION);
+  assert.equal(migrated.nationStates[firstNationId].stateReason.initialImperativeId, "food");
+  assert.ok(Number.isFinite(migrated.nationStates[firstNationId].sovereignty));
 });
 
 test("every nation selects one geography-grounded pull on each new month", () => {
@@ -54,6 +110,15 @@ test("every nation selects one geography-grounded pull on each new month", () =>
   assert.ok(currentEvents.every((event) => event.alternatives.length >= 2));
   assert.ok(currentEvents.every((event) => Math.abs(event.alternatives.reduce((sum, option) => sum + option.probability, 0) - 1) < 0.00001));
   assert.ok(view.nations.every((entry) => entry.condition.lastPullId));
+  assert.ok(currentEvents.every((event) => event.stateReason?.value >= 0));
+  for (const event of currentEvents) {
+    const selected = event.alternatives.find((option) => option.id === event.pullId);
+    const bestValue = Math.max(...event.alternatives.map((option) => option.stateReasonValue));
+    const cheapest = Math.min(...event.alternatives.filter((option) => option.stateReasonValue === bestValue).map((option) => option.stateReasonCost));
+    assert.equal(selected.stateReasonValue, bestValue);
+    assert.equal(selected.stateReasonCost, cheapest);
+  }
+  assert.ok(view.nations.every((entry) => entry.condition.stateReason.lastDecision?.pullId === entry.condition.lastPullId));
   assert.equal(view.relations.some((relation) => relation.atWar), false, "a generated world must not jump directly into war on its first pulse");
 });
 

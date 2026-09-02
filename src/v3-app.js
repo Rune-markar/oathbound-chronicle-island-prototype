@@ -79,10 +79,12 @@ import { readV3Save, V3_SAVE_VERSION, writeV3Save } from "./v3-save-system.js";
 import { applyV3BattleResultToWorldSimulation } from "./v3-battle-strategy.js";
 import { DECISION_TRAITS, TEMPERAMENTS } from "./race-decision-system.js";
 import { GEOPOLITICAL_PULL_SET } from "./geopolitical-world.js";
+import { STATE_REASON_CONDITIONS, STATE_REASON_PRINCIPLE } from "./state-reason-system.js";
 import { getRaceDefinition } from "./race-list.js";
 
 const STORAGE_KEY = "leviathan-covenant-v3-save";
 const WORLD_CONFIG = Object.freeze({ width: 192, height: 120, plateCount: 28, nationCount: 7 });
+const STATE_REASON_CONDITION_NAMES = Object.freeze(Object.fromEntries(STATE_REASON_CONDITIONS.map(({ id, name }) => [id, name])));
 const TERRAIN_COLORS = Object.freeze({
   grassland: "#72985d", plains: "#9aa66a", desert: "#c6a565", tundra: "#899b88", snow: "#d8dfd7", water: "#315e68",
 });
@@ -974,8 +976,8 @@ function renderDecisionProfile(profile, latestAction, peopleName) {
   const axes = Object.entries(DECISION_TRAITS).map(([id, definition]) => `
     <div><dt>${escapeHtml(definition.name)}</dt><dd data-sign="${profile.traits[id] < 0 ? "negative" : profile.traits[id] > 0 ? "positive" : "neutral"}">${signedDecisionValue(profile.traits[id])}</dd></div>
   `).join("");
-  const probabilities = (latestAction?.alternatives ?? []).slice(0, 4).map((entry) => `
-    <span><b>${escapeHtml(GEOPOLITICAL_PULL_SET[entry.id]?.name ?? entry.id)}</b><i>${Math.round((Number(entry.probability) || 0) * 100)}%</i></span>
+  const comparisons = (latestAction?.alternatives ?? []).slice(0, 4).map((entry) => `
+    <span><b>${escapeHtml(GEOPOLITICAL_PULL_SET[entry.id]?.name ?? entry.id)}</b><i>最弱 ${entry.stateReasonValue ?? "-"} · 費用 ${entry.stateReasonCost ?? "-"}</i></span>
   `).join("");
   const agendas = (profile.historicalAgendas ?? []).slice(-2).map((agenda) => `<li>${escapeHtml(agenda.title)}</li>`).join("");
   const populationGroups = Object.values(profile.populationGroups ?? {}).map((dimension) => {
@@ -993,7 +995,7 @@ function renderDecisionProfile(profile, latestAction, peopleName) {
       ${populationGroups ? `<div class="v3-population-groups"><header><small>POPULATION PROJECTIONS</small><span>同じ人口を地方・階級・信仰で集計</span></header>${populationGroups}</div>` : ""}
       <dl class="v3-decision-axes">${axes}</dl>
       ${balance ? `<p class="v3-decision-balance" data-status="${escapeHtml(balance.status)}"><strong>長期均衡 ${balance.status === "stable" ? "安定" : "要観察"}</strong><span>多様性 ${Math.round(balance.diversity * 100)}%${balance.warnings.length ? ` · ${escapeHtml(balance.warnings.join(" / "))}` : ""}</span></p>` : ""}
-      ${probabilities ? `<div class="v3-decision-probabilities"><small>直近判断の確率分布</small>${probabilities}</div>` : ""}
+      ${comparisons ? `<div class="v3-decision-probabilities"><small>直近判断の候補比較</small>${comparisons}</div>` : ""}
       ${agendas ? `<div class="v3-decision-agendas"><small>歴史アジェンダ</small><ul>${agendas}</ul></div>` : ""}
     </section>`;
 }
@@ -1087,9 +1089,10 @@ function renderWorldPanels(map) {
         <div><dt>首都</dt><dd>${escapeHtml(dossier.nation.capitalName ?? `${polity?.capitalTitle ?? dossier.nation.capitalTitle ?? "首都"}${dossier.nation.shortName ?? ""}`)}</dd></div>
         <div><dt>領域</dt><dd>${dossier.regions.length}地方</dd></div><div><dt>人口</dt><dd>${Math.round(dossier.population).toLocaleString("ja-JP")}人</dd></div>
         <div><dt>集落</dt><dd>都${dossier.settlementCounts.city}・町${dossier.settlementCounts.town}・村${dossier.settlementCounts.village}</dd></div><div><dt>隣国</dt><dd>${dossier.neighbors.length}勢力</dd></div>
-        ${condition ? `<div><dt>結束</dt><dd>${condition.cohesion}</dd></div><div><dt>備蓄</dt><dd>${condition.reserves}</dd></div><div><dt>態勢</dt><dd>${escapeHtml(condition.posture)}</dd></div><div><dt>緊張関係</dt><dd>${relationWarning}</dd></div>` : ""}
+        ${condition ? `<div><dt>初期国家課題</dt><dd>${escapeHtml(STATE_REASON_CONDITION_NAMES[condition.stateReason?.initialImperativeId] ?? "不明")}</dd></div><div><dt>現在の最弱環</dt><dd>${escapeHtml(STATE_REASON_CONDITION_NAMES[condition.stateReason?.weakestConditionId] ?? "不明")} ${condition.stateReason?.value ?? "-"}</dd></div><div><dt>食料</dt><dd>${condition.foodSecurity}</dd></div><div><dt>結束</dt><dd>${condition.cohesion}</dd></div><div><dt>財政</dt><dd>${condition.reserves}</dd></div><div><dt>防衛</dt><dd>${condition.readiness}</dd></div><div><dt>主権</dt><dd>${condition.sovereignty}</dd></div><div><dt>態勢</dt><dd>${escapeHtml(condition.posture)}</dd></div><div><dt>緊張関係</dt><dd>${relationWarning}</dd></div>` : ""}
       </dl>
       <p class="v3-dossier-war">${warText}</p>
+      ${condition ? `<p><strong>${escapeHtml(STATE_REASON_PRINCIPLE.name)}</strong><span>${escapeHtml(STATE_REASON_PRINCIPLE.rule)}</span><small>同値なら低コスト、なお同値なら国民性</small></p>` : ""}
       ${dossier.latestAction ? `<p><strong>直近の判断</strong><span>${escapeHtml(dossier.latestAction.title)}</span><small>${escapeHtml(dossier.latestAction.summary)}</small></p>` : ""}
       ${renderDecisionProfile(dossier.decisionProfile, dossier.latestAction, dossier.nation.peopleName ?? "住民")}`;
   }

@@ -1,10 +1,19 @@
 import { fnv1aUtf16, unitFromHash } from "./determinism.js";
 import {
-  chooseProbabilisticDecision,
   deriveNationDecisionProfiles,
+  scoreDecisionOptions,
 } from "./race-decision-system.js";
+import {
+  GEOPOLITICAL_ACTION_EFFECTS,
+  STATE_REASON_CONDITIONS,
+  STATE_REASON_PRINCIPLE,
+  chooseStateReasonAction,
+  createStateReason,
+  projectStateReason,
+  weakestStateCondition,
+} from "./state-reason-system.js";
 
-export const GEOPOLITICAL_SCHEMA_VERSION = 1;
+export const GEOPOLITICAL_SCHEMA_VERSION = 2;
 
 export const GEOPOLITICAL_MODEL_REFERENCES = Object.freeze([
   {
@@ -98,13 +107,20 @@ function pairNationIds(key) {
 function cloneRecord(record = {}) {
   return Object.fromEntries(Object.entries(record).map(([key, value]) => [key, {
     ...value,
+    ...(value?.stateReason ? {
+      stateReason: {
+        ...value.stateReason,
+        conditions: { ...(value.stateReason.conditions ?? {}) },
+        lastDecision: value.stateReason.lastDecision ? { ...value.stateReason.lastDecision } : null,
+      },
+    } : {}),
     ...(value?.alignmentOffer ? { alignmentOffer: { ...value.alignmentOffer } } : {}),
     ...(value?.ceasefireOffer ? { ceasefireOffer: { ...value.ceasefireOffer } } : {}),
   }]));
 }
 
 export function preserveGeopoliticalState(source) {
-  if (!source || typeof source !== "object" || Number(source.schemaVersion) !== GEOPOLITICAL_SCHEMA_VERSION) return null;
+  if (!source || typeof source !== "object" || ![1, GEOPOLITICAL_SCHEMA_VERSION].includes(Number(source.schemaVersion))) return null;
   return {
     schemaVersion: GEOPOLITICAL_SCHEMA_VERSION,
     establishedPeriod: typeof source.establishedPeriod === "string" ? source.establishedPeriod : null,
@@ -112,7 +128,11 @@ export function preserveGeopoliticalState(source) {
     nationStates: cloneRecord(source.nationStates),
     relations: cloneRecord(source.relations),
     events: Array.isArray(source.events)
-      ? source.events.slice(-MAX_EVENTS).map((event) => ({ ...event, drivers: [...(event.drivers ?? [])] }))
+      ? source.events.slice(-MAX_EVENTS).map((event) => ({
+        ...event,
+        drivers: [...(event.drivers ?? [])],
+        stateReason: event.stateReason ? { ...event.stateReason, conditions: { ...(event.stateReason.conditions ?? {}) } } : null,
+      }))
       : [],
   };
 }
@@ -219,16 +239,19 @@ function derivePairStructures(runtime, profiles) {
 }
 
 function initialNationState(seed, nation, profile) {
-  return {
+  const state = {
     cohesion: rounded(48 + profile.stateCapacity * 0.22 + profile.institutionalModifiers.cohesion + (hashUnit(seed, nation.id, "cohesion") - 0.5) * 12),
     reserves: rounded(38 + profile.commerceBase * 0.28 + (hashUnit(seed, nation.id, "reserves") - 0.5) * 10),
     foodSecurity: rounded(profile.foodBase + (hashUnit(seed, nation.id, "food") - 0.5) * 8),
     readiness: rounded(28 + profile.productionBase * 0.24 + profile.terrainDefense * 0.08 + profile.institutionalModifiers.mobilization),
+    sovereignty: rounded(23 + profile.stateCapacity * 0.2 + profile.terrainDefense * 0.08
+      + (hashUnit(seed, nation.id, "sovereignty") - 0.5) * 10),
     offensiveIntent: rounded(10 + profile.capability * 0.1 + hashUnit(seed, nation.id, "intent") * 10),
     posture: "情勢観察",
     lastPullId: null,
     lastTargetNationId: null,
   };
+  return { ...state, stateReason: createStateReason(state) };
 }
 
 function initialRelation(seed, pair) {
@@ -269,11 +292,13 @@ export function createGeopoliticalWorldState(runtime, source = null, dateState =
       reserves: rounded(stored.reserves),
       foodSecurity: rounded(stored.foodSecurity),
       readiness: rounded(stored.readiness),
+      sovereignty: Number.isFinite(Number(stored.sovereignty)) ? rounded(stored.sovereignty) : fallback.sovereignty,
       offensiveIntent: rounded(stored.offensiveIntent),
       posture: typeof stored.posture === "string" ? stored.posture : fallback.posture,
       lastPullId: GEOPOLITICAL_PULL_SET[stored.lastPullId] ? stored.lastPullId : null,
       lastTargetNationId: runtime.nationById.has(stored.lastTargetNationId) ? stored.lastTargetNationId : null,
     } : fallback;
+    nationStates[nation.id].stateReason = createStateReason(nationStates[nation.id], stored?.stateReason);
   }
   const relations = {};
   for (const pair of Object.values(pairs)) {
@@ -391,7 +416,11 @@ function historicalRelationEffect(runtime, decisionProfile, targetNationId, pull
   return 0;
 }
 
-function selectNationalPull(runtime, period, nationId, decisionProfile, candidates) {
+function stateConditionName(id) {
+  return STATE_REASON_CONDITIONS.find((condition) => condition.id === id)?.name ?? id;
+}
+
+function selectNationalPull(runtime, period, nationId, decisionProfile, condition, candidates) {
   const enriched = candidates.filter(Boolean).map((option) => ({
     ...option,
     situation: {
@@ -400,23 +429,36 @@ function selectNationalPull(runtime, period, nationId, decisionProfile, candidat
         + historicalRelationEffect(runtime, decisionProfile, option.targetNationId, option.pullId),
     },
   }));
-  const selected = chooseProbabilisticDecision(decisionProfile, enriched, {
+  const scored = scoreDecisionOptions(decisionProfile, enriched, {
     seed: runtime.terrain.seed,
     period,
     actorId: nationId,
     temperature: 17,
   });
+  const { selected, ranked } = chooseStateReasonAction(condition, scored);
+  const currentWeakest = weakestStateCondition(condition.stateReason?.conditions);
   return {
     ...selected,
     pullId: selected.id,
     score: selected.evaluation,
     probability: selected.probability,
+    stateReason: selected.stateReason,
+    alternatives: ranked.map((option) => ({
+      id: option.id,
+      evaluation: option.evaluation,
+      probability: option.probability,
+      personalityFit: option.personalityFit,
+      stateReasonValue: option.stateReason.value,
+      stateReasonCost: option.stateReason.cost,
+      weakestConditionId: option.stateReason.weakestConditionId,
+    })),
     decisionTraits: { ...(decisionProfile?.traits ?? {}) },
     temperamentId: decisionProfile?.leader?.temperamentId ?? null,
     drivers: [
       ...selected.drivers,
+      driver(`国家課題・${stateConditionName(currentWeakest.id)}`, 100 - currentWeakest.value),
+      driver("行動後の最弱値", selected.stateReason.value),
       driver("人格・文化適合", 50 + selected.personalityFit / 2),
-      driver("選択確率", selected.probability * 100),
     ],
   };
 }
@@ -434,7 +476,7 @@ function chooseNationalPull(runtime, period, nationId, profiles, pairs, snapshot
       .filter((entry) => entry.relation.atWar)
       .sort((left, right) => right.relation.warMonths - left.relation.warMonths || left.key.localeCompare(right.key))[0] ?? null;
     const warMonths = context.warOpponent.relation.warMonths;
-    return selectNationalPull(runtime, period, nationId, decisionProfile, [
+    return selectNationalPull(runtime, period, nationId, decisionProfile, condition, [
       candidate("accept_ceasefire", 104 + exhaustion * 0.9 + warMonths * 2.5, incomingCeasefire?.offer.from,
         [driver("戦争疲弊", exhaustion), driver("戦争期間", warMonths * 8)], Boolean(incomingCeasefire),
         { benefit: exhaustion * 0.12, danger: Math.max(0, 45 - exhaustion) * 0.05, threat: 0, relation: 4 }),
@@ -522,7 +564,7 @@ function chooseNationalPull(runtime, period, nationId, profiles, pairs, snapshot
         && crisis?.truceMonths === 0 && condition.readiness >= 62 && condition.offensiveIntent >= 45),
       { benefit: pressure * 0.08 + Math.max(0, coercionRatio - 1) * 6, danger: (100 - condition.readiness) * 0.05, threat: borderThreat * 0.06, relation: Math.max(0, -(crisis?.relation ?? 0)) * 0.05 }),
   ].filter(Boolean);
-  return selectNationalPull(runtime, period, nationId, decisionProfile, candidates);
+  return selectNationalPull(runtime, period, nationId, decisionProfile, condition, candidates);
 }
 
 function eventCopy(period, nation, target, decision) {
@@ -566,6 +608,7 @@ function eventCopy(period, nation, target, decision) {
     score: Math.round(decision.score),
     probability: Number(decision.probability) || 0,
     alternatives: (decision.alternatives ?? []).map((alternative) => ({ ...alternative })),
+    stateReason: decision.stateReason ? { ...decision.stateReason, conditions: { ...decision.stateReason.conditions } } : null,
     personalityFit: Number(decision.personalityFit) || 0,
     situation: { ...(decision.situation ?? {}) },
     decisionTraits: { ...(decision.decisionTraits ?? {}) },
@@ -592,22 +635,7 @@ function relationActionFor(bucket, key) {
 
 function applyDecisionEffects(decision, nationId, nationDeltas, relationDeltas, relationActions) {
   const relationKey = decision.targetNationId ? pairKey(nationId, decision.targetNationId) : null;
-  const effects = {
-    consolidate: { nation: { cohesion: 5, reserves: -1, offensiveIntent: -2 } },
-    secure_food: { nation: { foodSecurity: 6, reserves: -2, cohesion: 1 } },
-    open_trade: { nation: { reserves: 3 }, relation: { relation: 4, tension: -2, trade: 6 } },
-    diplomatic_overture: { nation: { reserves: -1, offensiveIntent: -2 }, relation: { relation: 7, tension: -7 } },
-    seek_alignment: { nation: { reserves: -2 }, relation: { relation: 2, tension: -1 } },
-    accept_alignment: { nation: { reserves: -1 }, relation: { relation: 3, tension: -2 } },
-    fortify_frontier: { nation: { readiness: 6, reserves: -2 }, relation: { tension: 2 } },
-    mobilize: { nation: { readiness: 9, reserves: -4, offensiveIntent: 5 }, relation: { relation: -4, tension: 9 } },
-    deescalate: { nation: { readiness: -4, offensiveIntent: -5 }, relation: { relation: 4, tension: -10 } },
-    coerce_neighbor: { nation: { offensiveIntent: 6, readiness: 2 }, relation: { relation: -8, tension: 13 } },
-    limited_war: { nation: { reserves: -5, readiness: -2, cohesion: -1 }, relation: { relation: -12, tension: 20 } },
-    sustain_war: { nation: { reserves: -5, readiness: -3, foodSecurity: -2, cohesion: -2 }, relation: { relation: -4, tension: 4 } },
-    seek_ceasefire: { nation: { readiness: -2, offensiveIntent: -4 }, relation: { relation: 2, tension: -4 } },
-    accept_ceasefire: { nation: { readiness: -4, offensiveIntent: -8 }, relation: { relation: 5, tension: -18 } },
-  }[decision.pullId];
+  const effects = GEOPOLITICAL_ACTION_EFFECTS[decision.pullId];
   addDelta(nationDeltas, nationId, effects.nation ?? {});
   if (relationKey) addDelta(relationDeltas, relationKey, effects.relation ?? {});
   if (!relationKey) return;
@@ -644,17 +672,19 @@ function nextOffer(currentOffer, seekers, acceptors, nationIds, clear) {
 
 const PLAYER_APPROVAL_PULL_IDS = new Set(["limited_war", "seek_ceasefire", "accept_ceasefire"]);
 
-function deferProtectedDecision(nation, decision, protectedNationIds, period) {
+function deferProtectedDecision(nation, condition, decision, protectedNationIds, period) {
   if (!protectedNationIds.has(nation.id) || !PLAYER_APPROVAL_PULL_IDS.has(decision.pullId)) {
     return { decision, pendingDecision: null };
   }
   const requestedPullId = decision.pullId;
   const fallbackPullId = requestedPullId === "limited_war" ? "fortify_frontier" : "sustain_war";
+  const fallbackStateReason = projectStateReason(condition, fallbackPullId);
   return {
     decision: {
       ...decision,
       pullId: fallbackPullId,
       score: decision.score,
+      stateReason: fallbackStateReason,
       drivers: [...decision.drivers, driver("プレイヤー承認待ち", 100)],
     },
     pendingDecision: {
@@ -679,7 +709,7 @@ export function advanceGeopoliticalWorld(runtime, source, dateState, options = {
   const decisionProfiles = deriveNationDecisionProfiles(runtime, options.raceDynamics);
   const decisions = runtime.nations.nations.map((nation) => {
     const selected = chooseNationalPull(runtime, period, nation.id, profiles, pairs, snapshot, decisionProfiles[nation.id]);
-    return { nation, ...deferProtectedDecision(nation, selected, protectedNationIds, period) };
+    return { nation, ...deferProtectedDecision(nation, snapshot.nationStates[nation.id], selected, protectedNationIds, period) };
   });
   const nationDeltas = {};
   const relationDeltas = {};
@@ -714,16 +744,24 @@ export function advanceGeopoliticalWorld(runtime, source, dateState, options = {
     const readinessDrift = current.readiness > 48 ? -1 : 0;
     const foodDrift = current.foodSecurity < profile.foodBase ? 1 : current.foodSecurity > profile.foodBase + 8 ? -1 : 0;
     const decision = decisions.find((entry) => entry.nation.id === nation.id).decision;
-    return [nation.id, {
+    const nextCondition = {
       cohesion: rounded(current.cohesion + (delta.cohesion ?? 0)),
       reserves: rounded(current.reserves + 1 + (delta.reserves ?? 0)),
       foodSecurity: rounded(current.foodSecurity + foodDrift + (delta.foodSecurity ?? 0)),
       readiness: rounded(current.readiness + readinessDrift + (delta.readiness ?? 0)),
+      sovereignty: rounded(current.sovereignty + (delta.sovereignty ?? 0)),
       offensiveIntent: rounded(current.offensiveIntent - (current.offensiveIntent > 35 ? 1 : 0) + (delta.offensiveIntent ?? 0)),
       posture: GEOPOLITICAL_PULL_SET[decision.pullId].posture,
       lastPullId: decision.pullId,
       lastTargetNationId: decision.targetNationId,
-    }];
+    };
+    const stateReason = createStateReason(nextCondition, current.stateReason);
+    stateReason.lastDecision = {
+      pullId: decision.pullId,
+      projectedValue: decision.stateReason?.value ?? stateReason.value,
+      weakestConditionId: decision.stateReason?.weakestConditionId ?? stateReason.weakestConditionId,
+    };
+    return [nation.id, { ...nextCondition, stateReason }];
   }));
 
   const relations = Object.fromEntries(Object.entries(snapshot.relations).map(([key, current]) => {
@@ -823,11 +861,20 @@ export function applyApprovedGeopoliticalDecision(runtime, source, dateState, so
     reserves: rounded(currentNation.reserves + (nationDelta.reserves ?? 0)),
     foodSecurity: rounded(currentNation.foodSecurity + (nationDelta.foodSecurity ?? 0)),
     readiness: rounded(currentNation.readiness + (nationDelta.readiness ?? 0)),
+    sovereignty: rounded(currentNation.sovereignty + (nationDelta.sovereignty ?? 0)),
     offensiveIntent: rounded(currentNation.offensiveIntent + (nationDelta.offensiveIntent ?? 0)),
     posture: GEOPOLITICAL_PULL_SET[pullId].posture,
     lastPullId: pullId,
     lastTargetNationId: target.id,
   };
+  nextNation.stateReason = createStateReason(nextNation, currentNation.stateReason);
+  const approvedProjection = projectStateReason(currentNation, pullId);
+  nextNation.stateReason.lastDecision = {
+    pullId,
+    projectedValue: approvedProjection.value,
+    weakestConditionId: approvedProjection.weakestConditionId,
+  };
+  decision.stateReason = approvedProjection;
   const nextRelation = {
     ...currentRelation,
     relation: Math.round(clamp(currentRelation.relation + (relationDelta.relation ?? 0), -100, 100)),
@@ -904,3 +951,5 @@ export function getGeopoliticalWorldView(runtime, source, dateState) {
   });
   return { geopolitics, profiles, nations, relations, events: [...geopolitics.events].reverse() };
 }
+
+export { STATE_REASON_PRINCIPLE };

@@ -258,6 +258,7 @@ test("the normal geopolitical monthly pulse opens an AI-vs-AI war after a sustai
     offensiveIntent: 100,
     reserves: 100,
     cohesion: 100,
+    foodSecurity: 100,
   };
   let advanced = advanceGeneratedWorldGeopolitics({ ...state, year: 317, month: 5 });
   const war = advanced.generatedWorld.worldWars.activeWars.find((entry) => entry.relationKey === key);

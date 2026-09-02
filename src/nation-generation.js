@@ -7,6 +7,7 @@ import {
 import { fnv1aUtf16, unitFromHash } from "./determinism.js";
 import { getRaceCategory, requireRaceDefinition } from "./race-list.js";
 import { createRaceState, deriveRaceRepresentativeTraits } from "./race-decision-system.js";
+import { STATE_REASON_PRINCIPLE } from "./state-reason-system.js";
 import {
   WORLD_POLITY_MODEL_REFERENCES,
   WORLD_POLITY_MODEL_VERSION,
@@ -1278,6 +1279,7 @@ function buildNationRecords(world, seeds, ownerIndex, seed) {
       color: NATION_COLORS[index % NATION_COLORS.length],
       government: polity.governmentName,
       polity,
+      stateReasonPrincipleId: STATE_REASON_PRINCIPLE.id,
       foundingDecisionTraits,
       rulerTitle: polity.rulerTitle,
       capitalTitle: polity.capitalTitle,
@@ -1788,7 +1790,7 @@ export function generateNations(world, options = {}) {
   }, new Map())].sort());
   const regionBorders = buildRegionBorders(world, regional.tileRegionIds, regional.regions);
   const nationWorld = {
-    version: 9,
+    version: 10,
     seed,
     config: Object.freeze({
       count,
@@ -1805,6 +1807,7 @@ export function generateNations(world, options = {}) {
       nationVillageLimitMinimumShare: NATION_VILLAGE_LIMIT_MINIMUM_SHARE,
       polityModelVersion: WORLD_POLITY_MODEL_VERSION,
       polityReferenceIds: Object.freeze(WORLD_POLITY_MODEL_REFERENCES.map((reference) => reference.id)),
+      stateReasonPrincipleId: STATE_REASON_PRINCIPLE.id,
     }),
     nations,
     regions: regional.regions,

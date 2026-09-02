@@ -13,6 +13,7 @@ import {
   validateNationWorld,
 } from "../src/nation-generation.js";
 import { renderTerrainSvg } from "../src/terrain-renderer.js";
+import { STATE_REASON_PRINCIPLE } from "../src/state-reason-system.js";
 
 const TERRAIN_OPTIONS = { width: 48, height: 32, plateCount: 9, erosionIterations: 4, seed: "nation-polities" };
 
@@ -115,9 +116,10 @@ test("human, beastfolk, and dwarf capitals follow their background habitats", ()
 test("generated states expose geographic government, economy, population, and shared borders", () => {
   const world = generateTerrain(TERRAIN_OPTIONS);
   const politics = generateNations(world, { count: 7 });
-  assert.equal(politics.version, 9);
+  assert.equal(politics.version, 10);
   assert.equal(politics.config.polityModelVersion, 1);
   assert.deepEqual(politics.config.polityReferenceIds, ["fantasy-glossary-polities-cities"]);
+  assert.equal(politics.config.stateReasonPrincipleId, STATE_REASON_PRINCIPLE.id);
   assert.ok(politics.borderSegments.length > 0);
   assert.ok(Object.keys(politics.sharedBorderLengths).length > 0);
   assert.equal(politics.summary.naturalBorderSegmentCount + politics.summary.artificialBorderSegmentCount, politics.summary.borderSegmentCount);
@@ -126,6 +128,7 @@ test("generated states expose geographic government, economy, population, and sh
     assert.ok(nation.government.length > 0);
     assert.equal(nation.government, nation.polity.governmentName);
     assert.ok(nation.polity.formId && nation.polity.politicalSystemId);
+    assert.equal(nation.stateReasonPrincipleId, STATE_REASON_PRINCIPLE.id);
     assert.ok(nation.rulerTitle && nation.capitalTitle && nation.capitalName);
     assert.ok(nation.capitalSettlementObjectId && nation.capitalSeatObjectId);
     assert.ok(Object.keys(nation.urbanFunctionCounts).length > 0);
