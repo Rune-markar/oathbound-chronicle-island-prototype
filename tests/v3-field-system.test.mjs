@@ -13,6 +13,7 @@ import {
   getV3DetailedTile,
   getV3FieldView,
   getV3LocationSummary,
+  getV3PurposefulActorPlans,
   getV3TileEntity,
   moveV3Player,
   normalizeV3FieldState,
@@ -67,6 +68,7 @@ function fixtureRuntime() {
       riverId: y === 5 ? "river-1" : null,
     };
   });
+  region.tileIndices = tiles.filter((tile) => tile.passable).map((tile) => tile.index);
   const settlement = {
     id: "village-1",
     name: "試験村",
@@ -91,6 +93,64 @@ function fixtureRuntime() {
     nationById: new Map([[nation.id, nation]]),
     regionById: new Map([[region.id, region]]),
   };
+}
+
+function purposefulActorRuntime() {
+  const runtime = fixtureRuntime();
+  const sourceNation = runtime.nations.nations[0];
+  sourceNation.peopleId = "human";
+  const sourceRegion = runtime.nations.regions[0];
+  sourceRegion.tileIndices = runtime.tiles.filter((tile) => tile.passable).map((tile) => tile.index);
+  const sourceSettlement = runtime.nations.objects[0];
+  sourceSettlement.functionIds = ["agricultural_settlement"];
+  sourceSettlement.primaryFunction = { id: "agricultural_settlement", name: "農業集落" };
+  runtime.tiles[sourceSettlement.tileIndex].yields = { food: 3 };
+
+  const destinationNation = {
+    id: "nation-2",
+    name: "飢餓公国",
+    color: "#997744",
+    peopleId: "human",
+    polity: { formName: "公国", politicalSystemName: "封建君主制", rulerTitle: "公爵", capitalTitle: "公都" },
+  };
+  const destinationRegion = { id: "region-2", nationId: destinationNation.id, name: "飢餓地方", tileIndices: [35] };
+  const destinationSettlement = {
+    id: "town-2",
+    name: "飢餓町",
+    settlementLevel: "town",
+    importance: 2,
+    population: 2_000,
+    nationId: destinationNation.id,
+    regionId: destinationRegion.id,
+    tileIndex: 35,
+    x: 3,
+    y: 4,
+    primaryFunction: { id: "commercial_city", name: "商業都市" },
+    functionIds: ["commercial_city"],
+    functions: [{ id: "commercial_city", name: "商業都市" }],
+    services: ["market"],
+    gameplay: { merchantPriceModifier: 1 },
+  };
+  Object.assign(runtime.tiles[35], {
+    nationId: destinationNation.id,
+    regionId: destinationRegion.id,
+    yields: { food: 0.1 },
+  });
+  sourceRegion.tileIndices = sourceRegion.tileIndices.filter((index) => index !== 35);
+  runtime.nations.nations.push(destinationNation);
+  runtime.nations.regions.push(destinationRegion);
+  runtime.nations.objects.push(destinationSettlement);
+  runtime.nations.roads = [{
+    id: "road-import",
+    fromObjectId: sourceSettlement.id,
+    toObjectId: destinationSettlement.id,
+    nationIds: [sourceNation.id, destinationNation.id],
+    importance: 3,
+    tileIndices: [sourceSettlement.tileIndex, destinationSettlement.tileIndex],
+  }];
+  runtime.nationById.set(destinationNation.id, destinationNation);
+  runtime.regionById.set(destinationRegion.id, destinationRegion);
+  return runtime;
 }
 
 function memoryStorage() {
@@ -319,11 +379,39 @@ test("V3集団戦の戦闘前編成を中止すると作戦地点から再開で
   assert.equal(storage.getItem(V3_GROUP_BATTLE_BRIDGE_KEY) !== null, true);
 });
 
-test("村の周辺には村人・冒険者・商人、野外には敵とアイテムが決定論的に現れる", () => {
-  const runtime = fixtureRuntime();
+test("国家需要・街道・地域生態から目的を持つ疎な行商と敵を決定論的に計画する", () => {
+  const runtime = purposefulActorRuntime();
   const context = createV3WorldContext(runtime, "encounter-fixture");
   context.raceDynamics = createRaceDecisionWorldState(runtime, null, { year: 317, month: 4 });
-  const emptyState = { defeatedTiles: [], collectedTiles: [], interactedTiles: [] };
+  context.worldSimulation = {
+    year: 317,
+    month: 4,
+    generatedWorld: {
+      geopolitics: {
+        nationStates: {
+          "nation-1": { foodSecurity: 82, cohesion: 76 },
+          "nation-2": { foodSecurity: 35, cohesion: 40, lastPullId: "secure_food" },
+        },
+      },
+      worldWars: { activeWars: [] },
+    },
+  };
+  const emptyState = { defeatedTiles: [], collectedTiles: [], interactedTiles: [], clockMinutes: 8 * 60 };
+  const plans = getV3PurposefulActorPlans(context, emptyState);
+  const merchant = plans.find((actor) => actor.type === "npc" && actor.role === "merchant");
+  assert.ok(merchant);
+  assert.equal(merchant.purpose.kind, "national-food-import");
+  assert.equal(merchant.purpose.commodityName, "穀物");
+  assert.equal(merchant.purpose.nationalActionId, "secure_food");
+  assert.equal(merchant.route.fromSettlementId, "village-1");
+  assert.equal(merchant.route.toSettlementId, "town-2");
+  assert.equal(merchant.route.roadId, "road-import");
+  assert.match(merchant.message, /国家決定「食料確保」.*食料安全度35/);
+  assert.ok(plans.every((actor) => actor.actorId && actor.purpose?.kind && actor.purpose?.label));
+  assert.equal(new Set(plans.map((actor) => `${actor.x},${actor.y}`)).size, plans.length);
+  assert.ok(plans.filter((actor) => actor.type === "enemy").every((actor) => actor.purpose.reason));
+  assert.ok(plans.length <= runtime.nations.objects.length + runtime.nations.regions.length + 2);
+
   const entities = [];
   for (let y = 0; y < context.height; y += 1) {
     for (let x = 0; x < context.width; x += 1) {
@@ -333,26 +421,19 @@ test("村の周辺には村人・冒険者・商人、野外には敵とアイ�
   }
   assert.ok(entities.some((entity) => entity.type === "enemy"));
   assert.ok(entities.some((entity) => entity.type === "item"));
-  assert.ok(entities.some((entity) => entity.type === "npc" && ["villager", "adventurer"].includes(entity.role)));
+  assert.ok(entities.some((entity) => entity.type === "npc" && entity.role === "villager"));
   assert.ok(entities.some((entity) => entity.type === "npc" && entity.role === "merchant"));
   assert.ok(entities.filter((entity) => entity.type === "npc").every((entity) => (
     TEMPERAMENT_IDS.includes(entity.temperamentId)
       && Object.keys(entity.decisionTraits).length === 6
       && entity.populationGroupIds.length === 2
   )));
-  const localMerchants = entities.filter((entity) => entity.type === "npc" && entity.role === "merchant" && entity.settlementId === "village-1");
-  assert.ok(localMerchants.length > 0);
-  assert.ok(localMerchants.every((merchant) => merchant.price === 3 && merchant.settlementFunctionName === "商業都市"));
-  const fieldState = createV3FieldState(context);
-  const startingEnemies = [];
-  for (let dy = -40; dy <= 40; dy += 1) {
-    for (let dx = -40; dx <= 40; dx += 1) {
-      const entity = getV3TileEntity(context, fieldState.player.x + dx, fieldState.player.y + dy, fieldState);
-      if (entity?.type === "enemy") startingEnemies.push(entity);
-    }
-  }
-  assert.ok(startingEnemies.length > 0);
-  assert.ok(startingEnemies.every((entity) => entity.level === 1));
+  assert.equal(entities.filter((entity) => entity.type !== "item").length, plans.length);
+  assert.ok(plans.length / (context.width * context.height) < 0.01);
+  const merchantEntity = getV3TileEntity(context, merchant.x, merchant.y, emptyState);
+  assert.equal(merchantEntity.purpose.kind, "national-food-import");
+  assert.equal(merchantEntity.price, 6);
+  assert.equal(merchantEntity.settlementFunctionName, "商業都市");
 });
 
 test("現在地要約は国家体制と最寄り集落の都市機能を参照できる", () => {
@@ -423,7 +504,9 @@ test("敵との遭遇は戦闘解決でき、V3セーブは同じ世界へ正規
 });
 
 test("新規種族選択と旧保存補完を保持し、新月の夜だけ幽霊が実体化する", () => {
-  const context = createV3WorldContext(fixtureRuntime(), "new-moon-field");
+  const runtime = fixtureRuntime();
+  runtime.tiles[10].terrainSite = { id: "ruins-1", type: "ruins", name: "月影遺跡" };
+  const context = createV3WorldContext(runtime, "new-moon-field");
   const elf = createV3FieldState(context, { playerName: "月見", playerRaceId: "elf" });
   assert.equal(elf.player.raceId, "elf");
   const legacy = structuredClone(elf);

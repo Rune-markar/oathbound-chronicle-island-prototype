@@ -1,12 +1,12 @@
 export const STATUS_LEDGER_META = Object.freeze({
   schemaVersion: 1,
   projectGeneration: "ver3",
-  lastAuditedAt: "2026-08-24",
+  lastAuditedAt: "2026-09-02",
   auditScope: Object.freeze({
-    codexPrimaryTasks: 87,
-    codexRange: "2026-08-02 — 2026-08-24",
-    gitCommits: 130,
-    gitRange: "initial — 2026-08-24 V2 world generation in V3",
+    codexPrimaryTasks: 88,
+    codexRange: "2026-08-02 — 2026-09-02",
+    gitCommits: 135,
+    gitRange: "initial — 2026-09-02 V3 purposeful field actors and map chips",
     workingTreeIncluded: false,
   }),
   maintenanceRule: "新規・変更機能はGeneration V3の実装と同じ変更でこの台帳を更新し、V3通常導線・状態・保存の一次出典を付ける。V2項目は比較履歴として世代を明記する。",
@@ -26,13 +26,29 @@ const entry = (value) => Object.freeze({ updatedAt: "2026-08-11", ...value, sour
 
 export const STATUS_ENTRIES = Object.freeze([
   entry({
+    id: "v3-purposeful-field-actors",
+    category: "implemented",
+    area: "Generation V3・人物・遭遇",
+    title: "国家・集落・生態から生じる目的駆動型の行商と敵",
+    summary: "詳細マスごとの人物・敵の確率抽選を廃止し、国家食料需要、実在街道、集落機能、地方生態、治安、戦争、天体から日次の少数ActorPlanを作り、視界内だけへ観測可能な人物として投影する。",
+    evidence: "行商は国家AIの食料確保決定または食料不足を起点に、余剰集落から不足集落への国家輸入・国内補給・戦時糧秣・集落間流通のいずれかを理由とし、一到着国一隊を上限に国家行動ID・品目・出発地・到着地・街道を保持する。集落人物は一集落一名の仕事または巡回、野外敵は一地方一体の生息目的を持つ。盗賊は実在隊商と低結束・戦争、新月霊体は夜間の遺跡がある場合だけ追加する。小世界回帰で全ActorPlanが総詳細マスの1%未満、座標重複なし、国家食料安全度35への穀物輸入、従来の敵発見・個人戦を確認する。",
+    updatedAt: "2026-09-02",
+    sources: [
+      source("目的駆動生成", "./src/v3-field-system.js", "getV3PurposefulActorPlans / national-food-import / regionalEnemyPlans"),
+      source("世界状態接続と目的表示", "./src/v3-app.js", "context.worldSimulation / purpose.label / renderField"),
+      source("因果・密度・戦闘回帰", "./tests/v3-field-system.test.mjs", "national food import / actor density / enemy discovery / new moon ruins"),
+      source("実装仕様", "./docs/superpowers/specs/2026-09-02-v3-purposeful-field-actors.md", "causality / limits / persistence boundary"),
+      source("実装・実画面レビュー", "./docs/gameplay-reviews/2026-09-02-v3-purposeful-field-actors.md", "real-world density / desktop / portrait / proof limits"),
+    ],
+  }),
+  entry({
     id: "v3-high-resolution-graphics",
     category: "implemented",
     area: "Generation V3・表示",
     title: "全通常導線の高解像度グラフィック",
-    summary: "V3の地形、集落・探索地点、主人公、NPC、敵、取得物を高解像度WebPへ対応し、機能・方向・戦闘・天候の仮記号をSVGへ置換する。",
-    evidence: "地形30種、地点10種、主人公4種族、NPC3役、敵9種、物品6種、軍勢を正本IDから決定論的に解決する。起動、生成、フィールド、遭遇、個人戦、持ち物、軍務、集団戦名簿、世界現象、世界地図へ接続し、未踏・生成待ち・世界外だけを意図した非画像状態として残す。配信用ラスター4点は合計約2.1MBのWebPへ最適化し、世界地図は最大2倍DPRで描画する。統合後の全773テストと1280×720・390×844の通常UIで代表経路を確認した。",
-    updatedAt: "2026-08-24",
+    summary: "V3の地形を1チップ384pxの手描きWebPへ更新し、集落・探索地点、主人公、NPC、敵、取得物を用途別WebPへ対応する。機能・方向・戦闘・天候の仮記号はSVGで表示する。",
+    evidence: "地形30種、地点10種、主人公4種族、NPC3役、敵9種、物品6種、軍勢を正本IDから決定論的に解決する。地形16枠は4×4・1536pxの等分アトラスへ再生成し、セル境界の半端ピクセルとCSS色ブレンドを除いた。13列×11行を明示して人物画に引かれた縦長マスも正方形へ戻した。起動、生成、フィールド、遭遇、個人戦、持ち物、軍務、集団戦名簿、世界現象、世界地図へ接続し、未踏・生成待ち・世界外だけを意図した非画像状態として残す。ゲーム判定とV3保存は変更しない。",
+    updatedAt: "2026-09-02",
     sources: [
       source("V3アート対応表", "./src/v3-art.js", "terrain / landmark / player / NPC / enemy / item / group battle"),
       source("V3通常UI", "./src/v3-app.js", "renderField / renderEncounter / renderInventory / drawWorldMap"),
@@ -41,6 +57,7 @@ export const STATUS_ENTRIES = Object.freeze([
       source("集団戦人物画", "./src/v3-group-combat.js", "createV3CommandRoster / portraitImage"),
       source("対応漏れ回帰", "./tests/v3-art.test.mjs", "asset files / all current IDs / no text tokens / DPR"),
       source("実装・実画面レビュー", "./docs/gameplay-reviews/2026-08-24-v3-high-resolution-graphics.md", "prompt set / desktop / portrait / high DPI / proof limits"),
+      source("地形チップ画質レビュー", "./docs/gameplay-reviews/2026-09-02-v3-map-chip-quality.md", "generation prompt / 384px cells / desktop / portrait"),
     ],
   }),
   entry({

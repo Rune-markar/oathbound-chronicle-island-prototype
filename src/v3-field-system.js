@@ -161,6 +161,7 @@ export function createV3WorldContext(runtime, seed = runtime?.terrain?.seed) {
   const width = runtime.terrain.width * V3_DETAIL_SCALE;
   const height = runtime.terrain.height * V3_DETAIL_SCALE;
   const settlements = (runtime.nations.objects ?? []).filter((object) => object.settlementLevel).map(detailedSettlement);
+  const settlementById = new Map(settlements.map((settlement) => [settlement.id, settlement]));
   const settlementByMacroIndex = new Map();
   for (const settlement of settlements) {
     const current = settlementByMacroIndex.get(settlement.tileIndex);
@@ -176,7 +177,9 @@ export function createV3WorldContext(runtime, seed = runtime?.terrain?.seed) {
     chunkRows: Math.ceil(height / V3_CHUNK_SIZE),
     roadTileIndices: new Set((runtime.nations.roads ?? []).flatMap((road) => road.tileIndices ?? [])),
     settlementByMacroIndex,
+    settlementById,
     settlements,
+    actorPlanCache: null,
   };
 }
 
@@ -358,74 +361,354 @@ export function getV3DetailedTile(context, requestedX, requestedY) {
   };
 }
 
+function actorPlanPeriod(context, state) {
+  const calendar = getGameCalendar(normalizeStateGameClock(state).clock);
+  const year = Number(context.worldSimulation?.year) || calendar.year;
+  const month = Number(context.worldSimulation?.month) || calendar.month;
+  return `${year}-${month}-${calendar.day}`;
+}
+
+function nationCondition(context, nationId) {
+  return context.worldSimulation?.generatedWorld?.geopolitics?.nationStates?.[nationId] ?? {};
+}
+
+function nationAtWar(context, nationId) {
+  return (context.worldSimulation?.generatedWorld?.worldWars?.activeWars ?? []).some((war) => (
+    war.attackerNationId === nationId || war.defenderNationId === nationId
+  ));
+}
+
+function settlementFoodSupply(context, settlement) {
+  const macro = context.runtime.tiles[settlement.tileIndex] ?? {};
+  const functions = new Set(settlement.functionIds ?? []);
+  return Math.max(0, Math.min(1,
+    (Number(macro.yields?.food) || 0) / 3
+      + (functions.has("agricultural_settlement") ? 0.35 : 0)
+      + (functions.has("fishing_harbor") ? 0.2 : 0),
+  ));
+}
+
+function settlementFoodDemand(settlement) {
+  const level = { village: 0.22, town: 0.5, city: 0.82 }[settlement.settlementLevel] ?? 0.3;
+  const population = Math.min(0.28, Math.log10(Math.max(10, Number(settlement.population) || 10)) / 20);
+  return Math.min(1, level + population);
+}
+
+function detailedPositionInMacro(context, macroIndex, salt, predicate = () => true) {
+  const macroTile = context.runtime.tiles[macroIndex];
+  if (!macroTile) return null;
+  const start = Math.floor(v3HashUnit(context.seed, salt, macroIndex) * V3_DETAIL_SCALE * V3_DETAIL_SCALE);
+  for (let offset = 0; offset < V3_DETAIL_SCALE * V3_DETAIL_SCALE; offset += 1) {
+    const index = (start + offset) % (V3_DETAIL_SCALE * V3_DETAIL_SCALE);
+    const tile = getV3DetailedTile(
+      context,
+      macroTile.x * V3_DETAIL_SCALE + index % V3_DETAIL_SCALE,
+      macroTile.y * V3_DETAIL_SCALE + Math.floor(index / V3_DETAIL_SCALE),
+    );
+    if (tile.passable && !tile.type.startsWith("settlement-") && predicate(tile)) return { x: tile.x, y: tile.y };
+  }
+  return null;
+}
+
+function positionOnRoad(context, road, salt, occupied) {
+  const route = road.tileIndices ?? [];
+  if (!route.length) return null;
+  const start = Math.floor(v3HashUnit(context.seed, salt, "route") * route.length);
+  for (let offset = 0; offset < route.length; offset += 1) {
+    const macroIndex = route[(start + offset) % route.length];
+    const position = detailedPositionInMacro(context, macroIndex, `${salt}:${offset}`, (tile) => tile.onRoad);
+    if (position && !occupied.has(tileKey(position.x, position.y))) return position;
+  }
+  return null;
+}
+
+function tradePurpose(context, road) {
+  const left = context.settlementById.get(road.fromObjectId);
+  const right = context.settlementById.get(road.toObjectId);
+  if (!left || !right) return null;
+  const scoreDirection = (origin, destination) => {
+    const originSupply = settlementFoodSupply(context, origin);
+    const destinationSupply = settlementFoodSupply(context, destination);
+    const destinationCondition = nationCondition(context, destination.nationId);
+    const nationalFoodOrder = destinationCondition.lastPullId === "secure_food";
+    const nationalShortage = Math.max(0, 68 - (Number(destinationCondition.foodSecurity) || 55)) / 35;
+    const need = settlementFoodDemand(destination) + nationalShortage - destinationSupply * 0.55;
+    return { origin, destination, originSupply, destinationSupply, destinationCondition, nationalFoodOrder, need, score: originSupply * 0.8 + need + (nationalFoodOrder ? 0.35 : 0) };
+  };
+  const directions = [scoreDirection(left, right), scoreDirection(right, left)]
+    .sort((a, b) => b.score - a.score || a.origin.id.localeCompare(b.origin.id));
+  const selected = directions[0];
+  const destinationAtWar = nationAtWar(context, selected.destination.nationId);
+  const foodSecurity = Number(selected.destinationCondition.foodSecurity) || 55;
+  const crossBorder = selected.origin.nationId !== selected.destination.nationId;
+  if ((foodSecurity < 62 || selected.nationalFoodOrder) && selected.originSupply > selected.destinationSupply + 0.08) return {
+    kind: crossBorder ? "national-food-import" : "national-food-relief",
+    label: crossBorder ? "国家の食料輸入" : "国家の食料補給",
+    commodityId: "grain",
+    commodityName: "穀物",
+    reason: selected.nationalFoodOrder
+      ? `${context.runtime.nationById.get(selected.destination.nationId)?.name ?? selected.destination.nationId}の国家決定「食料確保」を実行し、${selected.destination.name}側の食料安全度${Math.round(foodSecurity)}を補う`
+      : `${selected.destination.name}側の食料安全度${Math.round(foodSecurity)}を補う`,
+    ...selected,
+  };
+  if (destinationAtWar && selected.originSupply > 0.28) return {
+    kind: "wartime-provisions",
+    label: "戦時の糧秣輸送",
+    commodityId: "grain",
+    commodityName: "糧秣",
+    reason: `${selected.destination.nationId}の戦線と住民へ食料を届ける`,
+    ...selected,
+  };
+  if (selected.score >= 0.92 && (road.importance ?? 1) >= 2) return {
+    kind: "settlement-food-distribution",
+    label: "集落間の食料流通",
+    commodityId: "grain",
+    commodityName: "穀物",
+    reason: `${selected.origin.name}の余剰を${selected.destination.name}の需要へ回す`,
+    ...selected,
+  };
+  return null;
+}
+
+function purposefulMerchantPlans(context, period, occupied) {
+  const candidates = (context.runtime.nations.roads ?? []).map((road) => {
+    const purpose = tradePurpose(context, road);
+    return purpose ? { road, purpose } : null;
+  }).filter(Boolean).sort((left, right) => right.purpose.score - left.purpose.score || left.road.id.localeCompare(right.road.id));
+  const selected = [];
+  const destinationNations = new Set();
+  for (const candidate of candidates) {
+    const nationId = candidate.purpose.destination.nationId ?? "unclaimed";
+    if (destinationNations.has(nationId)) continue;
+    const actorId = `merchant:${period}:${candidate.road.id}:${candidate.purpose.commodityId}`;
+    const position = positionOnRoad(context, candidate.road, actorId, occupied);
+    if (!position) continue;
+    occupied.add(tileKey(position.x, position.y));
+    destinationNations.add(nationId);
+    const { origin, destination, kind, label, commodityId, commodityName, reason, nationalFoodOrder } = candidate.purpose;
+    selected.push({
+      type: "npc",
+      role: "merchant",
+      actorId,
+      name: kind === "national-food-import" ? "穀物輸入の行商人" : kind === "wartime-provisions" ? "糧秣隊商" : "穀物輸送の行商人",
+      symbol: "商",
+      message: `${reason}ため、${origin.name}から${destination.name}へ${commodityName}を運んでいる。`,
+      price: Math.min(8, Math.max(3, 5 + (Number(destination.gameplay?.merchantPriceModifier) || 0))),
+      settlementId: destination.id,
+      settlementFunctionName: destination.primaryFunction?.name ?? "集落",
+      purpose: {
+        kind,
+        label,
+        commodityId,
+        commodityName,
+        nationalActionId: nationalFoodOrder ? "secure_food" : null,
+        reason,
+        originSettlementId: origin.id,
+        originSettlementName: origin.name,
+        destinationSettlementId: destination.id,
+        destinationSettlementName: destination.name,
+        roadId: candidate.road.id,
+      },
+      route: { roadId: candidate.road.id, fromSettlementId: origin.id, toSettlementId: destination.id },
+      ...position,
+    });
+  }
+  return selected;
+}
+
+function localDutyPlans(context, period, occupied) {
+  const plans = [];
+  for (const settlement of context.settlements) {
+    const functions = new Set(settlement.functionIds ?? []);
+    const threatened = nationAtWar(context, settlement.nationId)
+      || functions.has("fortress_city") || functions.has("border_town") || functions.has("dungeon_city");
+    const role = threatened ? "adventurer" : "villager";
+    const actorId = `${role}:${period}:${settlement.id}`;
+    const position = detailedPositionInMacro(context, settlement.tileIndex, actorId);
+    if (!position || occupied.has(tileKey(position.x, position.y))) continue;
+    occupied.add(tileKey(position.x, position.y));
+    const functionName = settlement.primaryFunction?.name ?? "集落";
+    plans.push({
+      type: "npc",
+      role,
+      actorId,
+      name: role === "adventurer" ? `${settlement.name}の巡回役` : `${settlement.name}の働き手`,
+      symbol: role === "adventurer" ? "冒" : "人",
+      message: role === "adventurer"
+        ? `${settlement.name}の${functionName}と街道を守るため、危険の兆候を巡回している。`
+        : `${settlement.name}の${functionName}を支える仕事で、周辺の資源と道を確かめに来ている。`,
+      settlementId: settlement.id,
+      settlementFunctionName: functionName,
+      purpose: {
+        kind: role === "adventurer" ? "settlement-patrol" : "settlement-work",
+        label: role === "adventurer" ? "集落と街道の巡回" : `${functionName}の仕事`,
+        settlementId: settlement.id,
+        settlementName: settlement.name,
+      },
+      ...position,
+    });
+  }
+  return plans;
+}
+
+function macroHabitatTags(tile) {
+  const tags = new Set([tile.terrain, tile.relief, tile.feature, ...(tile.geographyTags ?? [])].filter(Boolean));
+  if (tile.relief === "mountains") tags.add("mountain_range");
+  if (tile.terrain === "tundra") tags.add("coldland");
+  if (tile.terrain === "snow") tags.add("snowfield");
+  if (tile.terrainSite?.type) tags.add(tile.terrainSite.type);
+  return tags;
+}
+
+function enemyPurpose(definition, regionName) {
+  const purposes = {
+    "green-slime": ["wetland-forage", "湿地の餌場を回遊", `${regionName}の水辺で苔と小動物を求めている`],
+    "goblin-scout": ["lair-watch", "巣と遺跡の見張り", `${regionName}の坑道・遺跡へ近づく者を見張っている`],
+    "wild-wolf": ["territorial-hunt", "縄張りでの狩り", `${regionName}の獣道を狩場として巡っている`],
+    "sand-scorpion": ["waterhole-hunt", "砂地の水場で待ち伏せ", `${regionName}の水場へ来る獲物を狙っている`],
+    "marsh-leech": ["marsh-feeding", "湿地の吸血域", `${regionName}の浅水域を餌場にしている`],
+    "reef-crab": ["shore-territory", "岩礁の縄張り", `${regionName}の岩礁と潮だまりを守っている`],
+    "ember-lizard": ["thermal-nesting", "火山性地形の営巣", `${regionName}の地熱域で巣を守っている`],
+  };
+  const [kind, label, reason] = purposes[definition.id] ?? ["territorial-roam", "生息域の巡回", `${regionName}を縄張りとしている`];
+  return { kind, label, reason };
+}
+
+function regionalEnemyPlans(context, state, period, occupied) {
+  const plans = [];
+  for (const region of context.runtime.nations.regions ?? []) {
+    const candidates = (region.tileIndices ?? []).map((macroIndex) => {
+      const macro = context.runtime.tiles[macroIndex];
+      if (!macro?.passable || context.settlementByMacroIndex.has(macroIndex)) return null;
+      const habitats = macroHabitatTags(macro);
+      const pool = ENEMY_TABLE.filter((enemy) => enemy.id !== "road-bandit" && enemy.habitats.some((id) => habitats.has(id)));
+      if (!pool.length) return null;
+      const danger = (macro.terrainSite ? 0.5 : 0) + (macro.relief === "mountains" ? 0.25 : 0)
+        + (macro.feature === "forest" || macro.feature === "marsh" ? 0.2 : 0)
+        + v3HashUnit(context.seed, period, region.id, macroIndex, "territory") * 0.18;
+      const enemy = pool[Math.floor(v3HashUnit(context.seed, region.id, macroIndex, "species") * pool.length)];
+      const detailed = getV3DetailedTile(
+        context,
+        macro.x * V3_DETAIL_SCALE + Math.floor(V3_DETAIL_SCALE / 2),
+        macro.y * V3_DETAIL_SCALE + Math.floor(V3_DETAIL_SCALE / 2),
+      );
+      const affected = applyV3WorldEffectToTile(context, state, detailed);
+      const worldDanger = Math.max(-0.25, Math.min(0.5, (affected.dangerBias ?? 0) - (detailed.dangerBias ?? 0)));
+      return { macroIndex, enemy, danger: danger + worldDanger };
+    }).filter(Boolean).sort((left, right) => right.danger - left.danger || left.macroIndex - right.macroIndex);
+    const selected = candidates[0];
+    if (!selected) continue;
+    const actorId = `enemy:${region.id}:${selected.enemy.id}`;
+    const position = detailedPositionInMacro(context, selected.macroIndex, `${actorId}:${period}`);
+    if (!position || occupied.has(tileKey(position.x, position.y))) continue;
+    occupied.add(tileKey(position.x, position.y));
+    plans.push({
+      type: "enemy",
+      ...selected.enemy,
+      actorId,
+      purpose: enemyPurpose(selected.enemy, region.name ?? "この地方"),
+      ...position,
+    });
+  }
+  return plans;
+}
+
+function tradeRaiderPlans(context, period, merchants, occupied) {
+  const plans = [];
+  for (const merchant of merchants) {
+    const road = (context.runtime.nations.roads ?? []).find((entry) => entry.id === merchant.route.roadId);
+    if (!road) continue;
+    const destination = context.settlementById.get(merchant.route.toSettlementId);
+    const condition = nationCondition(context, destination?.nationId);
+    const risk = Math.max(0, 58 - (Number(condition.cohesion) || 55)) + (nationAtWar(context, destination?.nationId) ? 18 : 0);
+    if (risk < 12) continue;
+    const actorId = `enemy:trade-raider:${period}:${road.id}`;
+    const position = positionOnRoad(context, road, actorId, occupied);
+    if (!position) continue;
+    occupied.add(tileKey(position.x, position.y));
+    const definition = ENEMY_TABLE.find((enemy) => enemy.id === "road-bandit");
+    plans.push({
+      type: "enemy",
+      ...definition,
+      actorId,
+      purpose: {
+        kind: "raid-caravan",
+        label: "隊商の襲撃",
+        reason: `${merchant.purpose.originSettlementName}から${merchant.purpose.destinationSettlementName}へ向かう${merchant.purpose.commodityName ?? "荷"}を狙っている`,
+        targetActorId: merchant.actorId,
+        roadId: road.id,
+      },
+      ...position,
+    });
+  }
+  return plans;
+}
+
+function newMoonGhostPlans(context, state, period, occupied) {
+  const active = getV3CelestialEffects(context, state).active.some((effect) => effect.id === "new_moon");
+  if (!active) return [];
+  const plans = [];
+  for (const macro of context.runtime.tiles.filter((tile) => tile.terrainSite?.type === "ruins")) {
+    const actorId = `enemy:new-moon:${period}:${macro.index}`;
+    const position = detailedPositionInMacro(context, macro.index, actorId);
+    if (!position || occupied.has(tileKey(position.x, position.y))) continue;
+    occupied.add(tileKey(position.x, position.y));
+    plans.push({
+      type: "enemy",
+      ...V3_NEW_MOON_GHOST,
+      actorId,
+      manifested: true,
+      purpose: { kind: "new-moon-manifestation", label: "新月の遺跡への顕現", reason: `${macro.terrainSite.name ?? "古い遺跡"}に残る記憶へ引かれて実体化した` },
+      ...position,
+    });
+  }
+  return plans;
+}
+
+export function getV3PurposefulActorPlans(context, state = {}) {
+  const period = actorPlanPeriod(context, state);
+  const celestialKey = getV3CelestialEffects(context, state).active.map((effect) => effect.id).sort().join(",") || "none";
+  const cacheKey = `${period}:${celestialKey}`;
+  const worldSimulation = context.worldSimulation ?? null;
+  const cached = context.actorPlanCache;
+  if (cached?.cacheKey === cacheKey && cached.worldSimulation === worldSimulation) return cached.plans;
+  const occupied = new Set();
+  const merchants = purposefulMerchantPlans(context, period, occupied);
+  const plans = [
+    ...merchants,
+    ...localDutyPlans(context, period, occupied),
+    ...regionalEnemyPlans(context, state, period, occupied),
+    ...tradeRaiderPlans(context, period, merchants, occupied),
+    ...newMoonGhostPlans(context, state, period, occupied),
+  ];
+  const byTile = new Map(plans.map((actor) => [tileKey(actor.x, actor.y), actor]));
+  context.actorPlanCache = { cacheKey, period, worldSimulation, plans: Object.freeze(plans), byTile };
+  return context.actorPlanCache.plans;
+}
+
+function purposefulActorAt(context, tile, state) {
+  getV3PurposefulActorPlans(context, state);
+  const actor = context.actorPlanCache.byTile.get(tileKey(tile.x, tile.y));
+  if (!actor) return null;
+  if (actor.type === "npc") return enrichV3NpcEntity(context, tile, actor);
+  const spawn = state.player && Number.isInteger(state.player.spawnX) && Number.isInteger(state.player.spawnY)
+    ? { x: state.player.spawnX, y: state.player.spawnY }
+    : { x: tile.x, y: tile.y };
+  const distanceFromArrival = wrappedDetailDistance(context, { x: tile.x, y: tile.y }, spawn);
+  const level = Math.min(5, 1 + Math.floor(distanceFromArrival / 160));
+  return { ...actor, level, hp: actor.baseHp + level * 2, maxHp: actor.baseHp + level * 2 };
+}
+
 export function getV3TileEntity(context, x, y, state = {}) {
   const tile = applyV3WorldEffectToTile(context, state, getV3DetailedTile(context, x, y));
   if (!tile.passable || tile.type.startsWith("settlement-")) return null;
   const key = tileKey(tile.x, tile.y);
   if ((state.defeatedTiles ?? []).includes(key) || (state.collectedTiles ?? []).includes(key) || (state.interactedTiles ?? []).includes(key)) return null;
-  const newMoonActive = getV3CelestialEffects(context, state).active.some((effect) => effect.id === "new_moon");
-  if (newMoonActive && v3HashUnit(context.seed, "new-moon-ghost", tile.x, tile.y) < 0.12) {
-    const spawn = state.player && Number.isInteger(state.player.spawnX) && Number.isInteger(state.player.spawnY)
-      ? { x: state.player.spawnX, y: state.player.spawnY }
-      : { x: tile.x, y: tile.y };
-    const distanceFromArrival = wrappedDetailDistance(context, { x: tile.x, y: tile.y }, spawn);
-    const level = Math.min(5, 1 + Math.floor(distanceFromArrival / 160));
-    return {
-      type: "enemy",
-      ...V3_NEW_MOON_GHOST,
-      level,
-      hp: V3_NEW_MOON_GHOST.baseHp + level * 2,
-      maxHp: V3_NEW_MOON_GHOST.baseHp + level * 2,
-      manifested: true,
-    };
-  }
-  const nearby = nearestV3Settlement(context, tile.x, tile.y, 7);
-  const roll = v3HashUnit(context.seed, "entity", tile.x, tile.y);
-  if (nearby && roll < 0.16) {
-    const roleRoll = v3HashUnit(context.seed, "npc-role", tile.x, tile.y);
-    const gameplay = nearby.settlement.gameplay ?? {};
-    const merchantThreshold = Math.min(0.58, Math.max(0.08,
-      0.12 + (tile.onRoad ? 0.18 : 0) + (Number(gameplay.merchantBias) || 0)));
-    const villagerThreshold = Math.min(0.84, Math.max(merchantThreshold + 0.12,
-      0.68 - (Number(gameplay.adventurerBias) || 0)));
-    const role = roleRoll < merchantThreshold ? "merchant" : roleRoll < villagerThreshold ? "villager" : "adventurer";
-    const functionName = nearby.settlement.primaryFunction?.name ?? "集落";
-    const merchantPrice = Math.min(8, Math.max(3, 5 + (Number(gameplay.merchantPriceModifier) || 0)));
-    const definitions = {
-      merchant: { name: "旅商人", symbol: "商", message: `${nearby.settlement.name}の${functionName}へ品を運ぶ途中らしい。`, price: merchantPrice },
-      villager: { name: `${nearby.settlement.name}の住民`, symbol: "人", message: `${functionName}の仕事と近くの道について教えてくれた。` },
-      adventurer: { name: "巡回中の冒険者", symbol: "冒", message: `${nearby.settlement.name}の${functionName}周辺を警戒している。` },
-    };
-    return enrichV3NpcEntity(context, tile, {
-      type: "npc",
-      role,
-      ...definitions[role],
-      settlementId: nearby.settlement.id,
-      settlementFunctionName: functionName,
-    });
-  }
-  if (tile.onRoad && roll < 0.025) return enrichV3NpcEntity(context, tile, {
-    type: "npc",
-    role: "merchant",
-    name: "街道商人",
-    symbol: "商",
-    message: "遠国へ向かう行商人だ。",
-    price: 5,
-  });
+  const actor = purposefulActorAt(context, tile, state);
+  if (actor) return actor;
   const habitats = new Set([tile.type, ...(tile.geographyTags ?? [])]);
-  const matchingEnemies = ENEMY_TABLE.filter((entry) => entry.habitats.some((id) => habitats.has(id)));
-  const dangerBias = tile.dangerBias ?? (tile.type === "forest" || tile.type === "mountain" ? 0.035 : 0);
-  if (roll < 0.095 + dangerBias) {
-    const enemyPool = matchingEnemies.length ? matchingEnemies : ENEMY_TABLE;
-    const definition = enemyPool[Math.floor(v3HashUnit(context.seed, "enemy", tile.x, tile.y) * enemyPool.length)];
-    const spawn = state.player && Number.isInteger(state.player.spawnX) && Number.isInteger(state.player.spawnY)
-      ? { x: state.player.spawnX, y: state.player.spawnY }
-      : { x: tile.x, y: tile.y };
-    const distanceFromArrival = wrappedDetailDistance(context, { x: tile.x, y: tile.y }, spawn);
-    const level = Math.min(5, 1 + Math.floor(distanceFromArrival / 160));
-    return { type: "enemy", ...definition, level, hp: definition.baseHp + level * 2, maxHp: definition.baseHp + level * 2 };
-  }
-  if (roll < 0.16) {
+  const itemRoll = v3HashUnit(context.seed, "item-presence", tile.x, tile.y);
+  if (itemRoll < 0.035) {
     const matchingItems = ITEM_TABLE.filter((entry) => entry.habitats.some((id) => habitats.has(id)));
     const itemPool = matchingItems.length ? matchingItems : ITEM_TABLE;
     const item = itemPool[Math.floor(v3HashUnit(context.seed, "item", tile.x, tile.y) * itemPool.length)];
@@ -655,7 +938,7 @@ export function moveV3Player(context, state, directionName) {
         worldY: destination.y,
         tileKey: key,
       },
-      messageLog: addLog(state, `${direction.label}の${destination.name}に${entity.name}を発見した。足元の地形で個人戦に入る！`),
+      messageLog: addLog(state, `${direction.label}の${destination.name}に${entity.name}を発見した。足元の地形で個人戦に入る！${entity.purpose?.reason ? ` ${entity.purpose.reason}。` : ""}`),
     };
   }
   return {
