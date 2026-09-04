@@ -113,6 +113,11 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .v3-player-sprite, .v3-entity { position: relative; z-index: 2; display: block; width: 94%; aspect-ratio: 1; border: 0; border-radius: 0; background-color: transparent; filter: drop-shadow(0 2px 2px rgba(5,12,9,.9)); }
 .v3-player-sprite { filter: drop-shadow(0 0 2px #fff2b1) drop-shadow(0 2px 2px rgba(5,12,9,.92)); }
 .v3-entity { width: 88%; }
+.v3-crisis-symbol { position: relative; z-index: 3; display: grid; place-items: center; width: 72%; aspect-ratio: 1; border: 2px solid #fff0b3; border-radius: 50%; background: radial-gradient(circle at 35% 28%, color-mix(in srgb, var(--crisis-color) 68%, white), var(--crisis-color) 58%, #24151d); color: #fffbe8; box-shadow: 0 0 0 2px rgba(22,10,15,.68), 0 0 12px color-mix(in srgb, var(--crisis-color) 64%, transparent); font-style: normal; animation: v3-crisis-pulse 1.6s ease-in-out infinite alternate; }
+.v3-crisis-symbol > i { font: 900 clamp(8px, 1.5vw, 16px)/1 Georgia, "Yu Mincho", serif; }
+.v3-crisis-symbol > small { position: absolute; right: -3px; bottom: -3px; display: grid; place-items: center; min-width: 15px; height: 15px; border: 1px solid #fff0b3; border-radius: 50%; background: #28151b; color: #fff0b3; font: 900 8px/1 sans-serif; }
+.v3-combatants .v3-crisis-symbol { width: 58%; }
+@keyframes v3-crisis-pulse { from { scale: .94; filter: brightness(.92); } to { scale: 1.03; filter: brightness(1.18); } }
 .v3-entity.is-group-battle { width: 82%; border: 2px solid #ffe18b; border-radius: 50%; box-shadow: 0 0 0 2px rgba(73,20,19,.76), 0 2px 4px #07100d; }
 .v3-combatants { position: relative; z-index: 2; display: flex; align-items: end; justify-content: center; width: 92%; }
 .v3-combatants .v3-player-sprite, .v3-combatants .v3-entity { width: 66%; }
@@ -329,7 +334,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .v3-world-intelligence > section { padding: 10px; border: 1px solid #50655d; background: #0b2022; }
 .v3-world-intelligence header { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 .v3-world-intelligence header > strong { font: 800 17px Georgia, "Yu Mincho", serif; }
-.v3-world-summary > div:first-of-type { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin: 9px 0; }
+.v3-world-summary > div:first-of-type { display: grid; grid-template-columns: repeat(auto-fit, minmax(52px, 1fr)); gap: 4px; margin: 9px 0; }
 .v3-world-summary > div:first-of-type span { display: grid; justify-items: center; padding: 6px 2px; background: #142c2e; color: #9fafa6; font-size: 9px; }
 .v3-world-summary > div:first-of-type b { color: #fff5ce; font-size: 15px; }
 .v3-world-nation-list { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
@@ -358,14 +363,15 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .v3-world-effects > header > span > small { color: #d8c576; font-size: 8px; font-weight: 900; letter-spacing: .12em; }
 .v3-world-effects > header > span > strong { font: 800 16px Georgia, "Yu Mincho", serif; }
 .v3-world-effects > header > b { color: #f1df98; font-size: 11px; }
-.v3-world-effect-local, .v3-world-effect-celestial, .v3-world-effect-race, .v3-world-effect-market { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 7px 0; padding: 6px 7px; border-left: 2px solid #d4c16e; background: #172c30; }
+.v3-world-effect-local, .v3-world-effect-celestial, .v3-world-effect-race, .v3-world-effect-market, .v3-world-effect-crisis { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 7px 0; padding: 6px 7px; border-left: 2px solid #d4c16e; background: #172c30; }
 .v3-world-effect-local > strong, .v3-world-effect-celestial > strong, .v3-world-effect-market > strong { display: inline-flex; align-items: center; }
 .v3-world-effect-celestial { border-left-color: #a68acb; background: #211d30; }
 .v3-world-effect-race { border-left-color: #657a73; }
 .v3-world-effect-race.is-active { border-left-color: #9b82cf; background: #211d2c; }
 .v3-world-effect-market { border-left-color: #b76b5b; background: #2b1b1b; }
-.v3-world-effect-local strong, .v3-world-effect-celestial strong, .v3-world-effect-race strong, .v3-world-effect-market strong { flex: none; color: #fff1bd; font-size: 11px; }
-.v3-world-effect-local span, .v3-world-effect-celestial span, .v3-world-effect-race span, .v3-world-effect-market span { color: #aabbb6; font-size: 8px; line-height: 1.35; text-align: right; }
+.v3-world-effect-crisis { border-left-color: #9b65b3; background: #251b2c; }
+.v3-world-effect-local strong, .v3-world-effect-celestial strong, .v3-world-effect-race strong, .v3-world-effect-market strong, .v3-world-effect-crisis strong { flex: none; color: #fff1bd; font-size: 11px; }
+.v3-world-effect-local span, .v3-world-effect-celestial span, .v3-world-effect-race span, .v3-world-effect-market span, .v3-world-effect-crisis span { color: #aabbb6; font-size: 8px; line-height: 1.35; text-align: right; }
 .v3-world-effects ul { display: grid; gap: 3px; margin: 0; padding: 0; list-style: none; }
 .v3-world-effects li { display: grid; grid-template-columns: 27px minmax(0, 1fr) auto; align-items: center; gap: 6px; min-height: 34px; padding: 4px 5px; border: 1px solid #31494b; background: #0c1b1e; }
 .v3-world-effects li > i { display: grid; place-items: center; width: 25px; height: 25px; border: 1px solid color-mix(in srgb, var(--effect-color) 72%, white); border-radius: 50%; background: color-mix(in srgb, var(--effect-color) 52%, #0b1b1d); color: #fff9df; font-style: normal; }
@@ -373,6 +379,8 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .v3-world-effects li strong { color: #eceddf; font-size: 9px; }
 .v3-world-effects li small { overflow: hidden; color: #8fa29e; font-size: 7px; letter-spacing: 0; text-overflow: ellipsis; white-space: nowrap; }
 .v3-world-effects li em { color: #ddc979; font-size: 8px; font-style: normal; font-weight: 800; }
+.v3-world-effects li.is-crisis { border-color: color-mix(in srgb, var(--effect-color, #9b65b3) 55%, #31494b); background: #181522; }
+.v3-world-effects li.is-crisis > i > b { color: #fff9df; font-size: 10px; }
 .v3-dossier-settlement { display: grid; gap: 4px; margin-top: 9px; padding-top: 8px; border-top: 1px solid #465c56; }
 .v3-dossier-settlement > small { color: #d8c576; font-weight: 900; letter-spacing: .12em; }
 .v3-dossier-settlement > strong { color: #f0ead0; font: 800 15px Georgia, "Yu Mincho", serif; }

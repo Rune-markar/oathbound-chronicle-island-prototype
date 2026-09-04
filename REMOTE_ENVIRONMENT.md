@@ -42,4 +42,4 @@ Development servers should listen on localhost by default. Use SSH port forwardi
 
 ## Current verification focus
 
-As of 2026-09-04, the canonical Generation V3 conflict-balance check uses Node.js 22, `npm run check`, and a localhost browser run of `index.html`. The deterministic 50-year fixture `v3-race-history-600` must retain at least one completed generated war while avoiding universal national-condition saturation. Browser verification must cover desktop and 390×844 viewports and close the browser and local server afterward.
+As of 2026-09-05, the canonical Generation V3 check uses Node.js 22, `npm run check`, and a localhost browser run of `index.html`. The deterministic 50-year fixture `v3-race-history-600` must retain completed generated wars, non-saturated national conditions, and all four external-crisis types across its crisis history. Browser verification must cover the world-crisis panel and local projected crisis symbol at desktop and 390×844 viewports, then close the browser and local server.

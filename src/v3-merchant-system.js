@@ -33,6 +33,7 @@ import { advanceStateGameClock, getGameCalendar, normalizeStateGameClock } from 
 import { getV3DetailedTile } from "./v3-field-system.js";
 import { getV3WorldSimulationView } from "./v3-world-simulation.js";
 import { getV3WartimeMarketEffect } from "./v3-world-effects.js";
+import { getV3ExternalCrisisMarketEffect } from "./v3-external-crisis-system.js";
 
 export const V3_MERCHANT_VERSION = 2;
 
@@ -104,22 +105,44 @@ export function getV3CurrentMarket(context, state) {
   return distance <= settlementRadius(tile.settlement.settlementLevel) ? clone(tile.settlement) : null;
 }
 
-function wartimeMarketEffect(context, worldSimulation, settlement) {
+function multiplyCommodityEffects(effects, field) {
+  const commodityIds = new Set(effects.flatMap((effect) => Object.keys(effect[field] ?? {})));
+  return Object.fromEntries([...commodityIds].map((commodityId) => [commodityId, Number(effects.reduce((value, effect) => (
+    value * (Number(effect[field]?.[commodityId]) || 1)
+  ), 1).toFixed(4))]));
+}
+
+function worldMarketEffect(context, worldSimulation, settlement) {
   if (!worldSimulation || !settlement) return null;
   const map = getV3WorldSimulationView(context.runtime, worldSimulation);
   const nationId = map.regionById.get(settlement.regionId)?.nationId ?? settlement.nationId ?? null;
   const nation = map.nationById.get(nationId);
-  return getV3WartimeMarketEffect({
+  const wartime = getV3WartimeMarketEffect({
     activeWars: map.activeWars,
     nationId,
     nationName: nation?.name ?? settlement.nationName,
     regionId: settlement.regionId,
   });
+  const external = getV3ExternalCrisisMarketEffect(worldSimulation.externalCrises, nationId, settlement.regionId);
+  const effects = [wartime, external].filter(Boolean);
+  if (!effects.length) return null;
+  if (effects.length === 1) return effects[0];
+  return {
+    id: `combined-market:${effects.map((effect) => effect.id).join("+")}`,
+    effectId: "combined_world_scarcity",
+    name: effects.map((effect) => effect.name).join("・"),
+    symbol: "危",
+    severity: Number(Math.min(5, effects.reduce((sum, effect) => sum + (Number(effect.severity) || 0), 0)).toFixed(2)),
+    priceMultiplier: Number(effects.reduce((value, effect) => value * (Number(effect.priceMultiplier) || 1), 1).toFixed(4)),
+    commodityPriceMultipliers: multiplyCommodityEffects(effects, "commodityPriceMultipliers"),
+    commodityStockMultipliers: multiplyCommodityEffects(effects, "commodityStockMultipliers"),
+    summary: effects.map((effect) => effect.summary).join(" "),
+  };
 }
 
 function tradeAdapter(context, state, settlement = null, worldSimulation = null) {
   const calendar = getGameCalendar(normalizeStateGameClock(state).clock);
-  const marketEffect = wartimeMarketEffect(context, worldSimulation, settlement);
+  const marketEffect = worldMarketEffect(context, worldSimulation, settlement);
   return {
     year: calendar.year,
     month: calendar.month,

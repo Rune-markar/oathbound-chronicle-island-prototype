@@ -52,7 +52,7 @@ test("天地創造の複合地理と未実装の資源開発を分けて追跡�
 });
 
 test("V3の単独犯罪と六作戦の組織運営を現行導線として追跡する", async () => {
-  assert.equal(STATUS_LEDGER_META.lastAuditedAt, "2026-09-02");
+  assert.equal(STATUS_LEDGER_META.lastAuditedAt, "2026-09-05");
   assert.equal(STATUS_LEDGER_META.projectGeneration, "ver3");
   const crime = STATUS_ENTRIES.find((item) => item.id === "criminal-play-flow");
   assert.ok(crime, "criminal-play-flow ledger entry is required");
@@ -87,6 +87,16 @@ test("V3の単独犯罪と六作戦の組織運営を現行導線として追跡
   assert.match(manual, /身代金.*交渉材料.*解放.*身請け.*見捨て/s);
   assert.match(changelog, /Generation V3.*唯一の開発正本/s);
   assert.match(changelog, /V3詳細フィールド.*単独犯罪.*V3専用セーブ/s);
+});
+
+test("V3外部危機を地方圧力・世界影響・周辺シンボルまで現行導線として追跡する", () => {
+  const entry = STATUS_ENTRIES.find((item) => item.id === "v3-external-crisis-simulation");
+  assert.equal(entry?.category, "implemented");
+  assert.match(entry?.summary ?? "", /洪水.*山火事.*飢饉.*魔族襲撃/);
+  assert.match(entry?.evidence ?? "", /国家五条件.*集落人口.*地方施設.*市場/);
+  assert.ok(entry?.sources.some((item) => item.href === "./src/v3-external-crisis-system.js"));
+  assert.ok(entry?.sources.some((item) => item.href === "./src/v3-field-system.js"));
+  assert.ok(entry?.sources.some((item) => item.href === "./tests/v3-external-crisis-system.test.mjs"));
 });
 
 test("世界終局の二経路を生成世界へ接続済みとして追跡する", () => {

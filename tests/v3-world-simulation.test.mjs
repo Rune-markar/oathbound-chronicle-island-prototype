@@ -31,10 +31,19 @@ test("V3世界状態は同じシードと月数から同じ外交・戦争・年
   assert.deepEqual([left.year, left.month], [317, 4]);
   assert.deepEqual(left.generatedWorld.geopolitics, right.generatedWorld.geopolitics);
   assert.deepEqual(left.generatedWorld.worldWars, right.generatedWorld.worldWars);
+  assert.deepEqual(left.externalCrises, right.externalCrises);
   assert.deepEqual(left.history, right.history);
   assert.ok(left.history.length >= 3);
   assert.equal(left.generatedWorld.regionalDomains.lastAdvancedPeriod, "317-4");
   assert.equal(left.generatedWorld.geopolitics.lastAdvancedPeriod, "317-4");
+});
+
+test("月次観測を反復しても過去の現在スナップショットを累積しない", () => {
+  const { runtime } = fixture();
+  let simulation = createV3WorldSimulation(runtime, OPTIONS, { year: 317, month: 4 });
+  for (let index = 0; index < 6; index += 1) simulation = advanceV3WorldSimulation(runtime, simulation, 1);
+  assert.ok(simulation.history.filter((snapshot) => snapshot.reason === "現在").length <= 1);
+  assert.ok(simulation.history.length <= 3, "six single-month observations must not retain six full current snapshots");
 });
 
 test("V3事前史は指定月数だけ過去から進み、現在月と年次記録へ到達する", async () => {
@@ -49,6 +58,7 @@ test("V3事前史は指定月数だけ過去から進み、現在月と年次記
   assert.equal(progress.at(-1).progress, 1);
   assert.equal(progress.at(-1).completed, 24);
   assert.ok(simulation.history.some((snapshot) => snapshot.reason === "年次記録"));
+  assert.ok(simulation.externalCrises.events.some((event) => event.type === "external_crisis"));
   assert.equal(simulation.history.at(-1).headline, "冒険者が世界へ降り立つ");
 });
 
@@ -85,6 +95,9 @@ test("50年事前史は人口・気質・統治者・国家判断を一つの決
   assert.ok(Object.values(simulation.generatedWorld.geopolitics.nationStates).every((condition) => (
     STATE_REASON_CONDITIONS.some(({ field }) => condition[field] < 90)
   )), "long histories must not saturate every nation's conditions near 100");
+  assert.deepEqual(new Set(simulation.externalCrises.events.filter((event) => event.outcome === "started").map((event) => event.crisisType)),
+    new Set(["flood", "wildfire", "famine", "demon_raid"]));
+  assert.ok(simulation.externalCrises.history.length > 0, "regional crises must recover instead of persisting forever");
 });
 
 test("周縁圧力は決定論的に蓄積し、閾値を越えた地方を独立勢力として保存する", () => {
@@ -145,6 +158,7 @@ test("V3世界セーブはJSON往復後も現在年月・動的国境・年代�
   assert.deepEqual([restored.year, restored.month], [advanced.year, advanced.month]);
   assert.deepEqual(restored.generatedWorld.regionalDomains.regionStates, advanced.generatedWorld.regionalDomains.regionStates);
   assert.deepEqual(restored.history, advanced.history);
+  assert.deepEqual(restored.externalCrises, advanced.externalCrises);
 });
 
 test("V3通常地図に政治・地形・地方・戦争レイヤー、年代再生、月次進行、国家詳細がある", async () => {
@@ -166,6 +180,8 @@ test("V3通常地図に政治・地形・地方・戦争レイヤー、年代再
   assert.match(app, /直近判断の候補比較/);
   assert.match(app, /初期国家課題/);
   assert.match(app, /現在の最弱環/);
+  assert.match(app, /drawExternalCrisisSymbols/);
+  assert.match(app, /世界現象・外部危機/);
   assert.match(app, /POPULATION PROJECTIONS/);
   assert.match(app, /長期均衡/);
   assert.match(styles, /\.v3-world-map-workspace/);

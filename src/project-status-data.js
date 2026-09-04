@@ -1,12 +1,12 @@
 export const STATUS_LEDGER_META = Object.freeze({
   schemaVersion: 1,
   projectGeneration: "ver3",
-  lastAuditedAt: "2026-09-02",
+  lastAuditedAt: "2026-09-05",
   auditScope: Object.freeze({
     codexPrimaryTasks: 88,
-    codexRange: "2026-08-02 — 2026-09-02",
-    gitCommits: 135,
-    gitRange: "initial — 2026-09-02 V3 purposeful field actors and map chips",
+    codexRange: "2026-08-02 — 2026-09-05",
+    gitCommits: 145,
+    gitRange: "initial — 2026-09-05 V3 external crises",
     workingTreeIncluded: false,
   }),
   maintenanceRule: "新規・変更機能はGeneration V3の実装と同じ変更でこの台帳を更新し、V3通常導線・状態・保存の一次出典を付ける。V2項目は比較履歴として世代を明記する。",
@@ -25,6 +25,26 @@ const source = (label, href, ref, kind = "source") => Object.freeze({ label, hre
 const entry = (value) => Object.freeze({ updatedAt: "2026-08-11", ...value, sources: Object.freeze(value.sources) });
 
 export const STATUS_ENTRIES = Object.freeze([
+  entry({
+    id: "v3-external-crisis-simulation",
+    category: "implemented",
+    area: "Generation V3・世界情勢・外部危機",
+    title: "地方圧力から進行する災害・飢饉・魔族襲撃",
+    summary: "洪水、山火事、飢饉、魔族襲撃を地方ごとの地理・季節・食料・戦争・国家条件・魔的地点から月次で概算し、発生から終息まで保存する。活動中の危機だけを世界地図とプレイヤー周辺へシンボル化する。",
+    evidence: "危機は圧力52以上で発生し、一地方2件・全世界12件、種別ごとの最長期間、6か月の再発猶予を持つ。国家五条件、集落人口、地方施設、市場へ危機度別に作用し、年代記と横断イベントへ接続する。詳細側は現在地方の危機だけを13×11視界へ決定論的に投影し、敵遭遇へ変換しない。",
+    updatedAt: "2026-09-05",
+    sources: [
+      source("外部危機ドメイン", "./src/v3-external-crisis-system.js", "advanceV3ExternalCrises / applyV3ExternalCrisisConsequences / getV3ExternalCrisisMarketEffect"),
+      source("動的世界と保存", "./src/v3-world-simulation.js", "externalCrises / world-simulation v3 / chronicle"),
+      source("周辺シンボル投影", "./src/v3-field-system.js", "externalCrisisPlans / nearbyCrisisPosition"),
+      source("通常UI", "./src/v3-app.js", "drawExternalCrisisSymbols / renderWorldEffects / crisis entity"),
+      source("市場接続", "./src/v3-merchant-system.js", "worldMarketEffect / price and stock multipliers"),
+      source("回帰テスト", "./tests/v3-external-crisis-system.test.mjs", "lifecycle / consequences / local symbol / market"),
+      source("50年回帰", "./tests/v3-world-simulation.test.mjs", "all four crisis types / save roundtrip / UI contract"),
+      source("実装仕様", "./docs/superpowers/specs/2026-09-05-v3-external-crisis-simulation.md", "pressure / consequences / projection / persistence"),
+      source("実装レビュー", "./docs/gameplay-reviews/2026-09-05-v3-external-crisis-simulation.md", "causality / browser proof / limits"),
+    ],
+  }),
   entry({
     id: "v3-purposeful-field-actors",
     category: "implemented",

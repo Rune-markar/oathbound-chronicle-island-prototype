@@ -207,6 +207,7 @@ function generatedWorldEvents(simulation) {
     ...(world.regionalDomains?.events ?? []),
     ...(world.resistance?.events ?? []),
     ...(world.barbarians?.events ?? []),
+    ...(simulation?.externalCrises?.events ?? []),
   ].filter((entry) => entry?.id && (entry.summary || entry.title));
 }
 
@@ -228,6 +229,9 @@ function asDomainWorldEvent(entry, clock) {
       title: entry.title ?? null,
       tone: entry.tone ?? null,
       targetNationId: entry.targetNationId ?? null,
+      crisisType: entry.crisisType ?? null,
+      severity: entry.severity ?? null,
+      outcome: entry.outcome ?? null,
       worldPeriod: entry.period ?? null,
     },
   };

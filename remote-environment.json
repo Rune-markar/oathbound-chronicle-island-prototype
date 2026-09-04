@@ -8,8 +8,8 @@
   "requiredEnvironment": [],
   "bootstrapCommands": { "all": ["npm ci"] },
   "verifyCommands": ["npm run check"],
-  "lastReviewed": "2026-09-04",
-  "verificationFocus": ["Generation V3 50-year conflict balance", "Desktop and 390x844 canonical browser flow"],
+  "lastReviewed": "2026-09-05",
+  "verificationFocus": ["Generation V3 50-year conflict and external-crisis balance", "World crisis panel and projected local symbol", "Desktop and 390x844 canonical browser flow"],
   "roles": {
     "development": {},
     "static-publisher": {},

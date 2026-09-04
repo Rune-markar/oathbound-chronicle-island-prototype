@@ -180,6 +180,7 @@ export function createV3WorldContext(runtime, seed = runtime?.terrain?.seed) {
     settlementById,
     settlements,
     actorPlanCache: null,
+    crisisProjectionCache: new Map(),
   };
 }
 
@@ -665,16 +666,88 @@ function newMoonGhostPlans(context, state, period, occupied) {
   return plans;
 }
 
+function nearbyCrisisPosition(context, state, crisis, period, occupied) {
+  const observationCell = `${Math.floor(state.player.x / 13)}:${Math.floor(state.player.y / 11)}`;
+  const projectionKey = `${crisis.id}:${period}:${observationCell}`;
+  const cached = context.crisisProjectionCache?.get(projectionKey);
+  if (cached && !occupied.has(tileKey(cached.x, cached.y))) return cached;
+  const candidates = [];
+  const discovered = new Set(state.discoveredTiles ?? []);
+  for (let dy = -5; dy <= 5; dy += 1) {
+    for (let dx = -6; dx <= 6; dx += 1) {
+      if (Math.abs(dx) + Math.abs(dy) < 2) continue;
+      const x = wrapped(state.player.x + dx, context.width);
+      const y = state.player.y + dy;
+      if (y < 0 || y >= context.height || occupied.has(tileKey(x, y))) continue;
+      if (discovered.size && !discovered.has(tileKey(x, y))) continue;
+      const tile = getV3DetailedTile(context, x, y);
+      if (!tile.passable || tile.type.startsWith("settlement-") || tile.region?.id !== crisis.regionId) continue;
+      candidates.push({ x, y, score: v3HashUnit(context.seed, crisis.id, period, x, y) });
+    }
+  }
+  const position = candidates.sort((left, right) => right.score - left.score || left.y - right.y || left.x - right.x)[0] ?? null;
+  if (position && context.crisisProjectionCache) {
+    context.crisisProjectionCache.set(projectionKey, position);
+    while (context.crisisProjectionCache.size > 96) {
+      context.crisisProjectionCache.delete(context.crisisProjectionCache.keys().next().value);
+    }
+  }
+  return position;
+}
+
+function externalCrisisPlans(context, state, period, occupied) {
+  const crises = context.worldSimulation?.externalCrises?.activeCrises ?? [];
+  if (!state.player || !Number.isFinite(state.player.x) || !Number.isFinite(state.player.y) || crises.length === 0) return [];
+  const playerMacroX = Math.floor(state.player.x / V3_DETAIL_SCALE);
+  const playerMacroY = Math.floor(state.player.y / V3_DETAIL_SCALE);
+  const playerMacroIndex = playerMacroY * context.runtime.terrain.width + playerMacroX;
+  const playerRegionId = context.runtime.tiles[playerMacroIndex]?.regionId ?? null;
+  const plans = [];
+  for (const crisis of crises.filter((entry) => entry.regionId === playerRegionId)) {
+    const actorId = `crisis-symbol:${crisis.id}`;
+    const position = nearbyCrisisPosition(context, state, crisis, period, occupied);
+    if (!position || occupied.has(tileKey(position.x, position.y))) continue;
+    occupied.add(tileKey(position.x, position.y));
+    plans.push({
+      type: "crisis",
+      id: crisis.type,
+      actorId,
+      crisisId: crisis.id,
+      name: crisis.name,
+      symbol: crisis.symbol,
+      color: crisis.color,
+      severity: crisis.severity,
+      stage: crisis.stage,
+      regionId: crisis.regionId,
+      message: `${crisis.regionName}では${crisis.name}が危機度${crisis.severity}で進行中。${crisis.description}`,
+      purpose: {
+        kind: "external-crisis-observation",
+        label: `${crisis.name}・危機度${crisis.severity}`,
+        reason: `${crisis.causes.join("、")}。詳細マスで突然発生したのではなく、地方単位の月次危機が周辺へ投影されている`,
+      },
+      period,
+      projectedFromMacroIndex: crisis.originTileIndex,
+      ...position,
+    });
+  }
+  return plans;
+}
+
 export function getV3PurposefulActorPlans(context, state = {}) {
   const period = actorPlanPeriod(context, state);
   const celestialKey = getV3CelestialEffects(context, state).active.map((effect) => effect.id).sort().join(",") || "none";
-  const cacheKey = `${period}:${celestialKey}`;
+  const observationCell = state.player && Number.isFinite(state.player.x) && Number.isFinite(state.player.y)
+    ? `${Math.floor(state.player.x / 13)}:${Math.floor(state.player.y / 11)}`
+    : "no-player";
+  const cacheKey = `${period}:${celestialKey}:${observationCell}`;
   const worldSimulation = context.worldSimulation ?? null;
   const cached = context.actorPlanCache;
   if (cached?.cacheKey === cacheKey && cached.worldSimulation === worldSimulation) return cached.plans;
   const occupied = new Set();
+  const crises = externalCrisisPlans(context, state, period, occupied);
   const merchants = purposefulMerchantPlans(context, period, occupied);
   const plans = [
+    ...crises,
     ...merchants,
     ...localDutyPlans(context, period, occupied),
     ...regionalEnemyPlans(context, state, period, occupied),
@@ -690,6 +763,7 @@ function purposefulActorAt(context, tile, state) {
   getV3PurposefulActorPlans(context, state);
   const actor = context.actorPlanCache.byTile.get(tileKey(tile.x, tile.y));
   if (!actor) return null;
+  if (actor.type === "crisis") return actor;
   if (actor.type === "npc") return enrichV3NpcEntity(context, tile, actor);
   const spawn = state.player && Number.isInteger(state.player.spawnX) && Number.isInteger(state.player.spawnY)
     ? { x: state.player.spawnX, y: state.player.spawnY }
@@ -703,8 +777,9 @@ export function getV3TileEntity(context, x, y, state = {}) {
   const tile = applyV3WorldEffectToTile(context, state, getV3DetailedTile(context, x, y));
   if (!tile.passable || tile.type.startsWith("settlement-")) return null;
   const key = tileKey(tile.x, tile.y);
-  if ((state.defeatedTiles ?? []).includes(key) || (state.collectedTiles ?? []).includes(key) || (state.interactedTiles ?? []).includes(key)) return null;
   const actor = purposefulActorAt(context, tile, state);
+  if (actor?.type === "crisis") return actor;
+  if ((state.defeatedTiles ?? []).includes(key) || (state.collectedTiles ?? []).includes(key) || (state.interactedTiles ?? []).includes(key)) return null;
   if (actor) return actor;
   const habitats = new Set([tile.type, ...(tile.geographyTags ?? [])]);
   const itemRoll = v3HashUnit(context.seed, "item-presence", tile.x, tile.y);
@@ -939,6 +1014,12 @@ export function moveV3Player(context, state, directionName) {
         tileKey: key,
       },
       messageLog: addLog(state, `${direction.label}の${destination.name}に${entity.name}を発見した。足元の地形で個人戦に入る！${entity.purpose?.reason ? ` ${entity.purpose.reason}。` : ""}`),
+    };
+  }
+  if (entity.type === "crisis") {
+    return {
+      ...moved,
+      messageLog: addLog(moved, `${entity.name}の影響域に入った。危機度${entity.severity}。${entity.purpose?.reason ?? entity.message}`),
     };
   }
   return {

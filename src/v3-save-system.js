@@ -41,6 +41,18 @@ function migrateWorldSimulationV1ToV2(raw) {
   };
 }
 
+function migrateWorldSimulationV2ToV3(raw) {
+  if (!raw.worldSimulation || typeof raw.worldSimulation !== "object") return raw;
+  return {
+    ...raw,
+    worldSimulation: {
+      ...raw.worldSimulation,
+      version: V3_WORLD_SIMULATION_VERSION,
+      externalCrises: raw.worldSimulation.externalCrises ?? null,
+    },
+  };
+}
+
 function migrateRaceDecisionsV1ToV2(raw) {
   const dynamics = raw.worldSimulation?.generatedWorld?.raceDynamics;
   if (!dynamics || typeof dynamics !== "object") return raw;
@@ -92,7 +104,7 @@ export const V3_SAVE_REGISTRY = createSaveRegistry({
       id: "world-simulation",
       version: V3_WORLD_SIMULATION_VERSION,
       legacyVersion: (raw) => Number(raw.worldSimulation?.version) || 1,
-      migrations: { 1: migrateWorldSimulationV1ToV2 },
+      migrations: { 1: migrateWorldSimulationV1ToV2, 2: migrateWorldSimulationV2ToV3 },
     },
     {
       id: "race-decisions",

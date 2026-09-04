@@ -16,8 +16,13 @@ import {
 } from "./race-decision-system.js";
 import { deriveNationPolity } from "./world-polity-system.js";
 import { UNIQUE_CHARACTERS } from "./unique-characters.js";
+import {
+  advanceV3ExternalCrises,
+  applyV3ExternalCrisisConsequences,
+  createV3ExternalCrisisState,
+} from "./v3-external-crisis-system.js";
 
-export const V3_WORLD_SIMULATION_VERSION = 2;
+export const V3_WORLD_SIMULATION_VERSION = 3;
 export const V3_PRESENT_DATE = Object.freeze({ year: 317, month: 4 });
 export const V3_PREHISTORY_MONTHS = 50 * 12;
 export const V3_PREHISTORY_REGIONAL_CADENCE_MONTHS = 4;
@@ -144,6 +149,23 @@ function snapshotNations(runtime, simulation, regionOwners) {
   });
 }
 
+function snapshotCrises(simulation) {
+  return (simulation.externalCrises?.activeCrises ?? []).map((crisis) => ({
+    id: crisis.id,
+    type: crisis.type,
+    name: crisis.name,
+    symbol: crisis.symbol,
+    color: crisis.color,
+    regionId: crisis.regionId,
+    regionName: crisis.regionName,
+    nationId: crisis.nationId,
+    originTileIndex: crisis.originTileIndex,
+    severity: crisis.severity,
+    stage: crisis.stage,
+    causes: [...(crisis.causes ?? [])],
+  }));
+}
+
 function snapshotFor(runtime, simulation, reason = "年次記録", headline = null) {
   const regionOwners = Object.fromEntries(runtime.nations.regions.map((region) => [
     region.id,
@@ -165,6 +187,7 @@ function snapshotFor(runtime, simulation, reason = "年次記録", headline = nu
     regionOwners,
     nations: snapshotNations(runtime, simulation, regionOwners),
     activeWars: wars,
+    activeCrises: snapshotCrises(simulation),
     raceDynamics: compactRaceDynamics(simulation.generatedWorld.raceDynamics),
     signature: ownershipSignature(regionOwners),
   };
@@ -175,7 +198,7 @@ function appendSnapshot(history, snapshot) {
   const duplicateIndex = next.findIndex((entry) => entry.period === snapshot.period && entry.signature === snapshot.signature);
   if (duplicateIndex >= 0) {
     const existing = next[duplicateIndex];
-    const priority = { "世界成立": 5, "国境変動": 4, "現在": 3, "年次記録": 2 };
+    const priority = { "世界成立": 5, "国境変動": 4, "年次記録": 3, "現在": 2 };
     const preserveExistingLabel = (priority[existing.reason] ?? 1) > (priority[snapshot.reason] ?? 1);
     next[duplicateIndex] = preserveExistingLabel
       ? { ...snapshot, reason: existing.reason, headline: existing.headline ?? snapshot.headline }
@@ -234,6 +257,9 @@ function normalizeSnapshot(runtime, source) {
       targetRegionId: war.targetRegionId,
       phase: war.phase,
     })),
+    activeCrises: (Array.isArray(source.activeCrises) ? source.activeCrises : []).filter((crisis) => (
+      crisis && typeof crisis.id === "string" && typeof crisis.regionId === "string"
+    )).map((crisis) => structuredClone(crisis)),
     raceDynamics: compactRaceDynamics(source.raceDynamics),
     signature: ownershipSignature(regionOwners),
   };
@@ -248,6 +274,7 @@ export function createV3WorldSimulation(runtime, options = {}, dateState = V3_PR
   generatedWorld.raceDynamics = createRaceDecisionWorldState(runtime, generatedWorld.raceDynamics, date, {
     fixedCharacters: FIXED_WORLD_CHARACTERS,
   });
+  const externalCrises = createV3ExternalCrisisState(runtime, null, date, generatedWorld);
   const simulation = {
     version: V3_WORLD_SIMULATION_VERSION,
     year: date.year,
@@ -256,6 +283,7 @@ export function createV3WorldSimulation(runtime, options = {}, dateState = V3_PR
     prehistoryMonths: 0,
     foundedPeriod: periodFor(date),
     generatedWorld,
+    externalCrises,
     autonomyStrain: {},
     history: [],
   };
@@ -264,7 +292,7 @@ export function createV3WorldSimulation(runtime, options = {}, dateState = V3_PR
 }
 
 export function normalizeV3WorldSimulation(runtime, options = {}, source = null) {
-  if (!source || ![1, V3_WORLD_SIMULATION_VERSION].includes(Number(source.version))) {
+  if (!source || ![1, 2, V3_WORLD_SIMULATION_VERSION].includes(Number(source.version))) {
     return createV3WorldSimulation(runtime, options);
   }
   const date = {
@@ -275,6 +303,7 @@ export function normalizeV3WorldSimulation(runtime, options = {}, source = null)
   generatedWorld.raceDynamics = createRaceDecisionWorldState(runtime, generatedWorld.raceDynamics, date, {
     fixedCharacters: FIXED_WORLD_CHARACTERS,
   });
+  const externalCrises = createV3ExternalCrisisState(runtime, source.externalCrises, date, generatedWorld);
   const simulation = {
     version: V3_WORLD_SIMULATION_VERSION,
     year: date.year,
@@ -283,6 +312,7 @@ export function normalizeV3WorldSimulation(runtime, options = {}, source = null)
     prehistoryMonths: Math.max(0, Math.round(Number(source.prehistoryMonths) || 0)),
     foundedPeriod: typeof source.foundedPeriod === "string" ? source.foundedPeriod : periodFor(date),
     generatedWorld,
+    externalCrises,
     autonomyStrain: Object.fromEntries(Object.entries(source.autonomyStrain ?? {}).filter(([regionId, value]) => (
       runtime.regionById.has(regionId) && Number.isFinite(Number(value))
     )).map(([regionId, value]) => [regionId, clamp(value, 0, 160)])),
@@ -400,6 +430,8 @@ function advanceOneMonth(runtime, simulation, options = {}) {
   const regionalCadence = clamp(Math.round(options.regionalCadence ?? 1), 1, 12);
   if ((simulation.elapsedMonths + 1) % regionalCadence === 0) state = advanceGeneratedWorldRegions(state);
   state = advanceGeneratedWorldGeopolitics(state);
+  const externalCrises = advanceV3ExternalCrises(runtime, simulation.externalCrises, date, state.generatedWorld);
+  state.generatedWorld = applyV3ExternalCrisisConsequences(runtime, state.generatedWorld, externalCrises, date);
   const elapsedMonths = simulation.elapsedMonths + 1;
   const secession = maybeDeclareSecession(runtime, state, elapsedMonths, simulation.autonomyStrain);
   state = secession.state;
@@ -409,6 +441,7 @@ function advanceOneMonth(runtime, simulation, options = {}) {
     month: state.month,
     elapsedMonths,
     generatedWorld: state.generatedWorld,
+    externalCrises,
     autonomyStrain: secession.autonomyStrain,
   };
   const currentPeriod = periodFor(next);
@@ -426,7 +459,7 @@ export function advanceV3WorldSimulation(runtime, source, months = 1) {
   const count = clamp(Math.round(months), 0, 120);
   for (let index = 0; index < count; index += 1) simulation = advanceOneMonth(runtime, simulation);
   const current = snapshotFor(runtime, simulation, "現在", null);
-  simulation.history = appendSnapshot(simulation.history, current);
+  simulation.history = appendSnapshot(simulation.history.filter((snapshot) => snapshot.reason !== "現在"), current);
   return simulation;
 }
 
@@ -456,7 +489,7 @@ export async function buildV3WorldPrehistory(runtime, options = {}, config = {})
   }
   simulation.prehistoryMonths = months;
   const current = snapshotFor(runtime, simulation, "現在", "冒険者が世界へ降り立つ");
-  simulation.history = appendSnapshot(simulation.history, current);
+  simulation.history = appendSnapshot(simulation.history.filter((snapshot) => snapshot.reason !== "現在"), current);
   return simulation;
 }
 
@@ -494,6 +527,7 @@ function historicalMapView(runtime, snapshot) {
     roads: runtime.nations.roads ?? [],
     borderSegments,
     activeWars: snapshot.activeWars,
+    activeCrises: snapshot.activeCrises ?? [],
     raceDynamics: snapshot.raceDynamics,
   };
 }
@@ -517,6 +551,7 @@ function currentMapView(runtime, simulation) {
     roads: domains.nationMap.roads,
     borderSegments: domains.nationMap.borderSegments,
     activeWars: wars.activeWars,
+    activeCrises: simulation.externalCrises?.activeCrises ?? [],
     raceDynamics: simulation.generatedWorld.raceDynamics,
   };
 }
@@ -554,6 +589,7 @@ export function getV3NationDossier(runtime, simulation, nationId, historyIndex =
   const neighbors = [...new Set(map.borderSegments.flatMap((segment) => segment.nations?.includes(nationId)
     ? segment.nations.filter((id) => id && id !== nationId) : []))].map((id) => map.nationById.get(id)).filter(Boolean);
   const wars = map.activeWars.filter((war) => war.attackerNationId === nationId || war.defenderNationId === nationId);
+  const crises = (map.activeCrises ?? []).filter((crisis) => crisis.nationId === nationId || regions.some((region) => region.id === crisis.regionId));
   let condition = null;
   let relations = [];
   let latestAction = null;
@@ -578,6 +614,7 @@ export function getV3NationDossier(runtime, simulation, nationId, historyIndex =
     settlements,
     neighbors,
     wars,
+    crises,
     condition,
     relations,
     latestAction,
@@ -594,6 +631,7 @@ function eventImportance(event) {
   if (["regional_independence", "regional_control_change"].includes(event.type)) return 5;
   if (/侵攻|停戦|併合|崩壊|独立/.test(event.title ?? "")) return 4;
   if (event.type === "generated_world_war") return 2;
+  if (event.type === "external_crisis") return ["started", "escalated"].includes(event.outcome) ? 4 : 3;
   if (["war_started", "ceasefire_accepted", "alliance_formed"].includes(event.outcome)) return 3;
   return 1;
 }
@@ -615,8 +653,9 @@ export function getV3WorldChronicle(runtime, simulation, limit = 80) {
     }));
   const warEvents = getGeneratedWorldWarView(state).events;
   const politicalEvents = getGeneratedGeopoliticalView(state).events;
+  const externalEvents = simulation.externalCrises?.events ?? [];
   const unique = new Map();
-  [...politicalEvents, ...warEvents, ...domainEvents].forEach((event) => {
+  [...politicalEvents, ...warEvents, ...domainEvents, ...externalEvents].forEach((event) => {
     if (event?.id && event?.period) unique.set(event.id, { ...event, importance: eventImportance(event) });
   });
   const maximum = clamp(Math.round(limit), 1, 240);

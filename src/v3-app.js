@@ -66,6 +66,7 @@ import {
   V3_PREHISTORY_MONTHS,
 } from "./v3-world-simulation.js";
 import { getV3WartimeMarketEffect, getV3WorldEffectsView } from "./v3-world-effects.js";
+import { getV3ExternalCrisisMarketEffect } from "./v3-external-crisis-system.js";
 import {
   getV3EntityArt,
   getV3LandmarkArt,
@@ -470,7 +471,9 @@ function renderField() {
     const sprites = [
       tile.player ? atlasArtMarkup(getV3PlayerArt(state.player.raceId), { className: "v3-player-sprite", label: state.player.name }) : "",
       (!hidden || militaryTarget) && visibleEntity
-        ? atlasArtMarkup(getV3EntityArt(visibleEntity), { className: `v3-entity is-${escapeHtml(visibleEntity.type)}`, label: visibleEntity.name })
+        ? visibleEntity.type === "crisis"
+          ? `<b class="v3-crisis-symbol is-${escapeHtml(visibleEntity.id)}" style="--crisis-color:${escapeHtml(visibleEntity.color)}" aria-label="${escapeHtml(`${visibleEntity.name}、危機度${visibleEntity.severity}`)}"><i>${escapeHtml(visibleEntity.symbol)}</i><small>${visibleEntity.severity}</small></b>`
+          : atlasArtMarkup(getV3EntityArt(visibleEntity), { className: `v3-entity is-${escapeHtml(visibleEntity.type)}`, label: visibleEntity.name })
         : "",
     ].filter(Boolean);
     const occupants = sprites.length > 1 ? `<span class="v3-combatants">${sprites.join("")}</span>` : sprites[0] ?? "";
@@ -927,6 +930,29 @@ function drawWorldEffectFronts(drawing, effects, scale) {
   drawing.restore();
 }
 
+function drawExternalCrisisSymbols(drawing, crises, scale) {
+  drawing.save();
+  drawing.textAlign = "center";
+  drawing.textBaseline = "middle";
+  drawing.font = "bold 7px sans-serif";
+  for (const crisis of crises ?? []) {
+    const tile = runtime.tiles[crisis.originTileIndex];
+    if (!tile) continue;
+    const x = tile.x * scale + scale / 2;
+    const y = tile.y * scale + scale / 2;
+    drawing.fillStyle = crisis.color;
+    drawing.strokeStyle = "#fff2c2";
+    drawing.lineWidth = 1.2;
+    drawing.beginPath();
+    drawing.arc(x, y, 5 + crisis.severity * 0.55, 0, Math.PI * 2);
+    drawing.fill();
+    drawing.stroke();
+    drawing.fillStyle = "#fff9e4";
+    drawing.fillText(crisis.symbol, x, y + 0.5);
+  }
+  drawing.restore();
+}
+
 function regionMapColor(color, regionId) {
   let hash = 0;
   for (const character of String(regionId)) hash = (Math.imul(hash, 31) + character.charCodeAt(0)) >>> 0;
@@ -1058,17 +1084,22 @@ function renderWorldPanels(map) {
     nationName: effectNation?.name,
     regionId: effectLocation.region?.id,
   });
+  const externalMarket = getV3ExternalCrisisMarketEffect(worldSimulation.externalCrises, effectNationId, effectLocation.region?.id);
+  const localCrises = (map.activeCrises ?? []).filter((crisis) => crisis.regionId === effectLocation.region?.id);
+  const crisisRows = (map.activeCrises ?? []).map((crisis) => `<li class="is-crisis is-${escapeHtml(crisis.type)}" style="--effect-color:${escapeHtml(crisis.color)}"><i><b>${escapeHtml(crisis.symbol)}</b></i><span><strong>${escapeHtml(crisis.name)}</strong><small>${escapeHtml(crisis.regionName)} · ${escapeHtml(crisis.causes.join("・"))}</small></span><em>危機度${crisis.severity}</em></li>`).join("");
   elements.worldEffects.innerHTML = `
-    <header><span><small>WORLD EFFECTS</small><strong>世界現象</strong></span><b>${effects.fronts.length}域${effects.activeGlobal.length ? `＋${effects.activeGlobal.length}天体` : ""}</b></header>
+    <header><span><small>WORLD EFFECTS</small><strong>世界現象・外部危機</strong></span><b>${effects.fronts.length}気象・${map.activeCrises?.length ?? 0}危機</b></header>
     <p class="v3-world-effect-local"><strong>${uiIconMarkup(weatherIcon(effects.local?.motion), "v3-inline-icon")}<span>${effects.local ? escapeHtml(effects.local.name) : "現在座標は平穏"}</span></strong><span>${effects.local ? `移動 +${Math.round((effects.local.travelMultiplier - 1) * 100)}% · 遭遇 +${(effects.local.dangerDelta * 100).toFixed(1)}pt` : "移動・遭遇補正なし"}</span></p>
     <p class="v3-world-effect-celestial"><strong>${uiIconMarkup("moon", "v3-inline-icon")}<span>${escapeHtml(moon.primaryMoon)} · ${escapeHtml(moon.phaseName)}</span></strong><span>${moon.active.length ? `${escapeHtml(moon.active[0].description)}（夜間作用中）` : `周期${moon.cycleDay}/${moon.cycleDays}日 · ${moon.isNight ? "夜間" : "日中"}`}</span></p>
     <p class="v3-world-effect-race${raceResponses.length ? " is-active" : ""}"><strong>${escapeHtml(effects.raceResponse?.peopleName ?? "人間")}への作用</strong><span>${escapeHtml(effects.raceResponse?.summary ?? "種族固有反応なし")}${raceResponses.length ? ` · ${escapeHtml(raceResponses.map((response) => response.summary).join(" "))}` : ""}</span></p>
     ${wartimeMarket ? `<p class="v3-world-effect-market"><strong>${uiIconMarkup("commerce", "v3-inline-icon")}<span>${escapeHtml(wartimeMarket.name)}</span></strong><span>${escapeHtml(wartimeMarket.summary)}</span></p>` : ""}
-    <ul>${effects.fronts.map((front) => `<li class="is-${escapeHtml(front.motion)}"><i style="--effect-color:${escapeHtml(front.color)}">${uiIconMarkup(weatherIcon(front.motion), "v3-effect-icon")}</i><span><strong>${escapeHtml(front.name)}</strong><small>${escapeHtml(front.regionName ?? "洋上・無主地")} · 強度${front.intensity} · 半径${Math.round(front.radius)}区画</small></span><em>最大+${front.travelPenaltyPercent}%</em></li>`).join("") || "<li><span><strong>大きな現象なし</strong><small>この月に記録対象となる前線はありません。</small></span></li>"}</ul>`;
+    ${externalMarket ? `<p class="v3-world-effect-market"><strong><span>${escapeHtml(externalMarket.name)}</span></strong><span>${escapeHtml(externalMarket.summary)}</span></p>` : ""}
+    ${localCrises.length ? `<p class="v3-world-effect-crisis"><strong>現在地方</strong><span>${localCrises.map((crisis) => `${escapeHtml(crisis.name)} 危機度${crisis.severity}`).join("・")}</span></p>` : ""}
+    <ul>${crisisRows}${effects.fronts.map((front) => `<li class="is-${escapeHtml(front.motion)}"><i style="--effect-color:${escapeHtml(front.color)}">${uiIconMarkup(weatherIcon(front.motion), "v3-effect-icon")}</i><span><strong>${escapeHtml(front.name)}</strong><small>${escapeHtml(front.regionName ?? "洋上・無主地")} · 強度${front.intensity} · 半径${Math.round(front.radius)}区画</small></span><em>最大+${front.travelPenaltyPercent}%</em></li>`).join("") || (!crisisRows ? "<li><span><strong>大きな現象なし</strong><small>この月に記録対象となる前線・危機はありません。</small></span></li>" : "")}</ul>`;
 
   const activeNations = map.nations.filter((nation) => regionCountFor(map, nation.id) > 0);
   const settlementCount = map.objects.filter((object) => object.settlementLevel).length;
-  elements.worldStats.innerHTML = `<span><b>${activeNations.length}</b>勢力</span><span><b>${map.regionById.size}</b>地方</span><span><b>${settlementCount}</b>集落</span><span><b>${map.activeWars.length}</b>戦争</span>`;
+  elements.worldStats.innerHTML = `<span><b>${activeNations.length}</b>勢力</span><span><b>${map.regionById.size}</b>地方</span><span><b>${settlementCount}</b>集落</span><span><b>${map.activeWars.length}</b>戦争</span><span><b>${map.activeCrises?.length ?? 0}</b>外部危機</span>`;
   elements.worldNationList.innerHTML = activeNations.sort((left, right) => regionCountFor(map, right.id) - regionCountFor(map, left.id) || left.name.localeCompare(right.name, "ja"))
     .map((nation) => `<button type="button" data-v3-select-nation="${escapeHtml(nation.id)}" class="${nation.id === selectedNationId ? "is-selected" : ""}" aria-pressed="${nation.id === selectedNationId}"><i style="--nation-color:${escapeHtml(nation.color)}"></i><span><strong>${escapeHtml(nation.name)}</strong><small>${regionCountFor(map, nation.id)}地方</small></span></button>`).join("");
 
@@ -1092,6 +1123,7 @@ function renderWorldPanels(map) {
         ${condition ? `<div><dt>初期国家課題</dt><dd>${escapeHtml(STATE_REASON_CONDITION_NAMES[condition.stateReason?.initialImperativeId] ?? "不明")}</dd></div><div><dt>現在の最弱環</dt><dd>${escapeHtml(STATE_REASON_CONDITION_NAMES[condition.stateReason?.weakestConditionId] ?? "不明")} ${condition.stateReason?.value ?? "-"}</dd></div><div><dt>食料</dt><dd>${condition.foodSecurity}</dd></div><div><dt>結束</dt><dd>${condition.cohesion}</dd></div><div><dt>財政</dt><dd>${condition.reserves}</dd></div><div><dt>防衛</dt><dd>${condition.readiness}</dd></div><div><dt>主権</dt><dd>${condition.sovereignty}</dd></div><div><dt>態勢</dt><dd>${escapeHtml(condition.posture)}</dd></div><div><dt>緊張関係</dt><dd>${relationWarning}</dd></div>` : ""}
       </dl>
       <p class="v3-dossier-war">${warText}</p>
+      ${dossier.crises.length ? `<p class="v3-dossier-crisis"><strong>外部危機</strong><span>${dossier.crises.map((crisis) => `${escapeHtml(crisis.regionName)}の${escapeHtml(crisis.name)}（危機度${crisis.severity}）`).join(" / ")}</span></p>` : ""}
       ${condition ? `<p><strong>${escapeHtml(STATE_REASON_PRINCIPLE.name)}</strong><span>${escapeHtml(STATE_REASON_PRINCIPLE.rule)}</span><small>同値なら低コスト、なお同値なら国民性</small></p>` : ""}
       ${dossier.latestAction ? `<p><strong>直近の判断</strong><span>${escapeHtml(dossier.latestAction.title)}</span><small>${escapeHtml(dossier.latestAction.summary)}</small></p>` : ""}
       ${renderDecisionProfile(dossier.decisionProfile, dossier.latestAction, dossier.nation.peopleName ?? "住民")}`;
@@ -1186,7 +1218,10 @@ function drawWorldMap() {
     }
     drawing.stroke();
   }
-  if (mapLayer === "effects") drawWorldEffectFronts(drawing, effects, scale);
+  if (mapLayer === "effects") {
+    drawWorldEffectFronts(drawing, effects, scale);
+    drawExternalCrisisSymbols(drawing, map.activeCrises, scale);
+  }
   drawing.globalAlpha = 1;
   for (const object of map.objects) {
     if (!object.settlementLevel) continue;
