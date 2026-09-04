@@ -18,18 +18,18 @@ export const STATE_REASON_CONDITIONS = Object.freeze([
 export const GEOPOLITICAL_ACTION_EFFECTS = Object.freeze({
   consolidate: Object.freeze({ nation: Object.freeze({ cohesion: 5, reserves: -1, sovereignty: 1, offensiveIntent: -2 }) }),
   secure_food: Object.freeze({ nation: Object.freeze({ foodSecurity: 6, reserves: -2, cohesion: 1 }) }),
-  open_trade: Object.freeze({ nation: Object.freeze({ reserves: 3, sovereignty: 1 }), relation: Object.freeze({ relation: 4, tension: -2, trade: 6 }) }),
-  diplomatic_overture: Object.freeze({ nation: Object.freeze({ reserves: -1, sovereignty: 4, offensiveIntent: -2 }), relation: Object.freeze({ relation: 7, tension: -7 }) }),
-  seek_alignment: Object.freeze({ nation: Object.freeze({ reserves: -2, sovereignty: 5 }), relation: Object.freeze({ relation: 2, tension: -1 }) }),
-  accept_alignment: Object.freeze({ nation: Object.freeze({ reserves: -1, sovereignty: 6 }), relation: Object.freeze({ relation: 3, tension: -2 }) }),
-  fortify_frontier: Object.freeze({ nation: Object.freeze({ readiness: 6, reserves: -2, sovereignty: 3 }), relation: Object.freeze({ tension: 2 }) }),
-  mobilize: Object.freeze({ nation: Object.freeze({ readiness: 9, reserves: -4, sovereignty: 2, offensiveIntent: 5 }), relation: Object.freeze({ relation: -4, tension: 9 }) }),
-  deescalate: Object.freeze({ nation: Object.freeze({ readiness: -4, sovereignty: 4, offensiveIntent: -5 }), relation: Object.freeze({ relation: 4, tension: -10 }) }),
-  coerce_neighbor: Object.freeze({ nation: Object.freeze({ offensiveIntent: 6, readiness: 2, sovereignty: 3 }), relation: Object.freeze({ relation: -8, tension: 13 }) }),
-  limited_war: Object.freeze({ nation: Object.freeze({ reserves: -5, readiness: -2, cohesion: -1, sovereignty: 20 }), relation: Object.freeze({ relation: -12, tension: 20 }) }),
+  open_trade: Object.freeze({ nation: Object.freeze({ reserves: 3 }), relation: Object.freeze({ relation: 4, tension: -2, trade: 6 }) }),
+  diplomatic_overture: Object.freeze({ nation: Object.freeze({ reserves: -1, sovereignty: 1, offensiveIntent: -2 }), relation: Object.freeze({ relation: 7, tension: -7 }) }),
+  seek_alignment: Object.freeze({ nation: Object.freeze({ reserves: -2, readiness: 2, sovereignty: 2 }), relation: Object.freeze({ relation: 2, tension: -1 }) }),
+  accept_alignment: Object.freeze({ nation: Object.freeze({ reserves: -1, cohesion: 2, readiness: 5, sovereignty: 6 }), relation: Object.freeze({ relation: 3, tension: -2 }) }),
+  fortify_frontier: Object.freeze({ nation: Object.freeze({ readiness: 6, reserves: -2, sovereignty: 2 }), relation: Object.freeze({ tension: 2 }) }),
+  mobilize: Object.freeze({ nation: Object.freeze({ readiness: 9, reserves: -4, sovereignty: 4, offensiveIntent: 5 }), relation: Object.freeze({ relation: -4, tension: 9 }) }),
+  deescalate: Object.freeze({ nation: Object.freeze({ readiness: -4, sovereignty: -1, offensiveIntent: -5 }), relation: Object.freeze({ relation: 4, tension: -10 }) }),
+  coerce_neighbor: Object.freeze({ nation: Object.freeze({ offensiveIntent: 6, readiness: 2, sovereignty: 6 }), relation: Object.freeze({ relation: -8, tension: 13 }) }),
+  limited_war: Object.freeze({ nation: Object.freeze({ sovereignty: 20 }), relation: Object.freeze({ relation: -12, tension: 20 }) }),
   sustain_war: Object.freeze({ nation: Object.freeze({ reserves: -5, readiness: -3, foodSecurity: -2, cohesion: -2, sovereignty: 1 }), relation: Object.freeze({ relation: -4, tension: 4 }) }),
-  seek_ceasefire: Object.freeze({ nation: Object.freeze({ readiness: -2, sovereignty: 5, offensiveIntent: -4 }), relation: Object.freeze({ relation: 2, tension: -4 }) }),
-  accept_ceasefire: Object.freeze({ nation: Object.freeze({ sovereignty: 6, offensiveIntent: -8 }), relation: Object.freeze({ relation: 5, tension: -18 }) }),
+  seek_ceasefire: Object.freeze({ nation: Object.freeze({ readiness: -2, sovereignty: -2, offensiveIntent: -4 }), relation: Object.freeze({ relation: 2, tension: -4 }) }),
+  accept_ceasefire: Object.freeze({ nation: Object.freeze({ sovereignty: -3, offensiveIntent: -8 }), relation: Object.freeze({ relation: 5, tension: -18 }) }),
 });
 
 function bounded(value) {
@@ -62,10 +62,12 @@ export function createStateReason(nationState, source = null) {
   };
 }
 
-export function projectStateReason(nationState, pullId) {
+export function projectStateReason(nationState, pullId, passiveEffects = {}) {
   const effects = GEOPOLITICAL_ACTION_EFFECTS[pullId]?.nation ?? {};
   const projectedState = { ...nationState };
-  for (const { field } of STATE_REASON_CONDITIONS) projectedState[field] = bounded((Number(projectedState[field]) || 0) + (effects[field] ?? 0));
+  for (const { field } of STATE_REASON_CONDITIONS) {
+    projectedState[field] = bounded((Number(projectedState[field]) || 0) + (effects[field] ?? 0) + (passiveEffects[field] ?? 0));
+  }
   const conditions = stateReasonConditions(projectedState);
   const weakest = weakestStateCondition(conditions);
   const cost = STATE_REASON_CONDITIONS.reduce((sum, { field }) => sum + Math.max(0, -(effects[field] ?? 0)), 0);
@@ -77,11 +79,11 @@ export function projectStateReason(nationState, pullId) {
   };
 }
 
-export function chooseStateReasonAction(nationState, scoredOptions) {
+export function chooseStateReasonAction(nationState, scoredOptions, passiveEffects = {}) {
   if (!Array.isArray(scoredOptions) || !scoredOptions.length) throw new Error("選択可能な国家行動がありません。");
   const ranked = scoredOptions.map((option) => ({
     ...option,
-    stateReason: projectStateReason(nationState, option.pullId ?? option.id),
+    stateReason: projectStateReason(nationState, option.pullId ?? option.id, passiveEffects),
   })).sort((left, right) => (
     right.stateReason.value - left.stateReason.value
     || left.stateReason.cost - right.stateReason.cost

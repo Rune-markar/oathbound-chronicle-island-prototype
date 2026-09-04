@@ -14,6 +14,7 @@ import {
   V3_PRESENT_DATE,
 } from "../src/v3-world-simulation.js";
 import { analyzeRaceDecisionBalance, getTemperamentShares, TEMPERAMENT_IDS } from "../src/race-decision-system.js";
+import { STATE_REASON_CONDITIONS } from "../src/state-reason-system.js";
 
 const OPTIONS = Object.freeze({ seed: "v3-world-simulation-fixture", width: 72, height: 48, plateCount: 11, nationCount: 3 });
 
@@ -79,6 +80,11 @@ test("50年事前史は人口・気質・統治者・国家判断を一つの決
     assert.ok(Math.abs(event.alternatives.reduce((sum, option) => sum + option.probability, 0) - 1) < 0.00001);
     assert.ok(event.alternatives.every((option) => option.probability > 0 && option.probability < 1));
   }
+  assert.ok(simulation.generatedWorld.worldWars.history.length >= 1, "a 50-year history must be able to contain completed wars");
+  assert.ok(simulation.generatedWorld.worldWars.history.some((war) => war.settlementId === "negotiated_ceasefire"));
+  assert.ok(Object.values(simulation.generatedWorld.geopolitics.nationStates).every((condition) => (
+    STATE_REASON_CONDITIONS.some(({ field }) => condition[field] < 90)
+  )), "long histories must not saturate every nation's conditions near 100");
 });
 
 test("周縁圧力は決定論的に蓄積し、閾値を越えた地方を独立勢力として保存する", () => {
