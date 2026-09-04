@@ -420,7 +420,7 @@ function stateConditionName(id) {
   return STATE_REASON_CONDITIONS.find((condition) => condition.id === id)?.name ?? id;
 }
 
-function selectNationalPull(runtime, period, nationId, decisionProfile, condition, candidates) {
+function selectNationalPull(runtime, period, nationId, decisionProfile, condition, passiveEffects, candidates) {
   const enriched = candidates.filter(Boolean).map((option) => ({
     ...option,
     situation: {
@@ -435,13 +435,14 @@ function selectNationalPull(runtime, period, nationId, decisionProfile, conditio
     actorId: nationId,
     temperature: 17,
   });
-  const { selected, ranked } = chooseStateReasonAction(condition, scored);
+  const { selected, ranked } = chooseStateReasonAction(condition, scored, passiveEffects);
   const currentWeakest = weakestStateCondition(condition.stateReason?.conditions);
   return {
     ...selected,
     pullId: selected.id,
     score: selected.evaluation,
     probability: selected.probability,
+    passiveEffects: { ...passiveEffects },
     stateReason: selected.stateReason,
     alternatives: ranked.map((option) => ({
       id: option.id,
@@ -463,10 +464,32 @@ function selectNationalPull(runtime, period, nationId, decisionProfile, conditio
   };
 }
 
+function driftDown(value, ceiling) {
+  return Number(value) > ceiling ? -1 : 0;
+}
+
+function monthlyNationPassiveEffects(condition, profile, context) {
+  const borderTension = Number(context.topBorderThreat?.relation?.tension) || 0;
+  const atWar = Boolean(context.warOpponent);
+  const fiscalFloor = rounded(42 + profile.commerceBase * 0.18);
+  const fiscalCeiling = Math.min(78, fiscalFloor + 8);
+  const cohesionCeiling = rounded(52 + profile.stateCapacity * 0.16);
+  const readinessCeiling = rounded(38 + profile.terrainDefense * 0.12 + Math.min(18, (context.topBorderThreat?.score ?? 0) * 0.18));
+  const sovereigntyCeiling = rounded(42 + profile.stateCapacity * 0.16);
+  return {
+    cohesion: atWar ? -1 : driftDown(condition.cohesion, cohesionCeiling),
+    reserves: atWar ? -2 : condition.reserves < fiscalFloor ? 1 : driftDown(condition.reserves, fiscalCeiling),
+    foodSecurity: atWar ? -2 : condition.foodSecurity < profile.foodBase ? 1 : driftDown(condition.foodSecurity, profile.foodBase + 6),
+    readiness: atWar ? -1 : driftDown(condition.readiness, readinessCeiling),
+    sovereignty: atWar ? -1 : borderTension >= 70 ? -2 : borderTension >= 45 ? -1 : driftDown(condition.sovereignty, sovereigntyCeiling),
+  };
+}
+
 function chooseNationalPull(runtime, period, nationId, profiles, pairs, snapshot, decisionProfile) {
   const profile = profiles[nationId];
   const condition = snapshot.nationStates[nationId];
   const context = strategicContext(nationId, profiles, pairs, snapshot);
+  const passiveEffects = monthlyNationPassiveEffects(condition, profile, context);
   const threat = context.topThreat?.score ?? 0;
   const borderThreat = context.topBorderThreat?.score ?? 0;
   const targetRelation = context.topThreat?.relation;
@@ -476,7 +499,7 @@ function chooseNationalPull(runtime, period, nationId, profiles, pairs, snapshot
       .filter((entry) => entry.relation.atWar)
       .sort((left, right) => right.relation.warMonths - left.relation.warMonths || left.key.localeCompare(right.key))[0] ?? null;
     const warMonths = context.warOpponent.relation.warMonths;
-    return selectNationalPull(runtime, period, nationId, decisionProfile, condition, [
+    return selectNationalPull(runtime, period, nationId, decisionProfile, condition, passiveEffects, [
       candidate("accept_ceasefire", 104 + exhaustion * 0.9 + warMonths * 2.5, incomingCeasefire?.offer.from,
         [driver("戦争疲弊", exhaustion), driver("戦争期間", warMonths * 8)], Boolean(incomingCeasefire),
         { benefit: exhaustion * 0.12, danger: Math.max(0, 45 - exhaustion) * 0.05, threat: 0, relation: 4 }),
@@ -513,7 +536,9 @@ function chooseNationalPull(runtime, period, nationId, profiles, pairs, snapshot
     .sort((left, right) => (right.relation.relation + right.trade * 0.25) - (left.relation.relation + left.trade * 0.25))[0] ?? null;
   const coercionTarget = context.weakestNeighbor;
   const coercionRatio = coercionTarget ? profile.capability / Math.max(1, profiles[coercionTarget.nationId].capability) : 0;
-  const pressure = Math.max(0, 55 - condition.foodSecurity) + Math.max(0, 48 - condition.reserves);
+  const pressure = Math.max(0, 55 - condition.foodSecurity)
+    + Math.max(0, 48 - condition.reserves)
+    + Math.max(0, 62 - condition.sovereignty);
   const crisis = context.topBorderThreat?.relation;
   const jitter = (pullId) => (hashUnit(runtime.terrain.seed, period, nationId, pullId) - 0.5) * 2;
   const candidates = [
@@ -556,15 +581,17 @@ function chooseNationalPull(runtime, period, nationId, profiles, pairs, snapshot
       + condition.offensiveIntent * 0.25 + (coercionTarget?.pair.permeability ?? 0) * 0.1
       + (coercionTarget?.relation.tension ?? 0) * 0.12 + jitter("coerce_neighbor"), coercionTarget?.nationId,
       [driver("国力優位", Math.min(100, coercionRatio * 50)), driver("資源圧力", pressure * 2), driver("国境透過性", coercionTarget?.pair.permeability ?? 0)],
-      Boolean(coercionTarget && coercionRatio >= 1.08 && pressure >= 10 && !coercionTarget.relation.allied && coercionTarget.relation.truceMonths === 0),
+      Boolean(coercionTarget && coercionRatio >= 1.05 && pressure >= 8 && !incomingAlignment && !coercionTarget.relation.allied
+        && coercionTarget.relation.truceMonths === 0
+        && (coercionTarget.relation.tension < 84 || coercionTarget.relation.crisisMonths < 3)),
       { benefit: pressure * 0.08 + Math.max(0, coercionRatio - 1) * 8, danger: (100 - condition.readiness) * 0.03, threat: borderThreat * 0.02, relation: Math.max(0, -(coercionTarget?.relation.relation ?? 0)) * 0.04 }),
     candidate("limited_war", 125 + (crisis?.tension ?? 0), context.topBorderThreat?.nationId,
       [driver("危機水準", crisis?.tension ?? 0), driver("攻勢意図", condition.offensiveIntent), driver("動員水準", condition.readiness)],
-      Boolean(context.topBorderThreat && !crisis?.allied && crisis?.tension >= 84 && crisis?.relation <= -45 && crisis?.crisisMonths >= 3
+      Boolean(context.topBorderThreat && !crisis?.allied && crisis?.tension >= 84 && crisis?.relation <= 15 && crisis?.crisisMonths >= 3
         && crisis?.truceMonths === 0 && condition.readiness >= 62 && condition.offensiveIntent >= 45),
       { benefit: pressure * 0.08 + Math.max(0, coercionRatio - 1) * 6, danger: (100 - condition.readiness) * 0.05, threat: borderThreat * 0.06, relation: Math.max(0, -(crisis?.relation ?? 0)) * 0.05 }),
   ].filter(Boolean);
-  return selectNationalPull(runtime, period, nationId, decisionProfile, condition, candidates);
+  return selectNationalPull(runtime, period, nationId, decisionProfile, condition, passiveEffects, candidates);
 }
 
 function eventCopy(period, nation, target, decision) {
@@ -678,7 +705,7 @@ function deferProtectedDecision(nation, condition, decision, protectedNationIds,
   }
   const requestedPullId = decision.pullId;
   const fallbackPullId = requestedPullId === "limited_war" ? "fortify_frontier" : "sustain_war";
-  const fallbackStateReason = projectStateReason(condition, fallbackPullId);
+  const fallbackStateReason = projectStateReason(condition, fallbackPullId, decision.passiveEffects);
   return {
     decision: {
       ...decision,
@@ -740,16 +767,14 @@ export function advanceGeopoliticalWorld(runtime, source, dateState, options = {
   const nationStates = Object.fromEntries(runtime.nations.nations.map((nation) => {
     const current = snapshot.nationStates[nation.id];
     const delta = nationDeltas[nation.id] ?? {};
-    const profile = profiles[nation.id];
-    const readinessDrift = current.readiness > 48 ? -1 : 0;
-    const foodDrift = current.foodSecurity < profile.foodBase ? 1 : current.foodSecurity > profile.foodBase + 8 ? -1 : 0;
     const decision = decisions.find((entry) => entry.nation.id === nation.id).decision;
+    const passiveEffects = decision.passiveEffects ?? {};
     const nextCondition = {
-      cohesion: rounded(current.cohesion + (delta.cohesion ?? 0)),
-      reserves: rounded(current.reserves + 1 + (delta.reserves ?? 0)),
-      foodSecurity: rounded(current.foodSecurity + foodDrift + (delta.foodSecurity ?? 0)),
-      readiness: rounded(current.readiness + readinessDrift + (delta.readiness ?? 0)),
-      sovereignty: rounded(current.sovereignty + (delta.sovereignty ?? 0)),
+      cohesion: rounded(current.cohesion + (passiveEffects.cohesion ?? 0) + (delta.cohesion ?? 0)),
+      reserves: rounded(current.reserves + (passiveEffects.reserves ?? 0) + (delta.reserves ?? 0)),
+      foodSecurity: rounded(current.foodSecurity + (passiveEffects.foodSecurity ?? 0) + (delta.foodSecurity ?? 0)),
+      readiness: rounded(current.readiness + (passiveEffects.readiness ?? 0) + (delta.readiness ?? 0)),
+      sovereignty: rounded(current.sovereignty + (passiveEffects.sovereignty ?? 0) + (delta.sovereignty ?? 0)),
       offensiveIntent: rounded(current.offensiveIntent - (current.offensiveIntent > 35 ? 1 : 0) + (delta.offensiveIntent ?? 0)),
       posture: GEOPOLITICAL_PULL_SET[decision.pullId].posture,
       lastPullId: decision.pullId,
@@ -768,6 +793,18 @@ export function advanceGeopoliticalWorld(runtime, source, dateState, options = {
     const delta = relationDeltas[key] ?? {};
     const actions = relationActions[key] ?? relationActionFor({}, key);
     const nationIds = pairNationIds(key);
+    const pair = pairs[key];
+    const [leftId, rightId] = nationIds;
+    const strongerId = profiles[leftId].capability >= profiles[rightId].capability ? leftId : rightId;
+    const weakerId = strongerId === leftId ? rightId : leftId;
+    const capabilityRatio = profiles[strongerId].capability / Math.max(1, profiles[weakerId].capability);
+    const rivalryResilience = Math.min(...nationIds.flatMap((nationId) => {
+      const condition = snapshot.nationStates[nationId];
+      return [condition.foodSecurity, condition.reserves, condition.sovereignty];
+    }));
+    const frontierRivalry = pair.sharedBorder && pair.permeability >= 20 && capabilityRatio >= 1.1
+      && snapshot.nationStates[strongerId].offensiveIntent >= 25 && rivalryResilience >= 45
+      && !current.allied && !current.atWar && current.truceMonths === 0;
     const warStarted = actions.warStarters.length > 0;
     const ceasefireAgreed = current.atWar && !warStarted && (
       mutualAction(nationIds, actions.ceasefireSeekers)
@@ -775,8 +812,10 @@ export function advanceGeopoliticalWorld(runtime, source, dateState, options = {
       || offerWasAccepted(current.ceasefireOffer, actions.ceasefireAcceptors)
     );
     const atWar = warStarted ? true : ceasefireAgreed ? false : current.atWar;
-    const relation = Math.round(clamp(current.relation + (delta.relation ?? 0) + (current.trade >= 45 && !atWar ? 1 : 0), -100, 100));
-    const tension = rounded(atWar ? Math.max(88, current.tension + (delta.tension ?? 0)) : current.tension - 1 + (delta.tension ?? 0));
+    const relation = Math.round(clamp(current.relation + (delta.relation ?? 0) + (current.trade >= 45 && !atWar ? 1 : 0)
+      - (frontierRivalry ? 1 : 0), -100, 100));
+    const tension = rounded(atWar ? Math.max(88, current.tension + (delta.tension ?? 0))
+      : current.tension - 1 + (delta.tension ?? 0) + (frontierRivalry ? 2 : 0));
     const allianceBroken = current.allied && (relation < 0 || tension >= 70);
     const allied = !atWar && !allianceBroken && (current.allied || approvedAllianceKeys.has(key));
     return [key, {

@@ -39,3 +39,7 @@ npm run remote:guard-deploy
 6. Perform browser, Passkey, notification, media-device, PowerShell-only, and LAN-only checks on the designated local host.
 
 Development servers should listen on localhost by default. Use SSH port forwarding, an authenticated tunnel, or a private VPN when remote browser access is required. Do not expose Codex app-server or unauthenticated development ports directly to the internet.
+
+## Current verification focus
+
+As of 2026-09-04, the canonical Generation V3 conflict-balance check uses Node.js 22, `npm run check`, and a localhost browser run of `index.html`. The deterministic 50-year fixture `v3-race-history-600` must retain at least one completed generated war while avoiding universal national-condition saturation. Browser verification must cover desktop and 390×844 viewports and close the browser and local server afterward.

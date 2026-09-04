@@ -78,6 +78,25 @@ test("state reason maximizes the weakest post-action condition, then breaks ties
     { id: "coerce_neighbor", pullId: "coerce_neighbor", personalityFit: 40 },
   ]);
   assert.equal(characterTie.selected.pullId, "coerce_neighbor");
+
+  const passiveDrift = chooseStateReasonAction({
+    foodSecurity: 35,
+    cohesion: 35,
+    reserves: 36,
+    readiness: 36,
+    sovereignty: 35,
+  }, [
+    { id: "consolidate", pullId: "consolidate", personalityFit: 0 },
+    { id: "open_trade", pullId: "open_trade", personalityFit: 100 },
+  ], { foodSecurity: 1, reserves: 1 });
+  assert.equal(passiveDrift.selected.pullId, "consolidate", "monthly passive changes belong in the post-action comparison");
+  assert.deepEqual(passiveDrift.selected.stateReason.conditions, {
+    food: 36,
+    cohesion: 40,
+    treasury: 36,
+    defense: 36,
+    sovereignty: 36,
+  });
 });
 
 test("schema v1 geopolitical saves migrate without discarding national conditions", () => {
@@ -117,6 +136,9 @@ test("every nation selects one geography-grounded pull on each new month", () =>
     const cheapest = Math.min(...event.alternatives.filter((option) => option.stateReasonValue === bestValue).map((option) => option.stateReasonCost));
     assert.equal(selected.stateReasonValue, bestValue);
     assert.equal(selected.stateReasonCost, cheapest);
+    assert.deepEqual(event.stateReason.conditions,
+      view.nations.find((entry) => entry.nation.id === event.nationId).condition.stateReason.conditions,
+      "the compared post-action conditions must equal the conditions actually applied");
   }
   assert.ok(view.nations.every((entry) => entry.condition.stateReason.lastDecision?.pullId === entry.condition.lastPullId));
   assert.equal(view.relations.some((relation) => relation.atWar), false, "a generated world must not jump directly into war on its first pulse");
