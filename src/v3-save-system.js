@@ -47,8 +47,20 @@ function migrateWorldSimulationV2ToV3(raw) {
     ...raw,
     worldSimulation: {
       ...raw.worldSimulation,
-      version: V3_WORLD_SIMULATION_VERSION,
+      version: 3,
       externalCrises: raw.worldSimulation.externalCrises ?? null,
+    },
+  };
+}
+
+function migrateWorldSimulationV3ToV4(raw) {
+  if (!raw.worldSimulation || typeof raw.worldSimulation !== "object") return raw;
+  return {
+    ...raw,
+    worldSimulation: {
+      ...raw.worldSimulation,
+      version: V3_WORLD_SIMULATION_VERSION,
+      marketEconomy: raw.worldSimulation.marketEconomy ?? null,
     },
   };
 }
@@ -104,7 +116,7 @@ export const V3_SAVE_REGISTRY = createSaveRegistry({
       id: "world-simulation",
       version: V3_WORLD_SIMULATION_VERSION,
       legacyVersion: (raw) => Number(raw.worldSimulation?.version) || 1,
-      migrations: { 1: migrateWorldSimulationV1ToV2, 2: migrateWorldSimulationV2ToV3 },
+      migrations: { 1: migrateWorldSimulationV1ToV2, 2: migrateWorldSimulationV2ToV3, 3: migrateWorldSimulationV3ToV4 },
     },
     {
       id: "race-decisions",

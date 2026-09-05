@@ -34,6 +34,7 @@ import { getV3DetailedTile } from "./v3-field-system.js";
 import { getV3WorldSimulationView } from "./v3-world-simulation.js";
 import { getV3WartimeMarketEffect } from "./v3-world-effects.js";
 import { getV3ExternalCrisisMarketEffect } from "./v3-external-crisis-system.js";
+import { getV3MarketSnapshot } from "./v3-market-economy.js";
 
 export const V3_MERCHANT_VERSION = 2;
 
@@ -147,6 +148,7 @@ function tradeAdapter(context, state, settlement = null, worldSimulation = null)
     year: calendar.year,
     month: calendar.month,
     generatedWorld: { seed: context.seed },
+    marketSnapshot: settlement ? getV3MarketSnapshot(worldSimulation?.marketEconomy, settlement.id) : null,
     worldEffects: marketEffect ? { market: marketEffect } : {},
     player: {
       locationId: settlement?.id ?? null,
@@ -218,6 +220,12 @@ function companyAdapter(context, state) {
       seed: context?.seed ?? next.seed,
       raceDynamics: clone(context?.raceDynamics ?? null),
     },
+    marketSnapshots: context?.worldSimulation?.marketEconomy
+      ? Object.fromEntries(next.merchant.trade.knownSettlements.map((settlement) => [
+        settlement.id,
+        getV3MarketSnapshot(context.worldSimulation.marketEconomy, settlement.id),
+      ]).filter(([, market]) => market))
+      : {},
     merchantCompanyContext: {
       currentSettlementId: currentMarket?.id ?? null,
       jurisdictions: context ? v3Jurisdictions(context, next) : [],
@@ -301,7 +309,17 @@ export function advanceV3CompanyMonthOnTick(context, state) {
         && company.staff.some((entry) => entry.id === branch.managerId);
       if (!valid && ["preparing", "open"].includes(branch.status)) branch.status = "suspended";
     });
-    return advanceMerchantCompanyMonthOnDraft(adapter);
+    const advanced = advanceMerchantCompanyMonthOnDraft(adapter);
+    const period = `${advanced.year}-${advanced.month}`;
+    for (const result of advanced.player.merchantCompany.monthlyLedger[0]?.routeResults ?? []) {
+      const route = advanced.player.merchantCompany.routes.find((entry) => entry.id === result.routeId);
+      if (!route || !(result.units > 0)) continue;
+      const sourceKey = `${period}:${route.sourceId}:${route.commodityId}`;
+      const destinationKey = `${period}:${route.destinationId}:${route.commodityId}`;
+      advanced.player.merchantTrade.marketStockDeltas[sourceKey] = (Number(advanced.player.merchantTrade.marketStockDeltas[sourceKey]) || 0) - result.units;
+      advanced.player.merchantTrade.marketStockDeltas[destinationKey] = (Number(advanced.player.merchantTrade.marketStockDeltas[destinationKey]) || 0) + result.units;
+    }
+    return advanced;
   });
 }
 

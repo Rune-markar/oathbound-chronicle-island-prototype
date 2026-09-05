@@ -99,6 +99,14 @@ test("V3外部危機を地方圧力・世界影響・周辺シンボルまで現
   assert.ok(entry?.sources.some((item) => item.href === "./tests/v3-external-crisis-system.test.mjs"));
 });
 
+test("V3市場経済を生産・消費・在庫・物流・取引反映まで追跡する", () => {
+  const market = STATUS_ENTRIES.find((item) => item.id === "v3-market-economy");
+  assert.equal(market?.category, "implemented");
+  assert.match(`${market?.summary} ${market?.evidence}`, /月産.*消費.*在庫.*街道.*NPC物流.*プレイヤー.*商会/s);
+  assert.ok(market?.sources.some((item) => item.href === "./src/v3-market-economy.js"));
+  assert.ok(market?.sources.some((item) => item.href === "./tests/v3-market-economy.test.mjs"));
+});
+
 test("世界終局の二経路を生成世界へ接続済みとして追跡する", () => {
   const ending = STATUS_ENTRIES.find((item) => item.id === "world-ending-design");
   assert.equal(ending?.category, "implemented");

@@ -64,7 +64,7 @@ export function normalizeMerchantTradeState(state) {
   return state;
 }
 
-function settlementSize(settlement) {
+export function getSettlementMarketSize(settlement) {
   const population = Number(settlement?.population) || 0;
   const level = { village: 0.15, town: 0.45, city: 0.8 }[settlement?.settlementLevel] ?? 0.25;
   return clamp(Math.max(level, Math.log10(Math.max(10, population)) / 6), 0.1, 1);
@@ -79,11 +79,13 @@ function supplyScore(settlement, definition) {
   if (definition.supply === "herbs") return clamp((Number(potential.freshwater) || 0) * 0.4 + (Number(potential.timber) || 0) * 0.35 + (/wetland|forest/.test(terrain) ? 0.25 : 0), 0, 1);
   if (definition.supply === "mineral") return clamp((Number(potential.mineral) || 0) * 0.9 + (/mountain|highland/.test(terrain) ? 0.2 : 0), 0, 1);
   if (definition.supply === "grazing") return clamp((Number(potential.grazing) || 0) * 0.85 + (/hill|highland|grassland/.test(terrain) ? 0.15 : 0), 0, 1);
-  return clamp(/coast|beach|salt/.test(terrain) ? 1 : (Number(yields.commerce) || 0) / 8, 0, 1);
+  const geographyTags = new Set(settlement?.geographyTags ?? []);
+  return clamp(/coast|beach|salt/.test(terrain) || geographyTags.has("coast") || geographyTags.has("island")
+    ? 1 : (Number(yields.commerce) || 0) / 8, 0, 1);
 }
 
 function demandScore(settlement, definition) {
-  const size = settlementSize(settlement);
+  const size = getSettlementMarketSize(settlement);
   const terrain = String(settlement?.terrain ?? settlement?.dominantTerrain ?? "");
   if (definition.id === "grain") return clamp(size + ((Number(settlement?.yields?.food) || 0) < 1 ? 0.25 : 0), 0, 1);
   if (definition.id === "iron") return clamp(size * 0.75 + (/fort|border/.test(String(settlement?.type ?? "")) ? 0.25 : 0), 0, 1);
@@ -91,13 +93,45 @@ function demandScore(settlement, definition) {
   return clamp(size * 0.8, 0, 1);
 }
 
+export function getCommodityMarketFundamentals(settlement, commodityId) {
+  const definition = MERCHANT_COMMODITIES[commodityId];
+  if (!definition) throw new Error(`扱えない商品です: ${commodityId}`);
+  return {
+    commodityId,
+    basePrice: definition.basePrice,
+    supply: supplyScore(settlement, definition),
+    demand: demandScore(settlement, definition),
+    size: getSettlementMarketSize(settlement),
+  };
+}
+
 function stockDeltaKey(state, settlementId, commodityId) {
   return `${periodOf(state)}:${settlementId}:${commodityId}`;
 }
 
 function marketGood(state, settlement, definition, marketEffect = null) {
-  const supply = supplyScore(settlement, definition);
-  const demand = demandScore(settlement, definition);
+  const snapshot = marketSnapshotFor(state, settlement)?.goods?.[definition.id];
+  if (snapshot) {
+    return {
+      commodityId: definition.id,
+      name: definition.name,
+      description: definition.description,
+      buyPrice: round1(snapshot.buyPrice),
+      sellPrice: round1(snapshot.sellPrice),
+      stock: Math.max(0, Math.floor(Number(snapshot.inventory) || 0)),
+      supply: Math.round((Number(snapshot.supply) || 0) * 100),
+      demand: Math.round((Number(snapshot.demand) || 0) * 100),
+      production: round1(snapshot.lastProduction),
+      consumption: round1(snapshot.lastConsumption),
+      imports: round1(snapshot.lastImports),
+      exports: round1(snapshot.lastExports),
+      shortage: Boolean(snapshot.shortage),
+      coverageMonths: round1(snapshot.coverageMonths),
+      priceTrend: snapshot.priceTrend ?? "stable",
+      worldEffect: snapshot.worldEffect ? clone(snapshot.worldEffect) : null,
+    };
+  }
+  const { supply, demand } = getCommodityMarketFundamentals(settlement, definition.id);
   const jitter = (hashUnit(state.generatedWorld?.seed ?? state.rngSeed ?? "world", periodOf(state), settlement.id, definition.id) - 0.5) * 0.16;
   const priceMultiplier = (Number(marketEffect?.priceMultiplier) || 1)
     * (Number(marketEffect?.commodityPriceMultipliers?.[definition.id]) || 1);
@@ -105,7 +139,7 @@ function marketGood(state, settlement, definition, marketEffect = null) {
   const multiplier = clamp((1.55 - supply * 0.75 + demand * 0.28 + jitter) * priceMultiplier, 0.4, 4.5);
   const buyPrice = round1(Math.max(0.4, definition.basePrice * multiplier));
   const sellPrice = round1(Math.max(0.2, buyPrice * 0.78));
-  const baseStock = Math.max(1, Math.round((3 + supply * 15 + settlementSize(settlement) * 4) * stockMultiplier));
+  const baseStock = Math.max(1, Math.round((3 + supply * 15 + getSettlementMarketSize(settlement) * 4) * stockMultiplier));
   const delta = Number(state.player?.merchantTrade?.marketStockDeltas?.[stockDeltaKey(state, settlement.id, definition.id)]) || 0;
   return {
     commodityId: definition.id,
@@ -123,6 +157,24 @@ function marketGood(state, settlement, definition, marketEffect = null) {
       stockMultiplier: Number(stockMultiplier.toFixed(4)),
     } : null,
   };
+}
+
+function marketSnapshotFor(state, settlement) {
+  return state.marketSnapshots?.[settlement.id]
+    ?? (state.marketSnapshot?.id === settlement.id ? state.marketSnapshot : null);
+}
+
+function transactionTotal(state, settlement, commodityId, quantity, side, good) {
+  const snapshot = marketSnapshotFor(state, settlement)?.goods?.[commodityId];
+  if (!snapshot?.priceCoefficient || quantity === 1) return round1(good[side === "buy" ? "buyPrice" : "sellPrice"] * quantity);
+  let total = 0;
+  for (let index = 0; index < quantity; index += 1) {
+    const inventory = snapshot.inventory + (side === "buy" ? -index : index);
+    const scarcity = clamp(1 + (snapshot.targetInventory - inventory) / snapshot.targetInventory * 0.7, 0.58, 2.6);
+    const buyPrice = round1(Math.max(0.4, snapshot.priceCoefficient * scarcity));
+    total += side === "buy" ? buyPrice : round1(Math.max(0.2, buyPrice * 0.78));
+  }
+  return round1(total);
 }
 
 function marketEffectFor(state, settlement, options) {
@@ -231,7 +283,7 @@ export function buyCommodity(state, settlement, commodityId, quantity) {
   if (getMerchantCargoLoad(next) + quantity > next.player.merchantTrade.cargoCapacity) throw new Error("積載量を超えています");
   const addedWeight = quantity * (MERCHANT_COMMODITY_WEIGHTS[commodityId] ?? 1);
   if (getMerchantCargoLoadDetails(next).weight + addedWeight > next.player.merchantTrade.cargoWeightCapacity) throw new Error("積荷の重量上限を超えています");
-  const cost = round1(good.buyPrice * quantity);
+  const cost = transactionTotal(next, settlement, commodityId, quantity, "buy", good);
   if (cost > Number(next.player.metrics.wealth)) throw new Error("個人財産が不足しています");
   next.player.metrics.wealth = round1(next.player.metrics.wealth - cost);
   const trade = next.player.merchantTrade;
@@ -240,12 +292,12 @@ export function buyCommodity(state, settlement, commodityId, quantity) {
     existing.averageCost = round1(((existing.averageCost * existing.quantity) + cost) / (existing.quantity + quantity));
     existing.quantity += quantity;
   } else {
-    trade.cargo.push({ commodityId, name: MERCHANT_COMMODITIES[commodityId].name, quantity, averageCost: good.buyPrice });
+    trade.cargo.push({ commodityId, name: MERCHANT_COMMODITIES[commodityId].name, quantity, averageCost: round1(cost / quantity) });
   }
   trade.marketStockDeltas[stockDeltaKey(next, settlement.id, commodityId)] = (Number(trade.marketStockDeltas[stockDeltaKey(next, settlement.id, commodityId)]) || 0) - quantity;
   trade.stats.unitsBought += quantity;
   trade.stats.purchaseCost = round1(trade.stats.purchaseCost + cost);
-  trade.recentTransactions.unshift({ type: "buy", settlementId: settlement.id, settlementName: settlement.name, commodityId, quantity, unitPrice: good.buyPrice, total: cost, year: next.year, month: next.month });
+  trade.recentTransactions.unshift({ type: "buy", settlementId: settlement.id, settlementName: settlement.name, commodityId, quantity, unitPrice: round1(cost / quantity), total: cost, year: next.year, month: next.month });
   trade.recentTransactions = trade.recentTransactions.slice(0, 30);
   rememberSettlement(trade, settlement);
   recordExactReports(next, settlement, market);
@@ -261,8 +313,10 @@ export function sellCommodity(state, settlement, commodityId, quantity) {
   if (!cargo || cargo.quantity < quantity) throw new Error("売却する積荷が不足しています");
   const market = getSettlementMarket(next, settlement);
   const good = market.goods[commodityId];
-  const revenue = round1(good.sellPrice * quantity);
-  const profit = round1((good.sellPrice - cargo.averageCost) * quantity);
+  const snapshot = marketSnapshotFor(next, settlement)?.goods?.[commodityId];
+  if (snapshot && quantity > snapshot.capacity - snapshot.inventory + 0.00001) throw new Error("市場の荷受余力が不足しています");
+  const revenue = transactionTotal(next, settlement, commodityId, quantity, "sell", good);
+  const profit = round1(revenue - cargo.averageCost * quantity);
   cargo.quantity -= quantity;
   if (cargo.quantity <= 0) trade.cargo = trade.cargo.filter((entry) => entry !== cargo);
   next.player.metrics.wealth = round1(Number(next.player.metrics.wealth) + revenue);
@@ -270,7 +324,7 @@ export function sellCommodity(state, settlement, commodityId, quantity) {
   trade.stats.unitsSold += quantity;
   trade.stats.salesRevenue = round1(trade.stats.salesRevenue + revenue);
   trade.stats.realizedProfit = round1(trade.stats.realizedProfit + profit);
-  trade.recentTransactions.unshift({ type: "sell", settlementId: settlement.id, settlementName: settlement.name, commodityId, quantity, unitPrice: good.sellPrice, total: revenue, profit, year: next.year, month: next.month });
+  trade.recentTransactions.unshift({ type: "sell", settlementId: settlement.id, settlementName: settlement.name, commodityId, quantity, unitPrice: round1(revenue / quantity), total: revenue, profit, year: next.year, month: next.month });
   trade.recentTransactions = trade.recentTransactions.slice(0, 30);
   rememberSettlement(trade, settlement);
   recordExactReports(next, settlement, market);

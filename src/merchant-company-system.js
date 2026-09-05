@@ -662,9 +662,21 @@ function routeMonthlyResult(state, route) {
   const source = knownSettlements(state).find((entry) => entry.id === route.sourceId);
   const destination = knownSettlements(state).find((entry) => entry.id === route.destinationId);
   const pair = source && destination ? marketPair(state, source, destination, route.commodityId) : { unitMargin: 0 };
-  const units = approach.volume + (leader?.skill ?? 1);
+  const sourceGood = state.marketSnapshots?.[route.sourceId]?.goods?.[route.commodityId];
+  const destinationGood = state.marketSnapshots?.[route.destinationId]?.goods?.[route.commodityId];
+  const usesWorldMarket = Boolean(sourceGood && destinationGood);
+  const availableStock = usesWorldMarket ? Math.floor(sourceGood.inventory) : Infinity;
+  const destinationCapacity = usesWorldMarket ? Math.floor(Math.max(0, destinationGood.capacity - destinationGood.inventory)) : Infinity;
+  const units = Math.min(approach.volume + (leader?.skill ?? 1), availableStock, destinationCapacity);
+  if (usesWorldMarket && units < 1) return { units: 0, revenue: 0, costs: 0, profit: 0, reason: "在庫または荷受余力不足" };
+  if (usesWorldMarket) {
+    sourceGood.inventory = round1(sourceGood.inventory - units);
+    destinationGood.inventory = round1(destinationGood.inventory + units);
+  }
   const marketMargin = Math.max(0.4, pair.unitMargin + 0.8);
-  const gross = round1((marketMargin * units + (COMPANY_STAFF_ROLES[leader?.roleId]?.routeBonus ?? 0)) * approach.margin * strategy.routeMargin);
+  const gross = usesWorldMarket
+    ? round1(pair.unitMargin * units)
+    : round1((marketMargin * units + (COMPANY_STAFF_ROLES[leader?.roleId]?.routeBonus ?? 0)) * approach.margin * strategy.routeMargin);
   const profit = round1(gross - approach.operatingCost);
   route.successfulRuns += 1;
   route.quotedUnitMargin = pair.unitMargin;
@@ -672,7 +684,7 @@ function routeMonthlyResult(state, route) {
   route.ledger = route.ledger.slice(0, 12);
   company.stats.routeRuns += 1;
   if (route.successfulRuns % 3 === 0) company.reputation += 1;
-  return { revenue: gross, costs: approach.operatingCost, profit };
+  return { units, revenue: gross, costs: approach.operatingCost, profit };
 }
 
 function branchMonthlyResult(state, branch) {
