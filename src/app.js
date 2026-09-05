@@ -433,7 +433,6 @@ import {
   readV3GroupBattleBridge,
 } from "./v3-group-combat.js";
 
-const STORAGE_KEY = "oathbound-career-chronicle-v10";
 
 const CITY_ART = Object.freeze({
   selene: "./assets/generated/city-selene.webp",
@@ -518,14 +517,10 @@ function cityArt(cityId) {
   return CITY_ART[cityId] ?? CITY_ART.selene;
 }
 
-const loadedChronicle = loadState();
-let chronicleReady = Boolean(loadedChronicle);
-const offlineResume = loadedChronicle
-  ? resumeDelegatedChronicle(loadedChronicle, advanceCareerMonth)
-  // A new chronicle builds its world asynchronously after the player starts.
-  // Generating it here blocks the launch screen for several seconds.
-  : { state: createInitialState(), report: null };
-let state = normalizeAdventureState(refreshGeneratedWorldForDate(offlineResume.state));
+// This renderer is entered only by group-battle-entry.js with a pending V3 mission.
+let chronicleReady = false;
+const offlineResume = { state: createInitialState(), report: null };
+let state = normalizeAdventureState(offlineResume.state);
 if (state.centralizationCampaign?.ending) state.council.pending = false;
 let toastTimer = null;
 let previewCache = { state: null, value: null };
@@ -800,36 +795,9 @@ function renderBuildInfo() {
 
 renderBuildInfo();
 
-function loadState() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (parsed.version !== 10 || !parsed.player) return null;
-    parsed.fiscal ??= { publicDebt: 24, totalDebtRepaid: 0 };
-    parsed.fiscal.publicDebt = Number.isFinite(parsed.fiscal.publicDebt) ? parsed.fiscal.publicDebt : 24;
-    parsed.fiscal.totalDebtRepaid = Number.isFinite(parsed.fiscal.totalDebtRepaid) ? parsed.fiscal.totalDebtRepaid : 0;
-    const loaded = normalizeLifeToRealmState(normalizeWarState(parsed));
-    normalizePropertyEnterpriseState(loaded);
-    normalizeMerchantCompanyState(loaded);
-    normalizeCompanionQuestState(loaded);
-    normalizeEstatePoliticsState(loaded);
-    normalizeGeneratedCampaignState(loaded);
-    return loaded;
-  } catch {
-    return null;
-  }
-}
-
-function persist(showMessage = false) {
-  if (!chronicleReady) return false;
-  const savedState = markChronicleSaved(state);
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(savedState));
-  if (showMessage) {
-    audio.play("save");
-    showToast("年代記をこの端末に記録しました。");
-  }
-  return true;
+// Tactical results are persisted through the V3 bridge; there is no separate chronicle save.
+function persist() {
+  return false;
 }
 
 function commit(nextState, message = "", cue = "confirm") {
@@ -1779,7 +1747,6 @@ async function resetChronicle(options = {}, flow = {}) {
       nextState.player.villageLife.party.push(options.goddessMercyCompanion);
       nextState.player.history.unshift({ turn: 0, title: "女神の慈悲", detail: `${options.goddessMercyCompanion.name}を伴い、二人で辺境の街道へ降り立った。` });
     }
-    localStorage.removeItem(STORAGE_KEY);
     state = nextState;
     chronicleReady = true;
     persist();
@@ -8663,43 +8630,8 @@ function renderAdventureScreen() {
 }
 
 function render() {
-  renderLaunchScreen();
-  renderWorldArrival();
   renderBattlePreparation();
   renderTacticalBattle();
-  renderAdventureScreen();
-  const adventureVisible = Boolean(view.adventureOpen && state.adventure?.activeRun);
-  if (
-    view.launchOpen
-    || view.battlePreparation
-    || view.tacticalBattle
-    || view.tacticalResultOpen
-    || view.commanderDispositionOpen
-    || adventureVisible
-  ) return;
-  renderAnalysisMode();
-  renderCampaignBar();
-  renderResources();
-  renderTimeControls();
-  renderTabs();
-  renderLeftPanel();
-  renderAlerts();
-  const authorityNetwork = renderMap();
-  renderSelection(authorityNetwork);
-  renderTileDetail();
-  renderCityWorkspace();
-  renderBackMenu();
-  renderOutliner();
-  renderTicker();
-  renderWarCouncil();
-  renderAssignmentModal();
-  renderEventModal();
-  renderOfflineReport();
-  renderEquipmentUpgradePrompt();
-  renderGuideModal();
-  renderEndingModal();
-  renderResetModal();
-  renderCharacterDetailModal();
 }
 
 function renderPanelFromTop() {
@@ -11305,12 +11237,10 @@ window.addEventListener("resize", () => {
   generatedMapVisualCache.entries.forEach((url) => URL.revokeObjectURL(url));
   generatedMapVisualCache = { key: null, url: null, entries: new Map() };
   delete elements.generatedWorldStrip.dataset.visualKey;
-  renderMap();
 });
 window.addEventListener("beforeunload", () => persist());
 window.addEventListener("pagehide", () => persist());
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") persist(); });
-setInterval(() => persist(), AUTOSAVE_INTERVAL_MS);
 elements.offlineReportModal?.addEventListener("click", (event) => {
   if (event.target === elements.offlineReportModal || event.target.closest("[data-close-offline-report]")) {
     closeOfflineReport();
@@ -11321,7 +11251,6 @@ elements.equipmentUpgradePrompt?.addEventListener("click", (event) => {
   if (event.target.closest("[data-dismiss-equipment-upgrade]")) commit(dismissEquipmentUpgrade(state), "装備候補を所持品へ保管しました。", null);
 });
 
-subdivideTerritoryTiles(elements.strategyMap);
-render();
 activeV3GroupBattleBridge = requestedV3GroupBattleBridge();
 if (activeV3GroupBattleBridge) openV3GroupBattleBridge(activeV3GroupBattleBridge);
+else window.location.replace(new URL("./index.html", window.location.href).href);

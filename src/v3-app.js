@@ -768,7 +768,7 @@ function beginV3GroupBattle() {
     writeV3GroupBattleBridge(localStorage, handoff.request);
     commitStateAction(handoff.state, { source: "military" });
     saveGame();
-    const battleUrl = new URL("./legacy-v2.html", window.location.href);
+    const battleUrl = new URL("./group-battle.html", window.location.href);
     battleUrl.searchParams.set("v3-group-battle", handoff.request.requestId);
     window.location.assign(battleUrl.href);
   } catch (error) {

@@ -89,7 +89,7 @@ test("専用戦闘前編成はベルタを唯一の参陣者とし、敵将を�
 
 test("開発メニューと生成ルールから上級将官戦とベルタの顔設計へ到達できる", () => {
   const app = readFileSync(new URL("../src/app.js", import.meta.url), "utf8");
-  const index = readFileSync(new URL("../legacy-v2.html", import.meta.url), "utf8");
+  const index = readFileSync(new URL("../group-battle.html", import.meta.url), "utf8");
   const rules = readFileSync(new URL("../CHARACTER_ART_GENERATION_RULES.md", import.meta.url), "utf8");
   assert.match(index, /data-developer-action="senior-general-battle"/);
   assert.match(index, /上級将官戦/);

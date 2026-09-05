@@ -4,14 +4,16 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#172224" />
-    <title>LEVIATHAN COVENANT V2 — LEGACY</title>
+    <title>LEVIATHAN COVENANT — 集団戦</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='8' fill='%23172224'/%3E%3Ccircle cx='32' cy='32' r='20' fill='none' stroke='%23ead28d' stroke-width='3'/%3E%3Cpath d='M14 32h36M32 12v40' stroke='%23ead28d' stroke-width='2'/%3E%3Cpath d='M21 36c7-8 15-8 22 0' fill='none' stroke='%234d8b80' stroke-width='3'/%3E%3C/svg%3E" />
     <link rel="preload" as="image" href="./assets/branding/proposals/leviathan-covenant-b-sovereign-compact.png" />
     <link rel="stylesheet" href="./styles.css?v=20260824-v3-group-combat" />
+    <link rel="stylesheet" href="./group-battle.css" />
   </head>
-  <body>
+  <body class="v3-group-battle">
     <div class="grain" aria-hidden="true"></div>
 
+    <div data-retired-ui hidden inert>
     <section class="portrait-guard" id="portraitGuard" aria-labelledby="portraitGuardTitle">
       <div class="portrait-guard-device" aria-hidden="true"><i></i></div>
       <small>PORTRAIT PLAY KIT</small>
@@ -103,6 +105,7 @@
       </div>
     </section>
 
+    </div>
     <section class="battle-preparation-screen is-hidden" id="battlePreparationScreen" aria-labelledby="battlePreparationTitle">
       <header class="battle-preparation-header">
         <div><span>ORDER OF BATTLE / MUSTERING PHASE</span><h1 id="battlePreparationTitle">灰冠平原・戦闘前編成</h1><p id="battlePreparationIntro">参陣人物、陣形、初期配置、兵站計画を確定してください。</p></div>
@@ -184,6 +187,7 @@
       <div id="commanderDispositionContent"></div>
     </section>
 
+    <div data-retired-ui hidden inert>
     <div class="strategy-shell">
       <aside class="left-dock" aria-label="人物と管轄のメニュー">
         <div class="left-hud">
@@ -805,7 +809,8 @@
       <div id="adventureContent"></div>
     </section>
 
+    </div>
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
-    <script type="module" src="./src/app.js"></script>
+    <script type="module" src="./src/group-battle-entry.js"></script>
   </body>
 </html>

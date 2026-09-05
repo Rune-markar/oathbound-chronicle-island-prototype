@@ -15,16 +15,16 @@ const appSource = await readFile(new URL("../src/app.js", import.meta.url), "utf
 const manualSource = await readFile(new URL("../MANUAL.md", import.meta.url), "utf8");
 const styleSource = await readFile(new URL("../styles.css", import.meta.url), "utf8");
 
-test("a blank browser cannot continue or autosave the fallback preview state", () => {
-  assert.match(appSource, /let chronicleReady = Boolean\(loadedChronicle\)/);
-  assert.match(appSource, /if \(!chronicleReady\) return false/);
-  assert.match(appSource, /data-launch-action="continue"/);
-  assert.match(appSource, /continueButton\.hidden = !chronicleReady/);
+test("the tactical renderer never loads or writes a standalone chronicle", () => {
+  assert.doesNotMatch(appSource, /loadState\(|oathbound-career-chronicle|localStorage\.(?:setItem|removeItem)/);
+  assert.match(appSource, /function persist\(\) \{\s*return false/);
 });
 
-test("completed character generation is persisted before the launch screen closes", () => {
-  const resetFlow = appSource.match(/async function resetChronicle[\s\S]*?function costLabel/)?.[0] ?? "";
-  assert.match(resetFlow, /state = nextState;[\s\S]*?chronicleReady = true;[\s\S]*?persist\(\)/);
+test("the group battle entry requires an exact pending V3 handoff", async () => {
+  const entry = await readFile(new URL("../src/group-battle-entry.js", import.meta.url), "utf8");
+  assert.match(entry, /bridge\?\.status === "pending" && bridge.requestId === requestId/);
+  assert.match(entry, /await import\("\.\/app\.js"\)/);
+  assert.match(entry, /window.location.replace/);
 });
 
 test("the displayed playable career route only claims milestones reachable from normal UI", () => {
@@ -155,8 +155,9 @@ test("view-only map renders reuse one state-derived map context", () => {
   assert.match(mapFlow, /generatedMapRenderCache = \{ state, signature: generatedMapRenderSignature\(\) \}/);
 });
 
-test("autosave snapshots do not replace the live state or invalidate render caches", () => {
-  assert.match(appSource, /const savedState = markChronicleSaved\(state\);/);
-  assert.match(appSource, /localStorage\.setItem\(STORAGE_KEY, JSON\.stringify\(savedState\)\);/);
-  assert.doesNotMatch(appSource, /state = markChronicleSaved\(state\);/);
+test("the tactical renderer only renders battle preparation and combat", () => {
+  const render = appSource.match(/function render\(\) \{([\s\S]*?)\n\}/)?.[1] ?? "";
+  assert.match(render, /renderBattlePreparation\(\)/);
+  assert.match(render, /renderTacticalBattle\(\)/);
+  assert.doesNotMatch(render, /renderLaunchScreen|renderMap|renderAdventureScreen/);
 });

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { buildTerritorySectorPaths, TERRITORY_SECTOR_COUNT } from "../src/map-tiles.js";
 
-const markup = readFileSync(new URL("../legacy-v2.html", import.meta.url), "utf8");
+const markup = readFileSync(new URL("../group-battle.html", import.meta.url), "utf8");
 const appSource = readFileSync(new URL("../src/app.js", import.meta.url), "utf8");
 const worldDossierNavigationSource = readFileSync(new URL("../src/world-dossier-navigation.js", import.meta.url), "utf8");
 const generatedWorldSource = readFileSync(new URL("../src/generated-world-system.js", import.meta.url), "utf8");
@@ -477,7 +477,7 @@ test("territory subdivision produces 186 curved, selectable small regions", () =
   assert.ok([...horizontal, ...vertical].every((sector) => sector.d.includes("Q")));
   const totalDeclared = [...markup.matchAll(/data-tile-count="(\d+)"/g)].reduce((total, match) => total + Number(match[1]), 0);
   assert.equal(totalDeclared, 186);
-  assert.match(appSource, /subdivideTerritoryTiles\(elements\.strategyMap\)/);
+  assert.doesNotMatch(appSource, /subdivideTerritoryTiles\(elements\.strategyMap\)/);
 });
 
 test("the political overlay uses stylized atlas textures clipped to exact national landmasses", () => {

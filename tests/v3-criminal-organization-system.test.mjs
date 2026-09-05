@@ -242,7 +242,7 @@ test("誘拐後の三択と暗殺担当拘束後の二択をV3保存上で分岐
   assert.equal(abandoned.criminal.crime.organization.members.find((entry) => entry.id === captureDecision.memberId).status, "left");
 });
 
-test("V3犯罪UIは既定入口へ接続し、V2は比較アーカイブとしてのみ残る", async () => {
+test("V3犯罪UIは既定入口へ接続し、旧版の起動導線を持たない", async () => {
   const [index, app, styles, agents] = await Promise.all([
     readFile(new URL("../index.html", import.meta.url), "utf8"),
     readFile(new URL("../src/v3-app.js", import.meta.url), "utf8"),
@@ -251,7 +251,7 @@ test("V3犯罪UIは既定入口へ接続し、V2は比較アーカイブとし�
   ]);
   assert.match(index, /data-v3-action="underworld"/);
   assert.match(index, /id="v3UnderworldModal"/);
-  assert.match(index, /V2 比較アーカイブ/);
+  assert.doesNotMatch(index, /V2 比較アーカイブ/);
   assert.match(app, /renderUnderworld/);
   assert.match(app, /resolveV3PersonalCrime/);
   assert.match(app, /state = normalizeV3IntegratedState\(context, state\);/);
@@ -262,7 +262,7 @@ test("V3犯罪UIは既定入口へ接続し、V2は比較アーカイブとし�
   assert.match(app, /const cycleLabel = worldSimulation/);
   assert.match(styles, /\.v3-underworld/);
   assert.match(agents, /Generation V3/);
-  assert.match(agents, /V2.*比較/);
+  assert.match(agents, /旧版.*削除/);
 });
 
 test("組織金庫への出資はV3銀貨から移り、V3人物状態へ戻る", () => {

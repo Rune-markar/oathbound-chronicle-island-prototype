@@ -30,7 +30,7 @@ test("現状台帳のローカル出典と開始画面の導線が存在する",
       await access(new URL(itemSource.href.slice(2), projectRoot));
     }
   }
-  const index = await readFile(new URL("legacy-v2.html", projectRoot), "utf8");
+  const index = await readFile(new URL("group-battle.html", projectRoot), "utf8");
   assert.match(index, /href="\.\/project-status\.html"/);
   const statusPage = await readFile(new URL("project-status.html", projectRoot), "utf8");
   assert.match(statusPage, /src="\.\/src\/project-status\.js"/);
