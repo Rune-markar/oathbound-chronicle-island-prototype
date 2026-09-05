@@ -25,6 +25,7 @@ import {
   normalizeRegisteredSystems,
 } from "./system-registry.js";
 import { advanceV3WorldSimulation } from "./v3-world-simulation.js";
+import { applyV3MarketInventoryFlows } from "./v3-market-economy.js";
 import {
   V3_WORLD_EFFECTS_VERSION,
   getV3WorldEffectAt,
@@ -208,7 +209,23 @@ function generatedWorldEvents(simulation) {
     ...(world.resistance?.events ?? []),
     ...(world.barbarians?.events ?? []),
     ...(simulation?.externalCrises?.events ?? []),
+    ...(simulation?.marketEconomy?.events ?? []),
   ].filter((entry) => entry?.id && (entry.summary || entry.title));
+}
+
+function merchantInventoryFlows(previousState, nextState) {
+  const before = previousState.merchant?.trade?.marketStockDeltas ?? {};
+  const after = nextState.merchant?.trade?.marketStockDeltas ?? {};
+  const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
+  return [...keys].map((key) => {
+    const match = key.match(/^(-?\d+)-(\d+):(.+):([^:]+)$/);
+    if (!match) return null;
+    const quantity = (Number(after[key]) || 0) - (Number(before[key]) || 0);
+    const latest = nextState.merchant?.trade?.recentTransactions?.[0];
+    const source = Number(latest?.year) === Number(match[1]) && Number(latest?.month) === Number(match[2])
+      && latest?.settlementId === match[3] && latest?.commodityId === match[4] ? "player" : "company";
+    return quantity ? { settlementId: match[3], commodityId: match[4], quantity, source } : null;
+  }).filter(Boolean);
 }
 
 function asDomainWorldEvent(entry, clock) {
@@ -251,13 +268,24 @@ export function commitV3Action(runtime, context, previousState, worldSimulation,
   const clockTransition = advanceGameClock(previous.clock, currentMinutes - previousMinutes);
   const skipped = new Set(result.advancedSystemIds ?? []);
   const events = [...result.events];
+  let nextWorldSimulation = applyV3MarketInventoryFlows(runtime, worldSimulation, merchantInventoryFlows(previous, state), "trade");
+  const collectWorldEvents = (beforeWorld, afterWorld, clock) => {
+    const known = new Set(generatedWorldEvents(beforeWorld).map((entry) => entry.id));
+    generatedWorldEvents(afterWorld).filter((entry) => !known.has(entry.id))
+      .forEach((entry) => events.push(asDomainWorldEvent(entry, clock)));
+  };
   for (const calendar of clockTransition.crossedMonths) {
     state = setStateGameClock(state, { ...state.clock, elapsedMinutes: calendar.monthIndex * 30 * 24 * 60 });
-    const monthly = advanceRegisteredMonth(V3_SYSTEM_REGISTRY, context, state, {
+    const beforeMonth = state;
+    const monthlyContext = { ...context, worldSimulation: nextWorldSimulation };
+    const monthly = advanceRegisteredMonth(V3_SYSTEM_REGISTRY, monthlyContext, state, {
       calendar,
       skipSystemIds: skipped,
     });
     state = monthly.state;
+    const tradedWorld = applyV3MarketInventoryFlows(runtime, nextWorldSimulation, merchantInventoryFlows(beforeMonth, state), "trade");
+    nextWorldSimulation = advanceV3WorldSimulation(runtime, tradedWorld, 1);
+    collectWorldEvents(tradedWorld, nextWorldSimulation, state.clock);
     const boundaryClock = state.clock;
     events.push(...monthly.events.map((event) => ({
       ...event,
@@ -266,13 +294,6 @@ export function commitV3Action(runtime, context, previousState, worldSimulation,
     })));
   }
   state = setStateGameClock(state, clockTransition.clock);
-  const knownWorldEventIds = new Set(generatedWorldEvents(worldSimulation).map((entry) => entry.id));
-  const nextWorldSimulation = clockTransition.crossedMonths.length
-    ? advanceV3WorldSimulation(runtime, worldSimulation, clockTransition.crossedMonths.length)
-    : worldSimulation;
-  generatedWorldEvents(nextWorldSimulation)
-    .filter((entry) => !knownWorldEventIds.has(entry.id))
-    .forEach((entry) => events.push(asDomainWorldEvent(entry, state.clock)));
   if (currentMinutes > previousMinutes) {
     const calendar = getGameCalendar(state.clock);
     events.push({
