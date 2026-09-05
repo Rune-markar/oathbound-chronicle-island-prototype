@@ -556,10 +556,10 @@ test("個人戦の退避は失敗時の被害を保ちつつ、再試行ごと�
   assert.ok(attempts > 1 && attempts < 12);
 });
 
-test("既定入口はV3フィールドで、個人戦はフィールド内、集団戦は旧版専用画面へ接続する", async () => {
+test("既定入口はV3フィールドで、個人戦はフィールド内、集団戦はV3専用画面へ接続する", async () => {
   const [index, legacy, app, legacyApp, styles, legacyStyles] = await Promise.all([
     readFile(new URL("../index.html", import.meta.url), "utf8"),
-    readFile(new URL("../legacy-v2.html", import.meta.url), "utf8"),
+    readFile(new URL("../group-battle.html", import.meta.url), "utf8"),
     readFile(new URL("../src/v3-app.js", import.meta.url), "utf8"),
     readFile(new URL("../src/app.js", import.meta.url), "utf8"),
     readFile(new URL("../v3.css", import.meta.url), "utf8"),
@@ -577,7 +577,7 @@ test("既定入口はV3フィールドで、個人戦はフィールド内、集
   assert.match(app, /encounterModal\.hidden = !encounter \|\| Boolean\(personalEnemy\)/);
   assert.match(app, /createV3GroupBattleHandoff/);
   assert.match(app, /startV3MilitaryMission\(context, state, worldSimulation\)/);
-  assert.match(app, /legacy-v2\.html/);
+  assert.match(app, /group-battle\.html/);
   assert.match(app, /document\.addEventListener\("visibilitychange", \(\) => \{\s*if \(document\.hidden\) saveGame\(\);\s*\}\);/);
   assert.match(app, /window\.addEventListener\("pagehide", saveGame\);/);
   assert.match(app, /polity\?\.politicalSystemName/);
@@ -586,8 +586,8 @@ test("既定入口はV3フィールドで、個人戦はフィールド内、集
   assert.match(styles, /\.v3-tile\.is-oasis/);
   assert.match(styles, /\.v3-tile\.is-volcano/);
   assert.match(styles, /\.v3-world-map > footer i\.is-site/);
-  assert.match(index, /legacy-v2\.html/);
-  assert.match(legacy, /src\/app\.js/);
+  assert.doesNotMatch(index, /legacy-v2|比較アーカイブ/);
+  assert.match(legacy, /src\/group-battle-entry\.js/);
   assert.match(legacy, /id="battlePreparationScreen"/);
   assert.match(legacy, /id="tacticalBattleScreen"/);
   assert.match(legacy, /id="tacticalResultScreen"/);

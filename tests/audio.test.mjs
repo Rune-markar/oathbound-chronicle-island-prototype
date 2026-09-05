@@ -24,7 +24,7 @@ test("audio controller restores saved preferences without requiring Web Audio at
 });
 
 test("the UI exposes a persistent BGM and SE control and the app uses distinct game cues", () => {
-  const markup = readFileSync(new URL("../legacy-v2.html", import.meta.url), "utf8");
+  const markup = readFileSync(new URL("../group-battle.html", import.meta.url), "utf8");
   const appSource = readFileSync(new URL("../src/app.js", import.meta.url), "utf8");
   assert.match(markup, /id="audioToggle"/);
   assert.match(markup, /id="audioStatus"/);

@@ -6,7 +6,7 @@ import { GAME_MINUTES_PER_MONTH, getGameCalendar, setStateGameClock } from "../s
 import { buildGeneratedWorld, createGeneratedWorldState } from "../src/generated-world-system.js";
 import { createV3FieldState, createV3WorldContext } from "../src/v3-field-system.js";
 import { applyV3BattleResultToWorldSimulation, bindV3BattleToStrategicWar } from "../src/v3-battle-strategy.js";
-import { readV3Save, writeV3Save } from "../src/v3-save-system.js";
+import { readV3Save, writeV3Save, V3_SAVE_VERSION } from "../src/v3-save-system.js";
 import { commitV3Action, normalizeV3IntegratedState } from "../src/v3-system-kernel.js";
 import { createV3WorldSimulation } from "../src/v3-world-simulation.js";
 import { V3_WORLD_EFFECTS_VERSION } from "../src/v3-world-effects.js";
@@ -57,74 +57,28 @@ test("a twelve-month observation preserves each source month in the shared event
   assert.equal(new Set(criminalMonths.map((event) => event.period)).size, 12);
 });
 
-test("V3 save registry upgrades version three and aligns its canonical clock to the newer world month", () => {
+test("V3 current saves roundtrip and incompatible saves are refused without mutation", () => {
+  const { options, state, simulation } = integratedFixture();
   const storage = new Map();
   const adapter = { getItem: (key) => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value) };
-  const legacy = {
-    version: 3,
-    world: { seed: "legacy-clock" },
-    field: { version: 3, seed: "legacy-clock", player: { name: "旧冒険者" }, clockMinutes: 610 },
-    worldSimulation: {
-      version: 1,
-      year: 318,
-      month: 2,
-      generatedWorld: { tacticalOutcomes: [{ battleId: "legacy-battle", period: "318-1" }] },
-    },
-  };
-  adapter.setItem("v3", JSON.stringify(legacy));
-  const migrated = readV3Save(adapter, "v3");
-  assert.equal(migrated.version, 6);
-  assert.deepEqual([getGameCalendar(migrated.field.clock).year, getGameCalendar(migrated.field.clock).month], [318, 2]);
-  assert.equal(migrated.field.clock.elapsedMinutes % GAME_MINUTES_PER_MONTH, 610);
-  assert.equal(migrated.worldSimulation.version, 3);
-  assert.equal(migrated.worldSimulation.externalCrises, null);
-  assert.equal(migrated.worldSimulation.generatedWorld.tacticalOutcomeReceipts["legacy-battle"], "318-1");
-  const saved = writeV3Save(adapter, "v3", migrated);
-  assert.equal(saved.systemVersions["system-kernel"], 2);
-  assert.equal(saved.systemVersions["world-effects"], V3_WORLD_EFFECTS_VERSION);
-  assert.equal(saved.systemVersions["merchant-company"], 2);
-  assert.equal(saved.systemVersions["world-simulation"], 3);
-  assert.equal(saved.systemVersions["race-decisions"], 2);
-});
-
-test("V5のRaceState V1は人物・群構成の追加領域を持つV2へ非破壊移行する", () => {
-  const storage = new Map();
-  const adapter = { getItem: (key) => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value) };
-  adapter.setItem("v3", JSON.stringify({
-    version: 5,
-    world: { seed: "race-v1-migration" },
-    field: { version: 4, seed: "race-v1-migration", player: { name: "移行者" }, clockMinutes: 480 },
-    worldSimulation: {
-      version: 2,
-      year: 317,
-      month: 4,
-      generatedWorld: {
-        raceDynamics: {
-          schemaVersion: 1,
-          seed: "race-v1-migration",
-          races: {
-            human: {
-              raceId: "human",
-              population: 100,
-              baseTraits: {},
-              temperamentPopulation: { militant: 25, submissive: 25, cooperative: 25, independent: 25 },
-              experience: {},
-              historicalAgendas: [],
-            },
-          },
-          nationProfiles: {},
-          events: [],
-        },
-      },
-    },
-    systemVersions: { "race-decisions": 1 },
-  }));
-  const migrated = readV3Save(adapter, "v3");
-  assert.equal(migrated.version, 6);
-  assert.equal(migrated.systemVersions["race-decisions"], 2);
-  assert.equal(migrated.worldSimulation.generatedWorld.raceDynamics.schemaVersion, 2);
-  assert.deepEqual(migrated.worldSimulation.generatedWorld.raceDynamics.races.human.populationGroups, {});
-  assert.deepEqual(migrated.worldSimulation.generatedWorld.raceDynamics.characterProfiles, {});
+  const current = writeV3Save(adapter, "v3", { version: V3_SAVE_VERSION, world: options, field: state, worldSimulation: simulation });
+  assert.deepEqual(readV3Save(adapter, "v3"), JSON.parse(JSON.stringify(current)));
+  assert.equal(current.systemVersions["world-effects"], V3_WORLD_EFFECTS_VERSION);
+  for (const mutate of [
+    ...[2, 3, 4, 5, 7].map((version) => (save) => { save.version = version; }),
+    (save) => { delete save.systemVersions; },
+    (save) => { save.systemVersions["world-simulation"] = 2; },
+    (save) => { save.worldSimulation.version = 2; },
+    (save) => { save.worldSimulation.generatedWorld.raceDynamics.schemaVersion = 1; },
+    (save) => { delete save.field.clock; },
+  ]) {
+    const invalid = structuredClone(current);
+    mutate(invalid);
+    adapter.setItem("v3", JSON.stringify(invalid));
+    const before = adapter.getItem("v3");
+    assert.equal(readV3Save(adapter, "v3"), null);
+    assert.equal(adapter.getItem("v3"), before);
+  }
 });
 
 test("a tactical BattleResult updates its bound strategic force and front exactly once", () => {

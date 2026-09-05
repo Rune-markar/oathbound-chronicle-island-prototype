@@ -35,7 +35,7 @@ npm run remote:guard-deploy
 2. Clone the repository on the VPS; do not synchronize `node_modules`, virtual environments, build caches, or active Git working trees.
 3. Set `REMOTE_HOST_ROLE=development`, then run `npm run remote:setup` and `npm run remote:verify`.
 4. Use a task branch or Git worktree for each concurrent change.
-5. Commit and push completed work, then record the commit and verification result in Notion.
+5. Commit and merge completed work into main, then record the commit and verification result in Notion. Push only when explicitly requested.
 6. Perform browser, Passkey, notification, media-device, PowerShell-only, and LAN-only checks on the designated local host.
 
 Development servers should listen on localhost by default. Use SSH port forwarding, an authenticated tunnel, or a private VPN when remote browser access is required. Do not expose Codex app-server or unauthenticated development ports directly to the internet.
@@ -43,3 +43,5 @@ Development servers should listen on localhost by default. Use SSH port forwardi
 ## Current verification focus
 
 As of 2026-09-05, the canonical Generation V3 check uses Node.js 22, `npm run check`, and a localhost browser run of `index.html`. The deterministic 50-year fixture `v3-race-history-600` must retain completed generated wars, non-saturated national conditions, and all four external-crisis types across its crisis history. Browser verification must cover the world-crisis panel and local projected crisis symbol at desktop and 390×844 viewports, then close the browser and local server.
+
+The only game entry is `index.html`. `group-battle.html` requires a pending V3 mission and returns to the field after cancellation or battle resolution. Verify current-save reload and rejection of outdated save versions at both viewports; legacy standalone pages are retired. Use Node.js 22 and close the browser and local server after verification.

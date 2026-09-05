@@ -25,7 +25,7 @@ test("game manual covers the monthly loop and every active foreign national logi
 
 test("in-game help and the UTF-8 full manual remain reachable", async () => {
   const [index, manualPage] = await Promise.all([
-    readFile(new URL("legacy-v2.html", root), "utf8"),
+    readFile(new URL("group-battle.html", root), "utf8"),
     readFile(new URL("manual.html", root), "utf8"),
   ]);
   assert.match(index, /id="guideModal"/);

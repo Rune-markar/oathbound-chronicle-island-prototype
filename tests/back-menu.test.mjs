@@ -6,7 +6,7 @@ const root = new URL("../", import.meta.url);
 
 test("front navigation shows world before person and keeps reference pages in the back menu", async () => {
   const [markup, app] = await Promise.all([
-    readFile(new URL("legacy-v2.html", root), "utf8"),
+    readFile(new URL("group-battle.html", root), "utf8"),
     readFile(new URL("src/app.js", root), "utf8"),
   ]);
   const primaryTabs = markup.match(/<nav class="primary-tabs"[\s\S]*?<\/nav>/)?.[0] ?? "";

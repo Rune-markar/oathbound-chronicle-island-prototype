@@ -36,7 +36,6 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .v3-new-world p { grid-column: 1 / -1; margin: 0; color: #aab8ae; font-size: 12px; }
 .v3-new-world > div { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 8px; }
 .v3-new-world button { min-height: 44px; text-align: center; }
-.v3-legacy-link { width: max-content; color: #aab8ae; font-size: 12px; }
 .v3-launch > footer { display: flex; justify-content: space-between; color: #71857c; font-size: 10px; font-weight: 800; letter-spacing: .12em; }
 
 .v3-generation { display: grid; place-content: center; justify-items: center; min-height: 100dvh; padding: 24px; text-align: center; background: radial-gradient(circle, rgba(34,68,71,.9), rgba(7,18,20,.98) 64%), url("./assets/generated/v3/launch-hero.webp") center / cover no-repeat; }

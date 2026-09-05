@@ -26,6 +26,21 @@ const entry = (value) => Object.freeze({ updatedAt: "2026-08-11", ...value, sour
 
 export const STATUS_ENTRIES = Object.freeze([
   entry({
+    id: "v3-retire-legacy",
+    category: "implemented",
+    area: "Generation V3・入口・保存",
+    title: "旧版起動とセーブ互換を廃止",
+    summary: "旧版の公開入口と起動リンク、旧保存の自動移行を削除し、現行V3の新規開始・再開・軍務集団戦へ入口を統一する。",
+    evidence: "集団戦専用入口は一致するpending軍務だけを受け付け、引渡しがない場合はindex.htmlへ戻る。旧版セーブは読み書きせず、共有戦闘計算と非表示の内部DOMだけを再利用する。保存全体V6とシステム別現行版が一致するセーブだけを再開する。",
+    updatedAt: "2026-09-05",
+    sources: [
+      source("V3入口", "./index.html", "new / continue / no legacy launch"),
+      source("軍務専用入口", "./src/group-battle-entry.js", "pending request guard"),
+      source("現行保存", "./src/v3-save-system.js", "V3_SAVE_REGISTRY / current versions only"),
+      source("保存回帰", "./tests/v3-system-integration.test.mjs", "roundtrip / reject incompatible without mutation"),
+    ],
+  }),
+  entry({
     id: "v3-external-crisis-simulation",
     category: "implemented",
     area: "Generation V3・世界情勢・外部危機",
@@ -86,7 +101,7 @@ export const STATUS_ENTRIES = Object.freeze([
     area: "Generation V3・共通基盤",
     title: "時計・月次・行動・イベント・保存の共通システム契約",
     summary: "歩行、動的世界、商会、犯罪組織、軍務が固有ルールを保ちながら、同じゲーム時計、行動結果、月次登録、横断イベント、継続作業、保存版を使う。",
-    evidence: "V3の全プレイヤー行動を統合カーネルへ通し、依存関係を検証した登録順で月境界ごとに各システムを一度だけ進める。12か月観測でも出来事の発生月を保持し、V3/V4/V5からV6への保存移行は宣言された段階移行成功後だけ版を更新する。集団戦結果は表示履歴と別の永続battleId証跡で二重反映を防ぎ、失効正面を別正面へ誤投影しない。V3商会は共有商会コアのアダプター、FNV系ハッシュ、Mulberry32、LCGは互換バリアント付き共通実装を使う。",
+    evidence: "V3の全プレイヤー行動を統合カーネルへ通し、依存関係を検証した登録順で月境界ごとに各システムを一度だけ進める。12か月観測でも出来事の発生月を保持し、旧セーブの自動移行は廃止し、保存全体V6とシステム別現行版の完全一致を要求する。集団戦結果は表示履歴と別の永続battleId証跡で二重反映を防ぎ、失効正面を別正面へ誤投影しない。V3商会は共有商会コアのアダプター、FNV系ハッシュ、Mulberry32、LCGは互換バリアント付き共通実装を使う。",
     updatedAt: "2026-08-24",
     sources: [
       source("統合時計", "./src/game-clock.js", "GameClock / getGameCalendar / gameClockAtPeriod / advanceGameClock"),
@@ -94,8 +109,8 @@ export const STATUS_ENTRIES = Object.freeze([
       source("行動・月次カーネル", "./src/v3-system-kernel.js", "V3_SYSTEM_REGISTRY / commitV3Action / getV3Operations"),
       source("月次依存関係", "./src/system-registry.js", "dependsOn / missing dependency / cycle detection"),
       source("横断イベント", "./src/domain-events.js", "DomainEvent / appendDomainEvents / getDomainEvents"),
-      source("保存移行エンジン", "./src/save-registry.js", "legacyVersion / sequential migrations / future-version refusal"),
-      source("V6保存移行", "./src/v3-save-system.js", "V3_SAVE_REGISTRY / world-simulation v1 to v2 / race-decisions v1 to v2 / readV3Save / writeV3Save"),
+      source("現行保存の検証", "./src/save-registry.js", "deserialize / serialize / exact system versions"),
+      source("V6現行保存", "./src/v3-save-system.js", "V3_SAVE_REGISTRY / current versions only / readV3Save / writeV3Save"),
       source("商会共通コア接続", "./src/v3-merchant-system.js", "shared merchant-company adapter"),
       source("戦術戦果の戦略投影", "./src/v3-battle-strategy.js", "bindV3BattleToStrategicWar / applyV3BattleResultToWorldSimulation"),
       source("共通決定論", "./src/determinism.js", "FNV variants / Mulberry32 / LCG"),

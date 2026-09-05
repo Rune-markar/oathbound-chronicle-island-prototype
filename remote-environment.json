@@ -3,23 +3,48 @@
   "project": "LEVIATHAN COVENANT / Oathbound Chronicle",
   "notionPage": "https://app.notion.com/p/aa8c546868ea4a5887982a6fea1570a4",
   "baselineBranch": "main",
-  "runtime": { "nodeMajor": 22 },
-  "requiredCommands": ["git", "node", "npm"],
+  "runtime": {
+    "nodeMajor": 22
+  },
+  "requiredCommands": [
+    "git",
+    "node",
+    "npm"
+  ],
   "requiredEnvironment": [],
-  "bootstrapCommands": { "all": ["npm ci"] },
-  "verifyCommands": ["npm run check"],
+  "bootstrapCommands": {
+    "all": [
+      "npm ci"
+    ]
+  },
+  "verifyCommands": [
+    "npm run check"
+  ],
   "lastReviewed": "2026-09-05",
-  "verificationFocus": ["Generation V3 50-year conflict and external-crisis balance", "World crisis panel and projected local symbol", "Desktop and 390x844 canonical browser flow"],
+  "verificationFocus": [
+    "Generation V3 50-year conflict and external-crisis balance",
+    "World crisis panel and projected local symbol",
+    "Desktop and 390x844 canonical browser flow",
+    "Current V3 save roundtrip and incompatible-save rejection",
+    "V3 military group battle and return; no legacy launch"
+  ],
   "roles": {
     "development": {},
     "static-publisher": {},
     "browser-device": {}
   },
-  "deploy": { "authorizedRoles": ["static-publisher"] },
+  "deploy": {
+    "authorizedRoles": [
+      "static-publisher"
+    ]
+  },
   "sourcesOfTruth": {
     "code": "GitHub / Rune-markar/oathbound-chronicle-island-prototype",
     "operations": "Notion / LEVIATHAN COVENANT",
     "productionData": "Version-controlled game state definitions and designated published build"
   },
-  "localOnlyTasks": ["Desktop and mobile interaction verification", "Visual and generated-art review"]
+  "localOnlyTasks": [
+    "Desktop and mobile interaction verification",
+    "Visual and generated-art review"
+  ]
 }
