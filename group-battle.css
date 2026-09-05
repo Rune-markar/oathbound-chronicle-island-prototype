@@ -1,0 +1,14 @@
+/* Keep unused renderer markup out of both layout and keyboard navigation. */
+[data-retired-ui] { display: none !important; }
+
+@media (max-width: 980px) {
+  .v3-group-battle .battle-preparation-screen {
+    grid-template-rows: max-content max-content max-content;
+    align-content: start;
+  }
+  .v3-group-battle .battle-preparation-layout {
+    grid-auto-rows: max-content;
+    min-height: max-content;
+    align-content: start;
+  }
+}

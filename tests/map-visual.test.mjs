@@ -477,7 +477,7 @@ test("territory subdivision produces 186 curved, selectable small regions", () =
   assert.ok([...horizontal, ...vertical].every((sector) => sector.d.includes("Q")));
   const totalDeclared = [...markup.matchAll(/data-tile-count="(\d+)"/g)].reduce((total, match) => total + Number(match[1]), 0);
   assert.equal(totalDeclared, 186);
-  assert.match(appSource, /subdivideTerritoryTiles\(elements\.strategyMap\)/);
+  assert.doesNotMatch(appSource, /subdivideTerritoryTiles\(elements\.strategyMap\)/);
 });
 
 test("the political overlay uses stylized atlas textures clipped to exact national landmasses", () => {

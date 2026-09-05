@@ -133,7 +133,7 @@ export const STATUS_ENTRIES = Object.freeze([
       source("商会共通コア接続", "./src/v3-merchant-system.js", "shared merchant-company adapter"),
       source("戦術戦果の戦略投影", "./src/v3-battle-strategy.js", "bindV3BattleToStrategicWar / applyV3BattleResultToWorldSimulation"),
       source("共通決定論", "./src/determinism.js", "FNV variants / Mulberry32 / LCG"),
-      source("統合回帰", "./tests/v3-system-integration.test.mjs", "monthly progression / save migration / battle projection"),
+      source("統合回帰", "./tests/v3-system-integration.test.mjs", "monthly progression / current save validation / battle projection"),
       source("設計・実プレイ", "./docs/gameplay-reviews/2026-08-24-system-integration-rationalization.md", "audit / desktop / 390x844 / persistence"),
     ],
   }),
