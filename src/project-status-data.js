@@ -26,6 +26,22 @@ const entry = (value) => Object.freeze({ updatedAt: "2026-08-11", ...value, sour
 
 export const STATUS_ENTRIES = Object.freeze([
   entry({
+    id: "v3-solo-auto-mode",
+    category: "implemented",
+    area: "Generation V3・ソロプレイ",
+    title: "基本方針と詳細オプションを持つ自動モード",
+    summary: "探索・目的地移動・交易巡回・世界観測を慎重／標準／積極的から選び、HP・遭遇・経路・売買・上限・速度を調整する。",
+    evidence: "通常の1マス行動・共通時計・月次・市場在庫・現行V6保存へ接続。手動操作・非表示・再読込で一時停止し、軍務集団戦・商会事故・組織判断は手動へ戻す。",
+    updatedAt: "2026-09-05",
+    sources: [
+      source("V3通常入口", "./index.html", "v3AutoOpen / presets / options"),
+      source("判断と行動", "./src/v3-auto-mode.js", "decideAutoAction / executeAutoAction"),
+      source("通常UI接続", "./src/v3-auto-ui.js", "mountV3AutoMode"),
+      source("行動回帰", "./tests/v3-auto-mode.test.mjs", "movement / trade / observation / save"),
+      source("仕様", "./docs/superpowers/specs/2026-09-05-v3-solo-auto-mode.md", "solo automation"),
+    ],
+  }),
+  entry({
     id: "v3-retire-legacy",
     category: "implemented",
     area: "Generation V3・入口・保存",

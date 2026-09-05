@@ -618,3 +618,51 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; }
 }
+
+/* Solo automation stays reachable without covering the field. */
+.v3-auto-toolbar { display: flex; align-items: center; gap: 10px; padding: 6px max(12px, calc((100vw - 1180px) / 2)); border-bottom: 1px solid #405b53; background: #0b2022; }
+.v3-auto-toolbar button, .v3-auto-card button { min-width: 44px; min-height: 44px; padding: 8px 12px; border: 1px solid #92a59a; border-radius: 4px; background: #173336; cursor: pointer; }
+#v3AutoOpen { flex: none; color: #eddda1; font-weight: 800; }
+#v3AutoOpen[aria-pressed="true"] { border-color: #dfc878; background: #304b3a; }
+#v3AutoBar { display: flex; flex: 1; align-items: center; gap: 8px; min-width: 0; }
+#v3AutoBar > div { flex: 1; min-width: 0; }
+#v3AutoBar strong, #v3AutoBar small { display: block; overflow-wrap: anywhere; font-size: 12px; }
+#v3AutoBar small { margin-top: 3px; color: #b0c2b6; font-size: 11px; }
+#v3AutoBar button { flex: none; }
+.v3-auto-modal { position: fixed; inset: 0; z-index: 35; display: grid; place-items: center; padding: 16px; background: rgba(1, 8, 9, .9); }
+.v3-auto-card { width: min(700px, 100%); max-height: calc(100dvh - 32px); display: grid; grid-template-rows: auto minmax(0, 1fr); overflow: hidden; background: #0d2224; border: 2px solid #d8d5bc; border-radius: 6px; }
+.v3-auto-card > header { display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; border-bottom: 1px solid #607268; }
+.v3-auto-card h1 { margin: 2px 0; font-size: 24px; }
+.v3-auto-card header small { color: #dcc77e; }
+#v3AutoForm { overflow: auto; overscroll-behavior: contain; padding: 18px; }
+.v3-auto-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.v3-auto-grid label { display: grid; align-content: start; gap: 6px; min-width: 0; color: #e2e8da; font-size: 13px; }
+.v3-auto-grid select, .v3-auto-grid input[type="number"] { width: 100%; min-width: 0; min-height: 44px; padding: 8px; color: #fff; background: #0b181b; border: 1px solid #72897c; border-radius: 3px; }
+.v3-auto-grid .v3-auto-check { display: flex; align-items: center; min-height: 44px; gap: 8px; }
+.v3-auto-check input { flex: none; width: 22px; height: 22px; accent-color: #b8c97b; }
+#v3AutoForm details { margin-top: 16px; border: 1px solid #506a5b; border-radius: 4px; }
+#v3AutoForm summary { display: flex; align-items: center; min-height: 48px; padding: 10px 12px; cursor: pointer; color: #e2d18a; font-weight: 700; }
+#v3AutoForm summary::before { content: '＋'; margin-right: 8px; }
+#v3AutoForm details[open] > summary::before { content: '−'; }
+#v3AutoForm fieldset { min-width: 0; margin: 12px; padding: 12px; border: 1px solid #405b51; }
+#v3AutoForm legend { padding: 0 6px; color: #d5c582; }
+#v3AutoForm p { color: #bbcbc0; font-size: 12px; line-height: 1.7; }
+#v3AutoForm footer { position: sticky; bottom: -18px; display: flex; justify-content: flex-end; gap: 8px; padding: 12px 0; background: #0d2224; }
+#v3AutoError { color: #ffb6a3 !important; }
+.v3-auto-log { padding: 0 18px 10px 36px; font-size: 12px; line-height: 1.8; overflow-wrap: anywhere; }
+.v3-auto-card :focus-visible, .v3-auto-toolbar :focus-visible { outline: 3px solid #f1d778; outline-offset: 2px; }
+@media (min-width: 721px) and (min-height: 681px) {
+  .v3-play-layout { min-height: calc(100dvh - 274px); }
+  .v3-field-shell { width: min(900px, calc(100vw - 32px), calc((100dvh - 310px) * 1.18)); }
+}
+@media (max-width: 720px) {
+  .v3-game { grid-template-rows: 58px auto auto minmax(0, 1fr); }
+  .v3-auto-toolbar { flex-wrap: wrap; gap: 6px; padding: 6px 8px; }
+  #v3AutoBar { flex-basis: 100%; }
+  #v3AutoBar strong { font-size: 11px; }
+  .v3-auto-modal { padding: 8px; }
+  .v3-auto-card { max-height: calc(100dvh - 16px); }
+  .v3-auto-card > header, #v3AutoForm { padding: 12px; }
+  .v3-auto-grid { grid-template-columns: minmax(0, 1fr); }
+  #v3AutoForm footer { bottom: -12px; }
+}

@@ -26,7 +26,8 @@
     "Persisted market production, consumption, inventory, logistics, and player price feedback",
     "Desktop and 390x844 canonical browser flow",
     "Current V3 save roundtrip and incompatible-save rejection",
-    "V3 military group battle and return; no legacy launch"
+    "V3 military group battle and return; no legacy launch",
+    "Solo auto presets/options, canonical actions, pause/resume, onsite trade, observation and paused save reload"
   ],
   "roles": {
     "development": {},
