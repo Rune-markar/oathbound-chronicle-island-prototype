@@ -51,6 +51,14 @@
         </div>
       </header>
 
+      <nav class="v3-auto-toolbar" aria-label="ソロプレイ自動モード">
+        <button type="button" id="v3AutoOpen" aria-pressed="false">自動モード</button>
+        <div id="v3AutoBar" hidden>
+          <div><strong id="v3AutoStatus" role="status"></strong><small id="v3AutoProgress"></small></div>
+          <button type="button" id="v3AutoToggle">一時停止</button><button type="button" id="v3AutoCancel">終了</button>
+        </div>
+      </nav>
+
       <section class="v3-play-layout">
         <aside class="v3-status-window" aria-label="主人公の状態">
           <header><strong id="v3PlayerLabel">アレク</strong><span><small id="v3RaceLabel">人間</small><small id="v3LevelLabel">LV 1</small></span></header>
@@ -156,6 +164,12 @@
       <footer><span><i class="is-player"></i>現在地</span><span id="v3WorldMissionLegend" hidden><i class="is-mission"></i>軍務作戦地</span><span id="v3WorldEffectLegend" hidden><i class="is-effect"></i>気象域・外部危機</span><span><i class="is-city"></i>都市・町・村</span><span><i class="is-road"></i>街道</span><span><i class="is-site"></i>地形地点</span><strong id="v3WorldMapPosition">現在地</strong><div><button type="button" data-v3-world-advance="1">1か月進める</button><button type="button" data-v3-world-advance="12">12か月観測</button></div></footer>
     </section>
 
+    <section class="v3-auto-modal" id="v3AutoModal" role="dialog" aria-modal="true" aria-labelledby="v3AutoTitle" hidden>
+      <article class="v3-auto-card">
+        <header><div><small>ソロプレイ</small><h1 id="v3AutoTitle">自動モード</h1></div><button type="button" data-auto-close>閉じる</button></header>
+        <form id="v3AutoForm"></form>
+      </article>
+    </section>
     <div class="v3-toast" id="v3Toast" role="status" aria-live="polite"></div>
     <script type="module" src="./src/v3-app.js"></script>
   </body>

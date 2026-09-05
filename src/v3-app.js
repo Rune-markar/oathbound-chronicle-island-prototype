@@ -82,6 +82,8 @@ import { DECISION_TRAITS, TEMPERAMENTS } from "./race-decision-system.js";
 import { GEOPOLITICAL_PULL_SET } from "./geopolitical-world.js";
 import { STATE_REASON_CONDITIONS, STATE_REASON_PRINCIPLE } from "./state-reason-system.js";
 import { getRaceDefinition } from "./race-list.js";
+import { restoreAutoState } from "./v3-auto-mode.js";
+import { mountV3AutoMode } from "./v3-auto-ui.js";
 
 const STORAGE_KEY = "leviathan-covenant-v3-save";
 const WORLD_CONFIG = Object.freeze({ width: 192, height: 120, plateCount: 28, nationCount: 7 });
@@ -182,6 +184,14 @@ let worldAdvanceBusy = false;
 let worldMapReturnFocus = null;
 const modalReturnFocus = { inventory: null, underworld: null, commerce: null };
 const worldChronicleCache = new WeakMap();
+const autoController = mountV3AutoMode({
+  read: () => ({ state, context, worldSimulation }),
+  writeAuto: (autoMode) => { state = { ...state, autoMode }; },
+  commit: commitStateAction,
+  save: saveGame,
+  render: renderGame,
+  toast: showToast,
+});
 
 function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>'"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[character]));
@@ -350,6 +360,7 @@ async function prepareWorld(options, savedField = null, savedWorldSimulation = n
   context.raceDynamics = worldSimulation.generatedWorld.raceDynamics;
   state = savedField ? normalizeV3FieldState(context, savedField) : createV3FieldState(context, { playerName: options.playerName, playerRaceId: options.playerRaceId });
   state = normalizeV3IntegratedState(context, state);
+  state.autoMode = restoreAutoState(savedField?.autoMode);
   if (savedField) {
     const calendar = getGameCalendar(state.clock);
     const lag = calendar.year * 12 + calendar.month - (worldSimulation.year * 12 + worldSimulation.month);
@@ -724,6 +735,7 @@ function renderGame() {
   renderInventory();
   if (!elements.underworldModal.hidden) renderUnderworld();
   if (!elements.commerceModal.hidden) renderCommerce();
+  autoController.refresh();
 }
 
 function movePlayer(direction) {
@@ -1408,8 +1420,10 @@ elements.continueButton.addEventListener("click", async () => {
 });
 
 document.addEventListener("visibilitychange", () => {
+  if (document.hidden) autoController.pause("画面を離れたため一時停止しました。");
   if (document.hidden) saveGame();
 });
+window.addEventListener("pagehide", () => autoController.pause("画面を離れたため一時停止しました。"));
 window.addEventListener("pagehide", saveGame);
 
 document.addEventListener("click", (event) => {
@@ -1608,6 +1622,8 @@ elements.worldCanvas.addEventListener("click", (event) => {
 });
 
 document.addEventListener("keydown", (event) => {
+  if (autoController.isOpen()) return;
+  if (event.target.closest(".v3-auto-toolbar") && ["Enter", " "].includes(event.key)) return;
   if (!state || /INPUT|TEXTAREA|SELECT/.test(event.target.tagName)) return;
   if (event.key === "Escape") {
     if (!elements.worldMap.hidden) closeWorldMap();
@@ -1624,6 +1640,7 @@ document.addEventListener("keydown", (event) => {
     return;
   }
   if (state.pendingEncounter) return;
+  if (!elements.worldMap.hidden || !elements.inventoryModal.hidden || !elements.underworldModal.hidden || !elements.commerceModal.hidden) return;
   const direction = { ArrowUp: "north", w: "north", W: "north", ArrowRight: "east", d: "east", D: "east", ArrowDown: "south", s: "south", S: "south", ArrowLeft: "west", a: "west", A: "west" }[event.key];
   if (!direction) return;
   event.preventDefault();
