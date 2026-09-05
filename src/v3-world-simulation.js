@@ -21,8 +21,13 @@ import {
   applyV3ExternalCrisisConsequences,
   createV3ExternalCrisisState,
 } from "./v3-external-crisis-system.js";
+import {
+  advanceV3MarketEconomyMonth,
+  createV3MarketEconomy,
+  normalizeV3MarketEconomy,
+} from "./v3-market-economy.js";
 
-export const V3_WORLD_SIMULATION_VERSION = 3;
+export const V3_WORLD_SIMULATION_VERSION = 4;
 export const V3_PRESENT_DATE = Object.freeze({ year: 317, month: 4 });
 export const V3_PREHISTORY_MONTHS = 50 * 12;
 export const V3_PREHISTORY_REGIONAL_CADENCE_MONTHS = 4;
@@ -284,6 +289,7 @@ export function createV3WorldSimulation(runtime, options = {}, dateState = V3_PR
     foundedPeriod: periodFor(date),
     generatedWorld,
     externalCrises,
+    marketEconomy: createV3MarketEconomy(runtime, date, generatedWorld, externalCrises),
     autonomyStrain: {},
     history: [],
   };
@@ -292,7 +298,7 @@ export function createV3WorldSimulation(runtime, options = {}, dateState = V3_PR
 }
 
 export function normalizeV3WorldSimulation(runtime, options = {}, source = null) {
-  if (!source || ![1, 2, V3_WORLD_SIMULATION_VERSION].includes(Number(source.version))) {
+  if (!source || ![1, 2, 3, V3_WORLD_SIMULATION_VERSION].includes(Number(source.version))) {
     return createV3WorldSimulation(runtime, options);
   }
   const date = {
@@ -304,6 +310,7 @@ export function normalizeV3WorldSimulation(runtime, options = {}, source = null)
     fixedCharacters: FIXED_WORLD_CHARACTERS,
   });
   const externalCrises = createV3ExternalCrisisState(runtime, source.externalCrises, date, generatedWorld);
+  const marketEconomy = normalizeV3MarketEconomy(runtime, source.marketEconomy, date, generatedWorld, externalCrises);
   const simulation = {
     version: V3_WORLD_SIMULATION_VERSION,
     year: date.year,
@@ -313,6 +320,7 @@ export function normalizeV3WorldSimulation(runtime, options = {}, source = null)
     foundedPeriod: typeof source.foundedPeriod === "string" ? source.foundedPeriod : periodFor(date),
     generatedWorld,
     externalCrises,
+    marketEconomy,
     autonomyStrain: Object.fromEntries(Object.entries(source.autonomyStrain ?? {}).filter(([regionId, value]) => (
       runtime.regionById.has(regionId) && Number.isFinite(Number(value))
     )).map(([regionId, value]) => [regionId, clamp(value, 0, 160)])),
@@ -435,6 +443,13 @@ function advanceOneMonth(runtime, simulation, options = {}) {
   const elapsedMonths = simulation.elapsedMonths + 1;
   const secession = maybeDeclareSecession(runtime, state, elapsedMonths, simulation.autonomyStrain);
   state = secession.state;
+  const marketEconomy = advanceV3MarketEconomyMonth(
+    runtime,
+    simulation.marketEconomy,
+    state,
+    state.generatedWorld,
+    externalCrises,
+  );
   const next = {
     ...simulation,
     year: state.year,
@@ -442,6 +457,7 @@ function advanceOneMonth(runtime, simulation, options = {}) {
     elapsedMonths,
     generatedWorld: state.generatedWorld,
     externalCrises,
+    marketEconomy,
     autonomyStrain: secession.autonomyStrain,
   };
   const currentPeriod = periodFor(next);

@@ -426,6 +426,26 @@ function positionOnRoad(context, road, salt, occupied) {
 function tradePurpose(context, road) {
   const left = context.settlementById.get(road.fromObjectId);
   const right = context.settlementById.get(road.toObjectId);
+  const shipment = (context.worldSimulation?.marketEconomy?.shipments ?? [])
+    .filter((entry) => entry.roadId === road.id)
+    .sort((a, b) => Number(b.quantity) - Number(a.quantity) || a.id.localeCompare(b.id))[0];
+  if (shipment) {
+    const origin = context.settlementById.get(shipment.originSettlementId);
+    const destination = context.settlementById.get(shipment.destinationSettlementId);
+    if (origin && destination) return {
+      kind: "market-inventory-shipment",
+      label: "市場在庫に基づく交易",
+      commodityId: shipment.commodityId,
+      commodityName: shipment.commodityName,
+      quantity: shipment.quantity,
+      reason: `${destination.name}の需要と在庫不足を受けた実輸送`,
+      origin,
+      destination,
+      nationalFoodOrder: false,
+      score: 2 + Number(shipment.quantity) / 10,
+    };
+  }
+  if (context.worldSimulation?.marketEconomy) return null;
   if (!left || !right) return null;
   const scoreDirection = (origin, destination) => {
     const originSupply = settlementFoodSupply(context, origin);
@@ -486,12 +506,12 @@ function purposefulMerchantPlans(context, period, occupied) {
     if (!position) continue;
     occupied.add(tileKey(position.x, position.y));
     destinationNations.add(nationId);
-    const { origin, destination, kind, label, commodityId, commodityName, reason, nationalFoodOrder } = candidate.purpose;
+    const { origin, destination, kind, label, commodityId, commodityName, quantity, reason, nationalFoodOrder } = candidate.purpose;
     selected.push({
       type: "npc",
       role: "merchant",
       actorId,
-      name: kind === "national-food-import" ? "穀物輸入の行商人" : kind === "wartime-provisions" ? "糧秣隊商" : "穀物輸送の行商人",
+      name: kind === "national-food-import" ? "穀物輸入の行商人" : kind === "wartime-provisions" ? "糧秣隊商" : `${commodityName}輸送の行商人`,
       symbol: "商",
       message: `${reason}ため、${origin.name}から${destination.name}へ${commodityName}を運んでいる。`,
       price: Math.min(8, Math.max(3, 5 + (Number(destination.gameplay?.merchantPriceModifier) || 0))),
@@ -502,6 +522,7 @@ function purposefulMerchantPlans(context, period, occupied) {
         label,
         commodityId,
         commodityName,
+        quantity: Number(quantity) || null,
         nationalActionId: nationalFoodOrder ? "secure_food" : null,
         reason,
         originSettlementId: origin.id,
@@ -907,7 +928,8 @@ export function normalizeV3FieldState(context, source = {}) {
     maxHp: clampInteger(source.player.maxHp, fallback.player.maxHp, 1, 999),
     level: clampInteger(source.player.level, 1, 1, 99),
     xp: clampInteger(source.player.xp, 0, 0, 999999),
-    gold: clampInteger(source.player.gold, 0, 0, 999999),
+    gold: Number.isFinite(Number(source.player.gold))
+      ? Number(Math.max(0, Math.min(999999, Number(source.player.gold))).toFixed(1)) : 0,
     inventory: Array.isArray(source.player.inventory) ? source.player.inventory.filter((item) => item?.id && item?.name).slice(0, 64) : [],
   };
   let pendingEncounter = source.pendingEncounter && typeof source.pendingEncounter === "object"
