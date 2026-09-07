@@ -6,6 +6,7 @@ import { fnv1aCharacters, unitFromHash } from "./determinism.js";
 import { getRegionalDomainView } from "./regional-domain-system.js";
 import { getV3WartimeMarketEffect } from "./v3-world-effects.js";
 import { getV3ExternalCrisisMarketEffect } from "./v3-external-crisis-system.js";
+import { deriveNationDecisionProfiles } from "./race-decision-system.js";
 
 export const V3_MARKET_ECONOMY_VERSION = 1;
 export const V3_MARKET_SHIPMENT_LIMIT = 160;
@@ -46,6 +47,9 @@ function marketWorld(runtime, date, generatedWorld) {
       toObjectId: marketEndpoint(road.toObjectId),
     })),
     activeWars: generatedWorld?.worldWars?.activeWars ?? [],
+    geopolitics: generatedWorld?.geopolitics,
+    raceDynamics: generatedWorld?.raceDynamics,
+    runtime: { ...runtime, nations: domains.nationMap, nationById: domains.nationById, regionById: domains.regionById },
   };
 }
 
@@ -79,14 +83,19 @@ function effectFor(world, externalCrises, settlement, commodityId) {
     regionId: settlement.regionId,
   });
   const external = getV3ExternalCrisisMarketEffect(externalCrises, nationId, settlement.regionId);
-  return combineEffects(wartime, external, commodityId);
+  return {
+    ...combineEffects(wartime, external, commodityId),
+    productionMultiplier: commodityId === "grain" && world.geopolitics?.nationStates?.[nationId]?.lastPullId === "secure_food" ? 1.15 : 1,
+  };
 }
 
 function monthlyRates(settlement, commodityId, effect) {
   const fundamentals = getCommodityMarketFundamentals(settlement, commodityId);
-  const production = round1((2.4 + fundamentals.supply * 12 + fundamentals.size * 2) * effect.stockMultiplier);
+  const normalProduction = 2.4 + fundamentals.supply * 12 + fundamentals.size * 2;
+  const production = round1(normalProduction * effect.stockMultiplier * (effect.productionMultiplier ?? 1));
   const consumption = round1(0.8 + fundamentals.demand * 5 + fundamentals.size * 1.5);
-  const targetInventory = Math.max(3, round1(consumption * 1.8 + production * 0.35));
+  // A failed harvest or a temporary policy changes output, not warehouse size.
+  const targetInventory = Math.max(3, round1(consumption * 1.8 + normalProduction * 0.35));
   const capacity = Math.max(8, round1(targetInventory * 2.4));
   return { ...fundamentals, production, consumption, targetInventory, capacity };
 }
@@ -109,6 +118,9 @@ function makeGood(seed, period, settlement, commodityId, effect, previous = null
   const inventory = advance
     ? clamp(startingInventory + rates.production - rates.consumption, 0, rates.capacity)
     : startingInventory;
+  const lastUnmetConsumption = advance
+    ? round1(Math.max(0, rates.consumption - startingInventory - rates.production))
+    : clamp(previous?.lastUnmetConsumption, 0, Number(previous?.lastConsumption) || rates.consumption);
   const prices = previous && !advance && Number.isFinite(Number(previous.buyPrice)) && Number.isFinite(Number(previous.sellPrice))
     ? { buyPrice: round1(previous.buyPrice), sellPrice: round1(previous.sellPrice), priceCoefficient: previous.priceCoefficient }
     : priceFor(seed, period, settlement, commodityId, rates, inventory, effect, previous?.buyPrice);
@@ -124,6 +136,7 @@ function makeGood(seed, period, settlement, commodityId, effect, previous = null
     targetInventory: rates.targetInventory,
     lastProduction: advance || !Number.isFinite(Number(previous?.lastProduction)) ? rates.production : round1(previous.lastProduction),
     lastConsumption: advance || !Number.isFinite(Number(previous?.lastConsumption)) ? rates.consumption : round1(previous.lastConsumption),
+    lastUnmetConsumption,
     lastImports: advance || !Number.isFinite(Number(previous?.lastImports)) ? 0 : round1(previous.lastImports),
     lastExports: advance || !Number.isFinite(Number(previous?.lastExports)) ? 0 : round1(previous.lastExports),
     playerFlow: advance || !Number.isFinite(Number(previous?.playerFlow)) ? 0 : round1(previous.playerFlow),
@@ -179,29 +192,45 @@ function hostileBorder(activeWars, leftNationId, rightNationId) {
   ));
 }
 
+export function getV3TradeAccess(geopolitics, decisionProfiles, leftNationId, rightNationId, activeWars = []) {
+  if (!leftNationId || !rightNationId || leftNationId === rightNationId) return { multiplier: 1, diplomatic: 1, openness: 1, hostile: false };
+  const relation = geopolitics?.relations?.[[leftNationId, rightNationId].sort().join(":")];
+  const hostile = hostileBorder(activeWars, leftNationId, rightNationId) || Boolean(relation?.atWar);
+  const diplomatic = clamp(0.8 + (Number(relation?.trade) || 0) / 100 * 0.7
+    + (Number(relation?.relation) || 0) / 100 * 0.15, 0.55, 1.65);
+  const meanOpenness = ((Number(decisionProfiles?.[leftNationId]?.traits?.openness) || 0)
+    + (Number(decisionProfiles?.[rightNationId]?.traits?.openness) || 0)) / 2;
+  const openness = clamp(1 + meanOpenness / 100 * 0.2, 0.8, 1.2);
+  return { multiplier: diplomatic * openness * (hostile ? 0.2 : 1), diplomatic, openness, hostile };
+}
+
 function moveRoadShipments(economy, world, period) {
   const shipments = [];
+  const decisionProfiles = deriveNationDecisionProfiles(world.runtime, world.raceDynamics);
   for (const road of [...world.roads].sort((left, right) => left.id.localeCompare(right.id))) {
     const left = economy.settlements[road.fromObjectId];
     const right = economy.settlements[road.toObjectId];
     if (!left || !right) continue;
-    const hostile = hostileBorder(world.activeWars, left.nationId, right.nationId);
-    const roadCapacity = (Number(road.importance) || 1) * (Number(road.condition) || 0) / 100 * 1.5 * (hostile ? 0.2 : 1);
+    const access = getV3TradeAccess(world.geopolitics, decisionProfiles, left.nationId, right.nationId, world.activeWars);
+    const roadCapacity = (Number(road.importance) || 1) * (Number(road.condition) || 0) / 100 * 1.5 * access.multiplier;
     for (const commodityId of Object.keys(MERCHANT_COMMODITIES)) {
       const leftGood = left.goods[commodityId];
       const rightGood = right.goods[commodityId];
-      const leftCoverage = leftGood.inventory / Math.max(1, leftGood.lastConsumption);
-      const rightCoverage = rightGood.inventory / Math.max(1, rightGood.lastConsumption);
+      const leftCoverage = (leftGood.inventory - leftGood.lastUnmetConsumption) / Math.max(1, leftGood.lastConsumption);
+      const rightCoverage = (rightGood.inventory - rightGood.lastUnmetConsumption) / Math.max(1, rightGood.lastConsumption);
       if (Math.abs(leftCoverage - rightCoverage) < 0.55) continue;
       const [origin, destination, originGood, destinationGood] = leftCoverage > rightCoverage
         ? [left, right, leftGood, rightGood]
         : [right, left, rightGood, leftGood];
       const surplus = Math.max(0, originGood.inventory - originGood.lastConsumption * 1.15);
-      const deficit = Math.max(0, destinationGood.lastConsumption * 1.4 - destinationGood.inventory);
-      const units = round1(Math.min(surplus, deficit, roadCapacity));
+      const deficit = Math.max(0, destinationGood.lastConsumption * 1.4 + destinationGood.lastUnmetConsumption - destinationGood.inventory);
+      const units = round1(Math.min(surplus, deficit, roadCapacity,
+        destinationGood.capacity - destinationGood.inventory + destinationGood.lastUnmetConsumption));
       if (units < 0.5) continue;
+      const consumedOnArrival = round1(Math.min(units, destinationGood.lastUnmetConsumption));
       originGood.inventory = round1(originGood.inventory - units);
-      destinationGood.inventory = round1(Math.min(destinationGood.capacity, destinationGood.inventory + units));
+      destinationGood.inventory = round1(Math.min(destinationGood.capacity, destinationGood.inventory + units - consumedOnArrival));
+      destinationGood.lastUnmetConsumption = round1(destinationGood.lastUnmetConsumption - consumedOnArrival);
       originGood.lastExports = round1(originGood.lastExports + units);
       destinationGood.lastImports = round1(destinationGood.lastImports + units);
       shipments.push({
@@ -216,7 +245,9 @@ function moveRoadShipments(economy, world, period) {
         originSettlementName: origin.name,
         destinationSettlementId: destination.id,
         destinationSettlementName: destination.name,
-        hostileBorder: hostile,
+        hostileBorder: access.hostile,
+        tradeAccess: { diplomatic: round1(access.diplomatic), openness: round1(access.openness), multiplier: round1(access.multiplier) },
+        consumedOnArrival,
         reason: destinationGood.shortage ? "不足市場への補給" : "価格差と在庫差の調整",
         summary: `${origin.name}から${destination.name}へ${MERCHANT_COMMODITIES[commodityId].name}${units}を輸送`,
       });
@@ -233,6 +264,8 @@ export function createV3MarketEconomy(runtime, date, generatedWorld, externalCri
     version: V3_MARKET_ECONOMY_VERSION,
     establishedPeriod: period,
     lastAdvancedPeriod: null,
+    lastFeedbackPeriod: null,
+    nationFeedback: {},
     settlements: Object.fromEntries(world.objects.map((settlement) => [
       settlement.id,
       settlementState(seed, period, settlement, world, externalCrises),
@@ -251,6 +284,10 @@ export function normalizeV3MarketEconomy(runtime, source, date, generatedWorld, 
   const seed = generatedWorld?.seed ?? "world";
   baseline.establishedPeriod = typeof source.establishedPeriod === "string" ? source.establishedPeriod : period;
   baseline.lastAdvancedPeriod = typeof source.lastAdvancedPeriod === "string" ? source.lastAdvancedPeriod : null;
+  baseline.lastFeedbackPeriod = typeof source.lastFeedbackPeriod === "string" ? source.lastFeedbackPeriod : null;
+  baseline.nationFeedback = Object.fromEntries(Object.entries(source.nationFeedback ?? {})
+    .filter(([nationId, feedback]) => world.nationById.has(nationId) && feedback && typeof feedback === "object")
+    .map(([nationId, feedback]) => [nationId, clone(feedback)]));
   baseline.settlements = Object.fromEntries(world.objects.map((settlement) => [
     settlement.id,
     settlementState(seed, period, settlement, world, externalCrises, source.settlements?.[settlement.id]),

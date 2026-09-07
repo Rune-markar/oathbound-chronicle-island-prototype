@@ -247,11 +247,25 @@ function fitPopulationGroupDimension(definitions, sourceEntries, targetPopulatio
       matrix.forEach((row) => { row[columnIndex] = row[columnIndex] * target / total; });
     });
   }
+  // Round each temperament as one conserved allocation. Independent cell rounding
+  // changed column totals by 0.001, so every save/read fitted a different population.
+  const roundedColumns = TEMPERAMENT_IDS.map((temperamentId, columnIndex) => {
+    const target = Math.round(Math.max(0, Number(targetTemperaments[temperamentId]) || 0) * 1000);
+    const total = matrix.reduce((sum, row) => sum + row[columnIndex], 0) || 1;
+    const entries = matrix.map((row, rowIndex) => {
+      const exact = row[columnIndex] / total * target;
+      return { rowIndex, units: Math.floor(exact), remainder: exact - Math.floor(exact) };
+    });
+    const remaining = target - entries.reduce((sum, entry) => sum + entry.units, 0);
+    const ranked = [...entries].sort((a, b) => b.remainder - a.remainder || a.rowIndex - b.rowIndex);
+    for (let index = 0; index < remaining; index += 1) ranked[index % ranked.length].units += 1;
+    return entries.map((entry) => entry.units / 1000);
+  });
   return Object.fromEntries(mergedDefinitions.map((definition, rowIndex) => {
     const source = sourceById.get(definition.id);
     const temperamentPopulation = Object.fromEntries(TEMPERAMENT_IDS.map((temperamentId, columnIndex) => [
       temperamentId,
-      fixed(matrix[rowIndex][columnIndex], 3),
+      roundedColumns[columnIndex][rowIndex],
     ]));
     const population = fixed(TEMPERAMENT_IDS.reduce((sum, id) => sum + temperamentPopulation[id], 0), 3);
     return [definition.id, {

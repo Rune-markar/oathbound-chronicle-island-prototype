@@ -930,7 +930,7 @@ export function normalizeV3FieldState(context, source = {}) {
     xp: clampInteger(source.player.xp, 0, 0, 999999),
     gold: Number.isFinite(Number(source.player.gold))
       ? Number(Math.max(0, Math.min(999999, Number(source.player.gold))).toFixed(1)) : 0,
-    inventory: Array.isArray(source.player.inventory) ? source.player.inventory.filter((item) => item?.id && item?.name).slice(0, 64) : [],
+    inventory: Array.isArray(source.player.inventory) ? source.player.inventory.filter((item) => item?.id && item?.name) : [],
   };
   let pendingEncounter = source.pendingEncounter && typeof source.pendingEncounter === "object"
     ? {
@@ -1061,6 +1061,12 @@ function levelledPlayer(player) {
   return level === player.level ? player : { ...player, level, maxHp, hp: Math.min(maxHp, player.hp + 5) };
 }
 
+export function grantV3Experience(player, amount = 0) {
+  const earned = Number(amount);
+  const xp = player.xp + (Number.isFinite(earned) ? Math.max(0, Math.floor(earned)) : 0);
+  return levelledPlayer({ ...player, xp });
+}
+
 export function resolveV3Encounter(context, state, action) {
   const encounter = state.pendingEncounter;
   if (!encounter) return state;
@@ -1109,7 +1115,7 @@ export function resolveV3Encounter(context, state, action) {
     * playerWorldResponse.modifiers.attack / enemyWorldResponse.modifiers.defense));
   const enemyHp = encounter.hp - playerDamage;
   if (enemyHp <= 0) {
-    const player = levelledPlayer({ ...state.player, xp: state.player.xp + encounter.xp, gold: state.player.gold + encounter.gold });
+    const player = grantV3Experience({ ...state.player, gold: state.player.gold + encounter.gold }, encounter.xp);
     return {
       ...state,
       player,

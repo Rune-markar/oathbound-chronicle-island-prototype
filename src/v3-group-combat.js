@@ -1,6 +1,7 @@
 import {
   getV3DetailedTile,
   getV3TileEntity,
+  grantV3Experience,
   nearestV3Settlement,
   v3HashUnit,
 } from "./v3-field-system.js";
@@ -629,7 +630,7 @@ export function applyV3GroupBattleReturn(requestedState, bridge) {
   const outcome = victory ? "勝利" : draw ? "引き分け" : "敗北";
   return {
     ...state,
-    player: { ...state.player, xp: state.player.xp + xpGain, gold: state.player.gold + goldGain },
+    player: grantV3Experience({ ...state.player, gold: state.player.gold + goldGain }, xpGain),
     military: {
       ...state.military,
       merit: state.military.merit + meritGain,

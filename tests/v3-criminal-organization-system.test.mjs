@@ -114,6 +114,26 @@ test("現在の集落を具体的な対象にした単独犯罪が銀貨・手�
   assert.equal(state.criminal.crime.incidents.length, 0, "入力状態は変更しない");
 });
 
+test("征服後の犯罪事件は現在の国家を記録し同じ地方の手配を引き継ぐ", () => {
+  const { context, state } = settlementState("v3-criminal-conquest");
+  state.criminal.crime.heatByJurisdiction["region-1"] = 42;
+  const successor = { id: "nation-new", name: "新興公国", peopleId: "dwarf" };
+  context.worldSimulation = { generatedWorld: { regionalDomains: {
+    regionStates: { "region-1": { nationId: successor.id } },
+    independentPolities: { [successor.id]: successor },
+  } } };
+  const view = getV3CriminalView(context, state);
+  assert.equal(view.location.nationId, successor.id);
+  assert.equal(view.location.nationName, successor.name);
+  assert.equal(view.location.settlement.nationId, successor.id);
+  assert.equal(view.location.regionId, "region-1");
+  assert.equal(view.status.heat, 42);
+  const resolved = resolveV3PersonalCrime(context, state, "theft");
+  assert.equal(resolved.criminal.crime.incidents[0].jurisdiction.nationId, successor.id);
+  assert.equal(resolved.criminal.crime.incidents[0].jurisdiction.id, "region-1");
+  assert.equal(context.runtime.regionById.get("region-1").nationId, "nation-1");
+});
+
 test("単独実績から現地仲介人、人員二名、一味結成へ通常順序で進む", () => {
   const { context, state: initial } = settlementState("v3-recruitment-route");
   assert.equal(getV3CriminalView(context, initial).canSearchBroker, false);

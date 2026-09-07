@@ -52,7 +52,7 @@ test("天地創造の複合地理と未実装の資源開発を分けて追跡�
 });
 
 test("V3の単独犯罪と六作戦の組織運営を現行導線として追跡する", async () => {
-  assert.equal(STATUS_LEDGER_META.lastAuditedAt, "2026-09-05");
+  assert.equal(STATUS_LEDGER_META.lastAuditedAt, "2026-09-07");
   assert.equal(STATUS_LEDGER_META.projectGeneration, "ver3");
   const crime = STATUS_ENTRIES.find((item) => item.id === "criminal-play-flow");
   assert.ok(crime, "criminal-play-flow ledger entry is required");

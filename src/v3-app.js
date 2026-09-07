@@ -84,6 +84,7 @@ import { STATE_REASON_CONDITIONS, STATE_REASON_PRINCIPLE } from "./state-reason-
 import { getRaceDefinition } from "./race-list.js";
 import { restoreAutoState } from "./v3-auto-mode.js";
 import { mountV3AutoMode } from "./v3-auto-ui.js";
+import { mountV3Campaign } from "./v3-campaign-ui.js";
 
 const STORAGE_KEY = "leviathan-covenant-v3-save";
 const WORLD_CONFIG = Object.freeze({ width: 192, height: 120, plateCount: 28, nationCount: 7 });
@@ -190,6 +191,14 @@ const autoController = mountV3AutoMode({
   commit: commitStateAction,
   save: saveGame,
   render: renderGame,
+  toast: showToast,
+});
+const campaignController = mountV3Campaign({
+  read: () => ({ state, context, worldSimulation }),
+  commit: commitStateAction,
+  save: saveGame,
+  render: renderGame,
+  pause: () => autoController.pause("人物史・統治を開いたため一時停止しました。"),
   toast: showToast,
 });
 
@@ -394,7 +403,6 @@ async function prepareWorld(options, savedField = null, savedWorldSimulation = n
         state = eventResult.state;
       }
     }
-    clearV3GroupBattleBridge(localStorage);
   }
   context.worldSimulation = worldSimulation;
   context.raceDynamics = worldSimulation.generatedWorld.raceDynamics;
@@ -404,6 +412,7 @@ async function prepareWorld(options, savedField = null, savedWorldSimulation = n
   selectedNationId = null;
   setGenerationProgress(100, "足元の世界が形になりました。");
   saveGame();
+  if (groupBattleReturn) clearV3GroupBattleBridge(localStorage);
   await new Promise((resolve) => setTimeout(resolve, 260));
   elements.generation.hidden = true;
   elements.game.hidden = false;
@@ -645,7 +654,8 @@ function renderCommerce() {
   const model = getV3MerchantView(context, state, worldSimulation);
   const cargoById = Object.fromEntries(model.cargo.map((entry) => [entry.commodityId, entry]));
   const market = model.market;
-  const marketEffectNotice = market?.worldEffect ? `<p class="v3-market-effect"><b>${uiIconMarkup("military", "v3-inline-icon")}<span>${escapeHtml(market.worldEffect.name)}</span></b><span>${escapeHtml(market.worldEffect.summary)}</span></p>` : "";
+  const marketNoticeOpen = elements.commerceContent.querySelector(".v3-market-effect")?.open;
+  const marketEffectNotice = market?.worldEffect ? `<details class="v3-market-effect" ${marketNoticeOpen ? "open" : ""}><summary>${escapeHtml(market.worldEffect.name)} · 供給と価格に影響</summary><p>${escapeHtml(market.worldEffect.summary)}</p></details>` : "";
   const marketBlock = market ? `<section class="v3-commerce-section"><header><div><small>CURRENT MARKET</small><h2>${escapeHtml(model.marketSettlement.name)}の市場</h2></div><button type="button" data-v3-trade-action="observe">相場を記録</button></header>${marketEffectNotice}<div class="v3-market-grid">${model.commodities.map((commodity) => {
     const good = market.goods[commodity.id];
     const cargo = cargoById[commodity.id];
@@ -669,10 +679,10 @@ function renderCommerce() {
     const sourceOptions = model.marketOptions.map((entry) => `<option value="${escapeHtml(entry.id)}">${escapeHtml(entry.name)} · ${escapeHtml(entry.nationName)}${entry.licensed ? "" : "（資格なし）"}</option>`).join("");
     const destinationOptions = model.marketOptions.map((entry, index) => `<option value="${escapeHtml(entry.id)}" ${index === 1 ? "selected" : ""}>${escapeHtml(entry.name)} · ${escapeHtml(entry.nationName)}${entry.licensed ? "" : "（資格なし）"}</option>`).join("");
     const routeForm = model.routeLeaders.length && model.marketOptions.length >= 2 ? `<div class="v3-company-form" data-v3-route-form><label>仕入地<select data-v3-route-source>${sourceOptions}</select></label><label>販売地<select data-v3-route-destination>${destinationOptions}</select></label><label>商品<select data-v3-route-commodity>${model.commodities.map((entry) => `<option value="${entry.id}">${escapeHtml(entry.name)}</option>`).join("")}</select></label><label>運行<select data-v3-route-approach>${model.routeApproaches.map((entry) => `<option value="${entry.id}">${escapeHtml(entry.name)} · 契約${entry.cost}</option>`).join("")}</select></label><label>責任者<select data-v3-route-leader>${model.routeLeaders.map((entry) => `<option value="${escapeHtml(entry.id)}">${escapeHtml(entry.name)} · ${escapeHtml(entry.roleName)}</option>`).join("")}</select></label><button type="button" data-v3-route-secure>販路を契約</button></div>` : "<p>二市場の記録と、配置待ちの隊商頭または護衛頭が必要です。</p>";
-    const routes = model.company.routes.map((entry) => `<li><strong>${escapeHtml(entry.sourceName)} → ${escapeHtml(entry.destinationName)} · ${escapeHtml(entry.commodityName)}</strong><span>${entry.status === "active" ? "運行中" : entry.status === "blocked" ? "事故対応待ち" : "休止"} · ${entry.successfulRuns}便</span></li>`).join("") || "<li>販路なし</li>";
+    const routes = model.company.routes.map((entry) => `<li><strong>${escapeHtml(entry.sourceName)} → ${escapeHtml(entry.destinationName)} · ${escapeHtml(entry.commodityName)}</strong><span>${entry.status === "active" ? "運行中" : entry.status === "blocked" ? "事故対応待ち" : "休止"} · ${entry.successfulRuns}便${entry.pauseReason ? ` · ${escapeHtml(entry.pauseReason)}` : ""}</span></li>`).join("") || "<li>販路なし</li>";
     const localJurisdiction = model.marketSettlement ? model.jurisdictions.find((entry) => entry.settlementIds.includes(model.marketSettlement.id)) : null;
     const branchForm = model.marketSettlement && localJurisdiction?.charter && model.branchManagers.length ? `<div class="v3-company-form" data-v3-branch-form><label>規模<select data-v3-branch-format>${model.branchFormats.map((entry) => `<option value="${entry.id}">${escapeHtml(entry.name)} · 開業${entry.cost}</option>`).join("")}</select></label><label>開店方法<select data-v3-branch-launch>${model.launchPlans.map((entry) => `<option value="${entry.id}">${escapeHtml(entry.name)} · ${entry.months}か月</option>`).join("")}</select></label><label>店長<select data-v3-branch-manager>${model.branchManagers.map((entry) => `<option value="${escapeHtml(entry.id)}">${escapeHtml(entry.name)} · ${escapeHtml(entry.roleName)}</option>`).join("")}</select></label><button type="button" data-v3-branch-open>${escapeHtml(model.marketSettlement.name)}へ出店</button></div>` : `<p>${model.marketSettlement ? localJurisdiction?.charter ? "配置待ちの番頭か仕入役が必要です。" : "先にこの国の営業資格を取得してください。" : "出店する市場まで歩いてください。"}</p>`;
-    const branches = model.company.branches.map((entry) => `<li><strong>${escapeHtml(entry.settlementName)}</strong><span>${entry.status === "preparing" ? `準備${entry.preparationProgress}/${entry.preparationMonths}` : entry.status === "open" ? "営業中" : "休業"}</span></li>`).join("") || "<li>支店なし</li>";
+    const branches = model.company.branches.map((entry) => `<li><strong>${escapeHtml(entry.settlementName)}</strong><span>${entry.status === "preparing" ? `準備${entry.preparationProgress}/${entry.preparationMonths}` : entry.status === "open" ? "営業中" : "休業"}${entry.pauseReason ? ` · ${escapeHtml(entry.pauseReason)}` : ""}</span></li>`).join("") || "<li>支店なし</li>";
     const incidents = model.company.pendingIncidents.map((entry) => `<article class="v3-company-incident"><strong>${escapeHtml(entry.title)}</strong><div><button type="button" data-v3-incident="${escapeHtml(entry.id)}" data-v3-decision="escort" ${model.company.treasury < 4 ? "disabled" : ""}>資金4で護衛増強</button><button type="button" data-v3-incident="${escapeHtml(entry.id)}" data-v3-decision="detour">一か月迂回</button><button type="button" data-v3-incident="${escapeHtml(entry.id)}" data-v3-decision="take_loss">損失受入れ</button></div></article>`).join("");
     const ledger = model.company.monthlyLedger.slice(0, 4).map((entry) => `<li><strong>${escapeHtml(entry.period)} · 損益${entry.profit >= 0 ? "+" : ""}${entry.profit}</strong><span>売上${entry.revenue}／費用${entry.costs}（給金${entry.wages}・資格${entry.charterDues}）</span></li>`).join("") || "<li>決算なし</li>";
     companyBlock = `<section class="v3-company-board"><header><div><small>MERCHANT COMPANY</small><h2>${escapeHtml(model.company.name)}</h2><p>${escapeHtml(model.strategies.find((entry) => entry.id === model.company.strategyId)?.name ?? "商会経営")}</p></div><div><strong>資金${model.company.treasury}</strong><span>信用${model.company.reputation}</span><button type="button" data-v3-company-invest ${state.player.gold < 10 ? "disabled" : ""}>個人資金10を出資</button></div></header>${incidents}<section class="v3-commerce-section"><header><div><small>LICENSES</small><h2>国家制度と営業資格</h2></div><b>${model.company.charters.length}/${model.jurisdictions.length}か国</b></header><div class="v3-charter-grid">${charterCards}</div></section><section class="v3-company-columns"><div class="v3-commerce-section"><header><div><small>STAFF</small><h2>人員の手配</h2></div></header><ul>${staff}</ul><details><summary>採用候補</summary><div class="v3-candidate-grid">${candidates}</div></details></div><div class="v3-commerce-section"><header><div><small>ROUTES</small><h2>販路の確保</h2></div></header>${routeForm}<ul>${routes}</ul></div><div class="v3-commerce-section"><header><div><small>BRANCH</small><h2>出店の段取り</h2></div></header>${branchForm}<ul>${branches}</ul></div><div class="v3-commerce-section"><header><div><small>MONTHLY</small><h2>月次決算</h2></div><button type="button" data-v3-company-month>翌月へ進む</button></header><ul>${ledger}</ul></div></section></section>`;
@@ -736,6 +746,7 @@ function renderGame() {
   if (!elements.underworldModal.hidden) renderUnderworld();
   if (!elements.commerceModal.hidden) renderCommerce();
   autoController.refresh();
+  campaignController.refresh();
 }
 
 function movePlayer(direction) {
@@ -1137,6 +1148,7 @@ function renderWorldPanels(map) {
         ${condition ? `<div><dt>初期国家課題</dt><dd>${escapeHtml(STATE_REASON_CONDITION_NAMES[condition.stateReason?.initialImperativeId] ?? "不明")}</dd></div><div><dt>現在の最弱環</dt><dd>${escapeHtml(STATE_REASON_CONDITION_NAMES[condition.stateReason?.weakestConditionId] ?? "不明")} ${condition.stateReason?.value ?? "-"}</dd></div><div><dt>食料</dt><dd>${condition.foodSecurity}</dd></div><div><dt>結束</dt><dd>${condition.cohesion}</dd></div><div><dt>財政</dt><dd>${condition.reserves}</dd></div><div><dt>防衛</dt><dd>${condition.readiness}</dd></div><div><dt>主権</dt><dd>${condition.sovereignty}</dd></div><div><dt>態勢</dt><dd>${escapeHtml(condition.posture)}</dd></div><div><dt>緊張関係</dt><dd>${relationWarning}</dd></div>` : ""}
       </dl>
       <p class="v3-dossier-war">${warText}</p>
+      ${dossier.marketFeedback ? `<p><strong>市場から見た国家の状況（${escapeHtml(dossier.marketFeedback.period)}月次）</strong><span>${escapeHtml(dossier.marketFeedback.summary)}</span><small>穀物備蓄${dossier.marketFeedback.grainCoverageMonths}か月分 · 未充足${Math.round(dossier.marketFeedback.grainUnmetShare * 100)}% · 物流${dossier.marketFeedback.logisticsVolume}</small></p>` : ""}
       ${dossier.crises.length ? `<p class="v3-dossier-crisis"><strong>外部危機</strong><span>${dossier.crises.map((crisis) => `${escapeHtml(crisis.regionName)}の${escapeHtml(crisis.name)}（危機度${crisis.severity}）`).join(" / ")}</span></p>` : ""}
       ${condition ? `<p><strong>${escapeHtml(STATE_REASON_PRINCIPLE.name)}</strong><span>${escapeHtml(STATE_REASON_PRINCIPLE.rule)}</span><small>同値なら低コスト、なお同値なら国民性</small></p>` : ""}
       ${dossier.latestAction ? `<p><strong>直近の判断</strong><span>${escapeHtml(dossier.latestAction.title)}</span><small>${escapeHtml(dossier.latestAction.summary)}</small></p>` : ""}
@@ -1416,7 +1428,17 @@ elements.newWorld.addEventListener("submit", async (event) => {
 });
 elements.continueButton.addEventListener("click", async () => {
   const saved = readSave();
-  if (saved) await prepareWorld(saved.world, saved.field, saved.worldSimulation);
+  if (!saved) return;
+  const bridge = readV3GroupBattleBridge(localStorage);
+  const matchingReturn = bridge?.missionId === saved.field?.military?.activeMission?.id ? bridge : null;
+  try {
+    await prepareWorld(saved.world, saved.field, saved.worldSimulation, matchingReturn);
+  } catch (error) {
+    elements.generation.hidden = true;
+    elements.launch.hidden = false;
+    updateContinueButton();
+    showToast(error.message);
+  }
 });
 
 document.addEventListener("visibilitychange", () => {
@@ -1622,6 +1644,7 @@ elements.worldCanvas.addEventListener("click", (event) => {
 });
 
 document.addEventListener("keydown", (event) => {
+  if (campaignController.isOpen()) return;
   if (autoController.isOpen()) return;
   if (event.target.closest(".v3-auto-toolbar") && ["Enter", " "].includes(event.key)) return;
   if (!state || /INPUT|TEXTAREA|SELECT/.test(event.target.tagName)) return;
@@ -1651,7 +1674,8 @@ const returnedGroupBattle = readV3GroupBattleBridge(localStorage);
 const returnedSave = readSave();
 if (returnedGroupBattle && returnedSave?.field?.military?.activeMission?.id === returnedGroupBattle.missionId) {
   void prepareWorld(returnedSave.world, returnedSave.field, returnedSave.worldSimulation, returnedGroupBattle).catch((error) => {
-    clearV3GroupBattleBridge(localStorage);
+    elements.generation.hidden = true;
+    elements.launch.hidden = false;
     updateContinueButton();
     showToast(error.message);
   });

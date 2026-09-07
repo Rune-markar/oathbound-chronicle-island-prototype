@@ -35,6 +35,7 @@ import { getV3WorldSimulationView } from "./v3-world-simulation.js";
 import { getV3WartimeMarketEffect } from "./v3-world-effects.js";
 import { getV3ExternalCrisisMarketEffect } from "./v3-external-crisis-system.js";
 import { getV3MarketSnapshot } from "./v3-market-economy.js";
+import { getV3CurrentJurisdiction, getV3CurrentSettlement } from "./v3-current-jurisdiction.js";
 
 export const V3_MERCHANT_VERSION = 2;
 
@@ -103,7 +104,7 @@ export function getV3CurrentMarket(context, state) {
   const tile = getV3DetailedTile(context, state.player.x, state.player.y);
   if (!tile.settlement) return null;
   const distance = Math.max(Math.abs(tile.localX - 4), Math.abs(tile.localY - 4));
-  return distance <= settlementRadius(tile.settlement.settlementLevel) ? clone(tile.settlement) : null;
+  return distance <= settlementRadius(tile.settlement.settlementLevel) ? getV3CurrentSettlement(context, tile.settlement) : null;
 }
 
 function multiplyCommodityEffects(effects, field) {
@@ -191,12 +192,13 @@ export function sellV3Commodity(context, state, commodityId, quantity = 1, world
 function v3Jurisdictions(context, state) {
   const entries = new Map();
   for (const settlement of state.merchant.trade.knownSettlements) {
-    const nationId = settlement.nationId ?? context.runtime.regionById.get(settlement.regionId)?.nationId ?? "unknown";
-    const nation = context.runtime.nationById.get(nationId);
+    const ownership = getV3CurrentJurisdiction(context, settlement.regionId, settlement.nationId);
+    const nationId = ownership.nationId ?? "unknown";
+    const nation = ownership.nation;
     const current = entries.get(nationId) ?? {
       id: nationId,
       name: nation?.name ?? settlement.nationName ?? "所在国",
-      government: nation?.government ?? settlement.government ?? "地域政権",
+      government: nation?.government ?? nation?.polity?.politicalSystemName ?? settlement.government ?? "地域政権",
       settlementIds: [],
       settlementNames: [],
     };
@@ -207,8 +209,46 @@ function v3Jurisdictions(context, state) {
   return [...entries.values()].map((entry) => ({ ...entry, procedure: getCompanyCharterProcedure(entry) }));
 }
 
+function synchronizeV3CompanyJurisdictions(context, state) {
+  if (!context) return state;
+  state.merchant.trade.knownSettlements = state.merchant.trade.knownSettlements
+    .map((settlement) => getV3CurrentSettlement(context, settlement));
+  const settlements = new Map(state.merchant.trade.knownSettlements.map((entry) => [entry.id, entry]));
+  const company = state.merchant.company;
+  for (const [kind, operations] of [["route", company.routes], ["branch", company.branches]]) {
+    for (const operation of operations) {
+      if (operation.status === "closed") continue;
+      const ids = kind === "route" ? [operation.sourceId, operation.destinationId] : [operation.settlementId];
+      const markets = ids.map((id) => settlements.get(id));
+      if (markets.some((market) => !market)) continue;
+      operation.jurisdictionIds = [...new Set(markets.map((market) => market.nationId ?? "unknown"))];
+      const missing = operation.jurisdictionIds.filter((nationId) => !company.charters
+        .some((charter) => charter.nationId === nationId && charter.status === "active"));
+      if (missing.length) {
+        operation.jurisdictionHold ??= { status: operation.status, pauseReason: operation.pauseReason ?? null };
+        if (["active", "preparing", "open"].includes(operation.status)) {
+          operation.jurisdictionHold.status = operation.status;
+          operation.jurisdictionHold.pauseReason = operation.pauseReason ?? null;
+        }
+        operation.status = kind === "route" ? "paused" : "suspended";
+        const names = markets.filter((market) => missing.includes(market.nationId ?? "unknown"))
+          .map((market) => market.nationName);
+        operation.pauseReason = `${[...new Set(names)].join("・")}の営業資格が必要`;
+      } else if (operation.jurisdictionHold) {
+        const hold = operation.jurisdictionHold;
+        const incident = kind === "route" && company.pendingIncidents.some((entry) => entry.routeId === operation.id);
+        const insolvent = company.arrearsMonths >= 2;
+        operation.status = incident ? "blocked" : insolvent ? kind === "route" ? "paused" : "suspended" : hold.status;
+        operation.pauseReason = insolvent ? "資金不足" : incident ? "事故対応待ち" : hold.pauseReason;
+        delete operation.jurisdictionHold;
+      }
+    }
+  }
+  return state;
+}
+
 function companyAdapter(context, state) {
-  const next = prepared(state);
+  const next = synchronizeV3CompanyJurisdictions(context, prepared(state));
   const calendar = getGameCalendar(normalizeStateGameClock(next).clock);
   const currentMarket = context ? getV3CurrentMarket(context, next) : null;
   return {
@@ -230,7 +270,8 @@ function companyAdapter(context, state) {
       currentSettlementId: currentMarket?.id ?? null,
       jurisdictions: context ? v3Jurisdictions(context, next) : [],
       nationPeopleById: context ? Object.fromEntries(
-        (context.runtime?.nations?.nations ?? []).map((nation) => [nation.id, nation.peopleId ?? "human"]),
+        [...(context.runtime?.nations?.nations ?? []), ...Object.values(context.worldSimulation?.generatedWorld?.regionalDomains?.independentPolities ?? {})]
+          .map((nation) => [nation.id, nation.peopleId ?? "human"]),
       ) : {},
     },
     player: {
@@ -256,7 +297,7 @@ function applyCompanyAdapter(state, adapter, fallbackMessage = null) {
 }
 
 function runCompanyAction(context, state, action, fallbackMessage = null) {
-  return applyCompanyAdapter(state, action(companyAdapter(context, state)), fallbackMessage);
+  return synchronizeV3CompanyJurisdictions(context, applyCompanyAdapter(state, action(companyAdapter(context, state)), fallbackMessage));
 }
 
 export function foundV3MerchantCompany(context, state, options = {}) {
@@ -357,7 +398,7 @@ export function getV3MerchantView(context, state, worldSimulation = null) {
     cargo: clone(next.merchant.trade.cargo),
     cargoLoad: getMerchantCargoLoadDetails(tradeAdapter(context, next, current)),
     tradeStats: clone(next.merchant.trade.stats),
-    knownMarkets: clone(next.merchant.trade.knownSettlements),
+    knownMarkets: clone(adapter.player.merchantTrade.knownSettlements),
     founding: { ...companyView.founding, cost: companyView.founding.foundingCost },
     company: clone(adapter.player.merchantCompany),
     strategies: companyView.strategies,

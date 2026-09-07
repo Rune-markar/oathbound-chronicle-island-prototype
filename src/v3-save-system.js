@@ -3,6 +3,7 @@ import { V3_FIELD_VERSION } from "./v3-field-system.js";
 import { V3_SYSTEM_KERNEL_VERSION, V3_SYSTEM_REGISTRY } from "./v3-system-kernel.js";
 import { V3_WORLD_SIMULATION_VERSION } from "./v3-world-simulation.js";
 import { RACE_DECISION_SCHEMA_VERSION } from "./race-decision-system.js";
+import { V3_CAMPAIGN_VERSION } from "./v3-campaign-system.js";
 
 export const V3_SAVE_VERSION = 6;
 
@@ -20,6 +21,7 @@ export const V3_SAVE_REGISTRY = createSaveRegistry({
     return Boolean(raw.world?.seed && raw.field?.player
       && raw.field.version === V3_FIELD_VERSION
       && raw.field.clock && Number.isFinite(raw.field.clock.elapsedMinutes)
+      && (!raw.field.campaign || raw.field.campaign.version === V3_CAMPAIGN_VERSION)
       && raw.worldSimulation?.version === V3_WORLD_SIMULATION_VERSION
       && raw.worldSimulation.generatedWorld?.raceDynamics?.schemaVersion === RACE_DECISION_SCHEMA_VERSION);
   },

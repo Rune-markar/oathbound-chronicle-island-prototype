@@ -130,6 +130,8 @@ function companyFixture() {
   const [source, ...destinations] = state.merchant.trade.knownSettlements;
   Object.assign(state.merchant.company, {
     status: "company", strategyId: "caravan", treasury: 1000,
+    charters: [...new Set(state.merchant.trade.knownSettlements.map((settlement) => settlement.nationId))]
+      .map((nationId) => ({ id: `fixture-charter:${nationId}`, nationId, status: "active", monthlyDue: 0 })),
     staff: destinations.map((_, index) => ({ id: `leader-${index}`, roleId: "guard_captain", skill: 5, wage: 1 })),
     routes: destinations.map((destination, index) => ({
       id: `stock-route-${index}`, sourceId: source.id, destinationId: destination.id,

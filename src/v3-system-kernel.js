@@ -26,6 +26,7 @@ import {
 } from "./system-registry.js";
 import { advanceV3WorldSimulation } from "./v3-world-simulation.js";
 import { applyV3MarketInventoryFlows } from "./v3-market-economy.js";
+import { normalizeV3CampaignState, advanceV3CampaignMonth } from "./v3-campaign-system.js";
 import {
   V3_WORLD_EFFECTS_VERSION,
   getV3WorldEffectAt,
@@ -191,6 +192,7 @@ export const V3_SYSTEM_REGISTRY = createSystemRegistry([
 export function normalizeV3IntegratedState(context, source) {
   let state = normalizeStateGameClock(clone(source));
   state = normalizeRegisteredSystems(V3_SYSTEM_REGISTRY, context, state);
+  state = normalizeV3CampaignState(context, state);
   state.domainEvents = normalizeDomainEventLog(state.domainEvents);
   return state;
 }
@@ -268,12 +270,13 @@ export function commitV3Action(runtime, context, previousState, worldSimulation,
   const clockTransition = advanceGameClock(previous.clock, currentMinutes - previousMinutes);
   const skipped = new Set(result.advancedSystemIds ?? []);
   const events = [...result.events];
-  let nextWorldSimulation = applyV3MarketInventoryFlows(runtime, worldSimulation, merchantInventoryFlows(previous, state), "trade");
+  let nextWorldSimulation = applyV3MarketInventoryFlows(runtime, result.worldSimulation ?? worldSimulation, merchantInventoryFlows(previous, state), "trade");
   const collectWorldEvents = (beforeWorld, afterWorld, clock) => {
     const known = new Set(generatedWorldEvents(beforeWorld).map((entry) => entry.id));
     generatedWorldEvents(afterWorld).filter((entry) => !known.has(entry.id))
       .forEach((entry) => events.push(asDomainWorldEvent(entry, clock)));
   };
+  collectWorldEvents(worldSimulation, nextWorldSimulation, state.clock);
   for (const calendar of clockTransition.crossedMonths) {
     state = setStateGameClock(state, { ...state.clock, elapsedMinutes: calendar.monthIndex * 30 * 24 * 60 });
     const beforeMonth = state;
@@ -285,6 +288,14 @@ export function commitV3Action(runtime, context, previousState, worldSimulation,
     state = monthly.state;
     const tradedWorld = applyV3MarketInventoryFlows(runtime, nextWorldSimulation, merchantInventoryFlows(beforeMonth, state), "trade");
     nextWorldSimulation = advanceV3WorldSimulation(runtime, tradedWorld, 1);
+    const campaign = advanceV3CampaignMonth({ ...context, worldSimulation: nextWorldSimulation }, state, nextWorldSimulation, calendar);
+    state = campaign.state;
+    nextWorldSimulation = campaign.worldSimulation;
+    events.push(...campaign.events.map((event) => ({
+      ...event,
+      clock: event.clock ?? state.clock,
+      period: event.period ?? `${calendar.year}-${calendar.month}`,
+    })));
     collectWorldEvents(tradedWorld, nextWorldSimulation, state.clock);
     const boundaryClock = state.clock;
     events.push(...monthly.events.map((event) => ({

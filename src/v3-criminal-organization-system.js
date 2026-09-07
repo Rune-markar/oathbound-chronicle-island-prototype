@@ -22,6 +22,7 @@ import { createActionResult } from "./action-result.js";
 import { getV3DetailedTile } from "./v3-field-system.js";
 import { advanceStateGameClock, getGameCalendar, normalizeStateGameClock } from "./game-clock.js";
 import { fnv1aCodePoints, unitFromHash } from "./determinism.js";
+import { getV3CurrentJurisdiction, getV3CurrentSettlement } from "./v3-current-jurisdiction.js";
 
 export const V3_CRIMINAL_VERSION = 1;
 export const V3_CRIMINAL_CYCLE_MINUTES = 30 * 24 * 60;
@@ -118,17 +119,17 @@ export function getV3CriminalLocation(context, state) {
     ? Math.max(Math.abs(tile.localX - 4), Math.abs(tile.localY - 4))
     : Number.POSITIVE_INFINITY;
   const settlement = tile.settlement && settlementDistance <= settlementRadius(tile.settlement.settlementLevel)
-    ? clone(tile.settlement)
+    ? getV3CurrentSettlement(context, tile.settlement)
     : null;
   const regionId = tile.region?.id ?? tile.macroTile?.regionId ?? null;
-  const nationId = tile.nation?.id ?? tile.macroTile?.nationId ?? null;
+  const { nationId, nation } = getV3CurrentJurisdiction(context, regionId, tile.nation?.id ?? tile.macroTile?.nationId ?? null);
   return {
     tile: { x: tile.x, y: tile.y, type: tile.type, name: tile.name, onRoad: Boolean(tile.onRoad) },
     settlement,
     regionId,
     regionName: tile.region?.name ?? regionId ?? "無所属地",
     nationId,
-    nationName: tile.nation?.name ?? nationId ?? "無所属",
+    nationName: nation?.name ?? nationId ?? "無所属",
     canManage: Boolean(settlement && regionId),
   };
 }

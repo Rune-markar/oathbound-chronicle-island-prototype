@@ -464,7 +464,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .v3-commerce-section li span { color: #aab7af; text-align: right; }
 .v3-commerce-section.is-empty { display: grid; align-content: center; min-height: 178px; background: repeating-linear-gradient(135deg, #0d2224 0 12px, #102729 13px 24px); }
 .v3-market-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-.v3-market-effect { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px; margin: 7px 0 10px; padding: 8px 9px; border-left: 3px solid #b76b5b; background: #2b1b1b; }
+.v3-market-effect { display: block; margin: 7px 0 10px; padding: 8px 9px; border-left: 3px solid #b76b5b; background: #2b1b1b; }
 .v3-market-effect b { color: #ffd4b5; }
 .v3-market-effect span { color: #c9b4aa; }
 .v3-market-grid article { display: grid; gap: 7px; min-width: 0; padding: 10px; border: 1px solid #405951; background: #091a1c; }
@@ -666,3 +666,46 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   .v3-auto-grid { grid-template-columns: minmax(0, 1fr); }
   #v3AutoForm footer { bottom: -12px; }
 }
+
+/* The council follows the same saved character and world as field play. */
+.v3-campaign-hint { color: #c4d0c3; font-size: 12px; margin-right: auto; }
+.v3-campaign-modal { position: fixed; inset: 0; z-index: 70; display: grid; place-items: center; padding: 18px; background: #02090ce8; }
+.v3-campaign-card { width: min(1000px, 100%); max-height: calc(100dvh - 36px); display: grid; grid-template-rows: auto auto minmax(0, 1fr); overflow: hidden; border: 2px solid #d8d5bc; border-radius: 6px; background: #0d2224; }
+.v3-campaign-card > header { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 18px; border-bottom: 1px solid #526c61; }
+.v3-campaign-card h1 { margin: 4px 0; font-size: 24px; }
+.v3-campaign-card h2 { margin: 0 0 10px; font-size: 18px; line-height: 1.5; }
+.v3-campaign-card h3 { margin: 0; font-size: 15px; }
+.v3-campaign-card button, .v3-campaign-card summary { min-height: 44px; padding: 10px 14px; border: 1px solid #91a398; border-radius: 4px; background: #1a3938; cursor: pointer; }
+.v3-campaign-card button:disabled { cursor: default; opacity: .55; }
+.v3-campaign-card :focus-visible { outline: 3px solid #efd477; outline-offset: 2px; }
+.v3-campaign-content { min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 18px; }
+.v3-campaign-content p { font-size: 14px; line-height: 1.7; margin: 8px 0; }
+.v3-campaign-next { color: #f1dc90; }
+.v3-campaign-overview, .v3-campaign-section, .v3-campaign-content details { margin-bottom: 20px; }
+.v3-campaign-requirements { padding: 0; list-style: none; display: grid; gap: 6px; }
+.v3-campaign-requirements li { display: flex; gap: 12px; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid #29433e; }
+.v3-campaign-requirements strong { flex-shrink: 0; }
+.v3-campaign-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.v3-campaign-actions article { min-width: 0; padding: 14px; border: 1px solid #486256; border-radius: 4px; display: flex; flex-direction: column; align-items: stretch; background: #102c2b; }
+.v3-campaign-actions article button { margin-top: 12px; }
+.v3-campaign-actions article small { color: #d6c589; margin-top: auto; }
+.v3-campaign-card .v3-campaign-reason { color: #edbd9c; }
+.v3-campaign-consequence { color: #bdcec1; }
+.v3-campaign-result { margin: 0; padding: 10px 18px; background: #193b35; font-size: 14px; line-height: 1.5; }
+.v3-campaign-result:empty { display: none; }
+.v3-campaign-history { padding-left: 22px; line-height: 1.8; font-size: 14px; }
+.v3-campaign-history time { color: #d6c589; }
+@media (max-width: 700px) {
+  .v3-campaign-hint { display: none; }
+  .v3-campaign-modal { padding: 0; }
+  .v3-campaign-card { width: 100%; max-height: 100dvh; border: 0; border-radius: 0; }
+  .v3-campaign-card > header { padding: max(10px, env(safe-area-inset-top)) 12px 10px; }
+  .v3-campaign-content { padding: 12px; }
+  .v3-campaign-actions { grid-template-columns: minmax(0, 1fr); }
+}
+
+.v3-market-effect summary { min-height: 44px; padding: 10px 0; cursor: pointer; color: #ffd4b5; line-height: 1.6; }
+.v3-market-effect p { line-height: 1.7; color: #c9b4aa; }
+.v3-commerce-section > header > button { flex-shrink: 0; white-space: nowrap; }
+.v3-campaign-section > summary { margin-bottom: 12px; font-weight: 700; }
+.v3-campaign-ending { border: 1px solid #ddc279; padding: 16px; background: #284134; margin-bottom: 18px; }
