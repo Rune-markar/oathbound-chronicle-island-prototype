@@ -113,7 +113,7 @@ test("概算危機は全域に敵をポップさせず、プレイヤー視界�
   assert.equal(symbols.length, 1);
   assert.equal(symbols[0].crisisId, "nearby-demon-raid");
   assert.ok(state.discoveredTiles.includes(`${symbols[0].x},${symbols[0].y}`), "the projected symbol must be observable instead of hidden in fog");
-  assert.match(symbols[0].purpose.reason, /地方単位の月次危機/);
+  assert.match(symbols[0].purpose.reason, /原因：.+市場供給/);
   const entity = getV3TileEntity(context, symbols[0].x, symbols[0].y, { ...state, interactedTiles: [`${symbols[0].x},${symbols[0].y}`] });
   assert.equal(entity.type, "crisis", "an old conversation marker must not erase a continuing regional crisis");
   context.actorPlanCache = null;

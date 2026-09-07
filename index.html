@@ -57,6 +57,7 @@
           <div><strong id="v3AutoStatus" role="status"></strong><small id="v3AutoProgress"></small></div>
           <button type="button" id="v3AutoToggle">一時停止</button><button type="button" id="v3AutoCancel">終了</button>
         </div>
+        <div id="v3AutoResponses" hidden></div>
       </nav>
 
       <section class="v3-play-layout">
@@ -91,7 +92,7 @@
       </section>
 
       <footer class="v3-command-area">
-        <section class="v3-message-window" aria-live="polite"><div id="v3Messages"></div></section>
+        <section class="v3-message-window" aria-live="polite"><div data-auto-report class="v3-auto-report"></div><div id="v3Messages"></div></section>
         <nav class="v3-dpad" id="v3MovementPad" aria-label="移動方向">
           <button type="button" data-v3-move="north" aria-label="北へ進む"><svg class="v3-ui-icon" aria-hidden="true"><use href="./assets/ui/v3-ui-icons.svg#icon-chevron-up"></use></svg></button>
           <button type="button" data-v3-move="west" aria-label="西へ進む"><svg class="v3-ui-icon" aria-hidden="true"><use href="./assets/ui/v3-ui-icons.svg#icon-chevron-left"></use></svg></button>
@@ -154,6 +155,7 @@
           </div>
         </section>
         <aside class="v3-world-intelligence" aria-label="世界情勢">
+          <section id="v3AutoMapBar" class="v3-auto-report" hidden><strong data-auto-map-status></strong><button type="button" data-auto-action="toggle">一時停止</button><button type="button" data-auto-action="revise">設定を変更</button><div data-auto-report></div></section>
           <section class="v3-world-dossier v3-world-current-polity" id="v3WorldMapDossier" aria-label="現在地の国家体制と都市機能" aria-live="polite"></section>
           <section class="v3-world-effects" id="v3WorldEffects" aria-label="世界現象と現在地への影響" aria-live="polite"></section>
           <section class="v3-world-summary"><header><small>WORLD STATE</small><strong>世界情勢</strong></header><div id="v3WorldStats"></div><div class="v3-world-nation-list" id="v3WorldNationList" aria-label="国家一覧"></div></section>
