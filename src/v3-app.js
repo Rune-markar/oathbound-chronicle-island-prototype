@@ -6,6 +6,7 @@ import {
   advanceV3BackgroundGeneration,
   createV3FieldState,
   createV3WorldContext,
+  getV3CombatForecast,
   getV3FieldView,
   getV3LocationSummary,
   moveV3Player,
@@ -191,6 +192,17 @@ const autoController = mountV3AutoMode({
   save: saveGame,
   render: renderGame,
   toast: showToast,
+  navigate: (action) => {
+    if (action === "field") {
+      if (!elements.worldMap.hidden) closeWorldMap();
+      for (const name of ["inventory", "commerce", "underworld"]) {
+        const modal = { inventory: elements.inventoryModal, commerce: elements.commerceModal, underworld: elements.underworldModal }[name];
+        if (!modal.hidden) closeModal(name);
+      }
+      return;
+    }
+    handleAction(action);
+  },
 });
 
 function escapeHtml(value) {
@@ -302,9 +314,14 @@ function saveGame() {
 }
 
 function commitStateAction(action, options = {}) {
+  const manual = options.source !== "auto-mode";
+  if (manual) autoController.pause("行動を選んだため一時停止しました。");
+  const preservedAuto = manual ? { ...state?.autoMode } : null;
+  if (preservedAuto && state?.pendingEncounter?.type === "enemy") preservedAuto.knownEnemies = [...new Set([...(preservedAuto.knownEnemies ?? []), state.pendingEncounter.id ?? state.pendingEncounter.name])].slice(-120);
   const result = isActionResult(action)
     ? { ...action, events: [...action.events, ...(options.event ? [options.event] : [])] }
     : createActionResult(action, { events: options.event ? [options.event] : [] });
+  if (preservedAuto) result.state = { ...result.state, autoMode: preservedAuto };
   const committed = commitV3Action(runtime, context, state, worldSimulation, result, { source: options.source });
   state = committed.state;
   worldSimulation = committed.worldSimulation;
@@ -525,6 +542,10 @@ function renderEncounter() {
     elements.personalBattleLevel.textContent = `LV ${personalEnemy.level}`;
     elements.personalBattleHpBar.style.width = `${Math.max(0, personalEnemy.hp / personalEnemy.maxHp * 100)}%`;
     elements.personalBattleHpLabel.textContent = `${personalEnemy.hp} / ${personalEnemy.maxHp}`;
+    let forecastLabel = elements.personalBattleStatus.querySelector(".v3-combat-forecast");
+    if (!forecastLabel) { forecastLabel = document.createElement("p"); forecastLabel.className = "v3-combat-forecast"; elements.personalBattleStatus.append(forecastLabel); }
+    const forecast = getV3CombatForecast(context, state);
+    forecastLabel.textContent = `次の攻撃 ${forecast.attack} ／ 反撃 ${forecast.retaliation} ／ 行動後HP ${Math.max(0, forecast.remainingHp)}`;
     return;
   }
   if (groupBattle) {
@@ -736,6 +757,14 @@ function renderGame() {
   if (!elements.underworldModal.hidden) renderUnderworld();
   if (!elements.commerceModal.hidden) renderCommerce();
   autoController.refresh();
+  if (!elements.worldMap.hidden) {
+    const panel = elements.worldMap.querySelector(".v3-world-intelligence");
+    const scroll = panel.scrollTop;
+    const signature = elements.worldMap.contains(document.activeElement) ? getActionFocusSignature(document.activeElement) : null;
+    drawWorldMap();
+    if (signature) restoreActionFocus(elements.worldMap, signature);
+    panel.scrollTop = scroll;
+  }
 }
 
 function movePlayer(direction) {
@@ -1331,6 +1360,7 @@ function redrawWorldMapWithFocus(actionElement) {
 }
 
 async function advanceWorld(months = 1, actionElement = document.activeElement) {
+  autoController.pause("月送りを選んだため一時停止しました。");
   const amount = Number(months) === 12 ? 12 : 1;
   if (worldAdvanceBusy || !worldSimulation) return;
   if (amount === 12 && !window.confirm("世界を12か月進めます。戦争や国境が変化する場合があります。続けますか？")) return;

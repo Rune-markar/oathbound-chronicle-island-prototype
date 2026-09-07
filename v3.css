@@ -666,3 +666,30 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   .v3-auto-grid { grid-template-columns: minmax(0, 1fr); }
   #v3AutoForm footer { bottom: -12px; }
 }
+
+/* Automation reports replace repeated movement lines while an execution is active. */
+.v3-auto-toolbar { flex-wrap: wrap; }
+#v3AutoResponses { display: flex; flex-wrap: wrap; gap: 6px; flex-basis: 100%; }
+.v3-auto-report { font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.v3-auto-report strong { display: block; color: #eddda1; }
+.v3-auto-report p { margin: 5px 0; }
+.v3-auto-report button { min-height: 44px; min-width: 44px; padding: 6px 10px; margin: 4px 4px 0 0; color: #eee5bb; background: #183537; border: 1px solid #81998a; border-radius: 4px; cursor: pointer; }
+.v3-message-window > .v3-auto-report { display: none; }
+.has-auto-report .v3-message-window > .v3-auto-report { display: block; }
+.has-auto-report #v3Messages { display: none; }
+.is-personal-battle #v3Messages { display: block; }
+.is-personal-battle .v3-message-window > .v3-auto-report { display: none; }
+#v3AutoMapBar { padding: 10px; border: 1px solid #718878; }
+#v3AutoMapBar [data-auto-report] { margin-top: 8px; }
+#v3AutoForm footer { flex-wrap: wrap; }
+.v3-combat-forecast { margin: 4px 0 0; font-size: 11px; color: #eee1b1; }
+@media (max-width: 720px) {
+  #v3AutoBar { flex-wrap: wrap; }
+  #v3AutoBar > div { flex-basis: 100%; }
+  #v3AutoResponses { max-height: 100px; overflow-y: auto; }
+  .has-auto-report .v3-message-window { font-size: 12px; }
+}
+@media (min-width: 721px) and (min-height: 681px) {
+  .has-auto-report .v3-play-layout { min-height: calc(100dvh - 350px); }
+  .has-auto-report .v3-field-shell { width: min(900px, calc(100vw - 32px), calc((100dvh - 380px) * 1.18)); }
+}
