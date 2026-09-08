@@ -20,14 +20,14 @@
   "verifyCommands": [
     "npm run check"
   ],
-  "lastReviewed": "2026-09-07",
+  "lastReviewed": "2026-09-08",
   "verificationFocus": [
     "Generation V3 50-year conflict, crisis, and market-economy balance",
     "Persisted market production, consumption, inventory, logistics, and player price feedback",
     "Desktop and 390x844 canonical browser flow",
     "Current V3 save roundtrip and incompatible-save rejection",
     "V3 military group battle and return; no legacy launch",
-    "Solo auto presets/options, canonical actions, pause/resume, onsite trade, observation and paused save reload",
+    "Solo auto discovery/return and reports, browsing without pause, mutation pause, preserved trade revisions, local quotes, risk forecast and paused save reload",
     "V3 canonical career, regional governance, empire/federation endings and continued saved world",
     "Market shortage, logistics, diplomacy and cultural feedback over multiple seeds and monthly batches"
   ],

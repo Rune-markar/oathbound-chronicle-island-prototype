@@ -265,6 +265,7 @@ function recordExactReports(state, settlement, market) {
       year: state.year,
       month: state.month,
       low: good.buyPrice,
+      sellPrice: good.sellPrice,
       high: good.buyPrice,
       confidence: "exact",
       source: "visit",

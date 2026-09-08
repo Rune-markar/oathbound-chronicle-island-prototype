@@ -1,7 +1,8 @@
+import { autoTradePreview, autoWorldEvents, autoNextGoal } from "../src/v3-auto-experience.js";
 import test from "node:test";
 import assert from "node:assert/strict";
-import { AUTO_PRESETS, autoBlocker, autoOutcomeStop, autoWorldStop, createAutoState, decideAutoAction, executeAutoAction, findAutoPath, normalizeAutoConfig, recordAutoAction, restoreAutoState, startAutoState } from "../src/v3-auto-mode.js";
-import { createV3FieldState, createV3WorldContext, moveV3Player, normalizeV3FieldState, useV3Item } from "../src/v3-field-system.js";
+import { AUTO_PRESETS, autoBlocker, autoOutcomeStop, autoWorldStop, createAutoState, decideAutoAction, executeAutoAction, findAutoPath, normalizeAutoConfig, recordAutoAction, restoreAutoState, startAutoState, reviseAutoPlan, returnAutoCargo } from "../src/v3-auto-mode.js";
+import { getV3CombatForecast, resolveV3Encounter, createV3FieldState, createV3WorldContext, moveV3Player, normalizeV3FieldState, useV3Item } from "../src/v3-field-system.js";
 import { normalizeV3MerchantState, observeV3Market, buyV3Commodity, getV3MerchantView } from "../src/v3-merchant-system.js";
 import { buildGeneratedWorld, createGeneratedWorldState } from "../src/generated-world-system.js";
 import { commitV3Action, normalizeV3IntegratedState } from "../src/v3-system-kernel.js";
@@ -115,6 +116,10 @@ test("military handoffs and organization and company decisions are mandatory sto
 test("steps, game time, and repeated exploration have finite bounds", () => {
   const { context, state } = fixture({ maxSteps: 1, maxHours: 1 });
   state.autoMode.steps = 1;
+  assert.equal(decideAutoAction(context, state, null).completed, false);
+  state.autoMode.config.exploreGoal = "survey";
+  assert.equal(decideAutoAction(context, state, null).completed, false);
+  state.autoMode.config.exploreGoal = "wander";
   assert.equal(decideAutoAction(context, state, null).completed, true);
   state.autoMode.steps = 0;
   state.autoMode.startMinutes = state.clock.elapsedMinutes - 59;
@@ -242,4 +247,224 @@ test("automatic purchases update world inventory and stop at the changed onsite 
   }
   assert.ok(bought > 0 && bought < 12);
   assert.ok(getV3MerchantView(context, state, world).market.goods.grain.buyPrice > beforeMarket.buyPrice);
+});
+
+test("changing a paused trade plan preserves cargo accounting, progress and total budget", () => {
+  const { context, state } = tradeFixture();
+  const bought = apply(context, state, decideAutoAction(context, state, null));
+  const auto = { ...bought.autoMode, status: "paused", phase: "sell", steps: 23 };
+  const revised = reviseAutoPlan(auto, { ...auto.config, sellPrice: 0.5, maxSteps: 250 });
+  assert.equal(revised.bought, 1); assert.equal(revised.spent, auto.spent);
+  assert.equal(revised.phase, "sell"); assert.equal(revised.steps, 23);
+  assert.throws(() => reviseAutoPlan(auto, { ...auto.config, commodity: "salt" }), /新しい実行/);
+  assert.throws(() => reviseAutoPlan(auto, { ...auto.config, budget: 0.1 }), /すでに仕入れ/);
+  const restored = restoreAutoState(revised);
+  assert.equal(restored.spent, auto.spent); assert.equal(restored.config.sellPrice, 0.5);
+});
+
+test("returning cargo stops at the source without restarting purchases or selling old cargo", () => {
+  const { context, state } = tradeFixture();
+  const bought = apply(context, state, decideAutoAction(context, state, null));
+  const returning = { ...bought, autoMode: returnAutoCargo(bought.autoMode) };
+  const decision = decideAutoAction(context, returning, null);
+  assert.equal(decision.completed, true);
+  assert.match(decision.reason, /積荷.*持ち帰/);
+  assert.equal(returning.merchant.trade.cargo[0].quantity, 1);
+});
+
+test("step limit in a trade route is an unfinished pause, not a completed journey", () => {
+  const { context, state } = tradeFixture({ maxSteps: 1 });
+  state.autoMode.steps = 1;
+  const decision = decideAutoAction(context, state, null);
+  assert.equal(decision.completed, false); assert.match(decision.reason, /未完了/);
+});
+
+test("survey returns to its actual starting tile after its outward allocation", () => {
+  const { context, state } = fixture({ exploreGoal: "survey", maxSteps: 12, autoHeal: false });
+  let current = state;
+  for (let i = 0; i < 30; i++) {
+    const decision = decideAutoAction(context, current, null);
+    if (decision.kind === "stop") {
+      assert.equal(decision.completed, true); assert.match(decision.reason, /帰還/);
+      assert.deepEqual([current.player.x, current.player.y], [state.player.x, state.player.y]);
+      assert.ok(current.steps > 0); return;
+    }
+    current = apply(context, current, decision);
+  }
+  assert.fail("survey did not finish");
+});
+
+test("market discovery pauses once and remains known after a new plan and save restore", () => {
+  const { context, state } = fixture({ exploreGoal: "settlement" });
+  const after = atMarket(context, state, 1);
+  after.steps += 1;
+  after.autoMode = recordAutoAction(state.autoMode, state, after, { kind: "move" }, context);
+  assert.equal(after.autoMode.discoveries[0], "市場1");
+  assert.match(autoOutcomeStop(state, after, { kind: "move" }, null, null, context), /市場.*発見/);
+  const restarted = startAutoState({ ...after, autoMode: restoreAutoState(after.autoMode) }, state.autoMode.config, context);
+  assert.ok(restarted.knownPlaces.includes("market-1"));
+  assert.deepEqual(restarted.discoveries, []);
+});
+
+test("summary survives movement log churn and does not include later manual spending", () => {
+  const { context, state } = fixture();
+  const after = { ...state, player: { ...state.player, inventory: [{ name: "薬草", heal: 18 }], gold: state.player.gold + 3 }, messageLog: ["薬草を拾った。"] };
+  let auto = recordAutoAction(state.autoMode, state, after, { kind: "move" }, context);
+  for (let i = 0; i < 25; i++) auto = recordAutoAction(auto, after, { ...after, messageLog: ["東へ7分進んだ。街道。"] }, { kind: "move" }, context);
+  assert.equal(auto.summary.items, 1); assert.equal(auto.summary.gold, 3);
+  assert.ok(auto.highlights.includes("薬草を拾った。"));
+  const spent = { ...after, player: { ...after.player, gold: 0 }, autoMode: auto };
+  assert.equal(restoreAutoState(spent.autoMode).summary.gold, 3);
+});
+
+test("related-country stop filters distant crises and shows the affected place", () => {
+  const { context, state } = fixture();
+  const before = { externalCrises: { activeCrises: [] } };
+  const after = { externalCrises: { activeCrises: [
+    { id: "remote", nationId: "n2", regionId: "r2", regionName: "遠い地方", name: "山火事", severity: 2 },
+    { id: "local", nationId: "n1", regionId: "r1", regionName: "試験地方", name: "洪水", severity: 3 },
+  ] } };
+  const events = autoWorldEvents(before, after, state.autoMode.config, context, state);
+  assert.equal(events[0].stop, false); assert.equal(events[1].stop, true);
+  assert.match(autoWorldStop(before, after, state.autoMode.config, context, state), /試験地方.*洪水/);
+  assert.equal(autoWorldEvents(before, after, { ...state.autoMode.config, watchNation: "n2" }, context, state)[0].stop, true);
+  assert.equal(autoWorldEvents(before, after, { ...state.autoMode.config, worldScope: "all" }, context, state)[0].stop, true);
+  assert.equal(autoWorldStop(after, after, state.autoMode.config, context, state), null);
+});
+
+test("rulers traveling abroad still stop for current territory and their own country's war", () => {
+  const { context, state } = fixture(); // The traveler is physically in n1/r1.
+  const before = { generatedWorld: { worldWars: { activeWars: [] } }, externalCrises: { activeCrises: [] } };
+  const after = {
+    generatedWorld: {
+      regionalDomains: { regionStates: { r1: { nationId: "n1" }, r2: { nationId: "player-realm" }, r3: { nationId: "player-realm" } }, independentPolities: { "player-realm": { name: "現在の自治国" } } },
+      worldWars: { activeWars: [
+        { id: "home-war", attackerNationId: "n4", defenderNationId: "player-realm", fronts: [] },
+        { id: "remote-war", attackerNationId: "n5", defenderNationId: "n6", fronts: [] },
+      ] },
+    },
+    externalCrises: { activeCrises: [
+      { id: "new-territory", regionId: "r3", nationId: "former-owner", name: "洪水" },
+      { id: "remote-crisis", regionId: "r7", nationId: "n7", name: "山火事" },
+    ] },
+  };
+  for (const stage of ["sovereign", "ending"]) {
+    state.campaign = { stage, nationId: "player-realm", regionId: "r2" };
+    const events = autoWorldEvents(before, after, state.autoMode.config, context, state);
+    assert.deepEqual(events.map((event) => event.stop), [true, false, true, false]);
+    assert.match(events[0].message, /現在の自治国/);
+    const recorded = recordAutoAction(state.autoMode, state, state, { kind: "month" }, context, before, after);
+    assert.equal(recorded.summary.remoteEvents, 2, "unrelated countries stay aggregated as distant events");
+    assert.ok(recorded.highlights.some((message) => message.includes("現在の自治国")));
+  }
+  const fallen = structuredClone(after);
+  fallen.generatedWorld.regionalDomains.regionStates.r2.nationId = "n3";
+  fallen.generatedWorld.regionalDomains.regionStates.r3.nationId = "n3";
+  assert.ok(autoWorldEvents(before, fallen, state.autoMode.config, context, state).every((event) => !event.stop), "a dissolved realm does not keep its old land or country as watch targets");
+});
+
+test("an absent governor watches only an appointment still held under the current owner", () => {
+  const { context, state } = fixture();
+  state.campaign = { stage: "governor", nationId: "n2", regionId: "r2" };
+  const before = { externalCrises: { activeCrises: [] } };
+  const after = {
+    generatedWorld: { regionalDomains: { regionStates: { r1: { nationId: "n1" }, r2: { nationId: "n2", lordId: "v3-player" } } } },
+    externalCrises: { activeCrises: [{ id: "appointed-crisis", regionId: "r2", nationId: "n2", name: "洪水" }] },
+  };
+  assert.equal(autoWorldEvents(before, after, state.autoMode.config, context, state)[0].stop, true);
+  after.generatedWorld.regionalDomains.regionStates.r2.lordId = "replacement-lord";
+  assert.equal(autoWorldEvents(before, after, state.autoMode.config, context, state)[0].stop, false, "dismissed office is not watched");
+  after.generatedWorld.regionalDomains.regionStates.r2 = { nationId: "n3", lordId: "v3-player" };
+  assert.equal(autoWorldEvents(before, after, state.autoMode.config, context, state)[0].stop, false, "a former owner's appointment does not authorize watching a conquered region");
+  after.generatedWorld.regionalDomains.regionStates.r2 = { nationId: "n2", lordId: "v3-player" };
+  state.campaign.stage = "commissioned";
+  assert.equal(autoWorldEvents(before, after, state.autoMode.config, context, state)[0].stop, false, "a local commission is not a governorship");
+});
+
+test("trade preview uses recorded sell quotes and marks old buy-only reports unknown", () => {
+  const { state } = tradeFixture();
+  const view = autoTradePreview(state, state.autoMode.config);
+  assert.equal(typeof view.target.sellPrice, "number"); assert.equal(typeof view.profit, "number");
+  const untouched = structuredClone(state);
+  for (const r of state.merchant.trade.marketReports) delete r.sellPrice;
+  assert.equal(autoTradePreview(state, state.autoMode.config).profit, null);
+  assert.equal(autoTradePreview(untouched, { ...state.autoMode.config, market: "unknown" }).target, undefined);
+});
+
+test("combat forecast matches resolution and automation stops before a lethal retaliation", () => {
+  const { context, state } = fixture({ enemy: "fight", autoHeal: false, stopHp: 30 });
+  state.pendingEncounter = { id: "wolf", type: "enemy", name: "狼", hp: 100, maxHp: 100, power: 15, level: 1, xp: 4, gold: 1, tileKey: "0,0" };
+  state.player.hp = 15;
+  const forecast = getV3CombatForecast(context, state);
+  const decision = decideAutoAction(context, state, null);
+  assert.equal(decision.kind, "stop"); assert.match(decision.reason, /反撃/);
+  state.player.hp = 34;
+  const next = resolveV3Encounter(context, state, "fight");
+  assert.equal(next.player.hp, 34 - forecast.retaliation);
+  assert.equal(next.pendingEncounter.hp, 100 - forecast.attack);
+  state.pendingEncounter.hp = 1;
+  state.defeatedTiles = Array.from({ length: 4000 }, (_, i) => `old-${i}`);
+  const victory = resolveV3Encounter(context, state, "fight");
+  assert.equal(victory.defeatedTiles.length, state.defeatedTiles.length);
+  assert.equal(recordAutoAction(state.autoMode, state, victory, { kind: "encounter", action: "fight" }, context).summary.battles, 1);
+});
+
+test("cargo protection, first-enemy stop and supply reserve are explicit policies", () => {
+  const { context, state } = fixture({ enemy: "fight", autoHeal: false, combatPolicy: "cargo" });
+  state.pendingEncounter = { id: "wolf", type: "enemy", name: "狼", hp: 20, power: 3, level: 1 };
+  state.merchant.trade.cargo = [{ commodityId: "grain", quantity: 1 }];
+  assert.match(decideAutoAction(context, state, null).reason, /積荷/);
+  state.autoMode.config.combatPolicy = "balanced";
+  state.autoMode.config.stopFirstEnemy = true;
+  assert.match(decideAutoAction(context, state, null).reason, /初めて/);
+  state.pendingEncounter = null;
+  state.player.hp = 3; state.player.inventory = [{ id: "herb", heal: 18 }];
+  Object.assign(state.autoMode.config, { autoHeal: true, combatPolicy: "supplies", reserveHealing: 1 });
+  assert.equal(decideAutoAction(context, state, null).kind, "stop");
+  state.player.inventory.push({ id: "herb", heal: 18 });
+  assert.equal(decideAutoAction(context, state, null).kind, "item");
+});
+
+test("growth guidance advances from market discovery to incorporation and staffing", () => {
+  const { state } = fixture();
+  assert.match(autoNextGoal(state).text, /二市場/);
+  state.merchant.trade.knownSettlements = [{ id: "a" }, { id: "b" }];
+  state.merchant.trade.stats = { unitsSold: 3, realizedProfit: 2 };
+  assert.match(autoNextGoal(state).text, /設立できる/);
+  state.merchant.company.status = "company";
+  assert.match(autoNextGoal(state).text, /営業資格/);
+  state.merchant.company.charters = [{ nationId: "n1" }];
+  assert.match(autoNextGoal(state).text, /責任者/);
+  state.military = { activeMission: { id: "mission" } };
+  assert.equal(autoNextGoal(state).action, "map");
+  state.pendingEncounter = { type: "group-battle" };
+  assert.equal(autoNextGoal(state).action, "field");
+});
+
+test("automatic healing does not bypass the first enemy decision", () => {
+  const { context, state } = fixture({ enemy: "fight", stopFirstEnemy: true, autoHeal: true });
+  state.pendingEncounter = { id: "wolf", type: "enemy", name: "狼", hp: 20, power: 3, level: 1 };
+  state.player.hp = 3;
+  state.player.inventory = [{ id: "herb", heal: 18 }];
+  const decision = decideAutoAction(context, state, null);
+  assert.equal(decision.kind, "item");
+  const healed = apply(context, state, decision);
+  assert.deepEqual(healed.autoMode.knownEnemies, []);
+  assert.match(decideAutoAction(context, healed, null).reason, /初めて/);
+});
+
+test("arrival on the final allowed step is complete for travel and survey", () => {
+  const { context, state } = fixture({ mode: "travel", destination: "market-0", maxSteps: 1 });
+  state.autoMode.steps = 1;
+  assert.equal(decideAutoAction(context, atMarket(context, state, 0), null).completed, true);
+  Object.assign(state.autoMode.config, { mode: "explore", exploreGoal: "survey" });
+  state.autoMode.explorationReturning = true;
+  assert.equal(decideAutoAction(context, state, null).completed, true);
+});
+
+test("finishing the final trading return records all completed laps", () => {
+  const { context, state } = tradeFixture({ laps: 2, maxSteps: 1 });
+  Object.assign(state.autoMode, { phase: "return", laps: 1, steps: 1 });
+  const decision = decideAutoAction(context, state, null);
+  assert.equal(decision.completed, true); assert.equal(decision.patch.laps, 2);
 });

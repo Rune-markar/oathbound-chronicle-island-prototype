@@ -744,7 +744,7 @@ function externalCrisisPlans(context, state, period, occupied) {
       purpose: {
         kind: "external-crisis-observation",
         label: `${crisis.name}・危機度${crisis.severity}`,
-        reason: `${crisis.causes.join("、")}。詳細マスで突然発生したのではなく、地方単位の月次危機が周辺へ投影されている`,
+        reason: `原因：${crisis.causes.join("、")}。周辺の生産・市場供給が圧迫されている`,
       },
       period,
       projectedFromMacroIndex: crisis.originTileIndex,
@@ -1067,6 +1067,20 @@ export function grantV3Experience(player, amount = 0) {
   return levelledPlayer({ ...player, xp });
 }
 
+export function getV3CombatForecast(context, state) {
+  const enemy = state.pendingEncounter;
+  if (enemy?.type !== "enemy") return null;
+  const x = Number.isInteger(enemy.worldX) ? enemy.worldX : state.player.x;
+  const y = Number.isInteger(enemy.worldY) ? enemy.worldY : state.player.y;
+  const playerResponse = getV3RaceWorldEffectAt(context, state, state.player.raceId ?? "human", x, y);
+  const enemyResponse = getV3RaceWorldEffectAt(context, state, enemy.raceId ?? "human", x, y);
+  const attack = Math.max(1, Math.round((6 + state.player.level * 2 + Math.floor(v3HashUnit(context.seed, "attack", state.steps, enemy.hp) * 5))
+    * playerResponse.modifiers.attack / enemyResponse.modifiers.defense));
+  const retaliation = enemy.hp <= attack ? 0 : Math.max(1, Math.round((enemy.power + enemy.level - Math.floor(state.player.level / 2))
+    * enemyResponse.modifiers.attack / playerResponse.modifiers.defense));
+  return { attack, retaliation, remainingHp: state.player.hp - retaliation };
+}
+
 export function resolveV3Encounter(context, state, action) {
   const encounter = state.pendingEncounter;
   if (!encounter) return state;
@@ -1110,9 +1124,8 @@ export function resolveV3Encounter(context, state, action) {
     };
   }
   if (action !== "fight") return state;
-  const basePlayerDamage = 6 + state.player.level * 2 + Math.floor(v3HashUnit(context.seed, "attack", state.steps, encounter.hp) * 5);
-  const playerDamage = Math.max(1, Math.round(basePlayerDamage
-    * playerWorldResponse.modifiers.attack / enemyWorldResponse.modifiers.defense));
+  const forecast = getV3CombatForecast(context, state);
+  const playerDamage = forecast.attack;
   const enemyHp = encounter.hp - playerDamage;
   if (enemyHp <= 0) {
     const player = grantV3Experience({ ...state.player, gold: state.player.gold + encounter.gold }, encounter.xp);
@@ -1124,8 +1137,7 @@ export function resolveV3Encounter(context, state, action) {
       messageLog: addLog(state, `${encounter.name}を倒した。経験${encounter.xp}、銀貨${encounter.gold}枚を得た。`),
     };
   }
-  const enemyDamage = Math.max(1, Math.round((encounter.power + encounter.level - Math.floor(state.player.level / 2))
-    * enemyWorldResponse.modifiers.attack / playerWorldResponse.modifiers.defense));
+  const enemyDamage = forecast.retaliation;
   if (state.player.hp - enemyDamage <= 0) {
     const player = { ...state.player, x: state.player.spawnX, y: state.player.spawnY, hp: state.player.maxHp, gold: Math.floor(state.player.gold / 2) };
     return {
