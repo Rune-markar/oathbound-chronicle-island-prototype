@@ -710,6 +710,97 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .v3-campaign-section > summary { margin-bottom: 12px; font-weight: 700; }
 .v3-campaign-ending { border: 1px solid #ddc279; padding: 16px; background: #284134; margin-bottom: 18px; }
 
+/* Council navigation and illustrated decisions share the field's SVG vocabulary. */
+#v3CampaignOpen { display: inline-flex; align-items: center; gap: 8px; }
+.v3-campaign-card { grid-template-rows: auto auto auto auto minmax(0, 1fr); }
+.v3-campaign-card > header { grid-row: 1; }
+.v3-campaign-stats { grid-row: 2; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; padding: 10px 18px; background: #152e2e; border-bottom: 1px solid #38554d; }
+.v3-campaign-stats > div { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.v3-campaign-stats span { display: grid; gap: 3px; font-size: 12px; color: #c2cec2; }
+.v3-campaign-stats strong { color: #fff5d6; font-variant-numeric: tabular-nums; font-size: 18px; }
+.v3-campaign-tabs { grid-row: 3; display: flex; gap: 4px; padding: 6px 12px; overflow-x: auto; background: #0b1f22; }
+.v3-campaign-tabs [role="tab"] { display: flex; align-items: center; justify-content: center; gap: 7px; border: 0; border-bottom: 3px solid transparent; white-space: nowrap; background: transparent; color: #cedace; }
+.v3-campaign-tabs [aria-selected="true"] { color: #fff2b7; border-bottom-color: #dfc674; background: #26443d; }
+.v3-campaign-content { grid-row: 5; }
+.v3-campaign-result { grid-row: 4; max-height: min(220px, 25dvh); overflow: auto; padding: 8px 18px; border-bottom: 1px solid #486d5a; }
+.v3-campaign-result > strong, .v3-result-deltas, .v3-result-deltas > span { display: flex; align-items: center; gap: 6px; }
+.v3-result-deltas { flex-wrap: wrap; column-gap: 14px; margin-top: 6px; color: #fff4c3; font-variant-numeric: tabular-nums; }
+.v3-result-deltas .v3-ui-icon { width: 16px; height: 16px; }
+.v3-campaign-result summary { min-height: 44px; padding: 7px 0; border: 0; background: transparent; font-size: 12px; color: #c5d6c6; }
+.v3-campaign-result p { margin: 4px 0; }
+.v3-result-cause { color: #e6c59e; font-size: 12px; }
+.v3-campaign-card h2, .v3-action-card h3 { display: flex; align-items: center; gap: 8px; }
+.v3-campaign-overview h2 { display: block; }
+.v3-campaign-overview h2 small { display: block; font-weight: 400; color: #acbbb0; font-size: 12px; }
+.v3-action-card h3 { line-height: 1.6; }
+.v3-action-card h3 .v3-ui-icon { width: 27px; height: 27px; padding: 7px; box-sizing: content-box; border-radius: 8px; background: #213f36; }
+.v3-campaign-actions .v3-action-card { border-color: #3c6052; background: linear-gradient(145deg, #183b32, #102927); }
+.v3-campaign-actions .v3-action-card button { background: #315245; color: #fff2bb; font-weight: 700; }
+.v3-action-cost { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; color: #e2ce8d; font-size: 13px; margin-top: auto; }
+.v3-action-cost .v3-ui-icon { width: 16px; height: 16px; }
+.v3-action-cost span + .v3-ui-icon { margin-left: 10px; }
+.v3-campaign-actions .v3-action-card.is-final-choice { border-color: #b2a56b; }
+.v3-campaign-requirements li > span { display: flex; align-items: center; gap: 8px; }
+.v3-campaign-requirements .v3-ui-icon { width: 17px; height: 17px; }
+.v3-campaign-progress { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); list-style: none; padding: 0; gap: 6px; margin: 0 0 20px; }
+.v3-campaign-progress li { display: grid; justify-items: center; gap: 7px; padding: 10px 0; border-bottom: 2px solid #355448; color: #a3b4a7; font-size: 12px; }
+.v3-campaign-progress .is-reached { color: #f4deb1; border-color: #dbc278; }
+.v3-campaign-progress [aria-current] { background: #28453a; border-radius: 6px 6px 0 0; }
+.v3-campaign-guidance { display: flex; gap: 12px; border: 1px solid #8a885d; border-left-width: 4px; background: #263f31; padding: 14px; margin-bottom: 16px; }
+.v3-campaign-guidance > .v3-ui-icon { width: 32px; height: 32px; }
+.v3-campaign-shortcuts { display: flex; flex-wrap: wrap; gap: 10px; margin: 16px 0; }
+.v3-campaign-shortcuts button, .v3-council-month > span, .v3-country-back { display: inline-flex; align-items: center; gap: 8px; }
+.v3-council-month { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; margin-top: 20px; padding-top: 14px; border-top: 1px solid #496758; color: #c8d4be; font-size: 13px; }
+.v3-country-list-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
+.v3-country-list-header label { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.v3-country-list-header select { min-height: 44px; max-width: 100%; padding: 8px; border: 1px solid #7d9788; background: #17382f; color: #fff4d3; font: inherit; }
+.v3-country-list { display: grid; gap: 6px; }
+.v3-country-list > button { display: flex; align-items: center; gap: 12px; text-align: left; padding: 12px; }
+.v3-country-list > button > span:first-of-type { flex: 1; min-width: 0; }
+.v3-country-list strong, .v3-country-list small { display: block; }
+.v3-country-list small { color: #bcd0bd; font-size: 12px; margin-top: 3px; }
+.v3-country-score { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; color: #f3daa0; }
+.v3-country-detail { margin: 18px 0; }
+.v3-country-status, .v3-country-factors { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 16px; }
+.v3-country-factors span, .v3-country-status span { display: inline-flex; align-items: center; gap: 5px; padding: 5px 8px; border: 1px solid #3c6352; border-radius: 5px; font-size: 12px; background: #19362d; }
+.v3-country-factors .v3-ui-icon { width: 16px; height: 16px; }
+.v3-country-detail blockquote, .v3-final-council blockquote { margin: 12px 0; padding-left: 14px; border-left: 3px solid #bea765; color: #f1e4bf; line-height: 1.9; font-size: 14px; }
+.v3-final-council { display: flex; align-items: flex-start; gap: 18px; padding: 22px; margin-bottom: 16px; background: radial-gradient(ellipse at top left, #375a47, #122c2d 80%); border: 1px solid #aea16c; border-radius: 6px; }
+.v3-council-emblem { width: 80px; height: 80px; flex: 0 0 auto; color: #ebd08a; }
+.v3-final-council small { color: #cfba81; font-size: 12px; }
+.v3-campaign-ending { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; }
+.v3-campaign-ending > div { flex: 1; min-width: 180px; }
+.v3-campaign-ending > ol { flex-basis: 100%; padding-left: 22px; }
+.v3-campaign-ending > ol li { padding: 7px 0; }
+.v3-adopted-policies { padding: 0; list-style: none; }
+.v3-adopted-policies li { display: flex; align-items: flex-start; gap: 10px; padding: 12px 0; border-bottom: 1px solid #345647; }
+.v3-quest-marker { position: absolute; right: 0; top: 0; width: 55%; height: 55%; z-index: 4; display: grid; place-items: center; border: 2px solid #ffd581; border-radius: 5px; color: #ffe4a1; background: #192c2a99; pointer-events: none; }
+.v3-quest-marker .v3-ui-icon { width: 72%; height: 72%; color: #ffe4a1; }
+@media (max-width: 640px) {
+  .v3-campaign-stats { padding: 8px 12px; gap: 6px; }
+  .v3-campaign-stats > div { gap: 5px; }
+  .v3-campaign-stats .v3-ui-icon { width: 16px; height: 16px; }
+  .v3-campaign-stats strong { font-size: 16px; }
+  .v3-campaign-tabs { padding: 4px; gap: 2px; }
+  .v3-campaign-tabs [role="tab"] { flex: 1; flex-direction: column; gap: 4px; padding: 7px; font-size: 12px; }
+  .v3-campaign-result { padding: 8px 12px; }
+  .v3-final-council { padding: 14px; gap: 10px; }
+  .v3-final-council .v3-council-emblem { width: 46px; height: 60px; }
+  .v3-campaign-card h1 { font-size: 21px; }
+  .v3-campaign-content .v3-campaign-actions { gap: 10px; }
+  .v3-campaign-requirements { font-size: 13px; }
+  .v3-campaign-requirements strong { white-space: nowrap; }
+  .v3-council-month > button { flex: 1; }
+}
+@media (max-height: 600px) {
+  .v3-campaign-card > header { padding: 6px 12px; }
+  .v3-campaign-card h1 { font-size: 18px; }
+  .v3-campaign-stats { padding-top: 5px; padding-bottom: 5px; }
+  .v3-campaign-stats span { display: flex; align-items: center; gap: 7px; }
+  .v3-campaign-tabs [role="tab"] { flex-direction: row; }
+  .v3-campaign-result { max-height: 90px; }
+}
+
 /* Automation reports replace repeated movement lines while an execution is active. */
 .v3-auto-toolbar { flex-wrap: wrap; }
 #v3AutoResponses { display: flex; flex-wrap: wrap; gap: 6px; flex-basis: 100%; }
@@ -778,3 +869,5 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 }
 
 .v3-developer-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+
+.v3-policy-category { display: block; margin: -3px 0 10px; color: #d6c78e; font-size: 12px; }

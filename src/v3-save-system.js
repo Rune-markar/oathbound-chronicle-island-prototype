@@ -1,3 +1,4 @@
+import { V3_CIVIC_VERSION } from "./v3-civic-policy.js";
 import { V3_SIMULATION_MODEL_VERSION } from "./v3-simulation-model.js";
 import { createSaveRegistry, readRegisteredSave, writeRegisteredSave } from "./save-registry.js";
 import { V3_FIELD_VERSION } from "./v3-field-system.js";
@@ -24,6 +25,7 @@ export const V3_SAVE_REGISTRY = createSaveRegistry({
       && raw.field.clock && Number.isFinite(raw.field.clock.elapsedMinutes)
       && (!raw.field.campaign || raw.field.campaign.version === V3_CAMPAIGN_VERSION)
       && raw.worldSimulation?.version === V3_WORLD_SIMULATION_VERSION
+      && (!raw.worldSimulation.civicState || raw.worldSimulation.civicState.version === V3_CIVIC_VERSION)
       && (!raw.worldSimulation.model || raw.worldSimulation.model.version === V3_SIMULATION_MODEL_VERSION)
       && raw.worldSimulation.generatedWorld?.raceDynamics?.schemaVersion === RACE_DECISION_SCHEMA_VERSION);
   },

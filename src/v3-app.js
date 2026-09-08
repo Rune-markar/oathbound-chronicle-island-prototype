@@ -207,6 +207,7 @@ const autoController = mountV3AutoMode({
   },
 });
 const campaignController = mountV3Campaign({
+  navigate: (destination) => autoController.open({ mode: "travel", destination, maxSteps: 256 }),
   read: () => ({ state, context, worldSimulation }),
   commit: commitStateAction,
   save: saveGame,
@@ -509,6 +510,8 @@ function renderField() {
     const adjacent = Math.abs(tile.dx) + Math.abs(tile.dy) === 1;
     const direction = tile.dx === 1 ? "east" : tile.dx === -1 ? "west" : tile.dy === 1 ? "south" : "north";
     const hidden = !tile.visible && !tile.player;
+    const survey = state.campaign?.stage === "commissioned" && !state.campaign.survey?.complete ? state.campaign.survey : null;
+    const questTarget = Boolean(survey && survey.x === tile.x && survey.y === tile.y);
     const encounterTile = Boolean(personalEnemy && personalEnemy.worldX === tile.x && personalEnemy.worldY === tile.y);
     const militaryTarget = Boolean(militaryMission && militaryMission.target.x === tile.x && militaryMission.target.y === tile.y);
     const visibleEntity = encounterTile
@@ -529,13 +532,14 @@ function renderField() {
     const occupants = sprites.length > 1 ? `<span class="v3-combatants">${sprites.join("")}</span>` : sprites[0] ?? "";
     const landmark = landmarkArt ? atlasArtMarkup(landmarkArt, { className: "v3-landmark-art", hidden: true, tag: "span" }) : "";
     const labelParts = [hidden ? "未踏" : tile.name];
+    if (questTarget) labelParts.push("委託された見回り地点");
     if (tile.player) labelParts.push(`${state.player.name}の現在地`);
     if ((!hidden || militaryTarget) && visibleEntity) labelParts.push(visibleEntity.name);
     if ((!hidden || militaryTarget) && visibleEntity?.purpose?.label) labelParts.push(visibleEntity.purpose.label);
     if (!hidden && tile.worldEffect) labelParts.push(`${tile.worldEffect.name}の影響下`);
     const effectClass = !hidden && tile.worldEffect ? ` has-world-effect is-effect-${escapeHtml(tile.worldEffect.motion)}` : "";
     const terrainStyle = terrainArt ? ` style="--v3-terrain-position:${terrainArt.position}"` : "";
-    return `<button type="button" role="gridcell" class="v3-tile is-${escapeHtml(hidden && !militaryTarget ? "fog" : tile.type)}${tile.player ? " is-player" : ""}${personalEnemy && tile.player ? " is-combat-player" : ""}${encounterTile ? " is-combat-enemy" : ""}${militaryTarget ? " is-military-target" : ""}${adjacent ? " is-adjacent" : ""}${effectClass}" data-x="${tile.x}" data-y="${tile.y}" ${adjacent && tile.passable && !state.pendingEncounter ? `data-v3-move="${direction}"` : ""} aria-label="${escapeHtml(labelParts.join("、"))}" tabindex="${tile.player ? "0" : "-1"}"${terrainStyle}>${landmark}${occupants}</button>`;
+    return `<button type="button" role="gridcell" class="v3-tile is-${escapeHtml(hidden && !militaryTarget ? "fog" : tile.type)}${tile.player ? " is-player" : ""}${personalEnemy && tile.player ? " is-combat-player" : ""}${encounterTile ? " is-combat-enemy" : ""}${militaryTarget ? " is-military-target" : ""}${adjacent ? " is-adjacent" : ""}${effectClass}" data-x="${tile.x}" data-y="${tile.y}" ${adjacent && tile.passable && !state.pendingEncounter ? `data-v3-move="${direction}"` : ""} aria-label="${escapeHtml(labelParts.join("、"))}" tabindex="${tile.player ? "0" : "-1"}"${terrainStyle}>${landmark}${occupants}${questTarget ? `<span class="v3-quest-marker" aria-hidden="true">${uiIconMarkup("quest")}</span>` : ""}</button>`;
   }).join("");
 }
 

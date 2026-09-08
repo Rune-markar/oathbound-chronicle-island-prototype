@@ -52,7 +52,7 @@
       </header>
 
       <nav class="v3-auto-toolbar" aria-label="ソロプレイ自動モード">
-        <button type="button" id="v3CampaignOpen" aria-haspopup="dialog">人物史・統治</button>
+        <button type="button" id="v3CampaignOpen" aria-haspopup="dialog"><svg class="v3-ui-icon" aria-hidden="true"><use href="./assets/ui/v3-ui-icons.svg#icon-crown"></use></svg><span>人物史・統治</span></button>
         <span id="v3CampaignHint" class="v3-campaign-hint"></span>
         <button type="button" id="v3AutoOpen" aria-pressed="false">自動モード</button>
         <div id="v3AutoBar" hidden>
@@ -65,7 +65,7 @@
       <section class="v3-play-layout">
         <aside class="v3-status-window" aria-label="主人公の状態">
           <header><strong id="v3PlayerLabel">アレク</strong><span><small id="v3RaceLabel">人間</small><small id="v3LevelLabel">LV 1</small></span></header>
-          <dl><div><dt>HP</dt><dd id="v3HpLabel">34 / 34</dd></div><div><dt>EXP</dt><dd id="v3XpLabel">0</dd></div><div><dt>銀貨</dt><dd id="v3GoldLabel">12</dd></div></dl>
+          <dl><div><dt><svg class="v3-inline-icon" aria-hidden="true"><use href="./assets/ui/v3-ui-icons.svg#icon-heart"></use></svg>HP</dt><dd id="v3HpLabel">34 / 34</dd></div><div><dt><svg class="v3-inline-icon" aria-hidden="true"><use href="./assets/ui/v3-ui-icons.svg#icon-star"></use></svg>EXP</dt><dd id="v3XpLabel">0</dd></div><div><dt><svg class="v3-inline-icon" aria-hidden="true"><use href="./assets/ui/v3-ui-icons.svg#icon-coin"></use></svg>銀貨</dt><dd id="v3GoldLabel">12</dd></div></dl>
           <div class="v3-hp-track"><i id="v3HpBar"></i></div>
         </aside>
 
@@ -178,8 +178,10 @@
     <section class="v3-campaign-modal" id="v3CampaignModal" role="dialog" aria-modal="true" aria-labelledby="v3CampaignTitle" hidden>
       <article class="v3-campaign-card">
         <header><div><small id="v3CampaignStage">人物史</small><h1 id="v3CampaignTitle">人物史・統治</h1></div><button type="button" data-campaign-close>閉じる</button></header>
-        <p id="v3CampaignResult" class="v3-campaign-result" role="status" aria-live="polite"></p>
-        <div id="v3CampaignContent" class="v3-campaign-content"></div>
+        <div id="v3CampaignStats" class="v3-campaign-stats"></div>
+        <nav id="v3CampaignTabs" class="v3-campaign-tabs" role="tablist" aria-label="人物史と統治の項目"></nav>
+        <div id="v3CampaignResult" class="v3-campaign-result" role="status" aria-live="polite"></div>
+        <div id="v3CampaignContent" class="v3-campaign-content" role="tabpanel" tabindex="0"></div>
       </article>
     </section>
     <script type="module" src="./src/v3-app.js"></script>

@@ -3,10 +3,16 @@ import { GEOPOLITICAL_ACTION_EFFECTS } from "./state-reason-system.js";
 import { GEOPOLITICAL_DECISION_TAGS, deriveGeopoliticalProfiles } from "./geopolitical-world.js";
 import { V3_WORLD_EFFECT_DEFINITIONS, V3_CELESTIAL_EFFECT_DEFINITIONS } from "./v3-world-effects.js";
 import { V3_EXTERNAL_CRISIS_DEFINITIONS } from "./v3-external-crisis-system.js";
+import { V3_INSTITUTIONS } from "./v3-civic-policy.js";
+import { V3_DIPLOMACY_RULES, V3_DIPLOMATIC_NEEDS } from "./v3-campaign-diplomacy.js";
 
 // Ordered from specific to general. These descriptions are shared by the UI
 // and the exported variable reference; the inspector does not mutate values.
 export const V3_VARIABLE_DOMAINS = Object.freeze([
+  { match: /\.civicState|^rules\.civicPolicies/, name: "地方制度の実効", source: "src/v3-civic-policy.js", effect: "現在の領有・任官と支払状況を検査し、生産、国境物流、街道修復、災害圧力へ制度を適用する。同じ月の環境回復を二重適用しない。" },
+  { match: /field\.campaign\.(diplomacy|lastMilitaryOutcome)|^rules\.(diplomacy|diplomaticNeeds)/, name: "プレイヤーの外交条件", source: "src/v3-campaign-diplomacy.js", effect: "相手の主権・防衛・不足・現在文化・共有国境と具体的提案から必要信頼、交渉費用を計算。軍事成功率は防備差・軍功・相手主権から計算し、シード・年月・試行番号で抽選する。" },
+  { match: /field\.campaign\.(survey|mandates|finalChoices|endingSnapshot)/, name: "現地の依頼と物語の選択", source: "src/v3-campaign-journey.js", effect: "委託地方の通行可能地点へ実際に歩き、住民依頼と異なる成果を揃えて任官する。終盤の選択は税・支持・防備・生息環境・物流へ残り、結末時の仲間と判断を保存する。" },
+  { match: /field\.campaign\.(lastReport|ledger)/, name: "統治結果の説明", source: "src/v3-campaign-system.js", effect: "実際の行動・決算前後の差分と、食料不足・危機・維持費の原因を保存。画面の増減表示と履歴に使い、値を再適用しない。" },
   { match: /(^model|\.model)(\.|$)/, name: "判断設定", source: "src/v3-simulation-model.js", effect: "次の月の国家判断と、新規世界の50年事前史で使用する。保存済みの過去は書き換えない。" },
   { match: /\.selection|\.factors|\.alternatives/, name: "判断の根拠", source: "src/v3-simulation-model.js", effect: "その月の候補、実際の抽選確率、点数内訳、除外理由。履歴を表示するだけで再抽選しない。" },
   { match: /\.nationFeedback/, name: "市場から国家への影響", source: "src/v3-world-feedback.js", effect: "直近月の穀物不足・備蓄・物流から食料、財政、結束を更新する。翌月の環境対応判断にも未充足率を渡す。" },
@@ -34,6 +40,33 @@ export const V3_VARIABLE_DOMAINS = Object.freeze([
 ]);
 
 const FIELDS = {
+  retentionBuffer: "成立済み合意の維持に必要な信頼を新規加盟の閾値より8低くする。毎月の小さな国力変動で合意が反転し続けることを防ぐ。戦争・制度不履行・自治低下は解除しない。",
+  minRetentionTrust: "既存合意を維持する信頼の下限35。新規加盟の最低信頼42とは別。",
+  funded: "前回の月次維持費を支払えた場合true。falseなら制度の生産・物流・環境効果を停止し、次の支払完了で再開。",
+  officeRequired: "trueなら領有国の一致に加え、地方の領主がv3-playerであることを要求。失職した地方へ制度を誤適用しない。",
+  habitatHealth: "生息環境0〜100。水源共同管理と保護区で月次回復。リヴァイアサンとの協議費用・語りへ作用し、終盤の選択でも変化。",
+  sanctuary: "生息地保護区。支払済みの統治地方で伐採量−8%、洪水・山火事の圧力目標−5、生息環境を毎月2回復。",
+  shippingCharter: "水路の通航協約。支払済みの統治地方を通る国境街道の物流係数+0.15。海路ネットワークの追加ではない。",
+  institutions: "採用済み制度ID。rules.civicPoliciesの同じ定義を任官条件・月次会計・実生産・災害に使用。",
+  stewardshipActs: "任官後に実施した異なる統治行動。2種類以上と在任2か月・支持などを満たすと主権を交渉できる。待機だけでは増えない。",
+  trust: "その国との信頼0〜100。相手条件から求める閾値と具体的提案・自治・平和を揃えて加盟合意を判定する。",
+  legacyConsent: "既存V6に保存された成立済み合意を維持する互換フラグ。新しい合意には具体的な提案が必要。",
+  kind: "依頼・提案・履歴の種類ID。外交提案では食料・防衛・財政・環境・自治の要求を固定し、援助直後の要求のすり替わりを防ぐ。",
+  method: "外交提案の履行方法。policyは対応制度の継続を要求し、aidは資金援助と加盟後の毎月負担を記録。",
+  monthlySupport: "毎月の支持への加算。通常の維持低下・不足・戦争の影響と合算し0〜100へ制限する。",
+  taxRate: "基本税収への加減算率。0.18なら18%増、−0.08なら8%減。複数制度と終盤の選択を合算する。",
+  upkeep: "一か月に必要な公金。制度、加盟条件、終盤の約束の分を会計に合算する。",
+  production: "全商品の月産倍率への加算率。0.08なら+8%。地域予算制度が実際の市場在庫を増やす。",
+  grainProduction: "穀物の月産倍率への加算率。共同備蓄は+0.16。消費・輸送後の実在庫を食料判断へ渡す。",
+  timberProduction: "木材の月産倍率への加算率。水源保全では−0.12。価格と交易可能量へ間接的に作用。",
+  tradeAccess: "国境街道の輸送能力への加算率。両端の大きい側の制度効果を使い、同じ荷物を二重に増やさない。戦争封鎖の倍率は残る。",
+  roadRepair: "統治地方を通る街道資産の状態へ毎月加算する値。0〜100で制限。通行・物流の既存計算がこの状態を使う。",
+  habitatRecovery: "生息環境の毎月の回復量。保護区の+2と加算。費用未払や失職中は回復しない。",
+  floodReduction: "洪水圧力の目標から引く値。既存圧力を即時消すものではなく、月次の平滑化後に効果が現れる。",
+  fireReduction: "山火事圧力の目標から引く値。地形・季節・気候の圧力と合算する。",
+  raidReduction: "魔族襲撃圧力の目標から引く値。共同防衛・常備軍の制度が月次リスクを緩和する。",
+  defenseMaintenance: "月次防備への加算。通常の防備消耗0.5と戦争中の追加消耗を相殺する。",
+  civicMitigation: "制度・保護区がその危機の目標圧力を減らした量。危機の発生原因表示に使用する。",
   supplyRelief: "地方穀物備蓄0.75か月以上・需要未充足10%以下なら1。翌月の飢饉圧力の目標を20以下に抑え、継続補給で回復させる。",
   supplyObserved: "直近の地方市場の消費需要を観測できた場合1。市場情報がない地方は国家・地理条件を用いる。",
   foodSecurity: "食料の国家指数（0〜100）。最弱環、資源確保の利得、飢饉リスクへ作用。",
@@ -105,6 +138,7 @@ export function createV3VariableSnapshot({ runtime, state, worldSimulation, worl
     worldSimulation: worldSimulation ?? {},
     geography: runtime ? { tiles: runtime.tiles, nations: runtime.nations, profiles: deriveGeopoliticalProfiles(runtime) } : {},
     rules: { actionEffects: GEOPOLITICAL_ACTION_EFFECTS, actionTags: GEOPOLITICAL_DECISION_TAGS,
+      civicPolicies: V3_INSTITUTIONS, diplomacy: V3_DIPLOMACY_RULES, diplomaticNeeds: V3_DIPLOMATIC_NEEDS,
       weather: V3_WORLD_EFFECT_DEFINITIONS, celestial: V3_CELESTIAL_EFFECT_DEFINITIONS, externalCrises: V3_EXTERNAL_CRISIS_DEFINITIONS },
   };
 }

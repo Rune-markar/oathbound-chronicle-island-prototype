@@ -161,7 +161,7 @@ export function mountV3AutoMode({ read, writeAuto, commit, save, render, toast, 
     }
     document.querySelector("#v3AutoHint").textContent = {
       explore: "見えている周辺を一歩ずつ探索します。",
-      travel: "世界地図の集落または受諾済み軍務の作戦地点へ歩きます。",
+      travel: "世界地図の集落、見回り地点、受諾済み軍務の作戦地点へ歩きます。",
       trade: "相場を記録した二市場を往復します。商品は1個ずつ価格を確認して売買します。",
       observe: "主人公は移動せず、世界・商会・組織を1か月ずつ進めます。",
     }[mode];
@@ -174,13 +174,13 @@ export function mountV3AutoMode({ read, writeAuto, commit, save, render, toast, 
     }
   }
 
-  function open() {
+  function open(preset = null) {
     pause("設定を開いたため一時停止しました。");
     const { state, context } = read();
     if (!state) return;
     returnFocus = document.activeElement;
     const settlements = [...context.settlements].sort((a, b) => autoDistance(context, state.player, { x: a.detailX, y: a.detailY }) - autoDistance(context, state.player, { x: b.detailX, y: b.detailY }));
-    const destinations = option("", "目的地を選択") + (state.military?.activeMission ? option("mission", "受諾済み軍務の作戦地点") : "") + settlements.map((s) => option(s.id, `${s.name} · 約${autoDistance(context, state.player, { x: s.detailX, y: s.detailY })}歩`)).join("");
+    const destinations = option("", "目的地を選択") + (state.campaign?.survey ? option("commission", state.campaign.survey.name) : "") + (state.military?.activeMission ? option("mission", "受諾済み軍務の作戦地点") : "") + settlements.map((s) => option(s.id, `${s.name} · 約${autoDistance(context, state.player, { x: s.detailX, y: s.detailY })}歩`)).join("");
     const nations = option("", "注目国家なし") + [...context.runtime.nationById.values()].map((n) => option(n.id, n.name)).join("");
     const known = state.merchant?.trade?.knownSettlements ?? [];
     const markets = option("", known.length < 2 ? "交易・商会で二市場の相場を記録" : "市場を選択") + known.map((s) => option(s.id, s.name)).join("");
@@ -228,7 +228,7 @@ export function mountV3AutoMode({ read, writeAuto, commit, save, render, toast, 
       <footer>${state.autoMode.status === "paused" ? '<button type="submit" name="submitAction" value="revise">条件を変更して再開</button>' : ""}<button type="submit" name="submitAction" value="save">設定を保存（停止のまま）</button><button class="is-primary" type="submit" name="submitAction" value="start">新しい実行を開始</button></footer>
       ${state.autoMode.log.length ? `<details><summary>直近の実行記録</summary><ol class="v3-auto-log">${state.autoMode.log.map((line) => `<li>${escape(line)}</li>`).join("")}</ol></details>` : ""}`;
     root.hidden = false;
-    fill(state.autoMode.config);
+    fill({ ...state.autoMode.config, ...(typeof preset?.mode === "string" ? preset : {}) });
     document.querySelector("#v3Game").inert = true;
     form.elements.mode.focus();
   }

@@ -1,3 +1,4 @@
+import { normalizeV3CivicState, advanceV3CivicEnvironment } from "./v3-civic-policy.js";
 import { normalizeV3SimulationModel, v3NationDecisionContext } from "./v3-simulation-model.js";
 import {
   advanceGeneratedWorldGeopolitics,
@@ -285,6 +286,7 @@ export function createV3WorldSimulation(runtime, options = {}, dateState = V3_PR
   const simulation = {
     version: V3_WORLD_SIMULATION_VERSION,
     model: normalizeV3SimulationModel(options.model),
+    civicState: normalizeV3CivicState(runtime),
     year: date.year,
     month: date.month,
     elapsedMonths: 0,
@@ -312,11 +314,13 @@ export function normalizeV3WorldSimulation(runtime, options = {}, source = null)
   generatedWorld.raceDynamics = createRaceDecisionWorldState(runtime, generatedWorld.raceDynamics, date, {
     fixedCharacters: FIXED_WORLD_CHARACTERS,
   });
+  const civicState = normalizeV3CivicState(runtime, source.civicState);
   const externalCrises = createV3ExternalCrisisState(runtime, source.externalCrises, date, generatedWorld);
-  const marketEconomy = normalizeV3MarketEconomy(runtime, source.marketEconomy, date, generatedWorld, externalCrises);
+  const marketEconomy = normalizeV3MarketEconomy(runtime, source.marketEconomy, { ...date, civicState }, generatedWorld, externalCrises);
   const simulation = {
     version: V3_WORLD_SIMULATION_VERSION,
     model: normalizeV3SimulationModel(source.model ?? options.model),
+    civicState,
     year: date.year,
     month: date.month,
     elapsedMonths: Math.max(0, Math.round(Number(source.elapsedMonths) || 0)),
@@ -445,7 +449,8 @@ function advanceOneMonth(runtime, simulation, options = {}) {
     decisionModel: simulation.model,
     decisionContext: v3NationDecisionContext(runtime, { ...simulation, generatedWorld: state.generatedWorld }),
   });
-  const externalCrises = advanceV3ExternalCrises(runtime, simulation.externalCrises, date, state.generatedWorld, { marketEconomy: simulation.marketEconomy });
+  const civicState = advanceV3CivicEnvironment(runtime, { ...simulation, generatedWorld: state.generatedWorld }, periodFor(date));
+  const externalCrises = advanceV3ExternalCrises(runtime, simulation.externalCrises, date, state.generatedWorld, { marketEconomy: simulation.marketEconomy, civicState });
   state.generatedWorld = applyV3ExternalCrisisConsequences(runtime, state.generatedWorld, externalCrises, date);
   const elapsedMonths = simulation.elapsedMonths + 1;
   const secession = maybeDeclareSecession(runtime, state, elapsedMonths, simulation.autonomyStrain);
@@ -453,7 +458,7 @@ function advanceOneMonth(runtime, simulation, options = {}) {
   const advancedMarketEconomy = advanceV3MarketEconomyMonth(
     runtime,
     simulation.marketEconomy,
-    state,
+    { ...state, civicState },
     state.generatedWorld,
     externalCrises,
   );
@@ -464,6 +469,7 @@ function advanceOneMonth(runtime, simulation, options = {}) {
     month: state.month,
     elapsedMonths,
     generatedWorld,
+    civicState,
     externalCrises,
     marketEconomy,
     autonomyStrain: secession.autonomyStrain,

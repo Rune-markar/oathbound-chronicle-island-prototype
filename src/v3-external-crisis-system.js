@@ -1,3 +1,4 @@
+import { getV3CivicRegion, getV3CivicPressureReduction } from "./v3-civic-policy.js";
 import { fnv1aCharacters, unitFromHash } from "./determinism.js";
 import { settlementLevelForPopulation } from "./nation-generation.js";
 import { createStateReason } from "./state-reason-system.js";
@@ -203,6 +204,7 @@ function crisisImpact(definition, severity) {
 
 function causeLabels(typeId, drivers) {
   const labels = [];
+  if (drivers.civicMitigation > 0) labels.push("地域の保全・防衛制度による圧力軽減");
   if (typeId === "flood") {
     if (drivers.exposure >= 0.45) labels.push("河川・低湿地の洪水危険");
     if (drivers.wetSeason >= 0.6) labels.push("季節的な増水");
@@ -306,6 +308,9 @@ export function advanceV3ExternalCrises(runtime, source, dateState = {}, generat
     for (const typeId of TYPE_IDS) {
       const current = next.regionalPressures[profile.regionId][typeId];
       const drivers = crisisDrivers(runtime, generatedWorld, profile, typeId, dateState, previousActive, grainSupplies[profile.regionId]);
+      const civic = getV3CivicRegion(options.civicState, generatedWorld, runtime, profile.regionId);
+      drivers.civicMitigation = getV3CivicPressureReduction(civic, typeId);
+      drivers.target = clamp(drivers.target - drivers.civicMitigation);
       const value = clamp(current.value * 0.74 + drivers.target * 0.26);
       current.trend = value > current.value + 0.35 ? "rising" : value < current.value - 0.35 ? "falling" : "stable";
       current.value = rounded(value);

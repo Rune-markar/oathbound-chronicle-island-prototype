@@ -57,3 +57,8 @@ Use Node.js 22, `npm run check`, and the canonical `index.html` flow. Open 人�
 ## V3 probability and developer tools (2026-09-08)
 
 Use Node.js 22 and `npm run check` (850 checks). Run `node scripts/audit-v3-probability.mjs` for 21 cases / 2,880 world months. Open `index.html?developer=1` on localhost for the variable reference and settings; start or resume a V3 world for live inspection and Worker comparisons. Verify cancellation, unchanged player/world during comparisons, exported-input replay, settings saved without advancing time, local grain famine recovery, and PC / 390×844 controls. Close task browsers and the localhost server. This is development-host validation; Git push, deployment and NAS publication remain separate operations.
+
+
+## V3 player experience verification (2026-09-08)
+
+Use Node.js 22, `npm run check`, and a task-owned localhost server/browser. Check actual walking to a commission survey, a second community mandate, two distinct governance acts before sovereignty, policy-specific market/crisis effects, country-by-country proposals, both council choices and current V6 continuation. Inspect SVG symbols, result causes, keyboard focus, and desktop / 390x844 layouts. Record browser actions separately from controlled domain fixtures in `docs/gameplay-reviews/2026-09-08-v3-player-experience.md`. Close the browser and server before return. Push, deployment and NAS publication are separate operations.

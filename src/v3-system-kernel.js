@@ -26,7 +26,7 @@ import {
 } from "./system-registry.js";
 import { advanceV3WorldSimulation } from "./v3-world-simulation.js";
 import { applyV3MarketInventoryFlows } from "./v3-market-economy.js";
-import { normalizeV3CampaignState, advanceV3CampaignMonth } from "./v3-campaign-system.js";
+import { normalizeV3CampaignState, advanceV3CampaignMonth, syncV3CampaignPolicies } from "./v3-campaign-system.js";
 import {
   V3_WORLD_EFFECTS_VERSION,
   getV3WorldEffectAt,
@@ -271,6 +271,7 @@ export function commitV3Action(runtime, context, previousState, worldSimulation,
   const skipped = new Set(result.advancedSystemIds ?? []);
   const events = [...result.events];
   let nextWorldSimulation = applyV3MarketInventoryFlows(runtime, result.worldSimulation ?? worldSimulation, merchantInventoryFlows(previous, state), "trade");
+  nextWorldSimulation = syncV3CampaignPolicies(context, state, nextWorldSimulation);
   const collectWorldEvents = (beforeWorld, afterWorld, clock) => {
     const known = new Set(generatedWorldEvents(beforeWorld).map((entry) => entry.id));
     generatedWorldEvents(afterWorld).filter((entry) => !known.has(entry.id))
