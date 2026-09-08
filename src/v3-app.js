@@ -1,3 +1,4 @@
+import { mountV3Developer, readV3ModelPreference } from "./v3-developer-ui.js";
 import {
   createGeneratedWorldState,
 } from "./generated-world-system.js";
@@ -212,6 +213,18 @@ const campaignController = mountV3Campaign({
   render: renderGame,
   pause: () => autoController.pause("人物史・統治を開いたため一時停止しました。"),
   toast: showToast,
+});
+
+const developerController = mountV3Developer({
+  read: () => ({ runtime, state, worldSimulation, worldOptions }),
+  pause: () => autoController.pause("開発者システムを開いたため一時停止しました。"),
+  applyModel: (model) => {
+    const next = { ...worldSimulation, model };
+    writeV3Save(localStorage, STORAGE_KEY, { version: V3_SAVE_VERSION, world: worldOptions, field: state, worldSimulation: next, savedAt: new Date().toISOString() });
+    worldSimulation = next;
+    context.worldSimulation = next;
+    context.actorPlanCache = null;
+  },
 });
 
 function escapeHtml(value) {
@@ -864,7 +877,7 @@ function handleMilitaryAction() {
 function scheduleBackgroundGeneration() {
   clearTimeout(backgroundTimer);
   const run = () => {
-    if (!state || document.hidden) {
+    if (!state || document.hidden || developerController.isOpen()) {
       backgroundTimer = setTimeout(run, 1200);
       return;
     }
@@ -1056,8 +1069,8 @@ function renderDecisionProfile(profile, latestAction, peopleName) {
   const axes = Object.entries(DECISION_TRAITS).map(([id, definition]) => `
     <div><dt>${escapeHtml(definition.name)}</dt><dd data-sign="${profile.traits[id] < 0 ? "negative" : profile.traits[id] > 0 ? "positive" : "neutral"}">${signedDecisionValue(profile.traits[id])}</dd></div>
   `).join("");
-  const comparisons = (latestAction?.alternatives ?? []).slice(0, 4).map((entry) => `
-    <span><b>${escapeHtml(GEOPOLITICAL_PULL_SET[entry.id]?.name ?? entry.id)}</b><i>最弱 ${entry.stateReasonValue ?? "-"} · 費用 ${entry.stateReasonCost ?? "-"}</i></span>
+  const comparisons = [...(latestAction?.alternatives ?? [])].sort((left, right) => Number(right.id === (latestAction?.selection?.chosenId ?? latestAction?.pullId)) - Number(left.id === (latestAction?.selection?.chosenId ?? latestAction?.pullId)) || right.probability - left.probability).slice(0, 4).map((entry) => `
+    <span><b>${escapeHtml(GEOPOLITICAL_PULL_SET[entry.id]?.name ?? entry.id)}</b><i>最弱 ${entry.stateReasonValue ?? "-"} · 費用 ${entry.stateReasonCost ?? "-"}${latestAction?.selection ? ` · 選択確率 ${Number((entry.probability * 100).toFixed(1))}%` : ""}</i></span>
   `).join("");
   const agendas = (profile.historicalAgendas ?? []).slice(-2).map((agenda) => `<li>${escapeHtml(agenda.title)}</li>`).join("");
   const populationGroups = Object.values(profile.populationGroups ?? {}).map((dimension) => {
@@ -1179,7 +1192,7 @@ function renderWorldPanels(map) {
       <p class="v3-dossier-war">${warText}</p>
       ${dossier.marketFeedback ? `<p><strong>市場から見た国家の状況（${escapeHtml(dossier.marketFeedback.period)}月次）</strong><span>${escapeHtml(dossier.marketFeedback.summary)}</span><small>穀物備蓄${dossier.marketFeedback.grainCoverageMonths}か月分 · 未充足${Math.round(dossier.marketFeedback.grainUnmetShare * 100)}% · 物流${dossier.marketFeedback.logisticsVolume}</small></p>` : ""}
       ${dossier.crises.length ? `<p class="v3-dossier-crisis"><strong>外部危機</strong><span>${dossier.crises.map((crisis) => `${escapeHtml(crisis.regionName)}の${escapeHtml(crisis.name)}（危機度${crisis.severity}）`).join(" / ")}</span></p>` : ""}
-      ${condition ? `<p><strong>${escapeHtml(STATE_REASON_PRINCIPLE.name)}</strong><span>${escapeHtml(STATE_REASON_PRINCIPLE.rule)}</span><small>同値なら低コスト、なお同値なら国民性</small></p>` : ""}
+      ${condition ? `<p><strong>${escapeHtml(dossier.latestAction?.selection?.mode === "weighted" ? "生存条件つき確率選択" : STATE_REASON_PRINCIPLE.name)}</strong><span>${escapeHtml(dossier.latestAction?.selection?.rule ?? STATE_REASON_PRINCIPLE.rule)}</span><small>${dossier.latestAction?.selection?.mode === "weighted" ? "地政学・経済・環境・人口文化から選択確率を決定" : "同値なら低コスト、なお同値なら国民性"}</small></p>` : ""}
       ${dossier.latestAction ? `<p><strong>直近の判断</strong><span>${escapeHtml(dossier.latestAction.title)}</span><small>${escapeHtml(dossier.latestAction.summary)}</small></p>` : ""}
       ${renderDecisionProfile(dossier.decisionProfile, dossier.latestAction, dossier.nation.peopleName ?? "住民")}`;
   }
@@ -1454,7 +1467,7 @@ elements.cancelNew.addEventListener("click", () => {
 elements.newWorld.addEventListener("submit", async (event) => {
   event.preventDefault();
   const seed = elements.worldSeed.value.trim() || createSeed();
-  await prepareWorld({ ...WORLD_CONFIG, seed, playerName: elements.playerName.value.trim() || "アレク", playerRaceId: elements.playerRace.value });
+  await prepareWorld({ ...WORLD_CONFIG, model: readV3ModelPreference(localStorage), seed, playerName: elements.playerName.value.trim() || "アレク", playerRaceId: elements.playerRace.value });
 });
 elements.continueButton.addEventListener("click", async () => {
   const saved = readSave();
@@ -1674,6 +1687,7 @@ elements.worldCanvas.addEventListener("click", (event) => {
 });
 
 document.addEventListener("keydown", (event) => {
+  if (developerController.isOpen()) return;
   if (campaignController.isOpen()) return;
   if (autoController.isOpen()) return;
   if (event.target.closest(".v3-auto-toolbar") && ["Enter", " "].includes(event.key)) return;

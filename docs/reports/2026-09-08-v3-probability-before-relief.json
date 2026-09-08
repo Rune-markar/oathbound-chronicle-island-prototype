@@ -1,0 +1,769 @@
+{
+  "date": "2026-09-08",
+  "command": "node scripts/audit-v3-probability.mjs",
+  "modelVersion": 1,
+  "totalWorldMonths": 2880,
+  "checks": [
+    "finite national conditions in 0..100",
+    "nonnegative market inventories and positive prices",
+    "nonnegative population and projection error below 0.02",
+    "logged choices equal actual candidate probabilities"
+  ],
+  "results": [
+    {
+      "seed": "v3-probability-audit-0",
+      "scenario": "standard",
+      "months": 60,
+      "trial": 0,
+      "period": "322-4",
+      "food": 50.25,
+      "treasury": 40.75,
+      "weakest": 0,
+      "grainUnmetPercent": 0.3,
+      "warsStarted": 1,
+      "crisesStarted": 22,
+      "actionCounts": {
+        "secure_food": 60,
+        "fortify_frontier": 28,
+        "coerce_neighbor": 25,
+        "mobilize": 10,
+        "diplomatic_overture": 46,
+        "limited_war": 1,
+        "open_trade": 46,
+        "sustain_war": 4,
+        "seek_ceasefire": 2,
+        "deescalate": 3,
+        "seek_alignment": 2,
+        "accept_alignment": 1,
+        "consolidate": 12
+      },
+      "fingerprint": "55dd26db"
+    },
+    {
+      "seed": "v3-probability-audit-0",
+      "scenario": "alternate-trial",
+      "months": 60,
+      "trial": 1,
+      "period": "322-4",
+      "food": 47,
+      "treasury": 42.75,
+      "weakest": 0,
+      "grainUnmetPercent": 0.3,
+      "warsStarted": 1,
+      "crisesStarted": 21,
+      "actionCounts": {
+        "secure_food": 48,
+        "diplomatic_overture": 31,
+        "coerce_neighbor": 21,
+        "fortify_frontier": 39,
+        "mobilize": 7,
+        "open_trade": 57,
+        "limited_war": 1,
+        "sustain_war": 4,
+        "seek_ceasefire": 2,
+        "seek_alignment": 1,
+        "accept_alignment": 1,
+        "deescalate": 3,
+        "consolidate": 25
+      },
+      "fingerprint": "620bed21"
+    },
+    {
+      "seed": "v3-probability-audit-0",
+      "scenario": "strict",
+      "months": 60,
+      "trial": 0,
+      "period": "322-4",
+      "food": 46,
+      "treasury": 39.5,
+      "weakest": 8,
+      "grainUnmetPercent": 0,
+      "warsStarted": 0,
+      "crisesStarted": 19,
+      "actionCounts": {
+        "secure_food": 47,
+        "fortify_frontier": 50,
+        "coerce_neighbor": 14,
+        "mobilize": 4,
+        "open_trade": 51,
+        "diplomatic_overture": 31,
+        "consolidate": 43
+      },
+      "fingerprint": "63c15cb5"
+    },
+    {
+      "seed": "v3-probability-audit-0",
+      "scenario": "broad-choice",
+      "months": 60,
+      "trial": 0,
+      "period": "322-4",
+      "food": 32.25,
+      "treasury": 22.25,
+      "weakest": 0,
+      "grainUnmetPercent": 0.55,
+      "warsStarted": 0,
+      "crisesStarted": 26,
+      "actionCounts": {
+        "secure_food": 46,
+        "open_trade": 42,
+        "coerce_neighbor": 19,
+        "mobilize": 16,
+        "fortify_frontier": 37,
+        "diplomatic_overture": 34,
+        "consolidate": 29,
+        "deescalate": 11,
+        "seek_alignment": 6
+      },
+      "fingerprint": "6ad4dd79"
+    },
+    {
+      "seed": "v3-probability-audit-0",
+      "scenario": "supply-priority",
+      "months": 60,
+      "trial": 0,
+      "period": "322-4",
+      "food": 64,
+      "treasury": 62.5,
+      "weakest": 56,
+      "grainUnmetPercent": 0.3,
+      "warsStarted": 0,
+      "crisesStarted": 13,
+      "actionCounts": {
+        "secure_food": 66,
+        "diplomatic_overture": 29,
+        "coerce_neighbor": 4,
+        "mobilize": 3,
+        "open_trade": 82,
+        "fortify_frontier": 41,
+        "seek_alignment": 2,
+        "accept_alignment": 1,
+        "consolidate": 12
+      },
+      "fingerprint": "d5a7c077"
+    },
+    {
+      "seed": "v3-probability-audit-0",
+      "scenario": "culture-and-threat",
+      "months": 60,
+      "trial": 0,
+      "period": "322-4",
+      "food": 33.75,
+      "treasury": 29,
+      "weakest": 0,
+      "grainUnmetPercent": 0.9,
+      "warsStarted": 0,
+      "crisesStarted": 26,
+      "actionCounts": {
+        "secure_food": 47,
+        "diplomatic_overture": 62,
+        "coerce_neighbor": 37,
+        "open_trade": 36,
+        "mobilize": 6,
+        "fortify_frontier": 31,
+        "seek_alignment": 3,
+        "deescalate": 2,
+        "consolidate": 16
+      },
+      "fingerprint": "0c643575"
+    },
+    {
+      "seed": "v3-probability-audit-0",
+      "scenario": "50-year-prehistory",
+      "months": 600,
+      "trial": 0,
+      "period": "317-4",
+      "food": 51.25,
+      "treasury": 30.5,
+      "weakest": 0,
+      "grainUnmetPercent": 0.3,
+      "warsStarted": null,
+      "crisesStarted": null,
+      "actionCounts": {},
+      "fingerprint": "37331921",
+      "completedWars": 1,
+      "crisisTypes": [
+        "famine",
+        "demon_raid",
+        "flood",
+        "wildfire"
+      ]
+    },
+    {
+      "seed": "v3-probability-audit-1",
+      "scenario": "standard",
+      "months": 60,
+      "trial": 0,
+      "period": "322-4",
+      "food": 55.2,
+      "treasury": 53.2,
+      "weakest": 30,
+      "grainUnmetPercent": 0,
+      "warsStarted": 0,
+      "crisesStarted": 16,
+      "actionCounts": {
+        "seek_alignment": 11,
+        "open_trade": 93,
+        "secure_food": 85,
+        "consolidate": 24,
+        "fortify_frontier": 68,
+        "coerce_neighbor": 3,
+        "diplomatic_overture": 15,
+        "accept_alignment": 1
+      },
+      "fingerprint": "6c611c49"
+    },
+    {
+      "seed": "v3-probability-audit-1",
+      "scenario": "alternate-trial",
+      "months": 60,
+      "trial": 1,
+      "period": "322-4",
+      "food": 61.2,
+      "treasury": 59,
+      "weakest": 56,
+      "grainUnmetPercent": 0,
+      "warsStarted": 0,
+      "crisesStarted": 13,
+      "actionCounts": {
+        "secure_food": 80,
+        "coerce_neighbor": 4,
+        "fortify_frontier": 82,
+        "diplomatic_overture": 15,
+        "open_trade": 92,
+        "seek_alignment": 8,
+        "consolidate": 18,
+        "deescalate": 1
+      },
+      "fingerprint": "16c72e47"
+    },
+    {
+      "seed": "v3-probability-audit-1",
+      "scenario": "strict",
+      "months": 60,
+      "trial": 0,
+      "period": "322-4",
+      "food": 55.4,
+      "treasury": 69.6,
+      "weakest": 53,
+      "grainUnmetPercent": 0,
+      "warsStarted": 0,
+      "crisesStarted": 13,
+      "actionCounts": {
+        "open_trade": 141,
+        "coerce_neighbor": 12,
+        "secure_food": 70,
+        "seek_alignment": 11,
+        "diplomatic_overture": 11,
+        "fortify_frontier": 33,
+        "consolidate": 20,
+        "accept_alignment": 1,
+        "mobilize": 1
+      },
+      "fingerprint": "4eef5e03"
+    },
+    {
+      "seed": "v3-probability-audit-1",
+      "scenario": "broad-choice",
+      "months": 60,
+      "trial": 0,
+      "period": "322-4",
+      "food": 59.6,
+      "treasury": 51.8,
+      "weakest": 24,
+      "grainUnmetPercent": 0,
+      "warsStarted": 0,
+      "crisesStarted": 17,
+      "actionCounts": {
+        "secure_food": 82,
+        "open_trade": 82,
+        "consolidate": 43,
+        "seek_alignment": 10,
+        "coerce_neighbor": 8,
+        "fortify_frontier": 65,
+        "diplomatic_overture": 10
+      },
+      "fingerprint": "81a661cb"
+    },
+    {
+      "seed": "v3-probability-audit-1",
+      "scenario": "supply-priority",
+      "months": 60,
+      "trial": 0,
+      "period": "322-4",
+      "food": 63.2,
+      "treasury": 59.4,
+      "weakest": 37,
+      "grainUnmetPercent": 0,
+      "warsStarted": 0,
+      "crisesStarted": 15,
+      "actionCounts": {
+        "secure_food": 95,
+        "consolidate": 19,
+        "seek_alignment": 11,
+        "coerce_neighbor": 3,
+        "open_trade": 100,
+        "diplomatic_overture": 14,
+        "fortify_frontier": 55,
+        "mobilize": 3
+      },
+      "fingerprint": "b22dd227"
+    },
+    {
+      "seed": "v3-probability-audit-1",
+      "scenario": "culture-and-threat",
+      "months": 60,
+      "trial": 0,
+      "period": "322-4",
+      "food": 53,
+      "treasury": 59.8,
+      "weakest": 31,
+      "grainUnmetPercent": 0,
+      "warsStarted": 0,
+      "crisesStarted": 16,
+      "actionCounts": {
+        "seek_alignment": 6,
+        "open_trade": 111,
+        "secure_food": 76,
+        "diplomatic_overture": 14,
+        "fortify_frontier": 83,
+        "coerce_neighbor": 2,
+        "consolidate": 8
+      },
+      "fingerprint": "f078c93c"
+    },
+    {
+      "seed": "v3-probability-audit-1",
+      "scenario": "50-year-prehistory",
+      "months": 600,
+      "trial": 0,
+      "period": "317-4",
+      "food": 56.4,
+      "treasury": 61.6,
+      "weakest": 50,
+      "grainUnmetPercent": 0,
+      "warsStarted": null,
+      "crisesStarted": null,
+      "actionCounts": {},
+      "fingerprint": "bc69f15f",
+      "completedWars": 0,
+      "crisisTypes": [
+        "demon_raid",
+        "flood",
+        "famine"
+      ]
+    },
+    {
+      "seed": "v3-probability-audit-2",
+      "scenario": "standard",
+      "months": 60,
+      "trial": 0,
+      "period": "322-4",
+      "food": 64.5,
+      "treasury": 58.67,
+      "weakest": 52,
+      "grainUnmetPercent": 0,
+      "warsStarted": 0,
+      "crisesStarted": 16,
+      "actionCounts": {
+        "seek_alignment": 25,
+        "consolidate": 21,
+        "coerce_neighbor": 3,
+        "secure_food": 82,
+        "open_trade": 127,
+        "diplomatic_overture": 12,
+        "fortify_frontier": 89,
+        "accept_alignment": 1
+      },
+      "fingerprint": "6750310f"
+    },
+    {
+      "seed": "v3-probability-audit-2",
+      "scenario": "alternate-trial",
+      "months": 60,
+      "trial": 1,
+      "period": "322-4",
+      "food": 60.67,
+      "treasury": 57.67,
+      "weakest": 53,
+      "grainUnmetPercent": 0,
+      "warsStarted": 0,
+      "crisesStarted": 16,
+      "actionCounts": {
+        "seek_alignment": 41,
+        "coerce_neighbor": 10,
+        "secure_food": 70,
+        "open_trade": 114,
+        "fortify_frontier": 63,
+        "mobilize": 3,
+        "diplomatic_overture": 41,
+        "consolidate": 17,
+        "deescalate": 1
+      },
+      "fingerprint": "0e7a352f"
+    },
+    {
+      "seed": "v3-probability-audit-2",
+      "scenario": "strict",
+      "months": 60,
+      "trial": 0,
+      "period": "322-4",
+      "food": 54.83,
+      "treasury": 63,
+      "weakest": 51,
+      "grainUnmetPercent": 0,
+      "warsStarted": 0,
+      "crisesStarted": 17,
+      "actionCounts": {
+        "coerce_neighbor": 9,
+        "seek_alignment": 41,
+        "secure_food": 58,
+        "open_trade": 155,
+        "fortify_frontier": 36,
+        "diplomatic_overture": 38,
+        "mobilize": 3,
+        "consolidate": 17,
+        "accept_alignment": 3
+      },
+      "fingerprint": "66ddde1b"
+    },
+    {
+      "seed": "v3-probability-audit-2",
+      "scenario": "broad-choice",
+      "months": 60,
+      "trial": 0,
+      "period": "322-4",
+      "food": 72.17,
+      "treasury": 52.33,
+      "weakest": 48,
+      "grainUnmetPercent": 0,
+      "warsStarted": 0,
+      "crisesStarted": 16,
+      "actionCounts": {
+        "open_trade": 100,
+        "seek_alignment": 28,
+        "consolidate": 51,
+        "fortify_frontier": 72,
+        "secure_food": 88,
+        "diplomatic_overture": 12,
+        "coerce_neighbor": 4,
+        "deescalate": 2,
+        "mobilize": 2,
+        "accept_alignment": 1
+      },
+      "fingerprint": "97f055c2"
+    },
+    {
+      "seed": "v3-probability-audit-2",
+      "scenario": "supply-priority",
+      "months": 60,
+      "trial": 0,
+      "period": "322-4",
+      "food": 68.33,
+      "treasury": 59,
+      "weakest": 53,
+      "grainUnmetPercent": 0,
+      "warsStarted": 0,
+      "crisesStarted": 16,
+      "actionCounts": {
+        "fortify_frontier": 56,
+        "seek_alignment": 23,
+        "consolidate": 9,
+        "coerce_neighbor": 7,
+        "secure_food": 95,
+        "diplomatic_overture": 38,
+        "open_trade": 128,
+        "mobilize": 2,
+        "accept_alignment": 2
+      },
+      "fingerprint": "d9e84424"
+    },
+    {
+      "seed": "v3-probability-audit-2",
+      "scenario": "culture-and-threat",
+      "months": 60,
+      "trial": 0,
+      "period": "322-4",
+      "food": 59.83,
+      "treasury": 61.67,
+      "weakest": 52,
+      "grainUnmetPercent": 0,
+      "warsStarted": 0,
+      "crisesStarted": 16,
+      "actionCounts": {
+        "seek_alignment": 24,
+        "fortify_frontier": 103,
+        "coerce_neighbor": 3,
+        "secure_food": 66,
+        "open_trade": 146,
+        "diplomatic_overture": 16,
+        "consolidate": 2
+      },
+      "fingerprint": "3e0bd38c"
+    },
+    {
+      "seed": "v3-probability-audit-2",
+      "scenario": "50-year-prehistory",
+      "months": 600,
+      "trial": 0,
+      "period": "317-4",
+      "food": 62,
+      "treasury": 60,
+      "weakest": 54,
+      "grainUnmetPercent": 0,
+      "warsStarted": null,
+      "crisesStarted": null,
+      "actionCounts": {},
+      "fingerprint": "b15bffd2",
+      "completedWars": 0,
+      "crisisTypes": [
+        "wildfire",
+        "flood"
+      ]
+    }
+  ],
+  "comparisonSweep": [
+    {
+      "model": {
+        "maxRegret": 0,
+        "costWeight": 1,
+        "temperature": 6
+      },
+      "wars": 0,
+      "settlements": [],
+      "conditions": [
+        {
+          "food": 60,
+          "cohesion": 64,
+          "treasury": 61,
+          "defense": 59,
+          "sovereignty": 58
+        },
+        {
+          "food": 58,
+          "cohesion": 86,
+          "treasury": 58,
+          "defense": 57,
+          "sovereignty": 58
+        },
+        {
+          "food": 54,
+          "cohesion": 72,
+          "treasury": 54,
+          "defense": 84,
+          "sovereignty": 55
+        },
+        {
+          "food": 58,
+          "cohesion": 100,
+          "treasury": 55,
+          "defense": 99,
+          "sovereignty": 55
+        }
+      ]
+    },
+    {
+      "model": {
+        "maxRegret": 0,
+        "costWeight": 3,
+        "temperature": 3
+      },
+      "wars": 0,
+      "settlements": [],
+      "conditions": [
+        {
+          "food": 60,
+          "cohesion": 60,
+          "treasury": 61,
+          "defense": 59,
+          "sovereignty": 58
+        },
+        {
+          "food": 58,
+          "cohesion": 68,
+          "treasury": 58,
+          "defense": 69,
+          "sovereignty": 58
+        },
+        {
+          "food": 60,
+          "cohesion": 65,
+          "treasury": 55,
+          "defense": 64,
+          "sovereignty": 59
+        },
+        {
+          "food": 58,
+          "cohesion": 99,
+          "treasury": 58,
+          "defense": 98,
+          "sovereignty": 54
+        }
+      ]
+    },
+    {
+      "model": {
+        "maxRegret": 1,
+        "costWeight": 2,
+        "temperature": 3
+      },
+      "wars": 0,
+      "settlements": [],
+      "conditions": [
+        {
+          "food": 60,
+          "cohesion": 54,
+          "treasury": 67,
+          "defense": 54,
+          "sovereignty": 57
+        },
+        {
+          "food": 58,
+          "cohesion": 55,
+          "treasury": 73,
+          "defense": 83,
+          "sovereignty": 56
+        },
+        {
+          "food": 58,
+          "cohesion": 65,
+          "treasury": 59,
+          "defense": 96,
+          "sovereignty": 54
+        },
+        {
+          "food": 58,
+          "cohesion": 63,
+          "treasury": 60,
+          "defense": 99,
+          "sovereignty": 54
+        }
+      ]
+    },
+    {
+      "model": {
+        "maxRegret": 1,
+        "costWeight": 3,
+        "temperature": 6
+      },
+      "wars": 0,
+      "settlements": [],
+      "conditions": [
+        {
+          "food": 67,
+          "cohesion": 57,
+          "treasury": 57,
+          "defense": 60,
+          "sovereignty": 58
+        },
+        {
+          "food": 58,
+          "cohesion": 56,
+          "treasury": 62,
+          "defense": 97,
+          "sovereignty": 57
+        },
+        {
+          "food": 59,
+          "cohesion": 68,
+          "treasury": 53,
+          "defense": 59,
+          "sovereignty": 54
+        },
+        {
+          "food": 58,
+          "cohesion": 72,
+          "treasury": 59,
+          "defense": 99,
+          "sovereignty": 54
+        }
+      ]
+    },
+    {
+      "model": {
+        "maxRegret": 0,
+        "costWeight": 0.15,
+        "temperature": 3
+      },
+      "wars": 0,
+      "settlements": [],
+      "conditions": [
+        {
+          "food": 60,
+          "cohesion": 63,
+          "treasury": 61,
+          "defense": 56,
+          "sovereignty": 57
+        },
+        {
+          "food": 58,
+          "cohesion": 73,
+          "treasury": 59,
+          "defense": 70,
+          "sovereignty": 58
+        },
+        {
+          "food": 59,
+          "cohesion": 65,
+          "treasury": 56,
+          "defense": 71,
+          "sovereignty": 54
+        },
+        {
+          "food": 58,
+          "cohesion": 100,
+          "treasury": 55,
+          "defense": 99,
+          "sovereignty": 55
+        }
+      ]
+    },
+    {
+      "model": {
+        "mode": "strict"
+      },
+      "wars": 1,
+      "settlements": [
+        "negotiated_ceasefire"
+      ],
+      "conditions": [
+        {
+          "food": 36,
+          "cohesion": 8,
+          "treasury": 9,
+          "defense": 79,
+          "sovereignty": 9
+        },
+        {
+          "food": 37,
+          "cohesion": 34,
+          "treasury": 36,
+          "defense": 30,
+          "sovereignty": 57
+        },
+        {
+          "food": 54,
+          "cohesion": 96,
+          "treasury": 59,
+          "defense": 56,
+          "sovereignty": 59
+        },
+        {
+          "food": 54,
+          "cohesion": 100,
+          "treasury": 54,
+          "defense": 56,
+          "sovereignty": 54
+        }
+      ]
+    }
+  ],
+  "status": "Before local grain supply was connected to famine recovery",
+  "comparisonSweepSeed": "v3-race-history-600",
+  "comparisonSweepGeometry": {
+    "width": 48,
+    "height": 32,
+    "plateCount": 8,
+    "nationCount": 4,
+    "months": 600
+  }
+}

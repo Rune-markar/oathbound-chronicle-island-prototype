@@ -124,7 +124,7 @@ test("複数シードの24か月一括進行と保存復元を挟んだ月次進
 test("異なる50年史は市場欠損で全国家を崩壊させず、国家条件と戦争・平和の多様性を保つ", async (t) => {
   const warCounts = [];
   const outcomes = [];
-  for (const seed of ["v3-race-history-600", "conflict-history-600-a", "feedback-history-600-b"]) {
+  for (const seed of ["v3-probability-audit-0", "conflict-history-600-a", "feedback-history-600-b"]) {
     const { runtime, options } = fixture(seed);
     const simulation = await buildV3WorldPrehistory(runtime, options, { months: 600 });
     const conditions = Object.values(simulation.generatedWorld.geopolitics.nationStates);

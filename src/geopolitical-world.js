@@ -1,3 +1,4 @@
+import { selectV3NationalDecision } from "./v3-simulation-model.js";
 import { fnv1aUtf16, unitFromHash } from "./determinism.js";
 import {
   deriveNationDecisionProfiles,
@@ -420,7 +421,7 @@ function stateConditionName(id) {
   return STATE_REASON_CONDITIONS.find((condition) => condition.id === id)?.name ?? id;
 }
 
-function selectNationalPull(runtime, period, nationId, decisionProfile, condition, passiveEffects, candidates) {
+function selectNationalPull(runtime, period, nationId, decisionProfile, condition, passiveEffects, candidates, options = {}) {
   const enriched = candidates.filter(Boolean).map((option) => ({
     ...option,
     situation: {
@@ -435,7 +436,11 @@ function selectNationalPull(runtime, period, nationId, decisionProfile, conditio
     actorId: nationId,
     temperature: 17,
   });
-  const { selected, ranked } = chooseStateReasonAction(condition, scored, passiveEffects);
+  const { selected, ranked, selection } = options.decisionModel
+    ? selectV3NationalDecision(condition, scored, passiveEffects, options.decisionModel, {
+      seed: runtime.terrain.seed, period, actorId: nationId, ...(options.decisionContext?.[nationId] ?? {}),
+    })
+    : chooseStateReasonAction(condition, scored, passiveEffects);
   const currentWeakest = weakestStateCondition(condition.stateReason?.conditions);
   return {
     ...selected,
@@ -444,6 +449,7 @@ function selectNationalPull(runtime, period, nationId, decisionProfile, conditio
     probability: selected.probability,
     passiveEffects: { ...passiveEffects },
     stateReason: selected.stateReason,
+    ...(selection ? { selection, factors: selected.factors } : {}),
     alternatives: ranked.map((option) => ({
       id: option.id,
       evaluation: option.evaluation,
@@ -452,6 +458,7 @@ function selectNationalPull(runtime, period, nationId, decisionProfile, conditio
       stateReasonValue: option.stateReason.value,
       stateReasonCost: option.stateReason.cost,
       weakestConditionId: option.stateReason.weakestConditionId,
+      ...(selection ? { factors: option.factors, excludedReason: option.excludedReason } : {}),
     })),
     decisionTraits: { ...(decisionProfile?.traits ?? {}) },
     temperamentId: decisionProfile?.leader?.temperamentId ?? null,
@@ -485,7 +492,7 @@ function monthlyNationPassiveEffects(condition, profile, context) {
   };
 }
 
-function chooseNationalPull(runtime, period, nationId, profiles, pairs, snapshot, decisionProfile) {
+function chooseNationalPull(runtime, period, nationId, profiles, pairs, snapshot, decisionProfile, options = {}) {
   const profile = profiles[nationId];
   const condition = snapshot.nationStates[nationId];
   const context = strategicContext(nationId, profiles, pairs, snapshot);
@@ -509,7 +516,7 @@ function chooseNationalPull(runtime, period, nationId, profiles, pairs, snapshot
       candidate("sustain_war", 126 + condition.readiness * 0.2 - exhaustion * 0.22, context.warOpponent.nationId,
         [driver("軍事脅威", 100), driver("動員水準", condition.readiness)], true,
         { benefit: condition.readiness * 0.04, danger: exhaustion * 0.1, threat: 8, relation: 0 }),
-    ]);
+    ], options);
   }
 
   const allianceCount = allianceCountFor(snapshot, nationId);
@@ -591,7 +598,7 @@ function chooseNationalPull(runtime, period, nationId, profiles, pairs, snapshot
         && crisis?.truceMonths === 0 && condition.readiness >= 62 && condition.offensiveIntent >= 45),
       { benefit: pressure * 0.08 + Math.max(0, coercionRatio - 1) * 6, danger: (100 - condition.readiness) * 0.05, threat: borderThreat * 0.06, relation: Math.max(0, -(crisis?.relation ?? 0)) * 0.05 }),
   ].filter(Boolean);
-  return selectNationalPull(runtime, period, nationId, decisionProfile, condition, passiveEffects, candidates);
+  return selectNationalPull(runtime, period, nationId, decisionProfile, condition, passiveEffects, candidates, options);
 }
 
 function eventCopy(period, nation, target, decision) {
@@ -633,13 +640,14 @@ function eventCopy(period, nation, target, decision) {
     summary: summaries[decision.pullId] ?? `${nation.name}は${targetText}${pull.name}を進めた。`,
     drivers: decision.drivers.sort((left, right) => right.value - left.value).slice(0, 3),
     score: Math.round(decision.score),
-    probability: Number(decision.probability) || 0,
+    probability: decision.selection?.deferred ? null : Number(decision.probability) || 0,
     alternatives: (decision.alternatives ?? []).map((alternative) => ({ ...alternative })),
     stateReason: decision.stateReason ? { ...decision.stateReason, conditions: { ...decision.stateReason.conditions } } : null,
     personalityFit: Number(decision.personalityFit) || 0,
     situation: { ...(decision.situation ?? {}) },
     decisionTraits: { ...(decision.decisionTraits ?? {}) },
     temperamentId: decision.temperamentId ?? null,
+    ...(decision.selection ? { selection: { ...decision.selection }, factors: { ...decision.factors } } : {}),
     tone: pull.tone,
   };
 }
@@ -711,6 +719,7 @@ function deferProtectedDecision(nation, condition, decision, protectedNationIds,
       ...decision,
       pullId: fallbackPullId,
       score: decision.score,
+      ...(decision.selection ? { probability: null, selection: { ...decision.selection, deferred: true, requestedId: requestedPullId, appliedId: fallbackPullId } } : {}),
       stateReason: fallbackStateReason,
       drivers: [...decision.drivers, driver("プレイヤー承認待ち", 100)],
     },
@@ -735,7 +744,7 @@ export function advanceGeopoliticalWorld(runtime, source, dateState, options = {
   const protectedNationIds = new Set(options.protectedNationIds ?? []);
   const decisionProfiles = deriveNationDecisionProfiles(runtime, options.raceDynamics);
   const decisions = runtime.nations.nations.map((nation) => {
-    const selected = chooseNationalPull(runtime, period, nation.id, profiles, pairs, snapshot, decisionProfiles[nation.id]);
+    const selected = chooseNationalPull(runtime, period, nation.id, profiles, pairs, snapshot, decisionProfiles[nation.id], options);
     return { nation, ...deferProtectedDecision(nation, snapshot.nationStates[nation.id], selected, protectedNationIds, period) };
   });
   const nationDeltas = {};
