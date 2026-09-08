@@ -1,7 +1,7 @@
 export const STATUS_LEDGER_META = Object.freeze({
   schemaVersion: 1,
   projectGeneration: "ver3",
-  lastAuditedAt: "2026-09-05",
+  lastAuditedAt: "2026-09-07",
   auditScope: Object.freeze({
     codexPrimaryTasks: 88,
     codexRange: "2026-08-02 — 2026-09-05",
@@ -25,6 +25,32 @@ const source = (label, href, ref, kind = "source") => Object.freeze({ label, hre
 const entry = (value) => Object.freeze({ updatedAt: "2026-08-11", ...value, sources: Object.freeze(value.sources) });
 
 export const STATUS_ENTRIES = Object.freeze([
+  entry({
+    id: "v3-continuous-campaign",
+    category: "implemented",
+    area: "Generation V3・人物史・統治・世界終局",
+    title: "同じ生成世界で仕事から統治・帝国と連邦の結末へ進む",
+    summary: "現地の仕事・探索・交易・軍務実績から地方任命、統治会計、主権、実在国家との外交、異なる制度条件の二終局へ進むV3の基本進行。",
+    evidence: "同じ生成地方・市場・国家・人物とV6保存に接続し、月次の統治会計、制度と合意の履歴、三段階の結末、結末後の年代記を保持する。旧V2の10階級と全行政の全面移植ではない。",
+    updatedAt: "2026-09-07",
+    sources: [
+      source("進行ドメイン", "./src/v3-campaign-system.js", "getV3CampaignView / performV3CampaignAction / advanceV3CampaignMonth"),
+      source("V3人物史と統治", "./src/v3-campaign-ui.js", "mountV3Campaign"),
+      source("統合確定", "./src/v3-system-kernel.js", "commitV3Action"),
+      source("進行回帰", "./tests/v3-campaign-system.test.mjs", "career / governance / endings / persistence"),
+      source("実装と検証記録", "./docs/gameplay-reviews/2026-09-07-v3-continuous-simulation.md", "review / scenarios / browser evidence"),
+    ],
+  }),
+  entry({
+    id: "v3-market-nation-feedback",
+    category: "implemented",
+    area: "Generation V3・経済・地政学・文化",
+    title: "実需給と国家判断の相互作用",
+    summary: "当月の未充足消費、物流、穀物備蓄を食料・財政・結束へ戻し、外交関係と現在文化が国境物流へ作用する。",
+    evidence: "世界月次の市場決算後に一回反映し、国家理性の次の判断へ接続。搬入は未充足需要を先に満たす。国家詳細に完了月と原因を表示する。",
+    updatedAt: "2026-09-07",
+    sources: [source("世界経済の接続", "./src/v3-world-feedback.js", "applyV3MarketNationFeedback"), source("実在庫市場", "./src/v3-market-economy.js", "advanceV3MarketEconomyMonth")],
+  }),
   entry({
     id: "v3-solo-auto-mode",
     category: "implemented",

@@ -52,6 +52,8 @@
       </header>
 
       <nav class="v3-auto-toolbar" aria-label="ソロプレイ自動モード">
+        <button type="button" id="v3CampaignOpen" aria-haspopup="dialog">人物史・統治</button>
+        <span id="v3CampaignHint" class="v3-campaign-hint"></span>
         <button type="button" id="v3AutoOpen" aria-pressed="false">自動モード</button>
         <div id="v3AutoBar" hidden>
           <div><strong id="v3AutoStatus" role="status"></strong><small id="v3AutoProgress"></small></div>
@@ -173,6 +175,13 @@
       </article>
     </section>
     <div class="v3-toast" id="v3Toast" role="status" aria-live="polite"></div>
+    <section class="v3-campaign-modal" id="v3CampaignModal" role="dialog" aria-modal="true" aria-labelledby="v3CampaignTitle" hidden>
+      <article class="v3-campaign-card">
+        <header><div><small id="v3CampaignStage">人物史</small><h1 id="v3CampaignTitle">人物史・統治</h1></div><button type="button" data-campaign-close>閉じる</button></header>
+        <p id="v3CampaignResult" class="v3-campaign-result" role="status" aria-live="polite"></p>
+        <div id="v3CampaignContent" class="v3-campaign-content"></div>
+      </article>
+    </section>
     <script type="module" src="./src/v3-app.js"></script>
   </body>
 </html>

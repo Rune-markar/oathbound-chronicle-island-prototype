@@ -69,11 +69,20 @@ export function autoWorldEvents(before, after, config, context, state) {
       include(context.settlementById.get(route.sourceId));
       include(context.settlementById.get(route.destinationId));
     }
+    const campaign = state.campaign;
+    if (campaign?.stage === "governor") {
+      const office = owners[campaign.regionId];
+      if (office?.nationId === campaign.nationId && office.lordId === "v3-player") include({ regionId: campaign.regionId, nationId: campaign.nationId });
+    } else if (["sovereign", "ending"].includes(campaign?.stage) && campaign.nationId) {
+      // A ruler's interests follow current territory even when the player travels abroad.
+      // Neither a dissolved realm nor a former appointment creates a permanent watch area.
+      for (const [regionId, office] of Object.entries(owners)) if (office.nationId === campaign.nationId) include({ regionId, nationId: campaign.nationId });
+    }
     if (state.military?.activeMission?.nationId) nations.add(state.military.activeMission.nationId);
   }
   if (config.watchNation) nations.add(config.watchNation);
   const all = config.worldScope === "all" || !context;
-  const nationName = (id) => context?.runtime?.nationById?.get(id)?.name ?? id ?? "国家";
+  const nationName = (id) => after?.generatedWorld?.regionalDomains?.independentPolities?.[id]?.name ?? context?.runtime?.nationById?.get(id)?.name ?? id ?? "国家";
   const priorWars = new Set(before?.generatedWorld?.worldWars?.activeWars?.map((v) => v.id));
   const priorCrises = new Set(before?.externalCrises?.activeCrises?.map((v) => v.id));
   return [

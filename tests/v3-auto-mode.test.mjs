@@ -332,6 +332,55 @@ test("related-country stop filters distant crises and shows the affected place",
   assert.equal(autoWorldStop(after, after, state.autoMode.config, context, state), null);
 });
 
+test("rulers traveling abroad still stop for current territory and their own country's war", () => {
+  const { context, state } = fixture(); // The traveler is physically in n1/r1.
+  const before = { generatedWorld: { worldWars: { activeWars: [] } }, externalCrises: { activeCrises: [] } };
+  const after = {
+    generatedWorld: {
+      regionalDomains: { regionStates: { r1: { nationId: "n1" }, r2: { nationId: "player-realm" }, r3: { nationId: "player-realm" } }, independentPolities: { "player-realm": { name: "現在の自治国" } } },
+      worldWars: { activeWars: [
+        { id: "home-war", attackerNationId: "n4", defenderNationId: "player-realm", fronts: [] },
+        { id: "remote-war", attackerNationId: "n5", defenderNationId: "n6", fronts: [] },
+      ] },
+    },
+    externalCrises: { activeCrises: [
+      { id: "new-territory", regionId: "r3", nationId: "former-owner", name: "洪水" },
+      { id: "remote-crisis", regionId: "r7", nationId: "n7", name: "山火事" },
+    ] },
+  };
+  for (const stage of ["sovereign", "ending"]) {
+    state.campaign = { stage, nationId: "player-realm", regionId: "r2" };
+    const events = autoWorldEvents(before, after, state.autoMode.config, context, state);
+    assert.deepEqual(events.map((event) => event.stop), [true, false, true, false]);
+    assert.match(events[0].message, /現在の自治国/);
+    const recorded = recordAutoAction(state.autoMode, state, state, { kind: "month" }, context, before, after);
+    assert.equal(recorded.summary.remoteEvents, 2, "unrelated countries stay aggregated as distant events");
+    assert.ok(recorded.highlights.some((message) => message.includes("現在の自治国")));
+  }
+  const fallen = structuredClone(after);
+  fallen.generatedWorld.regionalDomains.regionStates.r2.nationId = "n3";
+  fallen.generatedWorld.regionalDomains.regionStates.r3.nationId = "n3";
+  assert.ok(autoWorldEvents(before, fallen, state.autoMode.config, context, state).every((event) => !event.stop), "a dissolved realm does not keep its old land or country as watch targets");
+});
+
+test("an absent governor watches only an appointment still held under the current owner", () => {
+  const { context, state } = fixture();
+  state.campaign = { stage: "governor", nationId: "n2", regionId: "r2" };
+  const before = { externalCrises: { activeCrises: [] } };
+  const after = {
+    generatedWorld: { regionalDomains: { regionStates: { r1: { nationId: "n1" }, r2: { nationId: "n2", lordId: "v3-player" } } } },
+    externalCrises: { activeCrises: [{ id: "appointed-crisis", regionId: "r2", nationId: "n2", name: "洪水" }] },
+  };
+  assert.equal(autoWorldEvents(before, after, state.autoMode.config, context, state)[0].stop, true);
+  after.generatedWorld.regionalDomains.regionStates.r2.lordId = "replacement-lord";
+  assert.equal(autoWorldEvents(before, after, state.autoMode.config, context, state)[0].stop, false, "dismissed office is not watched");
+  after.generatedWorld.regionalDomains.regionStates.r2 = { nationId: "n3", lordId: "v3-player" };
+  assert.equal(autoWorldEvents(before, after, state.autoMode.config, context, state)[0].stop, false, "a former owner's appointment does not authorize watching a conquered region");
+  after.generatedWorld.regionalDomains.regionStates.r2 = { nationId: "n2", lordId: "v3-player" };
+  state.campaign.stage = "commissioned";
+  assert.equal(autoWorldEvents(before, after, state.autoMode.config, context, state)[0].stop, false, "a local commission is not a governorship");
+});
+
 test("trade preview uses recorded sell quotes and marks old buy-only reports unknown", () => {
   const { state } = tradeFixture();
   const view = autoTradePreview(state, state.autoMode.config);

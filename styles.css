@@ -10900,12 +10900,12 @@ body.is-battle-preparation-open { overflow: hidden; }
 .battle-deployment-panel { display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; min-width: 0; min-height: 0; padding: 14px 16px 10px; background: rgba(12,27,28,.78); }
 .battle-deployment-panel > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .battle-placement-mode { display: grid; grid-template-columns: repeat(2, minmax(98px, 1fr)); gap: 4px; }
-.battle-placement-mode button { display: grid; padding: 6px 10px; border: 1px solid #465c58; border-radius: 4px; color: #8da198; background: #1d3434; cursor: pointer; }
+.battle-placement-mode button { display: grid; min-height: 44px; padding: 6px 10px; border: 1px solid #465c58; border-radius: 4px; color: #8da198; background: #1d3434; cursor: pointer; }
 .battle-placement-mode button strong { font-size: 9px; }
 .battle-placement-mode button small { margin-top: 2px; color: #687e77; font-size: 6px; }
 .battle-placement-mode button.is-active { border-color: #d1a951; color: #f1dfb2; background: #3a4a3e; box-shadow: inset 0 -2px #d3ad57; }
 .battle-preparation-formations { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; margin-top: 10px; }
-.battle-preparation-formations button { display: grid; grid-template-columns: 1fr auto; gap: 2px 7px; padding: 7px 8px; border: 1px solid #3d5552; border-radius: 5px; color: #9fb0a9; background: rgba(29,50,50,.9); text-align: left; cursor: pointer; }
+.battle-preparation-formations button { display: grid; grid-template-columns: 1fr auto; gap: 2px 7px; min-height: 44px; padding: 7px 8px; border: 1px solid #3d5552; border-radius: 5px; color: #9fb0a9; background: rgba(29,50,50,.9); text-align: left; cursor: pointer; }
 .battle-preparation-formations button > span { color: #d6c49d; font: 600 10px serif; }
 .battle-preparation-formations button > small { color: #82948e; font: 700 6px system-ui, sans-serif; }
 .battle-preparation-formations button > em { grid-column: 1 / -1; overflow: hidden; color: #6f8580; font: normal 6px/1.35 system-ui, sans-serif; text-overflow: ellipsis; white-space: nowrap; }

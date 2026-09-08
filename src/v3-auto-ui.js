@@ -218,7 +218,7 @@ export function mountV3AutoMode({ read, writeAuto, commit, save, render, toast, 
         </div></fieldset>
         <fieldset><legend>速度・世界の変化</legend><div class="v3-auto-grid">
           ${select("speed", "実行速度", option(1, "ゆっくり · 1倍") + option(2, "通常 · 2倍") + option(4, "速い · 4倍"))}
-          ${select("worldScope", "世界変化で停止する範囲", option("relevant", "現在地・目的地・販路の国と注目国家") + option("all", "世界全体"))}
+          ${select("worldScope", "世界変化で停止する範囲", option("relevant", "現在地・目的地・販路・統治国と注目国家") + option("all", "世界全体"))}
           ${select("watchNation", "注目国家", nations)}
           ${checkbox("stopWar", "新しい戦争が始まったら停止")}${checkbox("stopCrisis", "新しい外部危機が発生したら停止")}
         </div></fieldset>

@@ -49,3 +49,7 @@ The only game entry is `index.html`. `group-battle.html` requires a pending V3 m
 Solo automation verification also uses Node.js 22 and `tests/v3-auto-mode.test.mjs`. In the canonical browser flow, select a preset, change detailed options, start/pause/resume, interrupt with manual input, and reload to prove settings persist while execution stays paused. Cover onsite trade conditions, monthly observation, and desktop / 390×844 controls. This is a development-host check; push, publication and NAS reflection remain separate.
 
 As of 2026-09-07, also verify discovery stopping and survey return, reports surviving movement logs, map browsing during execution, action-boundary interruption, trade plan revision preserving spent budget and cargo, current-price single sale and cargo return, related-world-event filtering, and the shared combat forecast. The specification is `docs/superpowers/specs/2026-09-07-v3-auto-experience.md`.
+
+## Continuous V3 campaign verification (2026-09-07)
+
+Use Node.js 22, `npm run check`, and the canonical `index.html` flow. Open 人物史・統治, earn local service, obtain a generated-region appointment, exercise policies and diplomacy, complete both institutional endings in separate worlds, and reload before continuing the same world. Inspect treasury, real market stocks, current ownership and monthly chronology. Domain scenarios and browser actions must be recorded separately. Test PC and 390×844 controls, blocked choices, keyboard focus and failure recovery. Close every task-owned browser and local server before handoff.

@@ -26,6 +26,7 @@ import {
   createV3MarketEconomy,
   normalizeV3MarketEconomy,
 } from "./v3-market-economy.js";
+import { applyV3MarketNationFeedback } from "./v3-world-feedback.js";
 
 export const V3_WORLD_SIMULATION_VERSION = 4;
 export const V3_PRESENT_DATE = Object.freeze({ year: 317, month: 4 });
@@ -443,19 +444,20 @@ function advanceOneMonth(runtime, simulation, options = {}) {
   const elapsedMonths = simulation.elapsedMonths + 1;
   const secession = maybeDeclareSecession(runtime, state, elapsedMonths, simulation.autonomyStrain);
   state = secession.state;
-  const marketEconomy = advanceV3MarketEconomyMonth(
+  const advancedMarketEconomy = advanceV3MarketEconomyMonth(
     runtime,
     simulation.marketEconomy,
     state,
     state.generatedWorld,
     externalCrises,
   );
+  const { generatedWorld, marketEconomy } = applyV3MarketNationFeedback(state.generatedWorld, advancedMarketEconomy, date);
   const next = {
     ...simulation,
     year: state.year,
     month: state.month,
     elapsedMonths,
-    generatedWorld: state.generatedWorld,
+    generatedWorld,
     externalCrises,
     marketEconomy,
     autonomyStrain: secession.autonomyStrain,
@@ -632,6 +634,7 @@ export function getV3NationDossier(runtime, simulation, nationId, historyIndex =
     wars,
     crises,
     condition,
+    marketFeedback: map.isCurrent ? simulation.marketEconomy?.nationFeedback?.[nationId] ?? null : null,
     relations,
     latestAction,
     decisionProfile,

@@ -379,6 +379,38 @@ test("V3集団戦の戦闘前編成を中止すると作戦地点から再開で
   assert.equal(storage.getItem(V3_GROUP_BATTLE_BRIDGE_KEY) !== null, true);
 });
 
+test("軍務の戦果だけで経験の閾値に達した主人公もレベルが上がる", () => {
+  const context = createV3WorldContext(fixtureRuntime(), "v3-military-experience");
+  const state = startV3MilitaryMission(context, createV3FieldState(context));
+  const mission = state.military.activeMission;
+  const returned = applyV3GroupBattleReturn(state, {
+    version: 1,
+    requestId: `${mission.id}:attempt-1`,
+    missionId: mission.id,
+    battleId: mission.battleId,
+    status: "completed",
+    result: { winner: "player", battleId: mission.battleId, player: { casualties: 0 }, enemy: { casualties: 0 } },
+  });
+  assert.equal(returned.player.xp, 20);
+  assert.equal(returned.player.level, 2);
+  assert.equal(returned.player.maxHp, state.player.maxHp + 5);
+  assert.equal(returned.player.hp, returned.player.maxHp);
+  assert.equal(state.player.level, 1);
+});
+
+test("長期プレイで購入済みの65個以上の道具が再読込で消えない", () => {
+  const context = createV3WorldContext(fixtureRuntime(), "v3-inventory-roundtrip");
+  let state = createV3FieldState(context);
+  state.player.gold = 500;
+  state.pendingEncounter = { type: "npc", name: "薬草売り", price: 5, tileKey: "28,28" };
+  for (let count = 0; count < 70; count += 1) state = resolveV3Encounter(context, state, "buy");
+  assert.equal(state.player.inventory.length, 70);
+  assert.equal(state.player.gold, 150);
+  const restored = normalizeV3FieldState(context, JSON.parse(JSON.stringify(state)));
+  assert.deepEqual(restored.player.inventory, state.player.inventory);
+  assert.equal(restored.player.gold, state.player.gold);
+});
+
 test("国家需要・街道・地域生態から目的を持つ疎な行商と敵を決定論的に計画する", () => {
   const runtime = purposefulActorRuntime();
   const context = createV3WorldContext(runtime, "encounter-fixture");

@@ -405,7 +405,7 @@ function candidateDecisionProfile(state, settlement, role, candidateId, seed) {
   let runtime = null;
   let nationId = settlement.nationId ?? null;
   let raceId = nationId ? state.merchantCompanyContext?.nationPeopleById?.[nationId] ?? null : null;
-  if (!nationId || !raceId) {
+  if ((!nationId || !raceId) && !state.merchantCompanyContext) {
     try { runtime = getGeneratedWorldView(state).runtime; } catch { runtime = null; }
     nationId ??= runtime?.regionById.get(settlement.regionId)?.nationId
       ?? state.generatedWorld?.playerNationId

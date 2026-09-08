@@ -79,6 +79,16 @@ test("地方・階級・信仰は同じ種族人口の独立した投影とし�
   assert.ok(targetLossRate > comparisonLossRate);
 });
 
+test("人口投影は保存を繰り返しても人数と気質構成が変わらない", () => {
+  const runtime = runtimeFixture();
+  const initial = createRaceDecisionWorldState(runtime, null, { year: 300, month: 1 });
+  let restored = initial;
+  for (let count = 0; count < 20; count += 1) {
+    restored = createRaceDecisionWorldState(runtime, JSON.parse(JSON.stringify(restored)), { year: 300, month: 1 });
+    assert.deepEqual(restored, initial, `${count + 1}回目の再読込`);
+  }
+});
+
 test("迫害は協調型を抵抗と服従へ分化させ、戦争損失は強硬型を高率に減らす", () => {
   const base = createRaceState({
     raceId: "elf",

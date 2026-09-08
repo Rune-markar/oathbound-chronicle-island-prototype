@@ -184,6 +184,69 @@ test("貴族社会は領主承認を要し、信用不足の却下後も再申�
   assert.deepEqual(state.merchant.company.routes[0].jurisdictionIds.sort(), ["nation-noble", "nation-republic"]);
 });
 
+test("市場の支配が新興国へ変わると既存販路と支店は新しい営業資格まで休止し取得後に再開する", () => {
+  const { context, state: initial } = setup();
+  let state = qualifyForCompany(initial, context.settlements);
+  placeAt(state, context.settlements[0]);
+  state = foundV3MerchantCompany(context, state, { name: "国境商会", strategyId: "caravan" });
+  state = contributeV3CompanyCapital(state, 50);
+  state = startV3CharterApplication(context, state, "nation-republic", "standard_notice");
+  state = startV3CharterApplication(context, state, "nation-noble", "direct_audience");
+  state = resolveV3CharterApplication(context, state, state.merchant.company.charterApplications[0].id, "noble_share");
+  for (const roleId of ["caravan_master", "factor"]) {
+    const candidate = getV3MerchantView(context, state).candidates.find((entry) => entry.roleId === roleId);
+    state = recruitV3CompanyStaff(context, state, candidate.id);
+  }
+  let view = getV3MerchantView(context, state);
+  state = secureV3CompanyRoute(context, state, {
+    sourceId: context.settlements[0].id, destinationId: context.settlements[1].id,
+    commodityId: "grain", approachId: "steady", leaderId: view.routeLeaders[0].id,
+  });
+  state = openV3CompanyBranch(context, state, { formatId: "stall", launchId: "lean", managerId: view.branchManagers[0].id });
+  const successor = { id: "nation-new", name: "新生共和国", government: "共和国", peopleId: "dwarf" };
+  context.worldSimulation = { generatedWorld: { regionalDomains: {
+    regionStates: { "region-republic": { nationId: successor.id } },
+    independentPolities: { [successor.id]: successor },
+  } } };
+  view = getV3MerchantView(context, state);
+  assert.equal(view.marketSettlement.nationId, successor.id);
+  assert.equal(view.knownMarkets[0].nationId, successor.id);
+  assert.equal(view.marketOptions[0].licensed, false);
+  assert.equal(view.jurisdictions.find((entry) => entry.id === successor.id).procedure.id, "republic");
+  assert.equal(context.settlements[0].nationId, "nation-republic", "生成時の地図データを変更しない");
+  assert.throws(() => openV3CompanyBranch(context, state, {
+    formatId: "stall", launchId: "lean", managerId: view.branchManagers[0]?.id,
+  }), /新生共和国の営業資格/);
+  state = advanceV3CompanyMonth(context, state).state;
+  assert.equal(state.merchant.company.routes[0].status, "paused");
+  assert.equal(state.merchant.company.branches[0].status, "suspended");
+  assert.match(state.merchant.company.routes[0].pauseReason, /新生共和国/);
+  assert.equal(state.merchant.company.monthlyLedger[0].routeResults.length, 0);
+  assert.equal(state.merchant.company.monthlyLedger[0].branchResults.length, 0);
+  assert.equal(state.merchant.company.branches[0].preparationProgress, 0);
+  state = startV3CharterApplication(context, state, successor.id, "standard_notice");
+  assert.equal(state.merchant.company.routes[0].status, "active");
+  assert.equal(state.merchant.company.branches[0].status, "preparing");
+  assert.deepEqual(state.merchant.company.routes[0].jurisdictionIds.sort(), ["nation-new", "nation-noble"]);
+  state = advanceV3CompanyMonth(context, state).state;
+  assert.equal(state.merchant.company.branches[0].status, "open");
+});
+
+test("統治者を失った市場へ生成時の国家資格を流用しない", () => {
+  const { context, state: initial } = setup();
+  let state = qualifyForCompany(initial, context.settlements);
+  placeAt(state, context.settlements[0]);
+  state = foundV3MerchantCompany(context, state, { name: "旧王国商会", strategyId: "retail" });
+  state = startV3CharterApplication(context, state, "nation-republic", "standard_notice");
+  context.worldSimulation = { generatedWorld: { regionalDomains: {
+    regionStates: { "region-republic": { nationId: null } }, independentPolities: {},
+  } } };
+  const view = getV3MerchantView(context, state);
+  assert.equal(view.marketSettlement.nationId, null);
+  assert.equal(view.marketSettlement.nationName, "無所属");
+  assert.equal(view.marketOptions[0].licensed, false);
+});
+
 test("旧V3フィールドセーブへ交易・商会領域を加算し、V3画面の操作契約を保持する", async () => {
   const { context, state } = setup();
   delete state.merchant;
