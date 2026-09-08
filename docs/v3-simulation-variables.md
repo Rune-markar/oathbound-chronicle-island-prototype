@@ -51,3 +51,17 @@
 - デモと改善経緯は `gameplay-reviews/2026-09-08-v3-probability-lab.md`。
 
 概算地方・国家・市場を単位とするゲーム内仮定。全住民の家計や現実の民族の特性を統計推定したモデルではなく、外部ユーザーによる評価調査は未実施。
+
+
+## 追加した政策・交渉・物語変数（2026-09-08）
+
+- `rules.civicPolicies`: 採用候補と実計算で共用する11制度。税率、維持費、月次支持、生産率、輸送率、街道修復、災害軽減の係数を展開できる。
+- `rules.diplomacy` / `rules.diplomaticNeeds`: 加盟・使節・援助・行政移管・軍事威圧の実係数と、相手の5種類の要求。数値は計算コードと同じ定義を参照する。成立済み合意の維持は新規加盟より信頼8低く（最低35）し、月次の小さな変動による反転を抑える。戦争・不履行等の制約は残る。
+- `worldSimulation.civicState.regions`: 現在の支配・任官、支払の可否、実効制度、生息環境、保護区、通航協約。地方別に生産・物流・災害への作用を確認する。
+- `field.campaign.survey` / `mandates` / `stewardshipActs`: 見回り地点、任官前の異なる成果、独立に必要な実統治行動。
+- `field.campaign.diplomacy`: 提案内容、履行方法、信頼、合意と継続費用。既存V6の成立済み合意には互換フラグを補完する。
+- `field.campaign.lastMilitaryOutcome`: 実際の成功率・抽選値・成否。世界シード、試行、年月、対象に対して再現する。
+- `field.campaign.finalChoices` / `endingSnapshot`: 各段階の選択と税・環境等の持続効果、成立時の仲間と地方。
+- `field.campaign.lastReport` / `ledger`: 実差分と食料・危機・維持費などの原因。結果を再適用しない表示記録。
+
+各項目の作用先・コード参照は `src/v3-variable-catalog.js` に登録。詳しくは [政策外交とプレイヤー体験](./superpowers/specs/2026-09-08-v3-player-experience.md)。比較Workerは世界のみを進め、人物の公金会計を実行しないため、政策の支払状態は開始時点のものを維持する。財政も含む政策評価は通常の共通kernelまたは統治回帰シナリオを使う。

@@ -1,3 +1,4 @@
+import { getV3CivicRegion, getV3CivicProduction, civicPolicies, civicTotal } from "./v3-civic-policy.js";
 import {
   MERCHANT_COMMODITIES,
   getCommodityMarketFundamentals,
@@ -47,6 +48,7 @@ function marketWorld(runtime, date, generatedWorld) {
       toObjectId: marketEndpoint(road.toObjectId),
     })),
     activeWars: generatedWorld?.worldWars?.activeWars ?? [],
+    civicRegions: Object.fromEntries(domains.nationMap.regions.map((region) => [region.id, getV3CivicRegion(date?.civicState, generatedWorld, runtime, region.id)])),
     geopolitics: generatedWorld?.geopolitics,
     raceDynamics: generatedWorld?.raceDynamics,
     runtime: { ...runtime, nations: domains.nationMap, nationById: domains.nationById, regionById: domains.regionById },
@@ -85,7 +87,8 @@ function effectFor(world, externalCrises, settlement, commodityId) {
   const external = getV3ExternalCrisisMarketEffect(externalCrises, nationId, settlement.regionId);
   return {
     ...combineEffects(wartime, external, commodityId),
-    productionMultiplier: commodityId === "grain" && world.geopolitics?.nationStates?.[nationId]?.lastPullId === "secure_food" ? 1.15 : 1,
+    productionMultiplier: (commodityId === "grain" && world.geopolitics?.nationStates?.[nationId]?.lastPullId === "secure_food" ? 1.15 : 1)
+      * getV3CivicProduction(world.civicRegions[settlement.regionId], commodityId),
   };
 }
 
@@ -212,6 +215,11 @@ function moveRoadShipments(economy, world, period) {
     const right = economy.settlements[road.toObjectId];
     if (!left || !right) continue;
     const access = getV3TradeAccess(world.geopolitics, decisionProfiles, left.nationId, right.nationId, world.activeWars);
+    const institutionalAccess = left.nationId === right.nationId ? 1 : 1 + Math.max(...[left, right].map((market) => {
+      const civic = world.civicRegions[market.regionId];
+      return civic?.funded ? civicTotal(civicPolicies(civic.institutions), "tradeAccess") + (civic.shippingCharter ? 0.15 : 0) : 0;
+    }));
+    access.multiplier *= institutionalAccess;
     const roadCapacity = (Number(road.importance) || 1) * (Number(road.condition) || 0) / 100 * 1.5 * access.multiplier;
     for (const commodityId of Object.keys(MERCHANT_COMMODITIES)) {
       const leftGood = left.goods[commodityId];
@@ -246,7 +254,7 @@ function moveRoadShipments(economy, world, period) {
         destinationSettlementId: destination.id,
         destinationSettlementName: destination.name,
         hostileBorder: access.hostile,
-        tradeAccess: { diplomatic: round1(access.diplomatic), openness: round1(access.openness), multiplier: round1(access.multiplier) },
+        tradeAccess: { institutional: Number(institutionalAccess.toFixed(3)), diplomatic: round1(access.diplomatic), openness: round1(access.openness), multiplier: round1(access.multiplier) },
         consumedOnArrival,
         reason: destinationGood.shortage ? "不足市場への補給" : "価格差と在庫差の調整",
         summary: `${origin.name}から${destination.name}へ${MERCHANT_COMMODITIES[commodityId].name}${units}を輸送`,

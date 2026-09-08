@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { createV3VariableSnapshot, describeV3Variable, variableEntries, searchV3Variables, V3_VARIABLE_DOMAINS } from "../src/v3-variable-catalog.js";
+import { V3_INSTITUTIONS } from "../src/v3-civic-policy.js";
+import { V3_DIPLOMACY_RULES } from "../src/v3-campaign-diplomacy.js";
 import { V3_MODEL_PARAMETERS, normalizeV3SimulationModel, v3NationDecisionContext } from "../src/v3-simulation-model.js";
 import { runV3SimulationTrials } from "../src/v3-simulation-trials.js";
 import { buildGeneratedWorld, createGeneratedWorldState } from "../src/generated-world-system.js";
@@ -38,6 +40,9 @@ test("変数一覧は全階層をページ送りでき、原本を変えず、�
     assert.equal(description.effect, parameter.effect);
     assert.equal(snapshot.model[parameter.id], parameter.default);
   }
+  assert.equal(snapshot.rules.civicPolicies, V3_INSTITUTIONS);
+  assert.equal(snapshot.rules.diplomacy, V3_DIPLOMACY_RULES);
+  assert.equal(describeV3Variable("worldSimulation.civicState.regions.r1.funded").source, "src/v3-civic-policy.js");
   assert.equal(describeV3Variable("unknown.mystery").classified, false);
   assert.equal(JSON.stringify(data.worldSimulation), before);
 });

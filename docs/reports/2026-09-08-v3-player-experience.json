@@ -1,0 +1,165 @@
+{
+  "date": "2026-09-08",
+  "generation": "V3",
+  "baseCommit": "c2ca429b89027245333e7ee6f272c2c0f615e539",
+  "scope": [
+    "game SVG icons",
+    "physical commission and civic progression",
+    "distinct policy effects",
+    "conditional diplomacy and probabilistic pressure",
+    "council choices and aftermath",
+    "compact accessible navigation",
+    "developer variable descriptions"
+  ],
+  "tests": {
+    "node": "22.23.2",
+    "full": {
+      "status": "passed",
+      "passed": 859,
+      "failed": 0,
+      "durationMs": 206757.381366,
+      "command": "npm run check"
+    },
+    "finalSaveFocused": {
+      "passed": 21,
+      "failed": 0
+    },
+    "campaignCases": 17,
+    "militaryTrials": 24,
+    "militaryOutcomes": [
+      "success",
+      "retreat"
+    ],
+    "sourceFiles": 113
+  },
+  "browser": {
+    "driver": "Playwright CLI / Chromium",
+    "seed": "v3-ux-fix-20260908",
+    "world": {
+      "width": 192,
+      "height": 120,
+      "initialNations": 7,
+      "prehistoryYears": 50
+    },
+    "stateInjection": false,
+    "journey": [
+      "walk 8 steps to market",
+      "local work",
+      "commission",
+      "community hearing",
+      "walk 8 steps to survey",
+      "local watch",
+      "walk 8 steps to report",
+      "appointment with zero civic funds",
+      "local work and contribution",
+      "council and road repair",
+      "two monthly accounts",
+      "sovereignty",
+      "six distinct federation policies",
+      "five foreign agreements",
+      "shared-fund",
+      "sanctuary",
+      "free-assembly",
+      "ending",
+      "continued month and walking",
+      "save reload"
+    ],
+    "ending": {
+      "route": "federation",
+      "period": "319-5",
+      "steps": 24,
+      "support": 100,
+      "autonomy": 92,
+      "readiness": 50,
+      "foreignSignatories": 5,
+      "choices": [
+        "shared-fund",
+        "sanctuary",
+        "free-assembly"
+      ]
+    },
+    "resumed": {
+      "period": "319-6",
+      "steps": 26,
+      "compared": [
+        "date",
+        "position",
+        "steps",
+        "entire campaign",
+        "entire civicState"
+      ],
+      "jsonIdentical": true
+    },
+    "cancelledFirstDeclaration": {
+      "period": "319-1",
+      "step": 0,
+      "treasury": 8.2,
+      "unchanged": true
+    },
+    "layouts": [
+      {
+        "width": 390,
+        "height": 844,
+        "horizontalOverflow": 0,
+        "campaignContentOverflow": 0,
+        "visibleControlsBelow44px": 0
+      },
+      {
+        "width": 1440,
+        "height": 900,
+        "horizontalOverflow": 0,
+        "campaignContentOverflow": 0,
+        "visibleControlsBelow44px": 0
+      }
+    ],
+    "countryList": {
+      "countries": 10,
+      "clientHeight": 535,
+      "scrollHeight": 941,
+      "clientWidth": 390,
+      "scrollWidth": 390,
+      "previousReviewHeight": 7571,
+      "sameSeedAsPreviousReview": false
+    },
+    "keyboard": {
+      "arrowRight": "v3CampaignTab-living",
+      "end": "v3CampaignTab-history",
+      "shiftTabFromFirstTab": "close",
+      "escapeReturnsTo": "v3CampaignOpen",
+      "nextCouncilScrollTop": 0,
+      "nextCouncilFocus": "v3CampaignTab-journey"
+    },
+    "icons": {
+      "added": 21,
+      "responseStatus": 200,
+      "inspectedUseElements": 37,
+      "missingSymbols": []
+    },
+    "developerVariables": {
+      "searched": "civicState.regions",
+      "currentValuesAndEffectsVisible": true,
+      "mobileHorizontalOverflow": 0
+    },
+    "errors": {
+      "foundDuringIteration": 2,
+      "cause": "focus target used false instead of null after a council transition",
+      "fixed": true,
+      "newErrorsAfterCorrection": 0,
+      "warnings": 0
+    }
+  },
+  "boundaries": {
+    "empireFullBrowserReplay": false,
+    "empireDomainCompletion": true,
+    "physicalMobileDevice": false,
+    "externalPlayerSatisfactionStudy": false,
+    "dedicatedLeviathanTacticalBoard": false,
+    "push": false,
+    "deploy": false,
+    "nasPublication": false
+  },
+  "resources": {
+    "taskBrowserClosed": true,
+    "taskServerClosed": true
+  }
+}

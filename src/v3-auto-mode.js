@@ -77,6 +77,7 @@ export function startAutoState(state, config, context = null) {
 }
 
 export function autoDestination(context, state, id) {
+  if (id === "commission") return state.campaign?.survey ?? null;
   if (id === "mission") {
     const target = state.military?.activeMission?.target;
     return target ? { x: target.x, y: target.y, name: "軍務作戦地点" } : null;
