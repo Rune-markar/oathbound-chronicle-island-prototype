@@ -736,3 +736,45 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   .has-auto-report .v3-play-layout { min-height: calc(100dvh - 350px); }
   .has-auto-report .v3-field-shell { width: min(900px, calc(100vw - 32px), calc((100dvh - 380px) * 1.18)); }
 }
+
+/* Developer tools use a native modal: background gameplay cannot receive input. */
+.v3-developer { width: min(1080px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); padding: 0 24px 24px; border: 1px solid #658c85; border-radius: 14px; background: #102323; color: #e5eeea; overflow: auto; box-sizing: border-box; }
+.v3-developer::backdrop { background: #030b0bce; }
+.v3-developer > header { position: sticky; top: 0; z-index: 2; padding: 14px 0 4px; background: #102323; border-bottom: 1px solid #355350; }
+.v3-developer h1 { margin: 2px 0; font-size: 24px; }
+.v3-developer small, .v3-developer code { color: #a7c2b9; overflow-wrap: anywhere; }
+.v3-developer p { line-height: 1.65; overflow-wrap: anywhere; }
+.v3-developer nav { display: flex; gap: 8px; flex-wrap: wrap; padding: 8px 0; }
+.v3-developer button { padding: 10px 14px; min-height: 44px; border: 1px solid #527871; border-radius: 6px; background: #203c38; color: #f1f6e6; font: inherit; cursor: pointer; }
+.v3-developer button[aria-pressed="true"], .v3-developer button[type="submit"] { background: #d1c580; color: #142623; border-color: #e1dba8; }
+.v3-developer button:disabled { opacity: .45; cursor: default; }
+.v3-developer :focus-visible { outline: 3px solid #efde87; outline-offset: 2px; }
+.v3-developer input, .v3-developer select { width: 100%; min-width: 0; box-sizing: border-box; padding: 10px; margin: 6px 0; color: #f3f4e9; background: #071c1c; border: 1px solid #5b7e75; border-radius: 4px; font: inherit; font-size: 16px; }
+.v3-developer input:disabled { opacity: .5; }
+.v3-developer-parameters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; margin: 22px 0; }
+.v3-developer-parameters label { display: flex; flex-direction: column; gap: 3px; }
+.v3-developer-parameters small { line-height: 1.65; }
+.v3-developer-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 14px 0; }
+.v3-developer-actions label { flex: 1 1 120px; max-width: 190px; }
+.v3-developer-variable, .v3-developer details { padding: 16px 0; border-bottom: 1px solid #355350; }
+.v3-developer-variable > div { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; }
+.v3-developer-variable output { color: #f1df87; overflow-wrap: anywhere; white-space: pre-wrap; }
+.v3-developer-variable code { display: block; margin-top: 8px; }
+.v3-developer a { color: #9fdac2; overflow-wrap: anywhere; }
+.v3-developer details summary { cursor: pointer; line-height: 1.6; }
+.v3-developer details article { padding: 12px; margin: 8px 0; background: #19312e; border-radius: 6px; }
+.v3-developer details article p { margin: 6px 0; }
+.v3-developer-table { overflow-x: auto; }
+.v3-developer table { border-collapse: collapse; width: 100%; white-space: nowrap; }
+.v3-developer th, .v3-developer td { text-align: right; padding: 10px; border-bottom: 1px solid #355350; }
+.v3-developer caption { text-align: left; white-space: normal; line-height: 1.6; padding: 10px 0; }
+.v3-launch footer [data-v3-developer] { color: inherit; background: transparent; border: 1px solid currentColor; padding: 6px 10px; border-radius: 4px; }
+@media (max-width: 600px) {
+  .v3-developer { padding: 0 14px 18px; }
+  .v3-developer h1 { font-size: 20px; }
+  .v3-developer-parameters { grid-template-columns: minmax(0, 1fr); }
+  .v3-developer nav { display: grid; grid-template-columns: 1fr 1fr; }
+  .v3-developer nav button { padding: 9px 4px; }
+}
+
+.v3-developer-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; }

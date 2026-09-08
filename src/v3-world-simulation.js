@@ -1,3 +1,4 @@
+import { normalizeV3SimulationModel, v3NationDecisionContext } from "./v3-simulation-model.js";
 import {
   advanceGeneratedWorldGeopolitics,
   advanceGeneratedWorldRegions,
@@ -283,6 +284,7 @@ export function createV3WorldSimulation(runtime, options = {}, dateState = V3_PR
   const externalCrises = createV3ExternalCrisisState(runtime, null, date, generatedWorld);
   const simulation = {
     version: V3_WORLD_SIMULATION_VERSION,
+    model: normalizeV3SimulationModel(options.model),
     year: date.year,
     month: date.month,
     elapsedMonths: 0,
@@ -314,6 +316,7 @@ export function normalizeV3WorldSimulation(runtime, options = {}, source = null)
   const marketEconomy = normalizeV3MarketEconomy(runtime, source.marketEconomy, date, generatedWorld, externalCrises);
   const simulation = {
     version: V3_WORLD_SIMULATION_VERSION,
+    model: normalizeV3SimulationModel(source.model ?? options.model),
     year: date.year,
     month: date.month,
     elapsedMonths: Math.max(0, Math.round(Number(source.elapsedMonths) || 0)),
@@ -438,8 +441,11 @@ function advanceOneMonth(runtime, simulation, options = {}) {
   };
   const regionalCadence = clamp(Math.round(options.regionalCadence ?? 1), 1, 12);
   if ((simulation.elapsedMonths + 1) % regionalCadence === 0) state = advanceGeneratedWorldRegions(state);
-  state = advanceGeneratedWorldGeopolitics(state);
-  const externalCrises = advanceV3ExternalCrises(runtime, simulation.externalCrises, date, state.generatedWorld);
+  state = advanceGeneratedWorldGeopolitics(state, {
+    decisionModel: simulation.model,
+    decisionContext: v3NationDecisionContext(runtime, { ...simulation, generatedWorld: state.generatedWorld }),
+  });
+  const externalCrises = advanceV3ExternalCrises(runtime, simulation.externalCrises, date, state.generatedWorld, { marketEconomy: simulation.marketEconomy });
   state.generatedWorld = applyV3ExternalCrisisConsequences(runtime, state.generatedWorld, externalCrises, date);
   const elapsedMonths = simulation.elapsedMonths + 1;
   const secession = maybeDeclareSecession(runtime, state, elapsedMonths, simulation.autonomyStrain);

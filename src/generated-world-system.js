@@ -1037,7 +1037,7 @@ function mergePendingStrategicDecisions(current, updates, refreshedProducers = {
   return capPendingStrategicDecisions([...merged.values()]);
 }
 
-export function advanceGeneratedWorldGeopolitics(state) {
+export function advanceGeneratedWorldGeopolitics(state, options = {}) {
   const generatedState = createGeneratedWorldState(state.generatedWorld ?? {}, state);
   const baseRuntime = buildGeneratedWorld(state);
   const regionalDomains = createRegionalDomainState(runtimeWithColonies(baseRuntime, generatedState), generatedState.regionalDomains, state);
@@ -1052,6 +1052,8 @@ export function advanceGeneratedWorldGeopolitics(state) {
   const advancedGeopolitics = advanceGeopoliticalWorld(runtime, baseline, state, {
     protectedNationIds: generatedState.simulationFidelity?.playerControlledNationIds ?? [],
     raceDynamics: raceDynamicsBaseline,
+    decisionModel: options.decisionModel,
+    decisionContext: options.decisionContext,
   });
   const playerCampaign = state.player?.generatedCampaign?.active;
   const playerCampaignRelationKey = playerCampaign?.targetNationId && generatedState.playerNationId

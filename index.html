@@ -27,7 +27,7 @@
         <p>開始すると、この端末のV3セーブを新しい世界で置き換えます。</p>
         <div><button type="button" id="v3CancelNew">戻る</button><button class="is-primary" type="submit">世界を生成</button></div>
       </form>
-      <footer><span>V3 FIELD PROTOTYPE</span><span>端末内オートセーブ</span></footer>
+      <footer><span>V3 FIELD PROTOTYPE</span><span>端末内オートセーブ</span><button type="button" data-v3-developer>開発者システム</button></footer>
     </section>
 
     <section class="v3-generation" id="v3Generation" aria-live="polite" hidden>
@@ -121,7 +121,7 @@
       <article class="v3-inventory-card">
         <header><div><small>ITEMS</small><h2 id="v3InventoryTitle">道具</h2></div><button type="button" data-v3-close="inventory" aria-label="道具を閉じる"><svg class="v3-ui-icon" aria-hidden="true"><use href="./assets/ui/v3-ui-icons.svg#icon-close"></use></svg></button></header>
         <div id="v3InventoryList"></div>
-        <footer><button class="is-danger" type="button" data-v3-action="reset"><svg class="v3-ui-icon" aria-hidden="true"><use href="./assets/ui/v3-ui-icons.svg#icon-reset"></use></svg><span>このV3冒険を初期化</span></button></footer>
+        <footer><button type="button" data-v3-developer>開発者システム</button><button class="is-danger" type="button" data-v3-action="reset"><svg class="v3-ui-icon" aria-hidden="true"><use href="./assets/ui/v3-ui-icons.svg#icon-reset"></use></svg><span>このV3冒険を初期化</span></button></footer>
       </article>
     </section>
 

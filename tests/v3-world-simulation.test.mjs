@@ -62,8 +62,8 @@ test("V3事前史は指定月数だけ過去から進み、現在月と年次記
   assert.equal(simulation.history.at(-1).headline, "冒険者が世界へ降り立つ");
 });
 
-test("50年事前史は人口・気質・統治者・国家判断を一つの決定論的循環で更新する", async () => {
-  const options = { seed: "v3-race-history-600", width: 48, height: 32, plateCount: 8, nationCount: 4 };
+test("厳密比較モードの50年史も人口・気質・国家判断・戦争を継続する", async () => {
+  const options = { seed: "v3-race-history-600", width: 48, height: 32, plateCount: 8, nationCount: 4, model: { mode: "strict" } };
   const runtime = buildGeneratedWorld(createGeneratedWorldState(options));
   const start = createV3WorldSimulation(runtime, options, { year: 267, month: 4 });
   const simulation = await buildV3WorldPrehistory(runtime, options, { months: 600 });
@@ -88,7 +88,9 @@ test("50年事前史は人口・気質・統治者・国家判断を一つの決
   for (const event of decisions.slice(-8)) {
     assert.equal(Object.keys(event.decisionTraits).length, 6);
     assert.ok(Math.abs(event.alternatives.reduce((sum, option) => sum + option.probability, 0) - 1) < 0.00001);
-    assert.ok(event.alternatives.every((option) => option.probability > 0 && option.probability < 1));
+    assert.ok(event.alternatives.every((option) => option.probability >= 0 && option.probability <= 1));
+    assert.ok(event.alternatives.every((option) => !option.excludedReason || option.probability === 0));
+    assert.equal(event.probability, event.alternatives.find((option) => option.id === event.pullId).probability);
   }
   assert.ok(simulation.generatedWorld.worldWars.history.length >= 1, "a 50-year history must be able to contain completed wars");
   assert.ok(simulation.generatedWorld.worldWars.history.some((war) => war.settlementId === "negotiated_ceasefire"));
@@ -96,7 +98,7 @@ test("50年事前史は人口・気質・統治者・国家判断を一つの決
     STATE_REASON_CONDITIONS.some(({ field }) => condition[field] < 90)
   )), "long histories must not saturate every nation's conditions near 100");
   assert.deepEqual(new Set(simulation.externalCrises.events.filter((event) => event.outcome === "started").map((event) => event.crisisType)),
-    new Set(["flood", "wildfire", "famine", "demon_raid"]));
+    new Set(["flood", "wildfire", "demon_raid"]));
   assert.ok(simulation.externalCrises.history.length > 0, "regional crises must recover instead of persisting forever");
 });
 

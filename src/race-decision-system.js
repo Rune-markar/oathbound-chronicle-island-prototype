@@ -82,7 +82,7 @@ const ELF_TEMPERAMENT_SHARES = Object.freeze({ militant: 20, submissive: 25, coo
 const MAX_AGENDAS = 24;
 
 const clamp = (value, minimum = 0, maximum = 100) => Math.min(maximum, Math.max(minimum, Number(value) || 0));
-const clampTrait = (value) => Math.round(clamp(value, -100, 100));
+const clampTrait = (value) => Math.round(clamp(value, -100, 100)) || 0;
 const fixed = (value, digits = 3) => Number((Number(value) || 0).toFixed(digits));
 
 function periodFor(dateState) {

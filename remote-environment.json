@@ -29,7 +29,8 @@
     "V3 military group battle and return; no legacy launch",
     "Solo auto discovery/return and reports, browsing without pause, mutation pause, preserved trade revisions, local quotes, risk forecast and paused save reload",
     "V3 canonical career, regional governance, empire/federation endings and continued saved world",
-    "Market shortage, logistics, diplomacy and cultural feedback over multiple seeds and monthly batches"
+    "Market shortage, logistics, diplomacy and cultural feedback over multiple seeds and monthly batches",
+    "V3 probabilistic decision model, local grain famine recovery, developer variable inspector and cancellable reproducible worker trials"
   ],
   "roles": {
     "development": {},

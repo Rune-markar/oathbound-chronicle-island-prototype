@@ -1,3 +1,4 @@
+import { createGeopoliticalWorldState } from "../src/geopolitical-world.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { buildGeneratedWorld, createGeneratedWorldState } from "../src/generated-world-system.js";
@@ -133,4 +134,35 @@ test("飢饉と魔族襲撃は危機度に応じて穀物・鉄・薬草の価�
   assert.ok(market.commodityStockMultipliers.grain < 1);
   assert.ok(market.commodityStockMultipliers.herbs < 1);
   assert.equal(getV3ExternalCrisisMarketEffect({ activeCrises: [{ ...market, nationId: null, regionId: "wilds" }] }, null, null), null);
+});
+
+test("地域へ届いた穀物で飢饉が回復し、別地方の在庫やゼロの国家指数を誤認しない", () => {
+  const { runtime, simulation } = fixture();
+  const [region, other] = runtime.nations.regions;
+  const world = structuredClone(simulation.generatedWorld);
+  world.geopolitics = createGeopoliticalWorldState(runtime, null, simulation);
+  // Ensure the actual geopolitical condition exists before imposing a crisis.
+  const condition = world.geopolitics?.nationStates?.[region.nationId];
+  if (!condition) throw new Error("fixture requires initialized geopolitics");
+  condition.foodSecurity = 0;
+  const initial = createV3ExternalCrisisState(runtime, null, simulation, world);
+  initial.regionalPressures[region.id].famine.value = 100;
+  const markets = (regionId, inventory, unmet) => ({ settlements: { local: {
+    regionId, nationId: region.nationId, goods: { grain: { inventory, lastConsumption: 10, lastUnmetConsumption: unmet } },
+  } } });
+  const date = nextMonth(simulation);
+  const baseline = advanceV3ExternalCrises(runtime, initial, date, world);
+  assert.equal(baseline.regionalPressures[region.id].famine.drivers.foodShortage, 1, "zero must not become the fallback value55");
+  const relieved = advanceV3ExternalCrises(runtime, initial, date, world, { marketEconomy: markets(region.id, 10, 0) });
+  assert.equal(relieved.regionalPressures[region.id].famine.drivers.supplyRelief, 1);
+  assert.equal(relieved.regionalPressures[region.id].famine.drivers.target, 20);
+  const elsewhere = advanceV3ExternalCrises(runtime, initial, date, world, { marketEconomy: markets(other.id, 100, 0) });
+  assert.equal(elsewhere.regionalPressures[region.id].famine.value, baseline.regionalPressures[region.id].famine.value);
+  const shortage = advanceV3ExternalCrises(runtime, initial, date, world, { marketEconomy: markets(region.id, 0, 8) });
+  assert.equal(shortage.regionalPressures[region.id].famine.drivers.supplyRelief, 0);
+  let current = relieved;
+  let currentDate = date;
+  for (let month = 0; month < 10; month += 1) { currentDate = nextMonth(currentDate); current = advanceV3ExternalCrises(runtime, current, currentDate, world, { marketEconomy: markets(region.id, 10, 0) }); }
+  assert.ok(current.regionalPressures[region.id].famine.value < 28);
+  assert.equal(current.activeCrises.some((entry) => entry.regionId === region.id && entry.type === "famine"), false);
 });

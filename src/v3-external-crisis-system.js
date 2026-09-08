@@ -125,7 +125,7 @@ function seasonalCycle(seed, regionId, typeId, dateState, cycleMonths) {
   return 0.5 + Math.sin(periodValue(dateState) / cycleMonths * Math.PI * 2 + phase) * 0.5;
 }
 
-function crisisDrivers(runtime, generatedWorld, profile, typeId, dateState, activeCrises) {
+function crisisDrivers(runtime, generatedWorld, profile, typeId, dateState, activeCrises, grainSupply = null) {
   const seed = generatedWorld?.seed ?? runtime.terrain.seed ?? "v3-world";
   const nationId = ownerNationId(runtime, generatedWorld, profile.regionId);
   const condition = generatedWorld?.geopolitics?.nationStates?.[nationId] ?? {};
@@ -140,11 +140,17 @@ function crisisDrivers(runtime, generatedWorld, profile, typeId, dateState, acti
     return { exposure: profile.wildfireExposure, drySeason, target: clamp(profile.wildfireExposure * 70 + drySeason * 30) };
   }
   if (typeId === "famine") {
-    const foodShortage = clamp((66 - (Number(condition.foodSecurity) || 55)) / 42, 0, 1);
+    const foodShortage = clamp((66 - (Number.isFinite(condition.foodSecurity) ? condition.foodSecurity : 55)) / 42, 0, 1);
     const weakProduction = 1 - profile.foodCapacity;
-    return { foodShortage, weakProduction, war: atWar, disaster: naturalCrisis, target: clamp(foodShortage * 68 + weakProduction * 22 + atWar * 16 + naturalCrisis * 18) };
+    const target = clamp(foodShortage * 68 + weakProduction * 22 + atWar * 16 + naturalCrisis * 18);
+    // Completed local deliveries can relieve famine even while national
+    // institutions are still weak. Sustained supply lowers pressure gradually.
+    const relief = Boolean(grainSupply && grainSupply.grainCoverageMonths >= 0.75 && grainSupply.grainUnmetShare <= 0.1);
+    return { foodShortage, weakProduction, war: atWar, disaster: naturalCrisis,
+      ...(grainSupply ? { ...grainSupply, supplyObserved: 1, supplyRelief: relief ? 1 : 0 } : {}),
+      target: relief ? Math.min(20, target) : target };
   }
-  const instability = clamp(((62 - (Number(condition.cohesion) || 55)) + (62 - (Number(condition.readiness) || 55))) / 80, 0, 1);
+  const instability = clamp(((62 - (Number.isFinite(condition.cohesion) ? condition.cohesion : 55)) + (62 - (Number.isFinite(condition.readiness) ? condition.readiness : 55))) / 80, 0, 1);
   const abyssalTide = seasonalCycle(seed, profile.regionId, typeId, dateState, 18);
   return { occultSites: profile.occultExposure, instability, war: atWar, abyssalTide, target: clamp(profile.occultExposure * 58 + instability * 28 + atWar * 12 + abyssalTide * 24) };
 }
@@ -204,6 +210,7 @@ function causeLabels(typeId, drivers) {
     if (drivers.exposure >= 0.4) labels.push("乾燥森林の連続");
     if (drivers.drySeason >= 0.6) labels.push("乾期の進行");
   } else if (typeId === "famine") {
+    if (drivers.supplyRelief) labels.push("地方市場への穀物補給で回復中");
     if (drivers.foodShortage >= 0.3) labels.push("国家食料安全度の低下");
     if (drivers.weakProduction >= 0.45) labels.push("地方生産力の不足");
     if (drivers.war) labels.push("戦争による輸送阻害");
@@ -272,16 +279,33 @@ export function createV3ExternalCrisisState(runtime, source = null, dateState = 
   };
 }
 
-export function advanceV3ExternalCrises(runtime, source, dateState = {}, generatedWorld = {}) {
+export function getV3RegionalGrainSupply(marketEconomy) {
+  const totals = {};
+  for (const market of Object.values(marketEconomy?.settlements ?? {})) {
+    if (!market.regionId || !market.goods?.grain) continue;
+    const grain = market.goods.grain;
+    const demand = Math.max(0, Number(grain.lastConsumption) || 0);
+    totals[market.regionId] ??= { demand: 0, unmet: 0, inventory: 0 };
+    totals[market.regionId].demand += demand;
+    totals[market.regionId].unmet += Math.min(demand, Math.max(0, Number(grain.lastUnmetConsumption) || 0));
+    totals[market.regionId].inventory += Math.max(0, Number(grain.inventory) || 0);
+  }
+  return Object.fromEntries(Object.entries(totals).filter(([, entry]) => entry.demand > 0).map(([id, entry]) => [id, {
+    grainCoverageMonths: entry.inventory / entry.demand, grainUnmetShare: entry.unmet / entry.demand,
+  }]));
+}
+
+export function advanceV3ExternalCrises(runtime, source, dateState = {}, generatedWorld = {}, options = {}) {
   const next = createV3ExternalCrisisState(runtime, source, dateState, generatedWorld);
   const period = periodFor(dateState);
   if (next.lastAdvancedPeriod === period) return next;
   const profiles = buildRegionProfiles(runtime);
   const previousActive = next.activeCrises;
+  const grainSupplies = getV3RegionalGrainSupply(options.marketEconomy);
   for (const profile of Object.values(profiles)) {
     for (const typeId of TYPE_IDS) {
       const current = next.regionalPressures[profile.regionId][typeId];
-      const drivers = crisisDrivers(runtime, generatedWorld, profile, typeId, dateState, previousActive);
+      const drivers = crisisDrivers(runtime, generatedWorld, profile, typeId, dateState, previousActive, grainSupplies[profile.regionId]);
       const value = clamp(current.value * 0.74 + drivers.target * 0.26);
       current.trend = value > current.value + 0.35 ? "rising" : value < current.value - 0.35 ? "falling" : "stable";
       current.value = rounded(value);

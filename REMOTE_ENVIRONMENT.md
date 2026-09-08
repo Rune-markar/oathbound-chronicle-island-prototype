@@ -53,3 +53,7 @@ As of 2026-09-07, also verify discovery stopping and survey return, reports surv
 ## Continuous V3 campaign verification (2026-09-07)
 
 Use Node.js 22, `npm run check`, and the canonical `index.html` flow. Open 人物史・統治, earn local service, obtain a generated-region appointment, exercise policies and diplomacy, complete both institutional endings in separate worlds, and reload before continuing the same world. Inspect treasury, real market stocks, current ownership and monthly chronology. Domain scenarios and browser actions must be recorded separately. Test PC and 390×844 controls, blocked choices, keyboard focus and failure recovery. Close every task-owned browser and local server before handoff.
+
+## V3 probability and developer tools (2026-09-08)
+
+Use Node.js 22 and `npm run check` (850 checks). Run `node scripts/audit-v3-probability.mjs` for 21 cases / 2,880 world months. Open `index.html?developer=1` on localhost for the variable reference and settings; start or resume a V3 world for live inspection and Worker comparisons. Verify cancellation, unchanged player/world during comparisons, exported-input replay, settings saved without advancing time, local grain famine recovery, and PC / 390×844 controls. Close task browsers and the localhost server. This is development-host validation; Git push, deployment and NAS publication remain separate operations.
