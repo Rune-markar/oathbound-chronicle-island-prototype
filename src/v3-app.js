@@ -87,6 +87,7 @@ import { getRaceDefinition } from "./race-list.js";
 import { restoreAutoState } from "./v3-auto-mode.js";
 import { mountV3AutoMode } from "./v3-auto-ui.js";
 import { mountV3Campaign } from "./v3-campaign-ui.js";
+import { mountV3Adventure } from "./v3-adventure-ui.js";
 
 const STORAGE_KEY = "leviathan-covenant-v3-save";
 const WORLD_CONFIG = Object.freeze({ width: 192, height: 120, plateCount: 28, nationCount: 7 });
@@ -226,6 +227,14 @@ const developerController = mountV3Developer({
     context.worldSimulation = next;
     context.actorPlanCache = null;
   },
+});
+
+const adventureController = mountV3Adventure({
+  read: () => ({ context, state }),
+  move: movePlayer,
+  campaign: () => campaignController.open(),
+  travel: (destination) => autoController.open({ mode: "travel", destination, maxSteps: 256 }),
+  action: handleAction,
 });
 
 function escapeHtml(value) {
@@ -499,12 +508,12 @@ function renderLocalWorldEffect() {
   elements.raceEffectLabel.innerHTML = `${uiIconMarkup("moon", "v3-inline-icon")}<span>${escapeHtml(view.raceResponse?.peopleName ?? "人間")} · ${escapeHtml(view.raceResponse?.summary ?? "種族固有反応なし")} · ${escapeHtml(moon.primaryMoon)}${escapeHtml(moon.phaseName)}${moon.active.length ? "（作用中）" : ""}</span>`;
 }
 
-function renderField() {
-  const view = getV3FieldView(context, state);
+function renderField(view) {
   const personalEnemy = state.pendingEncounter?.type === "enemy" ? state.pendingEncounter : null;
   const militaryMission = state.military?.activeMission ?? null;
   elements.field.style.setProperty("--field-columns", view.columns);
   elements.field.style.setProperty("--field-rows", view.rows);
+  elements.field.closest(".v3-field-shell").style.aspectRatio = `${view.columns} / ${view.rows}`;
   elements.field.setAttribute("aria-label", personalEnemy ? `${personalEnemy.name}との個人戦。探索中と同じ周辺フィールド` : "周辺フィールド");
   elements.field.innerHTML = view.tiles.map((tile) => {
     const adjacent = Math.abs(tile.dx) + Math.abs(tile.dy) === 1;
@@ -775,9 +784,11 @@ function renderGame() {
     ? `${location.nearestSettlement.settlement.name}（${location.nearestSettlementFunction?.name ?? "集落"}）まで約${Math.round(location.nearestSettlement.distance)}歩`
     : "近くに集落はない";
   elements.chunkLabel.textContent = `詳細生成 ${state.generatedChunks.length}区画 · ${state.steps}歩`;
-  elements.messages.innerHTML = state.messageLog.map((message, index) => `<p${index === 0 ? ' class="is-latest"' : ""}>${escapeHtml(message)}</p>`).join("");
+  elements.messages.innerHTML = `<p class="is-latest">${escapeHtml(state.messageLog[0] ?? "")}</p>`;
   renderLocalWorldEffect();
-  renderField();
+  const compactField = window.innerWidth <= 720;
+  const fieldView = getV3FieldView(context, state, compactField ? 5 : 7, compactField && window.innerHeight <= 780 ? 3 : 4);
+  renderField(fieldView);
   renderEncounter();
   renderMilitary();
   renderInventory();
@@ -785,6 +796,7 @@ function renderGame() {
   if (!elements.commerceModal.hidden) renderCommerce();
   autoController.refresh();
   campaignController.refresh();
+  adventureController.refresh({ view: fieldView, location });
   if (!elements.worldMap.hidden) {
     const panel = elements.worldMap.querySelector(".v3-world-intelligence");
     const scroll = panel.scrollTop;
@@ -1719,6 +1731,11 @@ document.addEventListener("keydown", (event) => {
 });
 
 const returnedGroupBattle = readV3GroupBattleBridge(localStorage);
+for (const query of ["(max-width: 720px)", "(max-height: 780px)"]) {
+  window.matchMedia(query).addEventListener("change", () => {
+    if (state && !elements.game.hidden) renderGame();
+  });
+}
 const returnedSave = readSave();
 if (returnedGroupBattle && returnedSave?.field?.military?.activeMission?.id === returnedGroupBattle.missionId) {
   void prepareWorld(returnedSave.world, returnedSave.field, returnedSave.worldSimulation, returnedGroupBattle).catch((error) => {

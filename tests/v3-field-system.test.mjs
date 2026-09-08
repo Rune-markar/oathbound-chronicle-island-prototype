@@ -5,6 +5,7 @@ import {
   V3_CHUNK_SIZE,
   V3_DETAIL_SCALE,
   V3_FIELD_VERSION,
+  V3_SIGHT_RADIUS,
   V3_NEW_MOON_GHOST,
   advanceV3BackgroundGeneration,
   createV3FieldState,
@@ -200,6 +201,17 @@ test("開始時は周辺チャンクだけを生成し、待機生成は1区画�
   assert.equal(view.columns, 13);
   assert.equal(view.rows, 11);
   assert.ok(view.tiles.some((tile) => tile.player));
+});
+
+test("開始時の視界は半径5マスの円で、先の地形を発見でき、外側は未踏のまま", () => {
+  const context = createV3WorldContext(fixtureRuntime());
+  const state = createV3FieldState(context);
+  assert.equal(V3_SIGHT_RADIUS, 5);
+  const view = getV3FieldView(context, state);
+  assert.equal(view.tiles.filter((tile) => tile.visible).length, 81);
+  assert.ok(view.tiles.find((tile) => tile.dx === 4 && tile.dy === 0).visible);
+  assert.equal(view.tiles.find((tile) => tile.dx === 4 && tile.dy === 4).visible, false);
+  assert.equal(view.tiles.find((tile) => tile.dx === 6 && tile.dy === 0).visible, false);
 });
 
 test("プレイヤーは通行可能な隣の1マスへだけ進み、発見範囲と時刻を更新する", () => {

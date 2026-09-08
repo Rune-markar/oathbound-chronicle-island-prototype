@@ -8,7 +8,7 @@ export const STATUS_LEDGER_META = Object.freeze({
     gitCommits: 145,
     gitRange: "initial — 2026-09-05 V3 market economy",
     workingTreeIncluded: false,
-    currentFocus: "2026-09-08 V3現地依頼・政策外交・終盤選択・ゲームアイコンと操作改善",
+    currentFocus: "2026-09-08 V3の風景・発見・目標・成果をつなぐ冒険画面",
   }),
   maintenanceRule: "新規・変更機能はGeneration V3の実装と同じ変更でこの台帳を更新し、V3通常導線・状態・保存の一次出典を付ける。V2項目は比較履歴として世代を明記する。",
 });
@@ -26,6 +26,21 @@ const source = (label, href, ref, kind = "source") => Object.freeze({ label, hre
 const entry = (value) => Object.freeze({ updatedAt: "2026-08-11", ...value, sources: Object.freeze(value.sources) });
 
 export const STATUS_ENTRIES = Object.freeze([
+  entry({
+    id: "v3-adventure-screen", category: "implemented", area: "Generation V3・探索・画面・操作",
+    title: "風景・発見・目標・成果が見える冒険画面",
+    summary: "地図外の主人公HUD、地形別風景、進行別の目標、周辺の発見と用途・報酬、既知の道を一歩進む案内、実差分と命中の演出を通常V3へ接続。視界半径5を開発者一覧に説明する。",
+    evidence: "通常のmovePlayer・共通時計・実生成地形・現行V6を使用する。未知地点を案内せず途中の敵を迂回。全868件、PC・モバイルでの採集・依頼・帰還・保存を確認。外部プレイヤーの評価測定は未実施。",
+    updatedAt: "2026-09-08",
+    sources: [
+      source("V3通常画面", "./index.html", "v3Field / v3AdventureObjective / v3Discoveries / v3AdventureFeedback"),
+      source("操作と状態の接続", "./src/v3-adventure-ui.js", "mountV3Adventure / movePlayer"),
+      source("案内の規則", "./src/v3-adventure-presentation.js", "getV3FieldPoints / getV3KnownRoute / getV3AdventureFeedback"),
+      source("発見と保存", "./src/v3-field-system.js", "V3_SIGHT_RADIUS / discoverAround / normalizeV3FieldState"),
+      source("回帰", "./tests/v3-adventure-presentation.test.mjs", "visibility / route / obstacle / feedback"),
+      source("実操作の記録", "./docs/gameplay-reviews/2026-09-08-v3-adventure-screen.md", "通常デモと表示確認"),
+    ],
+  }),
   entry({
     id: "v3-probability-developer-system", category: "implemented", area: "Generation V3・国家判断・開発者システム",
     title: "確率的な国家判断と全状態変数の確認・比較",

@@ -1,6 +1,7 @@
 import { getV3CampaignView, performV3CampaignAction } from "./v3-campaign-system.js";
 import { campaignDirection, campaignDistance } from "./v3-campaign-journey.js";
 import { getV3CurrentMarket } from "./v3-merchant-system.js";
+import { V3_SCENES } from "./v3-adventure-presentation.js";
 
 const escape = (value) => String(value ?? "").replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
 const icon = (name, large = false) => `<svg class="${large ? "v3-council-emblem" : "v3-ui-icon"}" aria-hidden="true"><use href="./assets/ui/v3-ui-icons.svg#icon-${name}"></use></svg>`;
@@ -95,6 +96,9 @@ export function mountV3Campaign({ read, commit, save, render, pause, toast, navi
     openButton.disabled = Boolean(state.pendingEncounter);
     if (!isOpen()) return;
     model = getV3CampaignView(context, state, worldSimulation);
+    const sceneArt = model.scene && model.campaign.finalStep > 0 ? V3_SCENES[model.scene.icon] ?? V3_SCENES.council : ["wanderer", "commissioned"].includes(model.stage) ? V3_SCENES.village : V3_SCENES.council;
+    root.style.setProperty("--campaign-scene", `url("${sceneArt}")`);
+    root.style.setProperty("--council-scene", `url("${model.scene ? V3_SCENES[model.scene.icon] ?? V3_SCENES.council : V3_SCENES.council}")`);
     const governed = !["wanderer", "commissioned"].includes(model.stage), sovereign = ["sovereign", "ending"].includes(model.stage);
     const visibleTabs = TABS.filter((tab) => !["living", "institutions"].includes(tab.id) || governed).filter((tab) => !["diplomacy", "territory"].includes(tab.id) || sovereign);
     if (!visibleTabs.some((tab) => tab.id === activeTab)) activeTab = "journey";
@@ -141,7 +145,7 @@ export function mountV3Campaign({ read, commit, save, render, pause, toast, navi
       const report = action.id === "wait-month" ? read().state.campaign.lastReport : outcome.state.campaign.lastReport;
       const monthly = committed.crossedMonths?.length && action.id !== "wait-month" ? read().state.campaign.ledger.at(-1) : null;
       result.innerHTML = `<strong>${icon("check")}${escape(report?.title ?? action.label)}</strong><div class="v3-result-deltas">${(report?.changes ?? []).map((change) => `<span>${icon(STAT_ICONS[change.key] ?? "charter")}${escape(change.label)} ${signed(change.delta)}</span>`).join("")}</div>${report?.causes?.[0] ? `<p class="v3-result-cause">${escape(report.causes[0])}</p>` : ""}<details><summary>結果と理由を見る${monthly ? " · 月次決算あり" : ""}</summary><p>${escape(report?.summary ?? outcome.message)}</p>${monthly ? `<p>${escape(monthly.summary)}</p>` : ""}</details>`;
-      if (previousStage !== read().state.campaign.stage) activeTab = "journey";
+      if (previousStage !== read().state.campaign.stage) { activeTab = "journey"; content.scrollTop = 0; }
     } catch (error) { result.textContent = error.message ?? String(error); }
     finally {
       busy = false; root.removeAttribute("aria-busy"); root.querySelector("[data-campaign-close]").disabled = false; render();

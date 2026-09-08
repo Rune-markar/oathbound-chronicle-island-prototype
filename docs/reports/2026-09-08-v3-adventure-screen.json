@@ -1,0 +1,42 @@
+{
+  "date": "2026-09-08",
+  "baselineCommit": "b900703368a6d7f8b79e7ba2021b8892447f148a",
+  "nodeVersion": "22.23.2",
+  "fullCheck": { "passed": 868, "failed": 0, "sourceFiles": 115, "durationMs": 231618.541197 },
+  "finalFocusedCheck": { "passed": 73, "failed": 0 },
+  "normalBrowserDemo": {
+    "browser": "headless Chromium",
+    "seed": "v3-screen-20260908",
+    "overview": [192, 120],
+    "nations": 7,
+    "prehistoryYears": 50,
+    "firstPickup": { "goldBefore": 12, "goldAfter": 16, "steps": 1 },
+    "commission": { "survey": [28, 572], "home": [20, 572], "outwardSteps": 8, "returnSteps": 8 },
+    "appointment": { "stage": "governor", "steps": 26, "gold": 14, "treasury": 16 },
+    "guidedHerbPickupSteps": 4,
+    "guidedNpcApproachSteps": 6,
+    "selectionDoesNotChangePlayerClockOrItems": true,
+    "escapeClearsSelectionAndReturnsFocus": true,
+    "duplicateMapPins": 0,
+    "completedAutoReportDismissalPreservesProgressAndState": true,
+    "saveResume": { "steps": 68, "stage": "governor", "playerClockCampaignEqual": true },
+    "groupedDiscoveries": { "featured": 1, "expanded": 11, "restored": 1 },
+    "consoleErrors": 0,
+    "consoleWarnings": 0,
+    "reducedMotion": true
+  },
+  "viewports": [
+    { "width": 1440, "height": 900, "columns": 15, "rows": 9, "overflowPx": 0, "padBottom": 891.984375, "missingAtlasTiles": 0 },
+    { "width": 1280, "height": 720, "columns": 15, "rows": 9, "overflowPx": 0, "padBottom": 711.984375, "missingAtlasTiles": 0 },
+    { "width": 390, "height": 844, "columns": 11, "rows": 9, "overflowPx": 0, "padBottom": 839.078125, "missingAtlasTiles": 0 },
+    { "width": 360, "height": 740, "columns": 11, "rows": 7, "overflowPx": 0, "padBottom": 739.859375, "missingAtlasTiles": 0 }
+  ],
+  "scope": {
+    "normalBrowserEndingsReplayedThisChange": false,
+    "combatDamageFeedbackCheckedByDomainTests": true,
+    "physicalDeviceChecked": false,
+    "externalPlayerSatisfactionMeasured": false,
+    "illustrationType": "Existing terrain and story artwork mapped to real state"
+  },
+  "notionChangePage": "https://app.notion.com/p/3d501092fbe2811b9c1be97a1e633379"
+}

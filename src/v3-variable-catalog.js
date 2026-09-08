@@ -5,10 +5,12 @@ import { V3_WORLD_EFFECT_DEFINITIONS, V3_CELESTIAL_EFFECT_DEFINITIONS } from "./
 import { V3_EXTERNAL_CRISIS_DEFINITIONS } from "./v3-external-crisis-system.js";
 import { V3_INSTITUTIONS } from "./v3-civic-policy.js";
 import { V3_DIPLOMACY_RULES, V3_DIPLOMATIC_NEEDS } from "./v3-campaign-diplomacy.js";
+import { V3_SIGHT_RADIUS } from "./v3-field-system.js";
 
 // Ordered from specific to general. These descriptions are shared by the UI
 // and the exported variable reference; the inspector does not mutate values.
 export const V3_VARIABLE_DOMAINS = Object.freeze([
+  { match: /^rules\.exploration/, name: "探索の視界", source: "src/v3-field-system.js", effect: "新規開始・一歩移動・敗北後の帰還で、現在地から半径5マスの円内を発見済みにする。世界端は東西循環・南北打切り。未踏の人物・取得物は周辺案内へ出さず、案内移動も発見済みの通行可能マスに限る。" },
   { match: /\.civicState|^rules\.civicPolicies/, name: "地方制度の実効", source: "src/v3-civic-policy.js", effect: "現在の領有・任官と支払状況を検査し、生産、国境物流、街道修復、災害圧力へ制度を適用する。同じ月の環境回復を二重適用しない。" },
   { match: /field\.campaign\.(diplomacy|lastMilitaryOutcome)|^rules\.(diplomacy|diplomaticNeeds)/, name: "プレイヤーの外交条件", source: "src/v3-campaign-diplomacy.js", effect: "相手の主権・防衛・不足・現在文化・共有国境と具体的提案から必要信頼、交渉費用を計算。軍事成功率は防備差・軍功・相手主権から計算し、シード・年月・試行番号で抽選する。" },
   { match: /field\.campaign\.(survey|mandates|finalChoices|endingSnapshot)/, name: "現地の依頼と物語の選択", source: "src/v3-campaign-journey.js", effect: "委託地方の通行可能地点へ実際に歩き、住民依頼と異なる成果を揃えて任官する。終盤の選択は税・支持・防備・生息環境・物流へ残り、結末時の仲間と判断を保存する。" },
@@ -137,7 +139,7 @@ export function createV3VariableSnapshot({ runtime, state, worldSimulation, worl
     field: state ?? {},
     worldSimulation: worldSimulation ?? {},
     geography: runtime ? { tiles: runtime.tiles, nations: runtime.nations, profiles: deriveGeopoliticalProfiles(runtime) } : {},
-    rules: { actionEffects: GEOPOLITICAL_ACTION_EFFECTS, actionTags: GEOPOLITICAL_DECISION_TAGS,
+    rules: { exploration: { sightRadius: V3_SIGHT_RADIUS }, actionEffects: GEOPOLITICAL_ACTION_EFFECTS, actionTags: GEOPOLITICAL_DECISION_TAGS,
       civicPolicies: V3_INSTITUTIONS, diplomacy: V3_DIPLOMACY_RULES, diplomaticNeeds: V3_DIPLOMATIC_NEEDS,
       weather: V3_WORLD_EFFECT_DEFINITIONS, celestial: V3_CELESTIAL_EFFECT_DEFINITIONS, externalCrises: V3_EXTERNAL_CRISIS_DEFINITIONS },
   };
