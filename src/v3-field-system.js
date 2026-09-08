@@ -19,6 +19,7 @@ export const V3_DETAIL_SCALE = 8;
 export const V3_CHUNK_SIZE = 16;
 export const V3_INITIAL_CHUNK_RADIUS = 1;
 export const V3_LOCAL_PREGEN_RADIUS = 2;
+export const V3_SIGHT_RADIUS = 5;
 export const V3_PLAYER_RACES = Object.freeze({
   human: Object.freeze({ id: "human", name: "人間", description: "制度と適応力の基準種" }),
   elf: Object.freeze({ id: "elf", name: "エルフ", description: "森雨と霧に強い自然魔法種" }),
@@ -863,11 +864,11 @@ function chunkKeysAround(context, x, y, radius) {
 
 function discoverAround(context, x, y, existing = []) {
   const discovered = new Set(existing);
-  for (let dy = -2; dy <= 2; dy += 1) {
+  for (let dy = -V3_SIGHT_RADIUS; dy <= V3_SIGHT_RADIUS; dy += 1) {
     const nextY = y + dy;
     if (nextY < 0 || nextY >= context.height) continue;
-    for (let dx = -2; dx <= 2; dx += 1) {
-      if (Math.abs(dx) + Math.abs(dy) > 3) continue;
+    for (let dx = -V3_SIGHT_RADIUS; dx <= V3_SIGHT_RADIUS; dx += 1) {
+      if (dx * dx + dy * dy > V3_SIGHT_RADIUS * V3_SIGHT_RADIUS) continue;
       discovered.add(tileKey(wrapped(x + dx, context.width), nextY));
     }
   }

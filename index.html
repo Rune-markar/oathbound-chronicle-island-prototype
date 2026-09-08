@@ -7,6 +7,7 @@
     <title>LEVIATHAN COVENANT V3 — 一歩ずつ歩く生成世界</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='8' fill='%230b1718'/%3E%3Cpath d='M12 46h40M18 42V18h28v24M26 42V28h12v14' fill='none' stroke='%23dfce7d' stroke-width='4'/%3E%3C/svg%3E" />
     <link rel="stylesheet" href="./v3.css" />
+    <link rel="stylesheet" href="./v3-adventure.css" />
   </head>
   <body>
     <section class="v3-launch" id="v3Launch" aria-labelledby="v3LaunchTitle">
@@ -14,7 +15,7 @@
       <header>
         <small>LEVIATHAN COVENANT / GENERATION V3</small>
         <h1 id="v3LaunchTitle">世界を、一歩ずつ歩く。</h1>
-        <p>先に国家・地方・街道を持つ世界を構築し、その地形を1マス単位の冒険フィールドへ展開します。</p>
+        <p>見知らぬ土地で生き、仲間と出会い、やがて国の行方を選ぶ。あなたの一歩から、ひとつの年代記が始まります。</p>
       </header>
       <div class="v3-launch-actions">
         <button class="is-primary" id="v3Continue" type="button"><strong>冒険を続ける</strong><span id="v3ContinueSummary">保存された冒険はありません</span></button>
@@ -27,7 +28,7 @@
         <p>開始すると、この端末のV3セーブを新しい世界で置き換えます。</p>
         <div><button type="button" id="v3CancelNew">戻る</button><button class="is-primary" type="submit">世界を生成</button></div>
       </form>
-      <footer><span>V3 FIELD PROTOTYPE</span><span>端末内オートセーブ</span><button type="button" data-v3-developer>開発者システム</button></footer>
+      <footer><span>LEVIATHAN COVENANT</span><span>端末内オートセーブ</span><button type="button" data-v3-developer>開発者システム</button></footer>
     </section>
 
     <section class="v3-generation" id="v3Generation" aria-live="polite" hidden>
@@ -62,17 +63,19 @@
         <div id="v3AutoResponses" hidden></div>
       </nav>
 
-      <section class="v3-play-layout">
-        <aside class="v3-status-window" aria-label="主人公の状態">
-          <header><strong id="v3PlayerLabel">アレク</strong><span><small id="v3RaceLabel">人間</small><small id="v3LevelLabel">LV 1</small></span></header>
+      <aside class="v3-status-window" aria-label="主人公の状態">
+          <div id="v3HeroPortrait" class="v3-hero-portrait" aria-hidden="true"></div><header><strong id="v3PlayerLabel">アレク</strong><span><small id="v3RaceLabel">人間</small><small id="v3LevelLabel">LV 1</small></span></header>
           <dl><div><dt><svg class="v3-inline-icon" aria-hidden="true"><use href="./assets/ui/v3-ui-icons.svg#icon-heart"></use></svg>HP</dt><dd id="v3HpLabel">34 / 34</dd></div><div><dt><svg class="v3-inline-icon" aria-hidden="true"><use href="./assets/ui/v3-ui-icons.svg#icon-star"></use></svg>EXP</dt><dd id="v3XpLabel">0</dd></div><div><dt><svg class="v3-inline-icon" aria-hidden="true"><use href="./assets/ui/v3-ui-icons.svg#icon-coin"></use></svg>銀貨</dt><dd id="v3GoldLabel">12</dd></div></dl>
-          <div class="v3-hp-track"><i id="v3HpBar"></i></div>
+          <div class="v3-hp-track"><i id="v3HpBar"></i></div><div class="v3-xp-track"><i id="v3XpProgress"></i></div><small id="v3XpNext"></small><button id="v3QuickInventory" type="button" aria-label="回復できる道具を見る">道具</button>
         </aside>
-
-        <section class="v3-field-shell" aria-label="1マス単位の冒険フィールド">
+      <section class="v3-play-layout">
+        <div class="v3-field-column">
+          <header class="v3-field-heading"><span><b aria-hidden="true">✦</b> 周辺を探索する</span><button type="button" data-adventure-discoveries><span id="v3DiscoveryCount">周囲を見る</span><svg class="v3-ui-icon" aria-hidden="true"><use href="./assets/ui/v3-ui-icons.svg#icon-chevron-right"></use></svg></button></header>
+          <section class="v3-field-shell" aria-label="1マス単位の冒険フィールド">
           <div class="v3-field" id="v3Field" role="grid" aria-label="周辺フィールド"></div>
           <div class="v3-world-effect-visual" id="v3WorldEffectVisual" aria-hidden="true" hidden></div>
           <div class="v3-field-vignette" aria-hidden="true"></div>
+          <div id="v3FieldPulse" class="v3-field-pulse" aria-hidden="true" hidden></div>
           <aside class="v3-personal-battle-status" id="v3PersonalBattleStatus" aria-live="polite" hidden>
             <i class="v3-personal-battle-art" id="v3PersonalBattleArt" aria-hidden="true"></i>
             <header><small>PERSONAL BATTLE / 現在のフィールド</small><b id="v3PersonalBattleLevel">LV 1</b></header>
@@ -80,21 +83,9 @@
             <div><span>敵HP</span><i><b id="v3PersonalBattleHpBar"></b></i><em id="v3PersonalBattleHpLabel">0 / 0</em></div>
           </aside>
         </section>
-
-        <aside class="v3-place-window" aria-live="polite">
-          <small id="v3ClockLabel">第1日 08:00</small>
-          <strong id="v3TerrainLabel">草原</strong>
-          <span id="v3TerrainEffect">移動10分 · 通常の地勢</span>
-          <span class="v3-weather-label" id="v3WeatherLabel">空 平穏 · 移動補正なし</span>
-          <span class="v3-race-effect-label" id="v3RaceEffectLabel">人間 · 種族固有反応なし</span>
-          <span id="v3NearbyLabel">周辺を確認中</span>
-          <span class="v3-military-summary" id="v3MilitaryLabel">軍務を確認中</span>
-          <span id="v3ChunkLabel">周辺生成 9区画</span>
-        </aside>
-      </section>
-
-      <footer class="v3-command-area">
-        <section class="v3-message-window" aria-live="polite"><div data-auto-report class="v3-auto-report"></div><div id="v3Messages"></div></section>
+          <section id="v3FieldSelection" class="v3-field-selection" aria-label="選んだ地点" hidden></section>
+          <footer class="v3-command-area">
+        <section class="v3-message-window"><div id="v3AdventureFeedback" class="v3-adventure-feedback" role="status" aria-live="polite" hidden></div><div id="v3Messages" aria-live="polite"></div><details class="v3-travel-journal"><summary>旅の記録</summary><div id="v3Journal"></div></details><div data-auto-report class="v3-auto-report"></div></section>
         <nav class="v3-dpad" id="v3MovementPad" aria-label="移動方向">
           <button type="button" data-v3-move="north" aria-label="北へ進む"><svg class="v3-ui-icon" aria-hidden="true"><use href="./assets/ui/v3-ui-icons.svg#icon-chevron-up"></use></svg></button>
           <button type="button" data-v3-move="west" aria-label="西へ進む"><svg class="v3-ui-icon" aria-hidden="true"><use href="./assets/ui/v3-ui-icons.svg#icon-chevron-left"></use></svg></button>
@@ -107,6 +98,23 @@
           <button type="button" data-v3-encounter="flee"><svg class="v3-ui-icon" aria-hidden="true"><use href="./assets/ui/v3-ui-icons.svg#icon-retreat"></use></svg><span><strong>退避</strong><small>にげる</small></span></button>
         </section>
       </footer>
+        </div>
+        <aside class="v3-adventure-rail" aria-label="旅先と次の目的">
+          <section id="v3Scene" class="v3-scene-card" aria-label="現在地の風景"></section>
+          <section id="v3AdventureObjective" class="v3-adventure-objective" aria-label="現在の目標"></section>
+          <section class="v3-discovery-board" aria-label="周辺の発見"><header><h2>道中の出会い</h2><small>選んで場所を確かめる</small></header><div id="v3Discoveries"></div><button id="v3DiscoveriesMore" type="button" hidden></button></section>
+          <details class="v3-place-window"><summary>地勢・天候・軍務の詳細</summary><div class="v3-place-details">
+          <small id="v3ClockLabel">第1日 08:00</small>
+          <strong id="v3TerrainLabel">草原</strong>
+          <span id="v3TerrainEffect">移動10分 · 通常の地勢</span>
+          <span class="v3-weather-label" id="v3WeatherLabel">空 平穏 · 移動補正なし</span>
+          <span class="v3-race-effect-label" id="v3RaceEffectLabel">人間 · 種族固有反応なし</span>
+          <span id="v3NearbyLabel">周辺を確認中</span>
+          <span class="v3-military-summary" id="v3MilitaryLabel">軍務を確認中</span>
+          <span id="v3ChunkLabel">周辺生成 9区画</span>
+        </div></details>
+        </aside>
+      </section>
     </main>
 
     <section class="v3-modal" id="v3EncounterModal" role="dialog" aria-modal="true" aria-labelledby="v3EncounterTitle" hidden>

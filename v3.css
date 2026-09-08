@@ -97,7 +97,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .v3-tile.is-sky-peak { background: linear-gradient(135deg, #d4e0dc 0 24%, #65736d 26% 67%, #384640 69%); color: #fff4cf; }
 .v3-tile.is-settlement-ground { background: #ae9669; }
 .v3-tile[class*="is-settlement-"]:not(.is-settlement-ground) { background: #9b825c; color: #fff1bd; text-shadow: 1px 2px #2b2117; }
-.v3-tile[style*="--v3-terrain-position"] { background-image: url("./assets/generated/v3/field-terrain-atlas-v2.webp"); background-position: var(--v3-terrain-position); background-size: 400% 400%; background-repeat: no-repeat; image-rendering: auto; }
+.v3-field .v3-tile[style*="--v3-terrain-position"] { background-image: url("./assets/generated/v3/field-terrain-atlas-v2.webp"); background-position: var(--v3-terrain-position); background-size: 400% 400%; background-repeat: no-repeat; image-rendering: auto; }
 .v3-tile.is-fog, .v3-tile.is-ungenerated, .v3-tile.is-void { background: #101f20; color: transparent; }
 .v3-tile.is-adjacent[data-v3-move] { cursor: pointer; }
 .v3-tile.is-adjacent[data-v3-move]:hover, .v3-tile.is-adjacent[data-v3-move]:focus-visible { z-index: 2; outline: 3px solid #fff1a5; outline-offset: -3px; filter: brightness(1.15); }

@@ -62,3 +62,7 @@ Use Node.js 22 and `npm run check` (850 checks). Run `node scripts/audit-v3-prob
 ## V3 player experience verification (2026-09-08)
 
 Use Node.js 22, `npm run check`, and a task-owned localhost server/browser. Check actual walking to a commission survey, a second community mandate, two distinct governance acts before sovereignty, policy-specific market/crisis effects, country-by-country proposals, both council choices and current V6 continuation. Inspect SVG symbols, result causes, keyboard focus, and desktop / 390x844 layouts. Record browser actions separately from controlled domain fixtures in `docs/gameplay-reviews/2026-09-08-v3-player-experience.md`. Close the browser and server before return. Push, deployment and NAS publication are separate operations.
+
+## V3 adventure screen verification (2026-09-08)
+
+Use Node.js 22 and `npm run check`. In a task-owned browser/server, inspect 1440x900, 1280x720, 390x844 and 360x740. Use a saved V3 game to select a visible discovery without advancing state, move one step to collect it, follow the destination into actual local work, reopen and close panels, and resume the saved position/resources. Check responsive 15x9 / 11x9 fields, hidden-point exclusion, known-route obstacles/encounters, actual HP/XP/gold feedback, chapter/council images and reduced motion. Save evidence under `output/playwright/`, close the browser and server, and distinguish prepared scenarios from normal play. See `docs/gameplay-reviews/2026-09-08-v3-adventure-screen.md`. Git push, deployment and NAS publication are separate operations.

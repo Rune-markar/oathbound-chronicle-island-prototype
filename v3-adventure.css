@@ -1,0 +1,225 @@
+/* The adventure surface keeps the playable field, destination and consequences
+   together. Panels use the same V3 state and never cover walkable map tiles. */
+:root { --journey-gold: #e6c57f; --journey-line: #665d48; --journey-muted: #b6bdb8; }
+.v3-game { display: block; background: radial-gradient(ellipse at 72% 5%, #2b302c, transparent 48%), #101719; }
+.v3-game-header { min-height: 64px; padding: 8px max(18px, calc((100vw - 1240px) / 2)); border-color: #635a43; background: #10191be8; box-shadow: none; }
+.v3-game-header strong { font-size: 20px; letter-spacing: .04em; }
+.v3-header-actions button { min-height: 44px; border: 1px solid #696653; background: #182527; box-shadow: none; border-radius: 3px; }
+.v3-header-actions button:hover { border-color: #edce87; background: #30403b; }
+.v3-auto-toolbar { padding: 5px max(18px, calc((100vw - 1240px) / 2)); border-bottom-color: #35423e; background: #111c1dcc; }
+.v3-auto-toolbar button { border-color: #6a624e; }
+#v3CampaignOpen { color: #fae5ae; background: linear-gradient(110deg, #514733, #282e29); }
+.v3-status-window { position: relative; inset: auto; display: grid; grid-template-columns: 48px 150px minmax(240px, 1fr) 180px 48px; grid-template-rows: auto auto; align-items: center; gap: 4px 14px; width: min(1240px, calc(100% - 36px)); min-height: 74px; margin: 0 auto; padding: 10px 0; border: 0; border-bottom: 1px solid #3d4941; border-radius: 0; background: transparent; box-shadow: none; }
+.v3-hero-portrait { grid-column: 1; grid-row: 1 / 3; width: 48px; height: 48px; overflow: hidden; border: 1px solid #a19369; border-radius: 50%; background: #303e31; box-shadow: 0 0 0 3px #171e1c; }
+.v3-hero-portrait i { display: block; width: 100%; aspect-ratio: 1; }
+.v3-status-window header { grid-column: 2; grid-row: 1 / 3; display: grid; gap: 2px; min-width: 0; padding: 0; border: 0; }
+.v3-status-window header strong { overflow: hidden; text-overflow: ellipsis; font: 700 19px Georgia, "Yu Mincho", serif; }
+.v3-status-window header > span { display: flex; justify-content: start; gap: 12px; font-size: 11px; }
+.v3-status-window dl { grid-column: 3; grid-row: 1 / 3; display: flex; justify-content: space-evenly; gap: 18px; margin: 0; }
+.v3-status-window dl div { display: grid; gap: 2px; }
+.v3-status-window dt { color: #b7c5bd; font-size: 11px; }
+.v3-status-window dd { font-variant-numeric: tabular-nums; font-size: 17px; }
+.v3-status-window .v3-hp-track { grid-column: 4; grid-row: 1; height: 6px; margin: 0; background: #3b2828; }
+.v3-hp-track i { transition: width .28s ease; background: linear-gradient(90deg, #629b76, #b9d295); }
+.has-low-hp .v3-hp-track i { background: #ee9172; }
+.v3-xp-track { grid-column: 4; grid-row: 2; align-self: end; height: 3px; margin-bottom: 0; background: #343a36; }
+.v3-xp-track i { display: block; height: 100%; background: #e3c986; transition: width .3s ease; }
+#v3XpNext { grid-column: 4; grid-row: 2; padding-bottom: 5px; color: #c6bea6; font-size: 10px; }
+#v3QuickInventory { grid-column: 5; grid-row: 1 / 3; min-height: 44px; border: 1px solid #625e4b; border-radius: 3px; background: #28322d; cursor: pointer; font-size: 12px; }
+.has-low-hp #v3QuickInventory { color: #ffd2bc; border-color: #d68e6c; }
+.v3-play-layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; align-items: start; justify-items: stretch; gap: 24px; width: min(1240px, calc(100% - 36px)); min-height: 0; margin: 16px auto 0; padding: 0 0 20px; overflow: visible; background: none; }
+.v3-field-column { min-width: 0; border: 1px solid #5c5846; background: linear-gradient(140deg, #25312c, #101c20 70%); box-shadow: 0 12px 36px #0005; }
+.v3-field-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 44px; padding: 0 14px; border-bottom: 1px solid #635c47; color: #e8d5ac; font-size: 12px; letter-spacing: .04em; }
+.v3-field-heading b { margin-right: 8px; color: #e4c479; }
+.v3-field-heading button { display: flex; align-items: center; gap: 4px; min-height: 44px; border: 0; background: transparent; color: #c9d1c8; cursor: pointer; font-size: 12px; }
+.v3-field-heading button .v3-ui-icon { width: 14px; }
+.v3-field-shell, .has-auto-report .v3-field-shell { width: min(100%, calc((100dvh - 406px) * 15 / 9)); min-width: min(100%, 400px); margin: 0 auto; aspect-ratio: 15 / 9; border: 0; border-radius: 0; box-shadow: none; }
+.v3-field { isolation: isolate; }
+.v3-field-vignette { box-shadow: inset 0 0 48px 6px #09171966; }
+.v3-tile { overflow: visible; }
+.v3-tile.is-fog, .v3-tile.is-ungenerated { background-color: #27383a; background-image: radial-gradient(ellipse at 30% 20%, #53615b35, transparent 70%); }
+.v3-tile.is-fog:nth-child(5n) { background-color: #293b3d; }
+.v3-tile.is-fog::after { background: linear-gradient(140deg, #a0ada005, #09181925); }
+.v3-player-sprite { z-index: 4; width: 94%; filter: drop-shadow(0 0 3px #ffe8a1) drop-shadow(0 4px 2px #06100b); }
+.v3-tile.is-player { z-index: 3; box-shadow: inset 0 0 0 2px #f9de86; }
+.v3-tile.is-player::after { inset: 5%; border: 1px solid #f5e7b785; border-radius: 50%; background: transparent; }
+.v3-tile.has-discovery { cursor: pointer; }
+.v3-map-pin { position: absolute; z-index: 5; top: -1px; right: 0; display: grid; place-items: center; width: 19px; height: 19px; border: 1px solid #ead394; border-radius: 50%; background: #293a2e; color: #ffebae; box-shadow: 0 2px 3px #0008; pointer-events: none; }
+.v3-map-pin .v3-ui-icon { width: 12px; height: 12px; }
+.is-discovery-enemy .v3-map-pin, .is-discovery-crisis .v3-map-pin { background: #6f352d; border-color: #f4a28a; }
+.is-discovery-npc .v3-map-pin { background: #2b535b; border-color: #a5dce0; }
+.v3-tile.is-inspected { z-index: 5; outline: 3px solid #fff0ae; outline-offset: -2px; box-shadow: 0 0 16px #f5d18385; }
+.v3-tile.is-inspected::before { content: ""; position: absolute; inset: -5px; border: 1px solid #e6c783; pointer-events: none; }
+.v3-game.is-personal-battle .v3-field-shell { box-shadow: inset 0 0 0 2px #ce9274; }
+.v3-world-effect-visual { opacity: calc(.12 + var(--effect-strength, .5) * .14); }
+.v3-world-effect-visual.is-storm::after { animation: none; }
+.v3-command-area { position: static; display: grid; grid-template-columns: minmax(0, 1fr) 140px; align-items: start; gap: 12px; height: auto; min-height: 0; padding: 10px 14px; border-top: 1px solid #536151; background: #131f20; }
+.v3-message-window { height: auto; min-height: 0; max-height: 180px; padding: 0; border: 0; border-radius: 0; overflow-y: auto; background: transparent; box-shadow: none; }
+.v3-message-window p.is-latest { margin: 4px 0 8px; color: #e6e1ca; font-size: 13px; line-height: 1.65; }
+.v3-message-window p.is-latest::before { content: none; }
+.v3-dpad { grid-template-columns: repeat(3, 44px); grid-template-rows: repeat(3, 44px); gap: 0; }
+.v3-dpad button { border-color: #7a745e; border-radius: 4px; background: linear-gradient(140deg, #3a4235, #26312a); box-shadow: inset 0 1px #ddd0a61c; }
+.v3-dpad i { border: 0; background: transparent; color: #cfc2a0; font-size: 11px; }
+.v3-travel-journal { font-size: 12px; color: #bac5bb; }
+.v3-travel-journal summary { min-height: 44px; padding: 12px 0; cursor: pointer; color: #cbbd97; }
+.v3-travel-journal p { margin: 6px 0 10px; font-size: 12px; line-height: 1.6; }
+.v3-adventure-rail { display: grid; gap: 0; min-width: 0; border: 1px solid #655d47; background: #182321; box-shadow: 0 12px 36px #0005; }
+.v3-scene-card { position: relative; display: flex; align-items: end; min-height: 180px; isolation: isolate; overflow: hidden; background: #3b4436 var(--scene-art) center 50% / cover; }
+.v3-scene-card::before { content: ""; position: absolute; z-index: -1; inset: 0; background: linear-gradient(0deg, #0b1818f2, #0b181832 70%, transparent); }
+.v3-scene-caption { display: grid; gap: 5px; padding: 18px; }
+.v3-scene-caption small { color: #e5cf91; font-size: 10px; letter-spacing: .14em; }
+.v3-scene-caption strong { font: 700 27px/1.25 Georgia, "Yu Mincho", serif; text-shadow: 0 2px 8px #000; overflow-wrap: anywhere; }
+.v3-scene-caption span { color: #d8decd; font-size: 12px; }
+.v3-adventure-objective { padding: 16px 18px; background: linear-gradient(150deg, #3b3a2a66, transparent); border-bottom: 1px solid #555843; }
+.v3-adventure-objective > small { color: #e6c98c; letter-spacing: .06em; font-size: 11px; }
+.v3-adventure-objective h2 { margin: 8px 0; font: 700 21px/1.4 Georgia, "Yu Mincho", serif; }
+.v3-adventure-objective p { margin: 4px 0 12px; color: #c6cec0; font-size: 12px; line-height: 1.75; }
+.v3-adventure-objective button { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 46px; margin-top: 10px; padding: 10px; border: 1px solid #cbb073; border-radius: 3px; background: linear-gradient(120deg, #65573b, #3b402e); cursor: pointer; font-size: 13px; font-weight: 700; }
+.v3-adventure-objective button .v3-ui-icon:last-child { width: 14px; margin-left: auto; }
+.v3-bearing { display: flex; gap: 7px; align-items: center; color: #ddc78f; font-size: 12px; }
+.v3-bearing .v3-ui-icon { width: 15px; height: 15px; }
+.v3-discovery-board { min-width: 0; padding: 14px 12px 8px; }
+.v3-discovery-board > header { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; padding: 0 4px 10px; }
+.v3-discovery-board h2 { margin: 0; font: 700 16px Georgia, "Yu Mincho", serif; }
+.v3-discovery-board header small { color: #b6c3b3; font-size: 10px; }
+.v3-discovery { display: grid; grid-template-columns: 42px minmax(0, 1fr) auto; align-items: center; gap: 8px; width: 100%; min-height: 58px; padding: 7px 4px; border: 0; border-top: 1px solid #445044; background: transparent; text-align: left; cursor: pointer; }
+.v3-discovery > i { display: block; width: 42px; aspect-ratio: 1; border-radius: 4px; background-color: #39483c; border: 1px solid #6d7754; }
+.v3-discovery > span { display: grid; gap: 4px; min-width: 0; }
+.v3-discovery strong { font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+.v3-discovery small { color: #b7cbb2; font-size: 11px; line-height: 1.4; }
+.v3-discovery > b { max-width: 58px; color: #dac493; font-size: 11px; font-weight: 500; }
+.v3-discovery.is-danger small { color: #edb397; }
+.v3-discovery[aria-pressed="true"], .v3-discovery:hover { background: #48544055; }
+#v3DiscoveriesMore { width: 100%; min-height: 44px; border: 0; background: #26372d; color: #e6d7a9; cursor: pointer; font-size: 12px; }
+.v3-discovery-empty { font-size: 13px; line-height: 1.7; color: #b4c5b8; }
+.v3-place-window { position: static; display: block; width: auto; margin: 0 12px; padding: 0; border: 0; border-top: 1px solid #4b5648; border-radius: 0; background: transparent; box-shadow: none; }
+.v3-place-window summary { min-height: 44px; padding: 14px 4px; font-size: 12px; color: #cdbf99; cursor: pointer; }
+.v3-place-details { display: grid; gap: 8px; padding: 0 4px 14px; }
+.v3-place-window span { font-size: 12px; line-height: 1.6; }
+.v3-place-window .v3-weather-label, .v3-place-window .v3-race-effect-label { white-space: normal; }
+.v3-field-selection { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; border-top: 1px solid #d4b77a; background: #30392d; }
+.v3-field-selection > div:first-child { display: grid; gap: 4px; min-width: 0; }
+.v3-field-selection small { display: flex; align-items: center; gap: 5px; color: #dfcd9f; font-size: 11px; }
+.v3-field-selection small .v3-ui-icon { width: 14px; height: 14px; }
+.v3-field-selection strong { font-size: 16px; }
+.v3-field-selection p { margin: 0; color: #d0dcc5; font-size: 12px; }
+.v3-field-selection .v3-point-purpose { max-width: 46ch; color: #c7c5ad; font-size: 11px; line-height: 1.6; }
+.v3-field-pulse { position: absolute; z-index: 8; top: 57%; left: 50%; display: flex; align-items: center; flex-wrap: wrap; justify-content: center; gap: 6px; max-width: 90%; padding: 7px 12px; transform: translateX(-50%); border: 1px solid #e6c984; border-radius: 5px; background: #152522ed; box-shadow: 0 4px 18px #0009; pointer-events: none; font-size: 14px; font-weight: 800; white-space: nowrap; }
+.v3-field-pulse b { color: #ffe4ab; }
+.v3-field-pulse .is-gain { color: #d5f5bc; }
+.v3-field-pulse .is-loss { color: #ffbca6; }
+.v3-selection-actions { position: relative; display: grid; gap: 4px; flex-shrink: 0; padding-right: 46px; }
+.v3-selection-actions button { display: flex; align-items: center; justify-content: center; gap: 5px; min-height: 44px; padding: 8px 10px; border: 1px solid #c9ae75; border-radius: 3px; background: #514e35; cursor: pointer; font-size: 13px; }
+.v3-selection-actions [data-adventure-clear] { position: absolute; right: -8px; top: 0; width: 44px; padding: 0; border: 0; background: transparent; }
+.v3-adventure-feedback { display: grid; gap: 5px; margin-bottom: 9px; padding: 8px 10px; border-left: 3px solid #d9bd72; background: linear-gradient(90deg, #65643a50, transparent); }
+.v3-adventure-feedback > strong, .v3-adventure-feedback > div, .v3-adventure-feedback span { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.v3-adventure-feedback strong { color: #ffe0a0; font-size: 13px; }
+.v3-adventure-feedback .v3-ui-icon { width: 15px; height: 15px; }
+.v3-adventure-feedback span { margin-right: 8px; font-size: 12px; font-variant-numeric: tabular-nums; }
+.v3-adventure-feedback .is-gain { color: #ceebb6; }
+.v3-adventure-feedback .is-loss { color: #ffc4a9; }
+.v3-adventure-feedback[data-kind="damage"] { border-color: #f1a089; background: linear-gradient(90deg, #934d3044, transparent); }
+.v3-personal-battle-status { top: 8px; right: 8px; border: 1px solid #d5ae80; background: #251a1bf2; box-shadow: 0 4px 18px #0007; }
+.v3-personal-battle-hp-bar, #v3PersonalBattleHpBar { transition: width .25s ease; }
+.v3-game :focus-visible { outline: 3px solid #ffe1a0; outline-offset: 2px; }
+
+/* Illustrations mark changes in the journey and make final speakers present. */
+.v3-campaign-card > header { min-height: 116px; align-items: end; background: linear-gradient(90deg, #111e1fea 15%, #12201f80), var(--campaign-scene, url("./assets/generated/adventure/guild.png")) center 43% / cover; }
+.v3-campaign-card > header > button { align-self: start; background: #172422ed; }
+.v3-campaign-card h1 { font: 700 30px Georgia, "Yu Mincho", serif; }
+.v3-campaign-progress { margin-top: 8px; padding: 10px 0; }
+.v3-campaign-progress li { position: relative; }
+.v3-campaign-progress li[aria-current="step"] { color: #ffe3a3; background: #73603e4d; box-shadow: inset 0 -3px #e5c47d; }
+.v3-action-card { border-color: #676149; border-radius: 5px; background: linear-gradient(135deg, #39443290, #142421); }
+.v3-action-card h3 .v3-ui-icon { width: 28px; height: 28px; padding: 3px; border: 1px solid #8b825c; border-radius: 50%; background: #3d4836; }
+.v3-action-card button { background: #424f38; }
+.v3-final-council { min-height: 200px; padding: 24px; background: linear-gradient(90deg, #112024f2, #101e22bf 70%, #101e2266), var(--council-scene, url("./assets/generated/adventure/guild.png")) center 35% / cover; border: 1px solid #b39966; }
+.v3-final-council blockquote { color: #f1e8d0; font-size: 16px; line-height: 1.9; }
+.v3-campaign-ending { background: linear-gradient(90deg, #142422f5, #182c29c9), url("./assets/generated/v3/launch-hero.webp") center / cover; }
+
+@media (max-width: 980px) {
+  .v3-play-layout { grid-template-columns: minmax(0, 1fr) 280px; gap: 14px; }
+  .v3-status-window { grid-template-columns: 44px 110px minmax(190px, 1fr) 110px 44px; gap: 4px 8px; }
+  .v3-status-window dl { gap: 8px; }
+  .v3-adventure-objective { padding: 14px; }
+  .v3-adventure-objective h2 { font-size: 19px; }
+}
+@media (max-width: 720px) {
+  .v3-game { display: block; }
+  .v3-game-header { min-height: 58px; padding: 7px 10px; }
+  .v3-game-header > div:first-child { max-width: 118px; }
+  .v3-game-header strong { font-size: 14px; }
+  .v3-header-actions { gap: 3px; }
+  .v3-header-actions button { width: 44px; min-width: 44px; min-height: 44px; padding: 6px; }
+  .v3-auto-toolbar { gap: 4px 8px; min-height: 52px; padding: 4px 10px; }
+  .v3-campaign-hint { display: none; }
+  #v3AutoOpen { margin-left: auto; font-size: 12px; }
+  .v3-status-window { width: calc(100% - 20px); grid-template-columns: 38px 72px minmax(0, 1fr) 44px; grid-template-rows: auto auto auto; min-height: 70px; gap: 2px 8px; padding: 6px 0; }
+  .v3-hero-portrait { width: 38px; height: 38px; grid-row: 1 / 3; }
+  .v3-status-window header { grid-row: 1 / 3; }
+  .v3-status-window header strong { font-size: 15px; }
+  .v3-status-window header > span { gap: 5px; font-size: 9px; }
+  .v3-status-window dl { grid-column: 3; gap: 7px; }
+  .v3-status-window dt { font-size: 10px; }
+  .v3-status-window dd { font-size: 13px; }
+  .v3-status-window dt .v3-inline-icon { width: 11px; margin-right: 2px; }
+  .v3-status-window .v3-hp-track { grid-row: 3; grid-column: 1 / 3; height: 4px; }
+  .v3-xp-track { grid-row: 3; grid-column: 3; width: 40%; align-self: center; }
+  #v3XpNext { grid-row: 3; grid-column: 3 / 5; justify-self: end; padding: 0; font-size: 9px; }
+  #v3QuickInventory { grid-column: 4; grid-row: 1 / 3; font-size: 11px; }
+  .v3-play-layout { width: 100%; margin: 0; display: flex; flex-direction: column; gap: 0; padding-bottom: env(safe-area-inset-bottom); }
+  .v3-adventure-rail { display: contents; }
+  .v3-scene-card { order: 0; width: 100%; min-height: 80px; background-position: center 48%; }
+  .v3-scene-caption { padding: 8px 16px; gap: 2px; max-width: 100%; }
+  .v3-scene-caption strong { font-size: 22px; }
+  .v3-scene-caption span { font-size: 11px; }
+  .v3-adventure-objective { order: 1; display: grid; grid-template-columns: minmax(0, 1fr) 116px; align-items: center; gap: 3px 10px; width: 100%; min-height: 68px; padding: 6px 12px; background: #253027; }
+  .v3-adventure-objective > small { grid-column: 1; font-size: 10px; }
+  .v3-adventure-objective h2 { grid-column: 1; margin: 0; font-size: 16px; }
+  .v3-adventure-objective p { display: none; }
+  .v3-adventure-objective .v3-bearing { grid-column: 1; font-size: 11px; }
+  .v3-adventure-objective button { grid-column: 2; grid-row: 1 / 4; gap: 5px; margin: 0; padding: 6px; font-size: 12px; }
+  .v3-adventure-objective button .v3-ui-icon { width: 16px; height: 16px; }
+  .v3-adventure-objective button .v3-ui-icon:last-child { display: none; }
+  .v3-field-column { order: 2; width: 100%; border-width: 0 0 1px; }
+  .v3-field-heading { padding-inline: 12px; }
+  .v3-field-shell, .has-auto-report .v3-field-shell { width: 100%; min-width: 0; border: 0; }
+  .v3-field-selection { flex-wrap: wrap; gap: 8px; padding: 10px 12px; }
+  .v3-field-selection > div:first-child { flex: 1 1 120px; }
+  .v3-selection-actions { padding-right: 36px; max-width: 100%; }
+  .v3-selection-actions small { font-size: 10px; }
+  .v3-command-area { grid-template-columns: minmax(0, 1fr) 132px; gap: 10px; padding: 10px 12px; }
+  .v3-message-window { min-height: 0; max-height: 168px; border: 0; padding: 0; }
+  .v3-message-window p.is-latest { font-size: 12px; }
+  .v3-discovery-board { order: 3; width: 100%; padding: 18px 12px 10px; background: #182522; }
+  .v3-discovery-board > header { padding-bottom: 12px; }
+  .v3-discovery-board header small { font-size: 12px; }
+  .v3-discovery { min-height: 66px; }
+  .v3-discovery small, .v3-discovery > b { font-size: 12px; }
+  .v3-place-window { order: 4; width: calc(100% - 24px); }
+  .v3-map-pin { width: 16px; height: 16px; }
+  .v3-map-pin .v3-ui-icon { width: 11px; height: 11px; }
+  .v3-personal-battle-status { max-width: 235px; padding-left: 59px; }
+  .v3-personal-battle-status small { font-size: 9px; }
+  .v3-campaign-card > header { min-height: 96px; }
+  .v3-campaign-card h1 { font-size: 25px; }
+  .v3-final-council { padding: 16px; }
+  .v3-final-council blockquote { font-size: 14px; }
+}
+@media (max-width: 380px) {
+  .v3-game-header > div:first-child { max-width: 100px; }
+  .v3-header-actions button { width: 44px; min-width: 44px; }
+  .v3-status-window { grid-template-columns: 34px 62px minmax(0, 1fr) 44px; gap: 2px 6px; }
+  .v3-status-window dl { gap: 5px; }
+  .v3-status-window header strong { font-size: 14px; }
+}
+@media (max-width: 720px) and (max-height: 780px) {
+  .v3-scene-card { min-height: 64px; }
+  .v3-scene-caption { padding-block: 6px; }
+  .v3-scene-caption strong { font-size: 20px; }
+  .v3-scene-caption span { display: none; }
+  .v3-command-area { padding-block: 6px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .v3-game *, .v3-campaign-modal * { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}

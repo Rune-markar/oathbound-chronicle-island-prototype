@@ -71,6 +71,7 @@ export function mountV3AutoMode({ read, writeAuto, commit, save, render, toast, 
     document.querySelector("#v3Game").classList.toggle("has-auto-report", auto.status !== "idle");
     toggle.textContent = auto.status === "running" ? "一時停止" : "再開";
     toggle.hidden = !["running", "paused"].includes(auto.status);
+    document.querySelector("#v3AutoCancel").textContent = auto.status === "completed" ? "報告を閉じる" : "終了";
     openButton.setAttribute("aria-pressed", String(auto.status === "running"));
   }
 
@@ -292,6 +293,10 @@ export function mountV3AutoMode({ read, writeAuto, commit, save, render, toast, 
     }
   });
   document.querySelector("#v3AutoCancel").addEventListener("click", () => {
+    const current = read().state.autoMode;
+    if (current.status === "completed") {
+      writeAuto({ ...current, status: "idle" }); refresh(); persist(); openButton.focus({ preventScroll: true }); return;
+    }
     pause("自動モードを終了しました。");
     const { state } = read();
     writeAuto({ ...state.autoMode, status: "completed", reason: "自動モードを終了しました。" }); refresh(); persist();
